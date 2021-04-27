@@ -1,3 +1,8 @@
+use elementref::Node;
+
+#[path ="web/elementref.rs"] mod elementref;
 fn main() {
-    println!("Hello, world!");
+    elementref::df();
+    let n:elementref::Node=Node{cool:21};
+    n.update();
 }
