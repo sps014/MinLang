@@ -1,8 +1,13 @@
-use elementref::Node;
+use node::Node;
+use syntaxtree::*;
 
-#[path ="web/elementref.rs"] mod elementref;
+#[path = "web/node.rs"]
+mod node;
+
+#[path = "rdp/syntaxtree.rs"]
+mod syntaxtree;
+
 fn main() {
-    elementref::df();
-    let n:elementref::Node=Node{cool:21};
+    let n = Node::new(String::from("abc"));
     n.update();
 }
