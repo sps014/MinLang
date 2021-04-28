@@ -3,6 +3,7 @@ Components := Component Components
 
 Component := '<' + ComponentName + ComponentCompleter
             | Epsilon
+            | StringName
 
 ComponentCompleter := '>' Components '</' + ComponentName + '>'
             | ComponentParams '/>'

@@ -5,6 +5,4 @@ pub struct SytaxNode {
 pub struct SytaxTree {
     pub root: SytaxNode,
 }
-impl SytaxTree {
-    
-}
+impl SytaxTree {}
