@@ -6,13 +6,14 @@ fn main() {
     call();
 }
 fn call() {
-    let mut l = Lexer::new("2+3+5-7 * 978 - 56");
-    while true {
+    let mut l = Lexer::new("2 +3+ 5  -  7
+    *978-56");
+    loop {
         let t = l.next_token();
-        l.next();
         println!("{:?}", t);
-        if t.kind == SyntaxKind::EndOfFileToken {
-            break;
+        if t.kind != SyntaxKind::EndOfFileToken {
+            continue;
         }
+        break;
     }
 }
