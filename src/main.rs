@@ -1,18 +1,18 @@
-use node::Node;
-use parser::Parser;
-use syntaxtree::*;
+mod lang;
+use lang::code_analysis::lexer::*;
 
-#[path = "web/node.rs"]
-mod node;
-
-#[path = "rdp/syntaxtree.rs"]
-mod syntaxtree;
-
-#[path = "rdp/parser.rs"]
-mod parser;
-
+use crate::lang::code_analysis::syntax_kind::SyntaxKind;
 fn main() {
-    let parts = vec!["<", "bc", ">", "ok", "</", "bc", ">"];
-    let result = Parser::match_str(parts);
-    print!("ok");
+    call();
+}
+fn call() {
+    let mut l = Lexer::new("2+3+5-7 * 978 - 56");
+    while true {
+        let t = l.next_token();
+        l.next();
+        println!("{:?}", t);
+        if t.kind == SyntaxKind::EndOfFileToken {
+            break;
+        }
+    }
 }

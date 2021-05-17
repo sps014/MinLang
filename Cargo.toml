@@ -1,5 +1,5 @@
 [package]
-name = "StarLight"
+name = "star_light"
 version = "0.1.0"
 authors = ["Shivendra Pratap Singh <shivendrapsingh014@gmail.com>"]
 edition = "2018"
