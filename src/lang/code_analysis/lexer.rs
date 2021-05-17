@@ -44,15 +44,53 @@ impl Lexer {
                 self.current += 1;
             }
             let length = self.current as usize - start;
-            //self.current = pos as i32;
-            //self.current -= 1;
             let text: &str = input_text[start..start + length].as_ref();
 
             return SyntaxToken::new(SyntaxKind::NumberToken, start as i32, text);
         }
+        if self.current_char() == '\n' {
+            self.next();
+            return SyntaxToken::new(SyntaxKind::NewLineToken, self.current - 1, "\n");
+        }
 
-        let text = input_text[pos..pos + 1].as_ref();
-        SyntaxToken::new(SyntaxKind::BadToken, self.current, &text)
+        if char::is_whitespace(self.current_char()) {
+            let start = pos;
+            while char::is_whitespace(self.current_char()) {
+                self.current += 1;
+            }
+            let length = self.current as usize - start;
+            let text: &str = input_text[start..start + length].as_ref();
+
+            return SyntaxToken::new(SyntaxKind::WhiteSpaceToken, start as i32, text);
+        }
+
+        if self.current_char() == '+' {
+            self.next();
+            return SyntaxToken::new(SyntaxKind::PlusToken, self.current - 1, "+");
+        } else if self.current_char() == '-' {
+            self.next();
+            return SyntaxToken::new(SyntaxKind::MinusToken, self.current - 1, "-");
+        } else if self.current_char() == '*' {
+            self.next();
+            return SyntaxToken::new(SyntaxKind::StarToken, self.current - 1, "*");
+        } else if self.current_char() == '/' {
+            self.next();
+            return SyntaxToken::new(SyntaxKind::SlashToken, self.current - 1, "/");
+        } else if self.current_char() == '(' {
+            self.next();
+            return SyntaxToken::new(SyntaxKind::OpenParenthesisToken, self.current - 1, "(");
+        } else if self.current_char() == ')' {
+            self.next();
+            return SyntaxToken::new(SyntaxKind::CloseParenthesisToken, self.current - 1, ")");
+        }
+
+        let text = self.current_char();
+        self.next();
+        SyntaxToken::new(
+            SyntaxKind::BadToken,
+            self.current - 1,
+            text.to_string().as_str(),
+        )
     }
     pub fn tokenize(&self) -> Vec<SyntaxToken> {
         vec![]
