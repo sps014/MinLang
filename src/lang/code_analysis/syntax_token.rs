@@ -8,7 +8,7 @@ pub struct SyntaxToken {
 impl SyntaxToken {
     pub fn new(kind: SyntaxKind, pos: i32, text: &str) -> SyntaxToken {
         SyntaxToken {
-            kind: kind,
+            kind,
             position: pos,
             text: String::from(text),
         }

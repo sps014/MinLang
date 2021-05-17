@@ -11,5 +11,6 @@ pub enum SyntaxKind {
     StarToken = 53,
     OpenParenthesisToken = 70,
     CloseParenthesisToken = 71,
+    
     BadToken = 1000,
 }

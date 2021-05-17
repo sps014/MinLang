@@ -1,4 +1,4 @@
-use std::{str::Chars, usize};
+use std::usize;
 
 use super::syntax_kind::*;
 use super::syntax_token::*;
@@ -13,14 +13,8 @@ impl Lexer {
             current: 0,
         }
     }
-    pub fn input_text(&self) -> &String {
-        &self.input_text
-    }
     pub fn next(&mut self) {
         self.current += 1;
-    }
-    pub fn input_str(&self) -> &str {
-        self.input_text.as_str()
     }
     pub fn current_char(&self) -> char {
         if self.current as usize >= self.input_text.len() {
@@ -29,7 +23,7 @@ impl Lexer {
         self.input_text.as_bytes()[self.current as usize] as char
     }
     pub fn next_token(&mut self) -> SyntaxToken {
-        let mut pos = self.current as usize;
+        let pos = self.current as usize;
         if pos >= self.input_text.len() {
             return SyntaxToken::new(
                 SyntaxKind::EndOfFileToken,
@@ -91,8 +85,5 @@ impl Lexer {
             self.current - 1,
             text.to_string().as_str(),
         )
-    }
-    pub fn tokenize(&self) -> Vec<SyntaxToken> {
-        vec![]
     }
 }
