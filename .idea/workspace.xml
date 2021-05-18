@@ -12,11 +12,8 @@
     <list default="true" id="429c5428-0820-458d-aab1-8bf294f59adf" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/mod.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/parser.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/parser.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax_kind.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax_kind.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax_token.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax_token.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/mod.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/utils.rs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax_node.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax_node.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax_tree.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax_tree.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -101,23 +98,12 @@
       <workItem from="1621318119353" duration="2384000" />
       <workItem from="1621320545084" duration="8848000" />
       <workItem from="1621335004310" duration="1713000" />
-      <workItem from="1621341600420" duration="2742000" />
+      <workItem from="1621341600420" duration="7225000" />
     </task>
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
-  </component>
-  <component name="XDebuggerManager">
-    <breakpoint-manager>
-      <breakpoints>
-        <line-breakpoint enabled="true" type="com.jetbrains.cidr.execution.debugger.OCBreakpointType">
-          <url>file://$PROJECT_DIR$/src/main.rs</url>
-          <line>10</line>
-          <option name="timeStamp" value="5" />
-        </line-breakpoint>
-      </breakpoints>
-    </breakpoint-manager>
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />
