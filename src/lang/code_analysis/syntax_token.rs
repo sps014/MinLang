@@ -2,8 +2,8 @@ use super::syntax_kind::*;
 #[derive(Debug,Clone)]
 pub struct SyntaxToken {
     pub kind: SyntaxKind,
-    position: usize,
-    text: String,
+    pub position: usize,
+    pub text: String,
 }
 impl SyntaxToken {
     pub fn new(kind: SyntaxKind, pos: usize, text: &str) -> SyntaxToken {
