@@ -21,25 +21,34 @@ impl Evaluator
         match node {
             SyntaxNode::NumberExpressionSyntax(token)=>
                 {
-                    return  Result::Ok(token.text.parse::<i32>().unwrap());
+                    return match token.text.parse::<i32>()
+                    {
+                        Ok(n) => Result::Ok(n),
+                        Err(e) => Result::Err(Error::new(ErrorKind::Other, e.to_string()))
+                    }
                 },
             SyntaxNode::BinaryExpressionSyntax(left,optr,right)=>
                 {
-                    let l=self.eval(left).unwrap();
-                    let r=self.eval(right).unwrap();
-                    let mut res=0;
-                    match optr.kind {
+                    let l= match self.eval(left)
+                    {
+                        Ok(n)=>n,
+                        Err(e) =>return Result::Err(Error::new(ErrorKind::Other, e.to_string()))
+                    };
+                    let r= match self.eval(right)
+                    {
+                        Ok(n)=>n,
+                        Err(e) =>return Result::Err(Error::new(ErrorKind::Other, e.to_string()))
+                    };
+                    return match optr.kind {
                        
-                        SyntaxKind::PlusToken => { res=l+r;}
-                        SyntaxKind::MinusToken => {res=l-r;}
-                        SyntaxKind::SlashToken => {res=l/r;}
-                        SyntaxKind::StarToken => {res=l*r;}
-                        _=>{
-                         return Result::Err(Error::new(ErrorKind::Other,format!("Error unexpected kind {:?}",optr.kind)));
-                        }
+                        SyntaxKind::PlusToken =>  Ok(l+r),
+                        SyntaxKind::MinusToken => Ok(l-r),
+                        SyntaxKind::SlashToken => Ok(l/r),
+                        SyntaxKind::StarToken => Ok(l*r),
+                        _=>
+                         return Result::Err(Error::new(ErrorKind::Other,format!("Error unexpected kind {:?}",optr.kind)))
                         
-                    }
-                    return  Result::Ok(res);
+                    };
                 },
             SyntaxNode::ParenthesizedExpressionSyntax(left,ex,right)=>
                 {
