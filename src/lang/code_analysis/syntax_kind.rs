@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq,Clone)]
 pub enum SyntaxKind {
     EndOfFileToken = 0,
     WhiteSpaceToken = 1,
