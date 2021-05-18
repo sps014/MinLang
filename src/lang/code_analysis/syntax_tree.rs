@@ -3,7 +3,7 @@ use crate::lang::code_analysis::syntax_token::SyntaxToken;
 use super::syntax_node::SyntaxNode;
 
 pub struct SyntaxTree {
-    root: Box<SyntaxNode>,
+    pub root: Box<SyntaxNode>,
     diagnostics: Vec<String>,
     eof_token: SyntaxToken,
 }
