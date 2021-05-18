@@ -4,85 +4,81 @@ use super::syntax_kind::*;
 use super::syntax_token::*;
 pub struct Lexer {
     input_text: String,
-    current: i32,
+    current: usize,
+    diagnostics:Vec<String>
 }
 impl Lexer {
     pub fn new(input_text: &str) -> Lexer {
         Lexer {
             input_text: String::from(input_text),
-            current: 0,
+            current: 0,diagnostics:Vec::new()
         }
     }
     pub fn next(&mut self) {
         self.current += 1;
     }
     pub fn current_char(&self) -> char {
-        if self.current as usize >= self.input_text.len() {
+        if self.current >= self.input_text.len() {
             return '\0';
         }
         self.input_text.as_bytes()[self.current as usize] as char
     }
     pub fn next_token(&mut self) -> SyntaxToken {
-        let pos = self.current as usize;
+        let pos = self.current;
         if pos >= self.input_text.len() {
-            return SyntaxToken::new(
-                SyntaxKind::EndOfFileToken,
-                (self.current as usize) as i32,
-                "\0",
-            );
+            return SyntaxToken::new(SyntaxKind::EndOfFileToken, pos , "\0",);
         }
         let input_text = self.input_text.as_str();
         if char::is_digit(self.current_char(), 10) {
-            let start = pos;
             while char::is_digit(self.current_char(), 10) {
                 self.current += 1;
             }
-            let length = self.current as usize - start;
-            let text: &str = input_text[start..start + length].as_ref();
+            let length = self.current - pos;
+            let text: &str = input_text[pos..pos + length].as_ref();
 
-            return SyntaxToken::new(SyntaxKind::NumberToken, start as i32, text);
+            return SyntaxToken::new(SyntaxKind::NumberToken, pos, text);
         }
         if self.current_char() == '\n' {
             self.next();
-            return SyntaxToken::new(SyntaxKind::NewLineToken, self.current - 1, "\n");
+            return SyntaxToken::new(SyntaxKind::NewLineToken, pos, "\n");
         }
 
         if char::is_whitespace(self.current_char()) {
-            let start = pos;
             while char::is_whitespace(self.current_char()) {
                 self.current += 1;
             }
-            let length = self.current as usize - start;
-            let text: &str = input_text[start..start + length].as_ref();
+            let length = self.current  - pos;
+            let text: &str = input_text[pos..pos + length].as_ref();
 
-            return SyntaxToken::new(SyntaxKind::WhiteSpaceToken, start as i32, text);
+            return SyntaxToken::new(SyntaxKind::WhiteSpaceToken, pos, text);
         }
 
         if self.current_char() == '+' {
             self.next();
-            return SyntaxToken::new(SyntaxKind::PlusToken, self.current - 1, "+");
+            return SyntaxToken::new(SyntaxKind::PlusToken, pos, "+");
         } else if self.current_char() == '-' {
             self.next();
-            return SyntaxToken::new(SyntaxKind::MinusToken, self.current - 1, "-");
+            return SyntaxToken::new(SyntaxKind::MinusToken, pos, "-");
         } else if self.current_char() == '*' {
             self.next();
-            return SyntaxToken::new(SyntaxKind::StarToken, self.current - 1, "*");
+            return SyntaxToken::new(SyntaxKind::StarToken, pos, "*");
         } else if self.current_char() == '/' {
             self.next();
-            return SyntaxToken::new(SyntaxKind::SlashToken, self.current - 1, "/");
+            return SyntaxToken::new(SyntaxKind::SlashToken, pos, "/");
         } else if self.current_char() == '(' {
             self.next();
-            return SyntaxToken::new(SyntaxKind::OpenParenthesisToken, self.current - 1, "(");
+            return SyntaxToken::new(SyntaxKind::OpenParenthesisToken, pos, "(");
         } else if self.current_char() == ')' {
             self.next();
-            return SyntaxToken::new(SyntaxKind::CloseParenthesisToken, self.current - 1, ")");
+            return SyntaxToken::new(SyntaxKind::CloseParenthesisToken, pos, ")");
         }
 
         let text = self.current_char();
         self.next();
+        self.diagnostics.push(format!("Unexpected token {} at position {}",text,pos));
         SyntaxToken::new(
             SyntaxKind::BadToken,
-            self.current - 1,
+            pos,
             text.to_string().as_str(),
         )
     }
