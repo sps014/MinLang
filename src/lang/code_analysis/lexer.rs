@@ -5,13 +5,14 @@ use super::syntax_token::*;
 pub struct Lexer {
     input_text: String,
     current: usize,
-    diagnostics:Vec<String>
+    diagnostics: Vec<String>,
 }
 impl Lexer {
     pub fn new(input_text: &str) -> Lexer {
         Lexer {
             input_text: String::from(input_text),
-            current: 0,diagnostics:Vec::new()
+            current: 0,
+            diagnostics: Vec::new(),
         }
     }
     pub fn next(&mut self) {
@@ -26,7 +27,7 @@ impl Lexer {
     pub fn next_token(&mut self) -> SyntaxToken {
         let pos = self.current;
         if pos >= self.input_text.len() {
-            return SyntaxToken::new(SyntaxKind::EndOfFileToken, pos , "\0",);
+            return SyntaxToken::new(SyntaxKind::EndOfFileToken, pos, "\0");
         }
         let input_text = self.input_text.as_str();
         if char::is_digit(self.current_char(), 10) {
@@ -47,7 +48,7 @@ impl Lexer {
             while char::is_whitespace(self.current_char()) {
                 self.current += 1;
             }
-            let length = self.current  - pos;
+            let length = self.current - pos;
             let text: &str = input_text[pos..pos + length].as_ref();
 
             return SyntaxToken::new(SyntaxKind::WhiteSpaceToken, pos, text);
@@ -71,23 +72,18 @@ impl Lexer {
         } else if self.current_char() == ')' {
             self.next();
             return SyntaxToken::new(SyntaxKind::CloseParenthesisToken, pos, ")");
-        }
-        else if self.current_char() == '&' {
+        } else if self.current_char() == '&' {
             self.next();
-            return SyntaxToken::new(SyntaxKind::BitWiseAndToken, pos, "&");
-        }
-        else if self.current_char() == '|' {
+            return SyntaxToken::new(SyntaxKind::BitWiseAmpersandToken, pos, "&");
+        } else if self.current_char() == '|' {
             self.next();
-            return SyntaxToken::new(SyntaxKind::BitWiseOrToken, pos, "|");
+            return SyntaxToken::new(SyntaxKind::BitWisePipeToken, pos, "|");
         }
 
         let text = self.current_char();
         self.next();
-        self.diagnostics.push(format!("Unexpected token {} at position {}",text,pos));
-        SyntaxToken::new(
-            SyntaxKind::BadToken,
-            pos,
-            text.to_string().as_str(),
-        )
+        self.diagnostics
+            .push(format!("Unexpected token {} at position {}", text, pos));
+        SyntaxToken::new(SyntaxKind::BadToken, pos, text.to_string().as_str())
     }
 }

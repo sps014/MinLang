@@ -47,8 +47,8 @@ impl Evaluator {
                     SyntaxKind::MinusToken => Ok(l - r),
                     SyntaxKind::SlashToken => Ok(l / r),
                     SyntaxKind::StarToken => Ok(l * r),
-                    SyntaxKind::BitWiseAndToken => Ok(l & r),
-                    SyntaxKind::BitWiseOrToken => Ok(l | r),
+                    SyntaxKind::BitWiseAmpersandToken => Ok(l & r),
+                    SyntaxKind::BitWisePipeToken => Ok(l | r),
 
                     _ => {
                         return Err(Error::new(
