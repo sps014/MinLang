@@ -1,35 +1,35 @@
+use std::vec;
+
 use super::syntax_token::SyntaxToken;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SyntaxNode {
     NumberExpressionSyntax(SyntaxToken),
     BinaryExpressionSyntax(Box<SyntaxNode>, SyntaxToken, Box<SyntaxNode>),
     ParenthesizedExpressionSyntax(SyntaxToken, Box<SyntaxNode>, SyntaxToken),
 }
+enum SyntaxCol {
+    Token(SyntaxToken),
+    Node(SyntaxNode),
+}
 
 impl SyntaxNode {
-    pub fn get_children(&self) -> Vec<SyntaxToken> {
+    pub fn get_children(&self) -> Vec<SyntaxCol> {
         return match self {
-            SyntaxNode::NumberExpressionSyntax(n) => vec![n.clone()],
+            SyntaxNode::NumberExpressionSyntax(n) => vec![SyntaxCol::Token(n.clone())],
             SyntaxNode::BinaryExpressionSyntax(left, opr, right) => {
-                let mut v = vec![];
-                for i in left.get_children() {
-                    v.push(i);
-                }
-                v.push(opr.clone());
-                for i in right.get_children() {
-                    v.push(i);
-                }
-                v
+                vec![
+                    SyntaxCol::Node(left.as_ref().clone()),
+                    SyntaxCol::Token(opr.clone()),
+                    SyntaxCol::Node(right.as_ref().clone()),
+                ]
             }
             SyntaxNode::ParenthesizedExpressionSyntax(open, expr, close) => {
-                let mut v = vec![];
-                v.push(open.clone());
-                for i in expr.get_children() {
-                    v.push(i);
-                }
-                v.push(close.clone());
-                v
+                vec![
+                    SyntaxCol::Token(open.clone()),
+                    SyntaxCol::Node(expr.as_ref().clone()),
+                    SyntaxCol::Token(close.clone()),
+                ]
             }
             _ => vec![],
         };
