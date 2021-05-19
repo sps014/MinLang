@@ -6,7 +6,7 @@ fn main() {
     call();
 }
 fn call() {
-    let input = "(1+2*(6+2)+3)";
+    let input = "-(1+2&1)";
     let mut p = Parser::new(input);
     let tree=p.parse();
     let e=Evaluator::new(*tree.root);

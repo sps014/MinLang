@@ -1,6 +1,9 @@
 use crate::lang::code_analysis::syntax_kind::*;
 use crate::lang::code_analysis::syntax_node::SyntaxNode;
-use std::io::{Error, ErrorKind};
+use std::{
+    io::{Error, ErrorKind},
+    panic::resume_unwind,
+};
 
 pub struct Evaluator {
     root: SyntaxNode,
@@ -44,6 +47,9 @@ impl Evaluator {
                     SyntaxKind::MinusToken => Ok(l - r),
                     SyntaxKind::SlashToken => Ok(l / r),
                     SyntaxKind::StarToken => Ok(l * r),
+                    SyntaxKind::BitWiseAndToken => Ok(l & r),
+                    SyntaxKind::BitWiseOrToken => Ok(l | r),
+
                     _ => {
                         return Err(Error::new(
                             ErrorKind::Other,
@@ -55,6 +61,27 @@ impl Evaluator {
             SyntaxNode::ParenthesizedExpressionSyntax(_, ex, _) => {
                 return self.eval(ex);
             }
+            SyntaxNode::UnaryExpressionSyntax(op, exp) => match op.kind {
+                SyntaxKind::PlusToken => {
+                    return self.eval(exp);
+                }
+                SyntaxKind::MinusToken => {
+                    let v = self.eval(exp);
+                    return match v {
+                        Ok(n) => Ok(-n),
+                        Err(e) => Err(Error::new(
+                            ErrorKind::Other,
+                            format!("Error invalid unary expression {:?}", node),
+                        )),
+                    };
+                }
+                _ => {
+                    return Result::Err(Error::new(
+                        ErrorKind::Other,
+                        format!("Error invalid unary expression {:?}", node),
+                    ));
+                }
+            },
             _ => {
                 return Result::Err(Error::new(
                     ErrorKind::Other,

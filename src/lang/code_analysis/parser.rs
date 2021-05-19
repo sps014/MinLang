@@ -63,47 +63,49 @@ impl Parser {
     }
      pub fn parse(&mut self)->SyntaxTree
      {
-         let expresion = self.parse_term();
+         let expresion = self.parse_expression(0);
          let eof_token = self.match_token(SyntaxKind::EndOfFileToken);
          SyntaxTree::new(self.diagnostics.clone(), expresion, eof_token)
      }
-     fn parse_expression(&mut self)-> Box<SyntaxNode>
+     fn parse_expression(&mut self,parent_precedence:i32)-> Box<SyntaxNode>
      {
-         self.parse_term()
-     }
-     fn parse_term(&mut self)-> Box<SyntaxNode>
-     {
-         let mut left=self.parse_factor();
-         while self.get_current().kind == SyntaxKind::PlusToken ||
-             self.get_current().kind == SyntaxKind::MinusToken
+         let mut left;
+         let unary_precedence=self.get_current().kind.get_unary_precedence();
+         if unary_precedence != 0 && unary_precedence >= parent_precedence
          {
              let operator_token = self.next_token();
-             let right = self.parse_factor();
-             left = Box::new(SyntaxNode::BinaryExpressionSyntax(left, operator_token, right));
+             let operand = self.parse_expression(unary_precedence);
+             left = SyntaxNode::UnaryExpressionSyntax(operator_token, operand);
+         }
+         else
+         {
+             left = self.parse_primary_expression().as_ref().clone();
          }
 
-         return left;
+         loop
+         {
+             let precedence = self.get_current().kind.get_binary_precedence();
+             if precedence == 0 || precedence <= parent_precedence
+             {
+                break;
+             }
+
+             let operator_token = self.next_token();
+             let right = self.parse_expression(precedence);
+             left = SyntaxNode::BinaryExpressionSyntax(Box::new(left), operator_token, right);
+         }
+
+         return Box::new(left);
+
      }
-    fn parse_factor(&mut self)->Box< SyntaxNode>
-    {
-        let mut left = self.parse_primary_expression();
 
-        while self.get_current().kind == SyntaxKind::StarToken ||
-            self.get_current().kind == SyntaxKind::SlashToken
-        {
-            let operator_token = self.next_token();
-            let right = self.parse_primary_expression();
-            left= Box::new(SyntaxNode::BinaryExpressionSyntax(left, operator_token, right));
-        }
 
-        return left;
-    }
     fn parse_primary_expression(&mut self)->Box<SyntaxNode>
     {
         if self.get_current().kind==SyntaxKind::OpenParenthesisToken
         {
             let left = self.next_token();
-            let expression = self.parse_expression();
+            let expression = self.parse_expression(0);
             let right = self.match_token(SyntaxKind::CloseParenthesisToken);
             return  Box::new(SyntaxNode::ParenthesizedExpressionSyntax(left,expression,right));
         }

@@ -72,6 +72,14 @@ impl Lexer {
             self.next();
             return SyntaxToken::new(SyntaxKind::CloseParenthesisToken, pos, ")");
         }
+        else if self.current_char() == '&' {
+            self.next();
+            return SyntaxToken::new(SyntaxKind::BitWiseAndToken, pos, "&");
+        }
+        else if self.current_char() == '|' {
+            self.next();
+            return SyntaxToken::new(SyntaxKind::BitWiseOrToken, pos, "|");
+        }
 
         let text = self.current_char();
         self.next();
