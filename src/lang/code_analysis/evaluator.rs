@@ -26,7 +26,7 @@ impl Evaluator {
                     Err(_) => {
                         return Err(Error::new(
                             ErrorKind::Other,
-                            format!("expected a number at {}",optr.position),
+                            format!("expected a number at {}", optr.position),
                         ))
                     }
                 };
@@ -35,7 +35,7 @@ impl Evaluator {
                     Err(_) => {
                         return Err(Error::new(
                             ErrorKind::Other,
-                            format!("expected a number at {}",optr.position),
+                            format!("expected a number at {}", optr.position),
                         ))
                     }
                 };
@@ -47,7 +47,7 @@ impl Evaluator {
                     _ => {
                         return Err(Error::new(
                             ErrorKind::Other,
-                            format!("Error unexpected kind {:?}", optr.kind),
+                            format!("Error unexpected kind {:?} at {}", optr.kind, optr.position),
                         ))
                     }
                 };

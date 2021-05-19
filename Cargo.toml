@@ -1,5 +1,5 @@
 [package]
-name = "star_light"
+name = "syntax_expression_tree"
 version = "0.1.0"
 authors = ["Shivendra Pratap Singh <shivendrapsingh014@gmail.com>"]
 edition = "2018"
