@@ -11,11 +11,6 @@
   <component name="ChangeListManager">
     <list default="true" id="44a0d877-f1c5-4682-8ee2-71f570a7ee1d" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/evaluator.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/evaluator.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/lexer.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/lexer.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/parser.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/parser.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax_kind.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax_kind.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax_node.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax_node.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -86,7 +81,7 @@
       <option name="presentableId" value="Default" />
       <updated>1621434649403</updated>
       <workItem from="1621434653157" duration="149000" />
-      <workItem from="1621435313930" duration="1834000" />
+      <workItem from="1621435313930" duration="2871000" />
     </task>
     <servers />
   </component>
