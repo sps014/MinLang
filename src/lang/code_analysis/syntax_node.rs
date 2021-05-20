@@ -7,7 +7,8 @@ pub enum SyntaxNode {
     NumberExpressionSyntax(SyntaxToken),
     BinaryExpressionSyntax(Box<SyntaxNode>, SyntaxToken, Box<SyntaxNode>),
     ParenthesizedExpressionSyntax(SyntaxToken, Box<SyntaxNode>, SyntaxToken),
-    UnaryExpressionSyntax(SyntaxToken,Box<SyntaxNode>)
+    UnaryExpressionSyntax(SyntaxToken,Box<SyntaxNode>),
+    AssignmentExpressionSyntax(SyntaxToken, SyntaxToken,Box<SyntaxNode>)
 }
 enum SyntaxCol {
     Token(SyntaxToken),

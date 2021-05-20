@@ -1,3 +1,5 @@
+use std::string;
+
 use crate::lang::code_analysis::lexer::Lexer;
 use crate::lang::code_analysis::syntax_kind::SyntaxKind;
 use crate::lang::code_analysis::syntax_token::SyntaxToken;
@@ -59,13 +61,25 @@ impl Parser {
             "ERROR: unexpected token <{}>",
             self.get_current().text
         ));
-        return SyntaxToken::new(kind, self.current, "");
+        return SyntaxToken::new(kind, self.current, "\0");
     }
      pub fn parse(&mut self)->SyntaxTree
      {
-         let expresion = self.parse_expression(0);
+         let expresion = self.parse_assignment();
          let eof_token = self.match_token(SyntaxKind::EndOfFileToken);
          SyntaxTree::new(self.diagnostics.clone(), expresion, eof_token)
+     }
+     fn parse_assignment(&mut self)->Box<SyntaxNode>
+     {
+         if self.peek(0).kind==SyntaxKind::IdentifierToken && self.peek(1).kind==SyntaxKind::EqualToken
+         {
+                let  identifier_token = self.next_token();
+                let  operator_token = self.next_token();
+                let  right = self.parse_assignment();
+                let n= SyntaxNode::AssignmentExpressionSyntax(identifier_token, operator_token,right);
+                return  Box::new(n);
+         }
+         return self.parse_expression(0);
      }
      fn parse_expression(&mut self,parent_precedence:i32)-> Box<SyntaxNode>
      {
@@ -109,7 +123,11 @@ impl Parser {
             let right = self.match_token(SyntaxKind::CloseParenthesisToken);
             return  Box::new(SyntaxNode::ParenthesizedExpressionSyntax(left,expression,right));
         }
-        let number_token = self.match_token(SyntaxKind::NumberToken);
+        let mut number_token = self.match_token(SyntaxKind::NumberToken);
+        if number_token.text=="\0"
+        {
+            number_token=self.match_token(SyntaxKind::IdentifierToken);
+        }
         return Box::new(SyntaxNode::NumberExpressionSyntax(number_token));
     }
 }
