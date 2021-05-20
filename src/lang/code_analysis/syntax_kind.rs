@@ -3,6 +3,7 @@ pub enum SyntaxKind {
     EndOfFileToken = 0,
     WhiteSpaceToken = 1,
     NewLineToken = 2,
+    IdentifierToken=5,
 
     NumberToken = 10,
     PlusToken = 50,
@@ -15,6 +16,7 @@ pub enum SyntaxKind {
     PipePipeToken = 57,
     BitWisePipeToken = 58,
     BitWiseAmpersandToken = 59,
+    EqualToken=60,
 
     OpenParenthesisToken = 70,
     CloseParenthesisToken = 71,

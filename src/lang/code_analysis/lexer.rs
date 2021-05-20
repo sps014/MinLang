@@ -2,6 +2,7 @@ use std::usize;
 
 use super::syntax_kind::*;
 use super::syntax_token::*;
+
 pub struct Lexer {
     input_text: String,
     current: usize,
@@ -43,6 +44,20 @@ impl Lexer {
             self.next();
             return SyntaxToken::new(SyntaxKind::NewLineToken, pos, "\n");
         }
+        if self.current_char() == '_' || char::is_alphabetic(self.current_char()) {
+            let start = self.current;
+            self.current += 1;
+            while self.current_char() == '_'
+                || char::is_alphabetic(self.current_char())
+                || char::is_digit(self.current_char(), 10)
+            {
+                self.current += 1;
+            }
+            let length = self.current - pos;
+            let text: &str = input_text[pos..pos + length].as_ref();
+
+            return SyntaxToken::new(SyntaxKind::IdentifierToken, pos, text);
+        }
 
         if char::is_whitespace(self.current_char()) {
             while char::is_whitespace(self.current_char()) {
@@ -78,6 +93,9 @@ impl Lexer {
         } else if self.current_char() == '|' {
             self.next();
             return SyntaxToken::new(SyntaxKind::BitWisePipeToken, pos, "|");
+        } else if self.current_char() == '=' {
+            self.next();
+            return SyntaxToken::new(SyntaxKind::EqualToken, pos, "=");
         }
 
         let text = self.current_char();
