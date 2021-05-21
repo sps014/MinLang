@@ -42,6 +42,29 @@ impl Evaluator {
                 }
                 return Ok(4);
             }
+            SyntaxNode::BlockExpressionSyntax(open, exps, close) => {
+                if open.kind != SyntaxKind::CurlyOpenBracketToken
+                    || close.kind != SyntaxKind::CurlyCloseBracketToken
+                {
+                    return Err(Error::new(
+                        ErrorKind::Other,
+                        format!("mismatch in curly braces {}", open.position),
+                    ));
+                }
+                let mut last = 0;
+                for i in exps {
+                    last = match self.eval(i.as_ref(), variables) {
+                        Ok(j) => j,
+                        Err(e) => {
+                            return Err(Error::new(
+                                ErrorKind::Other,
+                                format!(" {} at {}", e, open.position),
+                            ));
+                        }
+                    }
+                }
+                return Ok(last);
+            }
             SyntaxNode::AssignmentExpressionSyntax(id, op, expr) => {
                 let r = self.eval(expr, variables);
                 match r {

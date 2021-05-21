@@ -87,53 +87,40 @@ impl Lexer {
         } else if self.current_char() == ')' {
             self.next();
             return SyntaxToken::new(SyntaxKind::CloseParenthesisToken, pos, ")");
+        } else if self.current_char() == '{' {
+            self.next();
+            return SyntaxToken::new(SyntaxKind::CurlyOpenBracketToken, pos, "{");
+        } else if self.current_char() == '}' {
+            self.next();
+            return SyntaxToken::new(SyntaxKind::CurlyCloseBracketToken, pos, "}");
         } else if self.current_char() == '&' {
             self.next();
             return SyntaxToken::new(SyntaxKind::BitWiseAmpersandToken, pos, "&");
         } else if self.current_char() == '|' {
             self.next();
             return SyntaxToken::new(SyntaxKind::BitWisePipeToken, pos, "|");
-        } 
-        else if self.current_char()=='='
-        {
+        } else if self.current_char() == '=' {
             self.next();
-            if self.current_char()=='='
-            {
+            if self.current_char() == '=' {
                 self.next();
                 return SyntaxToken::new(SyntaxKind::EqualEqualToken, pos, "==");
-
-            }
-            else
-            {
+            } else {
                 return SyntaxToken::new(SyntaxKind::EqualToken, pos, "=");
             }
-        }
-        
-        else if self.current_char()=='>'
-        {
+        } else if self.current_char() == '>' {
             self.next();
-            if self.current_char()=='='
-            {
+            if self.current_char() == '=' {
                 self.next();
                 return SyntaxToken::new(SyntaxKind::GreaterThanEqualToken, pos, ">=");
-
-            }
-            else
-            {
+            } else {
                 return SyntaxToken::new(SyntaxKind::GreaterThanToken, pos, ">");
             }
-        }
-        else if self.current_char()=='<'
-        {
+        } else if self.current_char() == '<' {
             self.next();
-            if self.current_char()=='='
-            {
+            if self.current_char() == '=' {
                 self.next();
                 return SyntaxToken::new(SyntaxKind::SmallerThanEqualToken, pos, "<=");
-
-            }
-            else
-            {
+            } else {
                 return SyntaxToken::new(SyntaxKind::SmallerThanToken, pos, "<");
             }
         }

@@ -7,9 +7,10 @@ pub enum SyntaxNode {
     NumberExpressionSyntax(SyntaxToken),
     BinaryExpressionSyntax(Box<SyntaxNode>, SyntaxToken, Box<SyntaxNode>),
     ParenthesizedExpressionSyntax(SyntaxToken, Box<SyntaxNode>, SyntaxToken),
-    UnaryExpressionSyntax(SyntaxToken,Box<SyntaxNode>),
-    AssignmentExpressionSyntax(SyntaxToken, SyntaxToken,Box<SyntaxNode>),
-    FunctionCallExpression(SyntaxToken,SyntaxToken,Vec<Box<SyntaxNode>>,SyntaxToken)
+    UnaryExpressionSyntax(SyntaxToken, Box<SyntaxNode>),
+    AssignmentExpressionSyntax(SyntaxToken, SyntaxToken, Box<SyntaxNode>),
+    FunctionCallExpression(SyntaxToken, SyntaxToken, Vec<Box<SyntaxNode>>, SyntaxToken),
+    BlockExpressionSyntax(SyntaxToken, Vec<Box<SyntaxNode>>, SyntaxToken),
 }
 enum SyntaxCol {
     Token(SyntaxToken),
