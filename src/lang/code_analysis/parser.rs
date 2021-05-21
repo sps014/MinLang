@@ -124,10 +124,32 @@ impl Parser {
             return  Box::new(SyntaxNode::ParenthesizedExpressionSyntax(left,expression,right));
         }
         let mut number_token = self.match_token(SyntaxKind::NumberToken);
-        if number_token.text=="\0"
+        if number_token.text =="\0" &&  self.get_current().kind==SyntaxKind::IdentifierToken
         {
-            number_token=self.match_token(SyntaxKind::IdentifierToken);
+            if  self.peek(1).kind==SyntaxKind::OpenParenthesisToken
+            {
+                let id=self.next_token();
+                let open=self.next_token();
+                let mut callers=vec![];
+                while self.get_current().kind!=SyntaxKind::CloseParenthesisToken {
+                    let cur=self.get_current();
+                    if cur.kind==SyntaxKind::EndOfFileToken
+                    {
+                        break;
+                    }
+                    println!("{:?}",cur);
+                    callers.push(self.parse_primary_expression());
+                    
+                }
+                let close=self.next_token();
+                return Box::new(SyntaxNode::FunctionCallExpression(id,open,callers,close));
+            }
+            else
+             {
+                number_token=self.match_token(SyntaxKind::IdentifierToken);
+            }
         }
+      
         return Box::new(SyntaxNode::NumberExpressionSyntax(number_token));
     }
 }
