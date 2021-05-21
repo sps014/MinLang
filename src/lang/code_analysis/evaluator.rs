@@ -25,10 +25,12 @@ impl Evaluator {
                 if id.kind != SyntaxKind::IdentifierToken
                     || open.kind != SyntaxKind::OpenParenthesisToken
                     || close.kind != SyntaxKind::CloseParenthesisToken
+                    || id.text != "print"
+                    || expr.len() != 1
                 {
                     return Err(Error::new(
                         ErrorKind::Other,
-                        format!("error in function call"),
+                        format!("error in function call,only print is implemented right now"),
                     ));
                 }
                 for i in expr {
@@ -38,8 +40,8 @@ impl Evaluator {
                             return Err(Error::new(ErrorKind::Other, format!("{:?}", e)));
                         }
                         Ok(v) => {
-                            if v!=i32::MAX{
-                            println!("{}", v);
+                            if v != i32::MAX {
+                                println!("{}", v);
                             }
                         }
                     }
@@ -68,7 +70,7 @@ impl Evaluator {
                         Err(e) => {
                             return Err(Error::new(ErrorKind::Other, format!("{:?}", e)));
                         }
-                        Ok(e) => {},
+                        Ok(e) => {}
                     }
                 }
                 return Ok(i32::MAX);
@@ -95,7 +97,7 @@ impl Evaluator {
                         Err(e) => {
                             return Err(Error::new(ErrorKind::Other, format!("{:?}", e)));
                         }
-                        Ok(e) =>{}
+                        Ok(e) => {}
                     }
                 }
                 return Ok(i32::MAX);
