@@ -11,7 +11,8 @@ pub enum SyntaxNode {
     AssignmentExpressionSyntax(SyntaxToken, SyntaxToken, Box<SyntaxNode>),
     FunctionCallExpression(SyntaxToken, SyntaxToken, Vec<Box<SyntaxNode>>, SyntaxToken),
     BlockExpressionSyntax(SyntaxToken, Vec<Box<SyntaxNode>>, SyntaxToken),
-    WhileLoopSyntax(SyntaxToken, Box<SyntaxNode>,Box<SyntaxNode>),
+    WhileLoopSyntax(SyntaxToken, Box<SyntaxNode>, Box<SyntaxNode>),
+    IfBlockSyntax(SyntaxToken, Box<SyntaxNode>,Box<SyntaxNode>),
 }
 enum SyntaxCol {
     Token(SyntaxToken),

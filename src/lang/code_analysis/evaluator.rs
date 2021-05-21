@@ -1,7 +1,7 @@
 use crate::lang::code_analysis::syntax_kind::*;
 use crate::lang::code_analysis::syntax_node::SyntaxNode;
 use std::{
-    collections::{HashMap},
+    collections::HashMap,
     io::{Error, ErrorKind},
 };
 
@@ -41,33 +41,61 @@ impl Evaluator {
                     }
                 }
                 return Ok(4);
-            },
-            SyntaxNode::WhileLoopSyntax(whi,cond,body)=>
-            {
-                if whi.text!="while"
-                {
-                    return Err(Error::new(ErrorKind::Other, format!("invalid while loop {}", whi.position)));
+            }
+            SyntaxNode::WhileLoopSyntax(whi, cond, body) => {
+                if whi.text != "while" {
+                    return Err(Error::new(
+                        ErrorKind::Other,
+                        format!("invalid while loop {}", whi.position),
+                    ));
                 }
 
-                while match  self.eval(cond, variables) {
-                    Ok(cond)=>cond!=0
-                    ,
-                    Err(e)=> {
-                        return Err(Error::new(ErrorKind::Other, format!("Error in while condition")));
+                while match self.eval(cond, variables) {
+                    Ok(cond) => cond != 0,
+                    Err(e) => {
+                        return Err(Error::new(
+                            ErrorKind::Other,
+                            format!("Error in while condition"),
+                        ));
                     }
-                }
-                {
-                    let body=self.eval(body, variables);
+                } {
+                    let body = self.eval(body, variables);
                     match body {
-                        Err(e)=>
-                        {
+                        Err(e) => {
                             return Err(Error::new(ErrorKind::Other, format!("{:?}", e)));
                         }
+                        Ok(e) => println!("{}", e),
                     }
                 }
                 return Ok(1);
             }
-            ,
+            SyntaxNode::IfBlockSyntax(ifb, cond, body) => {
+                if ifb.text != "if" {
+                    return Err(Error::new(
+                        ErrorKind::Other,
+                        format!("invalid if syntax {}", ifb.position),
+                    ));
+                }
+
+                if match self.eval(cond, variables) {
+                    Ok(cond) => cond != 0,
+                    Err(e) => {
+                        return Err(Error::new(
+                            ErrorKind::Other,
+                            format!("Error in while condition"),
+                        ));
+                    }
+                } {
+                    let body = self.eval(body, variables);
+                    match body {
+                        Err(e) => {
+                            return Err(Error::new(ErrorKind::Other, format!("{:?}", e)));
+                        }
+                        Ok(e) => println!("{}", e),
+                    }
+                }
+                return Ok(1);
+            }
             SyntaxNode::BlockExpressionSyntax(open, exps, close) => {
                 if open.kind != SyntaxKind::CurlyOpenBracketToken
                     || close.kind != SyntaxKind::CurlyCloseBracketToken
