@@ -20,7 +20,7 @@ fn call(input: String, variables: &mut HashMap<String, i32>) {
     println!("{:?}",tree.root);
     let mut e = Evaluator::new(*tree.root);
     match e.evaluate(variables) {
-        Ok(n) => println!("Result is {}", n),
+        Ok(n) => {},
         Err(e) => println!("Error occurred {}", e.to_string()),
     }
 }

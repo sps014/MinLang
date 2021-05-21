@@ -37,10 +37,14 @@ impl Evaluator {
                         Err(e) => {
                             return Err(Error::new(ErrorKind::Other, format!("{:?}", e)));
                         }
-                        _ => {}
+                        Ok(v) => {
+                            if v!=i32::MAX{
+                            println!("{}", v);
+                            }
+                        }
                     }
                 }
-                return Ok(4);
+                return Ok(i32::MAX);
             }
             SyntaxNode::WhileLoopSyntax(whi, cond, body) => {
                 if whi.text != "while" {
@@ -64,10 +68,10 @@ impl Evaluator {
                         Err(e) => {
                             return Err(Error::new(ErrorKind::Other, format!("{:?}", e)));
                         }
-                        Ok(e) => println!("{}", e),
+                        Ok(e) => {},
                     }
                 }
-                return Ok(1);
+                return Ok(i32::MAX);
             }
             SyntaxNode::IfBlockSyntax(ifb, cond, body) => {
                 if ifb.text != "if" {
@@ -91,10 +95,10 @@ impl Evaluator {
                         Err(e) => {
                             return Err(Error::new(ErrorKind::Other, format!("{:?}", e)));
                         }
-                        Ok(e) => println!("{}", e),
+                        Ok(e) =>{}
                     }
                 }
-                return Ok(1);
+                return Ok(i32::MAX);
             }
             SyntaxNode::BlockExpressionSyntax(open, exps, close) => {
                 if open.kind != SyntaxKind::CurlyOpenBracketToken
@@ -117,7 +121,7 @@ impl Evaluator {
                         }
                     }
                 }
-                return Ok(last);
+                return Ok(i32::MAX);
             }
             SyntaxNode::AssignmentExpressionSyntax(id, op, expr) => {
                 let r = self.eval(expr, variables);
