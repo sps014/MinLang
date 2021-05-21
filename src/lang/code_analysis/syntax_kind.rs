@@ -23,7 +23,8 @@ pub enum SyntaxKind {
     SmallerThanEqualToken,
     OpenParenthesisToken ,
     CloseParenthesisToken,
-
+    CurlyOpenBracketToken,
+    CurlyCloseBracketToken,
     NumberExpressionToken,
     BinaryExpressionToken,
     ParenthesizedExpressionToken,

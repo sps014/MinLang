@@ -65,9 +65,30 @@ impl Parser {
     }
      pub fn parse(&mut self)->SyntaxTree
      {
-         let expresion = self.parse_assignment();
+         let expresion = self.parse_block_expression();
          let eof_token = self.match_token(SyntaxKind::EndOfFileToken);
          SyntaxTree::new(self.diagnostics.clone(), expresion, eof_token)
+     }
+     fn parse_block_expression(&mut self)->Box<SyntaxNode>
+     {
+         if self.get_current().kind==SyntaxKind::CurlyOpenBracketToken
+         {
+             let start=self.next_token();
+             let mut stmt=vec![];
+             while self.get_current().kind!=SyntaxKind::CurlyCloseBracketToken 
+              {
+                  if self.get_current().kind==SyntaxKind::EndOfFileToken
+                  {
+                      break;
+                  }
+                  
+                 stmt.push(self.parse_assignment());
+             }
+             let close=self.next_token();
+             return Box::new(SyntaxNode::BlockExpressionSyntax(start,stmt,close));
+         }
+
+         return self.parse_assignment();
      }
      fn parse_assignment(&mut self)->Box<SyntaxNode>
      {
