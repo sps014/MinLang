@@ -3,7 +3,7 @@ pub enum SyntaxKind {
     EndOfFileToken = 0,
     WhiteSpaceToken = 1,
     NewLineToken = 2,
-    IdentifierToken=5,
+    IdentifierToken = 5,
 
     NumberToken = 10,
     PlusToken,
@@ -21,10 +21,11 @@ pub enum SyntaxKind {
     GreaterThanToken,
     SmallerThanToken,
     SmallerThanEqualToken,
-    OpenParenthesisToken ,
+    OpenParenthesisToken,
     CloseParenthesisToken,
     CurlyOpenBracketToken,
     CurlyCloseBracketToken,
+    KeyWordToken,
     NumberExpressionToken,
     BinaryExpressionToken,
     ParenthesizedExpressionToken,
@@ -34,8 +35,6 @@ pub enum SyntaxKind {
 impl SyntaxKind {
     pub fn get_binary_precedence(&self) -> i32 {
         return match self {
-
-
             SyntaxKind::BitWiseAmpersandToken => 90,
             SyntaxKind::BitWisePipeToken => 80,
             SyntaxKind::SlashToken => 50,
@@ -46,11 +45,11 @@ impl SyntaxKind {
 
             SyntaxKind::BangToken => 30,
 
-            SyntaxKind::GreaterThanEqualToken=>15,
-            SyntaxKind::GreaterThanToken=>15,
-            SyntaxKind::SmallerThanEqualToken=>15,
-            SyntaxKind::SmallerThanToken=>15,
-            SyntaxKind::EqualEqualToken=>15,
+            SyntaxKind::GreaterThanEqualToken => 15,
+            SyntaxKind::GreaterThanToken => 15,
+            SyntaxKind::SmallerThanEqualToken => 15,
+            SyntaxKind::SmallerThanToken => 15,
+            SyntaxKind::EqualEqualToken => 15,
             SyntaxKind::AmpersandAmpersandToken => 20,
             SyntaxKind::PipePipeToken => 10,
 

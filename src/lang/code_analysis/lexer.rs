@@ -30,7 +30,19 @@ impl Lexer {
         if pos >= self.input_text.len() {
             return SyntaxToken::new(SyntaxKind::EndOfFileToken, pos, "\0");
         }
+
         let input_text = self.input_text.as_str();
+
+        match input_text.find("while") {
+            Some(ind) => {
+                if ind == pos {
+                    self.current += "while".len();
+                    return SyntaxToken::new(SyntaxKind::KeyWordToken, pos, "while");
+                }
+            }
+            _ => {}
+        }
+
         if char::is_digit(self.current_char(), 10) {
             while char::is_digit(self.current_char(), 10) {
                 self.current += 1;
@@ -45,7 +57,6 @@ impl Lexer {
             return SyntaxToken::new(SyntaxKind::NewLineToken, pos, "\n");
         }
         if self.current_char() == '_' || char::is_alphabetic(self.current_char()) {
-            let start = self.current;
             self.current += 1;
             while self.current_char() == '_'
                 || char::is_alphabetic(self.current_char())
