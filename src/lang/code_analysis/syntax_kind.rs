@@ -6,43 +6,52 @@ pub enum SyntaxKind {
     IdentifierToken=5,
 
     NumberToken = 10,
-    PlusToken = 50,
-    MinusToken = 51,
-    SlashToken = 52,
-    StarToken = 53,
-    BangToken = 54,
-    EqualEqualToken = 55,
-    AmpersandAmpersandToken = 56,
-    PipePipeToken = 57,
-    BitWisePipeToken = 58,
-    BitWiseAmpersandToken = 59,
-    EqualToken=60,
+    PlusToken,
+    MinusToken,
+    SlashToken,
+    StarToken,
+    BangToken,
+    EqualEqualToken,
+    AmpersandAmpersandToken,
+    PipePipeToken,
+    BitWisePipeToken,
+    BitWiseAmpersandToken,
+    EqualToken,
+    GreaterThanEqualToken,
+    GreaterThanToken,
+    SmallerThanToken,
+    SmallerThanEqualToken,
+    OpenParenthesisToken ,
+    CloseParenthesisToken,
 
-    OpenParenthesisToken = 70,
-    CloseParenthesisToken = 71,
-
-    NumberExpressionToken = 100,
-    BinaryExpressionToken = 101,
-    ParenthesizedExpressionToken = 102,
+    NumberExpressionToken,
+    BinaryExpressionToken,
+    ParenthesizedExpressionToken,
 
     BadToken = 1000,
 }
 impl SyntaxKind {
     pub fn get_binary_precedence(&self) -> i32 {
         return match self {
-            SyntaxKind::BitWiseAmpersandToken => 9,
-            SyntaxKind::BitWisePipeToken => 8,
-            SyntaxKind::SlashToken => 5,
-            SyntaxKind::StarToken => 5,
 
-            SyntaxKind::PlusToken => 4,
-            SyntaxKind::MinusToken => 4,
 
-            SyntaxKind::EqualEqualToken => 3,
-            SyntaxKind::BangToken => 3,
+            SyntaxKind::BitWiseAmpersandToken => 90,
+            SyntaxKind::BitWisePipeToken => 80,
+            SyntaxKind::SlashToken => 50,
+            SyntaxKind::StarToken => 50,
 
-            SyntaxKind::AmpersandAmpersandToken => 2,
-            SyntaxKind::PipePipeToken => 1,
+            SyntaxKind::PlusToken => 40,
+            SyntaxKind::MinusToken => 40,
+
+            SyntaxKind::BangToken => 30,
+
+            SyntaxKind::GreaterThanEqualToken=>15,
+            SyntaxKind::GreaterThanToken=>15,
+            SyntaxKind::SmallerThanEqualToken=>15,
+            SyntaxKind::SmallerThanToken=>15,
+            SyntaxKind::EqualEqualToken=>15,
+            SyntaxKind::AmpersandAmpersandToken => 20,
+            SyntaxKind::PipePipeToken => 10,
 
             _ => 0,
         };
