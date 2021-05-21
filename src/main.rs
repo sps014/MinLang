@@ -17,6 +17,7 @@ fn main() {
 fn call(input: String, variables: &mut HashMap<String, i32>) {
     let mut p = Parser::new(input.as_str());
     let tree = p.parse();
+    println!("{:?}",tree.root);
     let mut e = Evaluator::new(*tree.root);
     match e.evaluate(variables) {
         Ok(n) => println!("Result is {}", n),

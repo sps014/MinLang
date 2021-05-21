@@ -14,6 +14,27 @@ impl Evaluator {
     }
     fn eval(&mut self, node: &SyntaxNode,variables:&mut HashMap<String,i32>) -> Result<i32, Error> {
         match node {
+            SyntaxNode::FunctionCallExpression(id,open,expr,close)=>
+            {
+                if id.kind!=SyntaxKind::IdentifierToken || open.kind!=SyntaxKind::OpenParenthesisToken ||
+                close.kind!=SyntaxKind::CloseParenthesisToken
+                {
+                    return Err(Error::new(ErrorKind::Other, format!("error in function call")));
+                }
+                for i in expr
+                {
+                    println!("{:?}",i);
+                     let g=self.eval(i.as_ref(), variables);
+                     match g {
+                         Err(e)=>
+                         {
+                            return  Err(Error::new(ErrorKind::Other,format!("{:?}",e)));
+                         }
+                         _=>{}
+                     }
+                }
+                return Ok(4);
+            },
             SyntaxNode::AssignmentExpressionSyntax(id,op,expr)=>
             {
                 let r=self.eval(expr,variables);
