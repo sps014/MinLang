@@ -42,6 +42,15 @@ impl Lexer {
             }
             _ => {}
         }
+        match input_text.find("if") {
+            Some(ind) => {
+                if ind == pos {
+                    self.current += "if".len();
+                    return SyntaxToken::new(SyntaxKind::KeyWordToken, pos, "if");
+                }
+            }
+            _ => {}
+        }
 
         if char::is_digit(self.current_char(), 10) {
             while char::is_digit(self.current_char(), 10) {

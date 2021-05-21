@@ -77,13 +77,13 @@ impl Parser {
                     break;
                 }
 
-                stmt.push(self.parse_assignment());
+                stmt.push(self.if_expression());
             }
             let close = self.next_token();
             return Box::new(SyntaxNode::BlockExpressionSyntax(start, stmt, close));
         }
 
-        return self.parse_assignment();
+        return self.if_expression();
     }
 
     fn parse_while(&mut self) -> Box<SyntaxNode> {
@@ -95,6 +95,19 @@ impl Parser {
             return Box::new(SyntaxNode::WhileLoopSyntax(whi, cond, block));
         }
         return self.parse_block_expression();
+    }
+    fn if_expression(&mut self)->Box<SyntaxNode>
+    {
+        if self.get_current().kind==SyntaxKind::KeyWordToken && self.get_current().text=="if"
+        {
+            let ifb=self.next_token();
+            let cond=self.parse_expression(0);
+            let bk=self.parse_block_expression();
+            return Box::new(SyntaxNode::IfBlockSyntax(ifb,cond,bk));
+
+        }
+        return  self.parse_assignment();
+
     }
     fn parse_assignment(&mut self) -> Box<SyntaxNode> {
         if self.peek(0).kind == SyntaxKind::IdentifierToken
