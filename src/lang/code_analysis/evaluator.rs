@@ -23,7 +23,6 @@ impl Evaluator {
                 }
                 for i in expr
                 {
-                    println!("{:?}",i);
                      let g=self.eval(i.as_ref(), variables);
                      match g {
                          Err(e)=>

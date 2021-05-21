@@ -137,7 +137,6 @@ impl Parser {
                     {
                         break;
                     }
-                    println!("{:?}",cur);
                     callers.push(self.parse_primary_expression());
                     
                 }
