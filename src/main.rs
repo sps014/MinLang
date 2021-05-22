@@ -9,6 +9,7 @@ fn main() {
     loop {
         println!("\n");
         let mut line: String = String::new();
+        print!(">>> ");
         stdin().read_line(&mut line).unwrap();
         let e = line.trim_end().to_string();
         call(e, &mut variables);
@@ -17,7 +18,7 @@ fn main() {
 fn call(input: String, variables: &mut HashMap<String, i32>) {
     let mut p = Parser::new(input.as_str());
     let tree = p.parse();
-    println!("{:?}",tree.root);
+    //println!("{:?}",tree.root);
     let mut e = Evaluator::new(*tree.root);
     match e.evaluate(variables) {
         Ok(n) => {},
