@@ -1,7 +1,7 @@
 # MinLang
 A minimal scripting language.
 
-<It provide  Base or foundation for writing compilers, Left Recursion Free CFG can be handled by this and custom facilities can be added by Extending `Lexer` , `Parser` and `Bound Tree`. 
+It provide  Base or foundation for writing compilers, Left Recursion Free CFG can be handled by this and custom facilities can be added by Extending `Lexer` , `Parser` and `Bound Tree`. 
 
 <br/>Language can parse , evaluate and generate syntax tree for conditionals and iterations statements with endless nesting
 eg.
