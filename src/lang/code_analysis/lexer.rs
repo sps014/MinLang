@@ -43,10 +43,18 @@ impl Lexer {
 
     //return current character if it is not in index range then returns end of file character
     fn current_char(&self) -> char {
-        if self.current >= self.input_text.len() {
-            return '\0';
+        if self.current < self.input_text.len() {
+            self.input_text.chars().nth(self.current).unwrap()
+        } else {
+            '\0'
         }
-        self.input_text.as_bytes()[self.current] as char
+    }
+    //returns string sliced from currentor returns EOF
+    fn current_str(&self) -> String {
+        if self.current >= self.input_text.len() {
+            return "\0".to_string();
+        }
+        self.input_text[self.current..].to_string()
     }
 
     //returns the current token if it is valid otherwise returns an eof token
@@ -57,50 +65,63 @@ impl Lexer {
         {
             return c_m.unwrap();
         }
-        c_m=self.do_match("=", TokenKind::EqualToken);
+        c_m=self.do_match(r"=", TokenKind::EqualToken);
         if c_m.is_some()
         {
             return c_m.unwrap();
         }
-        c_m=self.do_match(";", TokenKind::SemicolonToken);
+        c_m=self.do_match(r";", TokenKind::SemicolonToken);
         if c_m.is_some()
         {
             return c_m.unwrap();
         }
-        c_m=self.do_match(":", TokenKind::ColonToken);
+        c_m=self.do_match(r":", TokenKind::ColonToken);
         if c_m.is_some()
         {
             return c_m.unwrap();
         }
-        c_m=self.do_match("\\(", TokenKind::OpenParenthesisToken);
+        c_m=self.do_match(r"\(", TokenKind::OpenParenthesisToken);
         if c_m.is_some()
         {
             return c_m.unwrap();
         }
-        c_m=self.do_match("\\)", TokenKind::CloseParenthesisToken);
+        c_m=self.do_match(r"\)", TokenKind::CloseParenthesisToken);
         if c_m.is_some()
         {
             return c_m.unwrap();
         }
-        c_m=self.do_match("\\{", TokenKind::CurlyOpenBracketToken);
+        c_m=self.do_match(r"\{", TokenKind::CurlyOpenBracketToken);
         if c_m.is_some()
         {
             return c_m.unwrap();
         }
-        c_m=self.do_match("\\}", TokenKind::CurlyCloseBracketToken);
+        c_m=self.do_match(r"\}", TokenKind::CurlyCloseBracketToken);
         if c_m.is_some()
         {
             return c_m.unwrap();
         }
-        c_m=self.do_match(",", TokenKind::CommaToken);
+        c_m=self.do_match(r",", TokenKind::CommaToken);
         if c_m.is_some()
         {
             return c_m.unwrap();
         }
-        c_m=self.do_match("\\+", TokenKind::DotToken);
+        c_m=self.do_match(r"\+", TokenKind::DotToken);
         if c_m.is_some()
         {
             return c_m.unwrap();
+        }
+        c_m=self.do_match(r"\s+", TokenKind::WhiteSpaceToken);
+        if c_m.is_some()
+        {
+            return c_m.unwrap();
+        }
+
+
+        else if self.current>=self.input_text.len()
+        {
+            return SyntaxToken::new(TokenKind::EndOfFileToken,
+                                    TextSpan::new((self.current,self.current+1)),
+                                    "\0".to_string());
         }
 
         let bt=self.current_char();
@@ -118,26 +139,16 @@ impl Lexer {
     fn do_match(&mut self,regex_str:&str,token:TokenKind)->Option<SyntaxToken>
     {
         let re=regex::Regex::new(regex_str).unwrap();
-        let slice=&self.input_text[self.current..];
-        let match_pos=re.find(slice);
-        if match_pos.is_some()
-        {
-            let res=match_pos.unwrap();
-            if res.start()!=0
+        let slice=self.current_str();
+        for cap in re.captures_iter(slice.as_str()) {
+            if cap.get(0).unwrap().start()!=0
             {
                 return None;
             }
-            let cp_start=self.current;
-            let cp_end=self.current+res.end()+1;
-            let cp_str=&self.input_text[cp_start..=cp_end];
-            self.current=cp_end;
-
-            return Some(
-
-                SyntaxToken::new(token,
-                                 TextSpan::new((cp_start,cp_end)),
-                                 cp_str.to_string())
-            );
+            let start=self.current+cap.get(0).unwrap().start();
+            let end=self.current+cap.get(0).unwrap().end();
+            self.current=end;
+            return Some(SyntaxToken::new(token,TextSpan::new((start,end)),cap.get(0).unwrap().as_str().to_string()));
         }
         return None;
     }

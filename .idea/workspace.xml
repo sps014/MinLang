@@ -15,8 +15,6 @@
     <list default="true" id="44a0d877-f1c5-4682-8ee2-71f570a7ee1d" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/lexer.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/lexer.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/mod.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax_node.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax_node.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -124,7 +122,7 @@
       <workItem from="1644911773940" duration="1756000" />
       <workItem from="1645430163461" duration="7460000" />
       <workItem from="1645525752187" duration="273000" />
-      <workItem from="1645526094420" duration="3452000" />
+      <workItem from="1645526094420" duration="5060000" />
     </task>
     <servers />
   </component>
@@ -147,8 +145,8 @@
       <breakpoints>
         <line-breakpoint enabled="true" type="com.jetbrains.cidr.execution.debugger.OCBreakpointType">
           <url>file://$PROJECT_DIR$/src/lang/code_analysis/lexer.rs</url>
-          <line>34</line>
-          <option name="timeStamp" value="4" />
+          <line>128</line>
+          <option name="timeStamp" value="10" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>
