@@ -1,11 +1,9 @@
 mod lang;
-use crate::lang::code_analysis::evaluator::Evaluator;
 use lang::code_analysis::parser::*;
 use std::{collections::HashMap, io::stdin};
 
 fn main() {
-    let mut variables: HashMap<String, i32> = HashMap::new();
-
+    
     loop {
         println!("\n");
 

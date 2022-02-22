@@ -4,6 +4,7 @@ use super::syntax_token::SyntaxToken;
 
 #[derive(Debug, Clone)]
 pub enum SyntaxNode {
+    StatementsSyntax(Vec<Box<SyntaxNode>>),
     NumberExpressionSyntax(SyntaxToken),
     BinaryExpressionSyntax(Box<SyntaxNode>, SyntaxToken, Box<SyntaxNode>),
     ParenthesizedExpressionSyntax(SyntaxToken, Box<SyntaxNode>, SyntaxToken),
