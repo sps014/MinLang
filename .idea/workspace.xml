@@ -13,20 +13,11 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="44a0d877-f1c5-4682-8ee2-71f570a7ee1d" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/mod.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/lang/code_analysis/text/mod.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/lang/code_analysis/text/text_span.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/lang/code_analysis/token/mod.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/evaluator.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/evaluator.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/lexer.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/lexer.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/mod.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/parser.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/parser.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax_kind.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/token/token_kind.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax_node.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax_node.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax_token.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/token/syntax_token.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -70,7 +61,7 @@
     <property name="node.js.selected.package.tslint" value="(autodetect)" />
     <property name="org.rust.cargo.project.model.PROJECT_DISCOVERY" value="true" />
     <property name="org.rust.disableDetachedFileInspectionD:/Projects/MinLang/src/lang/code_analysis/token/token_kind.rs" value="true" />
-    <property name="settings.editor.selected.configurable" value="preferences.pluginManager" />
+    <property name="settings.editor.selected.configurable" value="CPPToolchains" />
   </component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
@@ -132,7 +123,8 @@
       <workItem from="1644911708464" duration="45000" />
       <workItem from="1644911773940" duration="1756000" />
       <workItem from="1645430163461" duration="7460000" />
-      <workItem from="1645525752187" duration="2000" />
+      <workItem from="1645525752187" duration="273000" />
+      <workItem from="1645526094420" duration="3452000" />
     </task>
     <servers />
   </component>
@@ -149,6 +141,17 @@
         </entry>
       </map>
     </option>
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" type="com.jetbrains.cidr.execution.debugger.OCBreakpointType">
+          <url>file://$PROJECT_DIR$/src/lang/code_analysis/lexer.rs</url>
+          <line>34</line>
+          <option name="timeStamp" value="4" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

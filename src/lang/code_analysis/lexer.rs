@@ -30,6 +30,7 @@ impl Lexer {
             {
                 break;
             }
+            println!("{:?}",c);
             res.push(c);
         }
         res
@@ -71,22 +72,22 @@ impl Lexer {
         {
             return c_m.unwrap();
         }
-        c_m=self.do_match("(", TokenKind::OpenParenthesisToken);
+        c_m=self.do_match("\\(", TokenKind::OpenParenthesisToken);
         if c_m.is_some()
         {
             return c_m.unwrap();
         }
-        c_m=self.do_match(")", TokenKind::CloseParenthesisToken);
+        c_m=self.do_match("\\)", TokenKind::CloseParenthesisToken);
         if c_m.is_some()
         {
             return c_m.unwrap();
         }
-        c_m=self.do_match("{", TokenKind::CurlyOpenBracketToken);
+        c_m=self.do_match("\\{", TokenKind::CurlyOpenBracketToken);
         if c_m.is_some()
         {
             return c_m.unwrap();
         }
-        c_m=self.do_match("}", TokenKind::CurlyCloseBracketToken);
+        c_m=self.do_match("\\}", TokenKind::CurlyCloseBracketToken);
         if c_m.is_some()
         {
             return c_m.unwrap();
@@ -96,7 +97,7 @@ impl Lexer {
         {
             return c_m.unwrap();
         }
-        c_m=self.do_match(@"\+", TokenKind::DotToken);
+        c_m=self.do_match("\\+", TokenKind::DotToken);
         if c_m.is_some()
         {
             return c_m.unwrap();
@@ -117,7 +118,8 @@ impl Lexer {
     fn do_match(&mut self,regex_str:&str,token:TokenKind)->Option<SyntaxToken>
     {
         let re=regex::Regex::new(regex_str).unwrap();
-        let match_pos=re.find(&self.input_text[self.current..]);
+        let slice=&self.input_text[self.current..];
+        let match_pos=re.find(slice);
         if match_pos.is_some()
         {
             let res=match_pos.unwrap();
@@ -127,12 +129,14 @@ impl Lexer {
             }
             let cp_start=self.current;
             let cp_end=self.current+res.end()+1;
+            let cp_str=&self.input_text[cp_start..=cp_end];
             self.current=cp_end;
+
             return Some(
 
                 SyntaxToken::new(token,
                                  TextSpan::new((cp_start,cp_end)),
-                                 self.input_text[cp_start..cp_end].to_string())
+                                 cp_str.to_string())
             );
         }
         return None;
