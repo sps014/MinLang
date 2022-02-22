@@ -1,154 +1,140 @@
 use std::usize;
+use regex::Regex;
+use crate::lang::code_analysis::text::text_span::TextSpan;
+use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
+use crate::lang::code_analysis::token::token_kind::TokenKind;
 
-use super::syntax_kind::*;
-use super::syntax_token::*;
-
+///Lexes all token and all invalid tokens are reported via diagnostics
 pub struct Lexer {
     input_text: String,
     current: usize,
     diagnostics: Vec<String>,
 }
 impl Lexer {
-    pub fn new(input_text: &str) -> Lexer {
+    //create a new instance of lexer
+    pub fn new(input_text: String) -> Lexer {
         Lexer {
-            input_text: String::from(input_text),
+            input_text,
             current: 0,
             diagnostics: Vec::new(),
         }
     }
-    pub fn next(&mut self) {
+
+    //get all token
+    pub fn lex_all(&mut self)->Vec<SyntaxToken>
+    {
+        let mut res=vec![];
+        loop {
+            let c=self.next_token();
+            if c.kind==TokenKind::EndOfFileToken
+            {
+                break;
+            }
+            res.push(c);
+        }
+        res
+    }
+
+    /// increment to next token
+    fn next(&mut self) {
         self.current += 1;
     }
-    pub fn current_char(&self) -> char {
+
+    //return current character if it is not in index range then returns end of file character
+    fn current_char(&self) -> char {
         if self.current >= self.input_text.len() {
             return '\0';
         }
-        self.input_text.as_bytes()[self.current as usize] as char
+        self.input_text.as_bytes()[self.current] as char
     }
-    pub fn next_token(&mut self) -> SyntaxToken {
-        let pos = self.current;
-        if pos >= self.input_text.len() {
-            return SyntaxToken::new(SyntaxKind::EndOfFileToken, pos, "\0");
+
+    //returns the current token if it is valid otherwise returns an eof token
+    fn next_token(&mut self) -> SyntaxToken
+    {
+        let mut c_m=self.do_match("==", TokenKind::EqualEqualToken);
+        if c_m.is_some()
+        {
+            return c_m.unwrap();
+        }
+        c_m=self.do_match("=", TokenKind::EqualToken);
+        if c_m.is_some()
+        {
+            return c_m.unwrap();
+        }
+        c_m=self.do_match(";", TokenKind::SemicolonToken);
+        if c_m.is_some()
+        {
+            return c_m.unwrap();
+        }
+        c_m=self.do_match(":", TokenKind::ColonToken);
+        if c_m.is_some()
+        {
+            return c_m.unwrap();
+        }
+        c_m=self.do_match("(", TokenKind::OpenParenthesisToken);
+        if c_m.is_some()
+        {
+            return c_m.unwrap();
+        }
+        c_m=self.do_match(")", TokenKind::CloseParenthesisToken);
+        if c_m.is_some()
+        {
+            return c_m.unwrap();
+        }
+        c_m=self.do_match("{", TokenKind::CurlyOpenBracketToken);
+        if c_m.is_some()
+        {
+            return c_m.unwrap();
+        }
+        c_m=self.do_match("}", TokenKind::CurlyCloseBracketToken);
+        if c_m.is_some()
+        {
+            return c_m.unwrap();
+        }
+        c_m=self.do_match(",", TokenKind::CommaToken);
+        if c_m.is_some()
+        {
+            return c_m.unwrap();
+        }
+        c_m=self.do_match(@"\+", TokenKind::DotToken);
+        if c_m.is_some()
+        {
+            return c_m.unwrap();
         }
 
-        let input_text = self.input_text.as_str();
-
-        match input_text.find("while") {
-            Some(ind) => {
-                if ind == pos {
-                    self.current += "while".len();
-                    return SyntaxToken::new(SyntaxKind::KeyWordToken, pos, "while");
-                }
-            }
-            _ => {}
+        let bt=self.current_char();
+        self.current+=1;
+        SyntaxToken::new(TokenKind::BadToken, TextSpan::new((self.current-1, self.current)),bt.to_string())
+    }
+    pub fn match_tokens(&mut self)->Option<SyntaxToken>
+    {
+        let token = self.next_token();
+        if token.kind == TokenKind::EndOfFileToken {
+            return None;
         }
-        match input_text.find("if") {
-            Some(ind) => {
-                if ind == pos {
-                    self.current += "if".len();
-                    return SyntaxToken::new(SyntaxKind::KeyWordToken, pos, "if");
-                }
-            }
-            _ => {}
-        }
-
-        if char::is_digit(self.current_char(), 10) {
-            while char::is_digit(self.current_char(), 10) {
-                self.current += 1;
-            }
-            let length = self.current - pos;
-            let text: &str = input_text[pos..pos + length].as_ref();
-
-            return SyntaxToken::new(SyntaxKind::NumberToken, pos, text);
-        }
-        if self.current_char() == '\n' {
-            self.next();
-            return SyntaxToken::new(SyntaxKind::NewLineToken, pos, "\n");
-        }
-        if self.current_char() == '_' || char::is_alphabetic(self.current_char()) {
-            self.current += 1;
-            while self.current_char() == '_'
-                || char::is_alphabetic(self.current_char())
-                || char::is_digit(self.current_char(), 10)
+        Some(token)
+    }
+    fn do_match(&mut self,regex_str:&str,token:TokenKind)->Option<SyntaxToken>
+    {
+        let re=regex::Regex::new(regex_str).unwrap();
+        let match_pos=re.find(&self.input_text[self.current..]);
+        if match_pos.is_some()
+        {
+            let res=match_pos.unwrap();
+            if res.start()!=0
             {
-                self.current += 1;
+                return None;
             }
-            let length = self.current - pos;
-            let text: &str = input_text[pos..pos + length].as_ref();
+            let cp_start=self.current;
+            let cp_end=self.current+res.end()+1;
+            self.current=cp_end;
+            return Some(
 
-            return SyntaxToken::new(SyntaxKind::IdentifierToken, pos, text);
+                SyntaxToken::new(token,
+                                 TextSpan::new((cp_start,cp_end)),
+                                 self.input_text[cp_start..cp_end].to_string())
+            );
         }
-
-        if char::is_whitespace(self.current_char()) {
-            while char::is_whitespace(self.current_char()) {
-                self.current += 1;
-            }
-            let length = self.current - pos;
-            let text: &str = input_text[pos..pos + length].as_ref();
-
-            return SyntaxToken::new(SyntaxKind::WhiteSpaceToken, pos, text);
-        }
-
-        if self.current_char() == '+' {
-            self.next();
-            return SyntaxToken::new(SyntaxKind::PlusToken, pos, "+");
-        } else if self.current_char() == '-' {
-            self.next();
-            return SyntaxToken::new(SyntaxKind::MinusToken, pos, "-");
-        } else if self.current_char() == '*' {
-            self.next();
-            return SyntaxToken::new(SyntaxKind::StarToken, pos, "*");
-        } else if self.current_char() == '/' {
-            self.next();
-            return SyntaxToken::new(SyntaxKind::SlashToken, pos, "/");
-        } else if self.current_char() == '(' {
-            self.next();
-            return SyntaxToken::new(SyntaxKind::OpenParenthesisToken, pos, "(");
-        } else if self.current_char() == ')' {
-            self.next();
-            return SyntaxToken::new(SyntaxKind::CloseParenthesisToken, pos, ")");
-        } else if self.current_char() == '{' {
-            self.next();
-            return SyntaxToken::new(SyntaxKind::CurlyOpenBracketToken, pos, "{");
-        } else if self.current_char() == '}' {
-            self.next();
-            return SyntaxToken::new(SyntaxKind::CurlyCloseBracketToken, pos, "}");
-        } else if self.current_char() == '&' {
-            self.next();
-            return SyntaxToken::new(SyntaxKind::BitWiseAmpersandToken, pos, "&");
-        } else if self.current_char() == '|' {
-            self.next();
-            return SyntaxToken::new(SyntaxKind::BitWisePipeToken, pos, "|");
-        } else if self.current_char() == '=' {
-            self.next();
-            if self.current_char() == '=' {
-                self.next();
-                return SyntaxToken::new(SyntaxKind::EqualEqualToken, pos, "==");
-            } else {
-                return SyntaxToken::new(SyntaxKind::EqualToken, pos, "=");
-            }
-        } else if self.current_char() == '>' {
-            self.next();
-            if self.current_char() == '=' {
-                self.next();
-                return SyntaxToken::new(SyntaxKind::GreaterThanEqualToken, pos, ">=");
-            } else {
-                return SyntaxToken::new(SyntaxKind::GreaterThanToken, pos, ">");
-            }
-        } else if self.current_char() == '<' {
-            self.next();
-            if self.current_char() == '=' {
-                self.next();
-                return SyntaxToken::new(SyntaxKind::SmallerThanEqualToken, pos, "<=");
-            } else {
-                return SyntaxToken::new(SyntaxKind::SmallerThanToken, pos, "<");
-            }
-        }
-
-        let text = self.current_char();
-        self.next();
-        self.diagnostics
-            .push(format!("Unexpected token {} at position {}", text, pos));
-        SyntaxToken::new(SyntaxKind::BadToken, pos, text.to_string().as_str())
+        return None;
     }
 }

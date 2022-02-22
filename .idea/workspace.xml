@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
   <component name="CMakeSettings">
     <configurations>
       <configuration PROFILE_NAME="Debug" ENABLED="true" CONFIG_NAME="Debug" />
@@ -10,7 +13,20 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="44a0d877-f1c5-4682-8ee2-71f570a7ee1d" name="Default Changelist" comment="">
+      <change afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/mod.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/lang/code_analysis/text/mod.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/lang/code_analysis/text/text_span.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/lang/code_analysis/token/mod.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/evaluator.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/evaluator.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/lexer.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/lexer.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/parser.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/parser.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax_kind.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/token/token_kind.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax_node.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax_node.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax_token.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/token/syntax_token.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -20,11 +36,21 @@
   <component name="ClangdSettings">
     <option name="formatViaClangd" value="false" />
   </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Rust File" />
+      </list>
+    </option>
+  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
   <component name="MacroExpansionManager">
     <option name="directoryName" value="ohz0zpco" />
+  </component>
+  <component name="MarkdownSettingsMigration">
+    <option name="stateVersion" value="1" />
   </component>
   <component name="ProjectId" id="1sl65Wldl0aGZmFq2taKmewvxz6" />
   <component name="ProjectViewState">
@@ -38,9 +64,25 @@
     <property name="WebServerToolWindowFactoryState" value="false" />
     <property name="cf.first.check.clang-format" value="false" />
     <property name="cidr.known.project.marker" value="true" />
+    <property name="node.js.detected.package.eslint" value="true" />
+    <property name="node.js.detected.package.tslint" value="true" />
+    <property name="node.js.selected.package.eslint" value="(autodetect)" />
+    <property name="node.js.selected.package.tslint" value="(autodetect)" />
     <property name="org.rust.cargo.project.model.PROJECT_DISCOVERY" value="true" />
+    <property name="org.rust.disableDetachedFileInspectionD:/Projects/MinLang/src/lang/code_analysis/token/token_kind.rs" value="true" />
+    <property name="settings.editor.selected.configurable" value="preferences.pluginManager" />
+  </component>
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="D:\Projects\MinLang\src\lang\code_analysis\token" />
+    </key>
   </component>
   <component name="RunManager">
+    <configuration default="true" type="GradleAppRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" PASS_PARENT_ENVS_2="true">
+      <method v="2">
+        <option name="com.jetbrains.cidr.cpp.gradle.execution.GradleNativeBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
     <configuration name="Run syntax_expression_tree" type="CargoCommandRunConfiguration" factoryName="Cargo Command" temporary="true">
       <option name="command" value="run --package syntax_expression_tree --bin syntax_expression_tree" />
       <option name="workingDirectory" value="file://$PROJECT_DIR$" />
@@ -57,11 +99,6 @@
         <option name="CARGO.BUILD_TASK_PROVIDER" enabled="true" />
       </method>
     </configuration>
-    <configuration default="true" type="GradleAppRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" PASS_PARENT_ENVS_2="true">
-      <method v="2">
-        <option name="com.jetbrains.cidr.cpp.gradle.execution.GradleNativeBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
-      </method>
-    </configuration>
     <recent_temporary>
       <list>
         <item itemvalue="Cargo.Run syntax_expression_tree" />
@@ -69,6 +106,7 @@
     </recent_temporary>
   </component>
   <component name="RustProjectSettings">
+    <option name="runExternalLinterOnTheFly" value="true" />
     <option name="toolchainHomeDirectory" value="$USER_HOME$/.cargo/bin" />
     <option name="version" value="2" />
   </component>
@@ -88,10 +126,32 @@
       <workItem from="1630598388203" duration="355000" />
       <workItem from="1631967367164" duration="35000" />
       <workItem from="1631967597848" duration="99000" />
+      <workItem from="1644757400142" duration="46000" />
+      <workItem from="1644757466214" duration="2017000" />
+      <workItem from="1644911673369" duration="19000" />
+      <workItem from="1644911708464" duration="45000" />
+      <workItem from="1644911773940" duration="1756000" />
+      <workItem from="1645430163461" duration="7460000" />
+      <workItem from="1645525752187" duration="2000" />
     </task>
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="XSLT-Support.FileAssociations.UIState">
+    <expand />
+    <select />
   </component>
 </project>
