@@ -1,6 +1,6 @@
 use std::io::{Error, ErrorKind};
 use std::thread::park;
-use crate::lang::code_analysis::syntax::syntax_node::{FunctionNode, ParameterNode, ProgramNode};
+use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, ParameterNode, ProgramNode, StatementNode};
 use crate::lang::code_analysis::text::line_text::LineText;
 use crate::lang::code_analysis::text::text_span::TextSpan;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
@@ -74,8 +74,6 @@ impl<'a> Parser<'a>
     fn match_token_str(&mut self,kind:TokenKind,val:&str) -> Result<SyntaxToken,Error>
     {
         let token=self.next_token();
-        dbg!(&token);
-        dbg!(&kind);
         if token.kind==kind && token.text==val
         {
             Ok(token)
@@ -124,7 +122,16 @@ impl<'a> Parser<'a>
         self.match_token_str(TokenKind::KeywordToken,"fun")?;
         let function_name=self.match_token(TokenKind::IdentifierToken)?;
         let params=self.parse_formal_parameters()?;
-        Ok(FunctionNode::new(function_name.text,String::new(),params,vec![]))
+        if self.current_token().kind==TokenKind::ColonToken
+        {
+            //eat the colon
+            self.match_token(TokenKind::ColonToken)?;
+            let return_type=self.match_token(TokenKind::KeywordToken)?;
+            //check is return type is valid
+            Parser::match_data_type(&return_type)?;
+        }
+        let block=self.parse_block()?;
+        Ok(FunctionNode::new(function_name.text,String::new(),params,block))
     }
     fn parse_formal_parameters(&mut self)->Result<Vec<ParameterNode>,Error>
     {
@@ -141,6 +148,7 @@ impl<'a> Parser<'a>
             self.match_token(TokenKind::ColonToken)?;
             //eat the type
             let param_type=self.match_token(TokenKind::KeywordToken)?;
+            dbg!(&param_type);
             //if param_type is valid data type
             Self::match_data_type(&param_type)?;
             params.push(ParameterNode::new(param.text,param_type.text));
@@ -161,4 +169,75 @@ impl<'a> Parser<'a>
         Ok(params)
     }
 
+    fn parse_block(&mut self)->Result<Vec<StatementNode>,Error>
+    {
+        //eat the open curly brace
+        self.match_token(TokenKind::CurlyOpenBracketToken)?;
+        let mut statements=vec![];
+        while self.current_token().kind!=TokenKind::CurlyCloseBracketToken
+            && self.current_token().kind!=TokenKind::EndOfFileToken
+        {
+            let statement=self.parse_statement()?;
+            statements.push(statement);
+        }
+        //eat the close curly brace
+        self.match_token(TokenKind::CurlyCloseBracketToken)?;
+        Ok(statements)
+    }
+    fn parse_statement(&mut self)->Result<StatementNode,Error>
+    {
+        if self.current_token().kind==TokenKind::KeywordToken
+        {
+            if self.current_token().text=="let"
+            {
+                return Ok(self.parse_declaration()?);
+            }
+        }
+
+        Err(Error::new(ErrorKind::Other,
+                       format!("Expected statement but found {:?} at {}",self.current_token().text,
+                               self.current_token().position.get_point_str())))
+    }
+    fn parse_declaration(&mut self)->Result<StatementNode,Error>
+    {
+        //eat the keyword let
+        self.match_token_str(TokenKind::KeywordToken,"let")?;
+        let identifier=self.match_token(TokenKind::IdentifierToken)?;
+        //eat the equal sign
+        self.match_token(TokenKind::EqualToken)?;
+        let expression=self.parse_expression(0)?;
+        //eat the semicolon
+        self.match_token(TokenKind::SemicolonToken)?;
+        Ok(StatementNode::Declaration(identifier.text,expression))
+    }
+    fn parse_expression(&mut self,parent_precedence:i32)->Result<ExpressionNode,Error>
+    {
+        let mut left;
+        let unary_precedence = self.current_token().kind.get_unary_precedence();
+        if unary_precedence != 0 && unary_precedence >= parent_precedence {
+            let operator_token = self.next_token();
+            let operand = self.parse_expression(unary_precedence)?;
+            left = ExpressionNode::Unary(operator_token.text, Box::new(operand));
+        } else {
+            left = self.parse_primary_expression()?;
+        }
+        loop
+        {
+            let precedence = self.current_token().kind.get_binary_precedence();
+            if precedence == 0 || precedence <= parent_precedence {
+                break;
+            }
+
+            let operator_token = self.next_token();
+            let right = self.parse_expression(precedence)?;
+            left = ExpressionNode::Binary(Box::new(left),
+                                          operator_token.text, Box::new(right));
+        }
+        Ok(left)
+    }
+    fn parse_primary_expression(&mut self)->Result<ExpressionNode,Error>
+    {
+        let identifier=self.match_token(TokenKind::IdentifierToken)?;
+        Ok(ExpressionNode::Identifier(identifier.text))
+    }
 }

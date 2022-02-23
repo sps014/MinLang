@@ -103,7 +103,7 @@ impl<'a> Lexer<'a> {
     {
         let current_str=self.current_str();
 
-        let keywords=vec![r"fun",r"if",r"else",r"while",r"int",r"float"];
+        let keywords=vec![r"fun",r"if",r"else",r"while",r"int",r"float",r"let"];
         for keyword in keywords.iter()
         {
             let c=Lexer::do_match(keyword.clone(),TokenKind::KeywordToken,&mut self.current,&current_str,self.line_text.borrow());
