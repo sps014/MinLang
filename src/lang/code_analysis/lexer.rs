@@ -1,8 +1,8 @@
+use std::borrow::Borrow;
 use std::collections::HashMap;
-use std::fs::create_dir;
-use std::ops::Index;
+use std::rc::Rc;
 use std::usize;
-use regex::Regex;
+use crate::lang::code_analysis::text::line_text::LineText;
 use crate::lang::code_analysis::text::text_span::TextSpan;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 use crate::lang::code_analysis::token::token_kind::TokenKind;
@@ -12,17 +12,19 @@ pub struct Lexer<'a> {
     input_text: String,
     current: usize,
     diagnostics: Vec<String>,
-    type_regex_map:HashMap<TokenKind,&'a str>
+    type_regex_map:HashMap<TokenKind,&'a str>,
+    line_text:Rc<LineText>
 }
 impl<'a> Lexer<'a> {
     //create a new instance of lexer
     pub fn new(input_text: String) -> Lexer<'a> {
 
         Lexer {
-            input_text,
+            input_text: input_text.clone(),
             current: 0,
             diagnostics: Vec::new(),
-            type_regex_map: Lexer::create_type_regex_map()
+            type_regex_map: Lexer::create_type_regex_map(),
+            line_text:Rc::new(LineText::new(input_text))
         }
     }
     fn create_type_regex_map()->HashMap<TokenKind,&'a str>
@@ -37,6 +39,7 @@ impl<'a> Lexer<'a> {
         map.insert(TokenKind::SemicolonToken,r";");
         map.insert((TokenKind::ColonToken),r":");
         map.insert(TokenKind::CommaToken,r",");
+        map.insert(TokenKind::DotToken,r"\.");
 
         map.insert(TokenKind::PlusToken,r"\+");
         map.insert(TokenKind::MinusToken,r"\-");
@@ -58,7 +61,12 @@ impl<'a> Lexer<'a> {
         let mut res=vec![];
         loop {
             let c=self.next_token();
-            if c.kind==TokenKind::EndOfFileToken
+            if c.kind==TokenKind::BadToken
+            {
+                self.diagnostics.push(c.text.clone());
+            }
+
+            else if c.kind==TokenKind::EndOfFileToken
             {
                 break;
             }
@@ -91,10 +99,10 @@ impl<'a> Lexer<'a> {
     //returns the current token if it is valid otherwise returns an eof token
     fn next_token(&mut self) -> SyntaxToken
     {
-        let cn=self.type_regex_map.clone();
-        for (kind,regex) in cn.iter()
+        let current_str=self.current_str();
+        for (key,value) in self.type_regex_map.iter()
         {
-            let c=self.do_match(regex,*(kind));
+            let c=Lexer::do_match(&value.clone(),key.clone(),&mut self.current,&current_str,self.line_text.borrow());
             if c.is_some()
             {
                 return c.unwrap();
@@ -104,27 +112,26 @@ impl<'a> Lexer<'a> {
         if self.current>=self.input_text.len()
         {
             return SyntaxToken::new(TokenKind::EndOfFileToken,
-                                    TextSpan::new((self.current,self.current+1)),
+                                    TextSpan::new((self.current,self.current+1),self.line_text.borrow()),
                                     "\0".to_string());
         }
 
         let bt=self.current_char();
         self.current+=1;
-        SyntaxToken::new(TokenKind::BadToken, TextSpan::new((self.current-1, self.current)),bt.to_string())
+        SyntaxToken::new(TokenKind::BadToken, TextSpan::new((self.current-1, self.current),self.line_text.borrow()),bt.to_string())
     }
-    fn do_match(&mut self,regex_str:&str,token:TokenKind)->Option<SyntaxToken>
+    fn do_match(regex_str:&str,token:TokenKind,current:&mut usize,current_str:&String,line_text:&LineText)->Option<SyntaxToken>
     {
         let re=regex::Regex::new(regex_str).unwrap();
-        let slice=self.current_str();
-        for cap in re.captures_iter(slice.as_str()) {
+        for cap in re.captures_iter(current_str.as_str()) {
             if cap.get(0).unwrap().start()!=0
             {
                 return None;
             }
-            let start=self.current+cap.get(0).unwrap().start();
-            let end=self.current+cap.get(0).unwrap().end();
-            self.current=end;
-            return Some(SyntaxToken::new(token.clone(),TextSpan::new((start,end)),cap.get(0).unwrap().as_str().to_string()));
+            let start=*current+cap.get(0).unwrap().start();
+            let end=*current+cap.get(0).unwrap().end();
+            *current=end;
+            return Some(SyntaxToken::new(token.clone(),TextSpan::new((start,end),line_text),cap.get(0).unwrap().as_str().to_string()));
         }
         return None;
     }
