@@ -33,7 +33,7 @@ impl<'a> Lexer<'a> {
         let mut map = HashMap::new();
 
         map.insert(TokenKind::IdentifierToken,"[a-zA-Z_][a-zA-Z0-9_]*");
-        map.insert(TokenKind::NumberToken,r"[0-9]+(\.[0-9]+)");
+        map.insert(TokenKind::NumberToken,r"[0-9]+(\.[0-9]+)?");
 
         map.insert(TokenKind::EqualEqualToken,r"==");
         map.insert(TokenKind::EqualToken,r"=");

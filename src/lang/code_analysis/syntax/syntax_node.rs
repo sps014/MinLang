@@ -52,7 +52,7 @@ pub enum StatementNode
 #[derive(Debug,Clone)]
 pub enum ExpressionNode
 {
-    NumberLiteral,
+    Number(NumberLiteral),
     Binary(Box<ExpressionNode>, String, Box<ExpressionNode>),
     Unary(String, Box<ExpressionNode>),
     StringLiteral(String),
