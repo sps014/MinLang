@@ -21,14 +21,14 @@ impl LineText {
         let parts=input.split("\n");
         for c in input.chars() {
             if c == '\n' {
-                line_width.push(width);
+                line_width.push(width+1);
                 width = 0;
             }
             else {
                 width += 1;
             }
         }
-        line_width.push(width);
+        line_width.push(width+1);
         line_width
     }
     ///returns the line number,column number of the token at the given index
@@ -36,17 +36,16 @@ impl LineText {
     {
         let mut line_number=0;
         let mut sum:usize=0;
-
         for i in self.line_width.iter()
         {
-            if(sum>=start)
+            if sum+i>start
             {
                 break;
             }
             sum+=*i;
             line_number+=1;
         }
-        (line_number+1,start-sum+1)
+        (line_number+1,if start>sum {start-sum+1} else{ sum-start+1})
     }
 
 }
