@@ -1,15 +1,18 @@
 mod lang;
 use std::{collections::HashMap, io::stdin};
 use lang::code_analysis::syntax::lexer::Lexer;
+use crate::lang::code_analysis::syntax::parser::Parser;
 
 fn main() {
 
-    let mut lexer= Lexer::new(r"{
-+-
-}".to_string());
-    let tokens=lexer.lex_all();
-    for token in tokens {
-        println!("{:?}",token);
+    let lexer= Lexer::new(r"fun abc(test:int,alpha:float)".to_string());
+    let mut parser=Parser::new(lexer);
+    let ast=parser.parse();
+    match ast {
+        Ok(ast) =>
+            println!("{:?}",ast),
+
+        Err(e) => println!("{:?}",e),
     }
 }
 

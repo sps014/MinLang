@@ -1,9 +1,9 @@
-#[derive(Debug, PartialEq, Clone,Eq,Hash,Copy)]
+#[derive(Debug, PartialEq, Clone,Copy,Hash,Eq)]
 pub enum TokenKind
 {
     EndOfFileToken,
     WhiteSpaceToken,
-    KeyWordToken,
+    KeywordToken,
     BadToken,
 
     IdentifierToken,
