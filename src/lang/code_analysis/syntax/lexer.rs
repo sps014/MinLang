@@ -59,14 +59,19 @@ impl<'a> Lexer<'a> {
     //get all token
     pub fn lex_all(&mut self)->Vec<SyntaxToken>
     {
+        self.diagnostics.clear();
         let mut res=vec![];
         loop {
             let c=self.next_token();
             if c.kind==TokenKind::BadToken
             {
-                self.diagnostics.push(c.text.clone());
+                self.diagnostics.push(format!("unexpected token '{}' at {}",c.text,c.position.get_point_str()));
+                continue;
             }
-
+            else if c.kind==TokenKind::WhiteSpaceToken
+            {
+                continue;
+            }
             else if c.kind==TokenKind::EndOfFileToken
             {
                 break;
