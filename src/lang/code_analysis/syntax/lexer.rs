@@ -7,7 +7,7 @@ use crate::lang::code_analysis::text::text_span::TextSpan;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 use crate::lang::code_analysis::token::token_kind::TokenKind;
 
-///Lexes all token and all invalid tokens are reported via diagnostics
+///Lex's all token and all invalid tokens are reported via diagnostics
 pub struct Lexer<'a> {
     input_text: String,
     current: usize,
@@ -27,17 +27,18 @@ impl<'a> Lexer<'a> {
             line_text:Rc::new(LineText::new(input_text))
         }
     }
+    ///used to populate the type_regex_map with all the regexes on new instance of lexer
     fn create_type_regex_map()->HashMap<TokenKind,&'a str>
     {
         let mut map = HashMap::new();
         map.insert(TokenKind::IdentifierToken,"[a-zA-Z_][a-zA-Z0-9_]*");
-        map.insert(TokenKind::NumberToken,"[0-9]+");
+        map.insert(TokenKind::NumberToken,r"[0-9]+(\.[0-9]+)");
 
         map.insert(TokenKind::EqualEqualToken,r"==");
         map.insert(TokenKind::EqualToken,r"=");
 
         map.insert(TokenKind::SemicolonToken,r";");
-        map.insert((TokenKind::ColonToken),r":");
+        map.insert(TokenKind::ColonToken,r":");
         map.insert(TokenKind::CommaToken,r",");
         map.insert(TokenKind::DotToken,r"\.");
 
@@ -75,11 +76,6 @@ impl<'a> Lexer<'a> {
         res
     }
 
-    /// increment to next token
-    fn next(&mut self) {
-        self.current += 1;
-    }
-
     //return current character if it is not in index range then returns end of file character
     fn current_char(&self) -> char {
         if self.current < self.input_text.len() {
@@ -88,7 +84,7 @@ impl<'a> Lexer<'a> {
             '\0'
         }
     }
-    //returns string sliced from currentor returns EOF
+    //returns string sliced from current position returns EOF
     fn current_str(&self) -> String {
         if self.current >= self.input_text.len() {
             return "\0".to_string();
@@ -120,10 +116,14 @@ impl<'a> Lexer<'a> {
         self.current+=1;
         SyntaxToken::new(TokenKind::BadToken, TextSpan::new((self.current-1, self.current),self.line_text.borrow()),bt.to_string())
     }
+
+    ///match the current string with the regex and return the token if it is valid otherwise return None
     fn do_match(regex_str:&str,token:TokenKind,current:&mut usize,current_str:&String,line_text:&LineText)->Option<SyntaxToken>
     {
-        let re=regex::Regex::new(regex_str).unwrap();
-        for cap in re.captures_iter(current_str.as_str()) {
+        let re=regex::Regex::new(regex_str).unwrap(); //ugly workaround should probably cache the regex
+        for cap in re.captures_iter(current_str.as_str())
+        {
+            //if our first regex match does not start at the beginning of the string then we have a no match
             if cap.get(0).unwrap().start()!=0
             {
                 return None;

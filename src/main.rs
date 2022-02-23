@@ -1,6 +1,6 @@
 mod lang;
 use std::{collections::HashMap, io::stdin};
-use crate::lang::code_analysis::lexer::Lexer;
+use lang::code_analysis::syntax::lexer::Lexer;
 
 fn main() {
 
