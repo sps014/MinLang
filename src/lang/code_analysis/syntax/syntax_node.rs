@@ -1,57 +1,54 @@
 use std::fmt::Debug;
 use std::hash::Hash;
 
-pub trait SyntaxNode
+#[derive(Debug)]
+pub struct ProgramNode
 {
-   fn get_parent(&self) -> Option<&dyn SyntaxNode>;
+    pub functions: Vec<FunctionNode>,
 }
 
-pub struct ProgramNode<'a>
-{
-    pub functions: Vec<FunctionNode<'a>>,
-}
-impl<'b> SyntaxNode for ProgramNode<'b>
-{
-    fn get_parent(&self) -> Option<&dyn SyntaxNode>
-    {
-        None
+impl ProgramNode {
+    pub fn new(functions: Vec<FunctionNode>) -> ProgramNode {
+        ProgramNode { functions }
     }
 }
 
-impl<'ab> ProgramNode<'ab> {
-    pub fn new(functions:Vec<FunctionNode<'ab>>) -> ProgramNode<'ab> {
-        ProgramNode {
-            functions
-        }
-    }
-}
-
-pub struct FunctionNode<'a>
+#[derive(Debug)]
+pub struct FunctionNode
 {
     pub name: String,
+    pub return_type: String,
     pub parameters: Vec<ParameterNode>,
     pub body: Vec<StatementNode>,
-    parent: Option<&'a dyn SyntaxNode>,
 }
-impl<'a> SyntaxNode for FunctionNode<'a>
-{
-    fn get_parent(&self) -> Option<&dyn SyntaxNode>
-    {
-        self.parent.clone()
+
+impl FunctionNode {
+    pub fn new(name: String, return_type: String, parameters: Vec<ParameterNode>, body: Vec<StatementNode>) -> FunctionNode {
+        FunctionNode { name, return_type, parameters, body }
     }
 }
 
+#[derive(Debug)]
 pub struct ParameterNode
 {
     pub name: String,
     pub type_: String,
 }
+impl ParameterNode
+{
+    pub fn new(name: String, type_: String) -> ParameterNode {
+        ParameterNode { name, type_ }
+    }
+}
 
+#[derive(Debug,Clone)]
 pub enum StatementNode
 {
     Assignment(String, ExpressionNode),
     Return(Option<ExpressionNode>),
 }
+
+#[derive(Debug,Clone)]
 pub enum ExpressionNode
 {
     NumberLiteral,
@@ -59,6 +56,8 @@ pub enum ExpressionNode
     Identifier(String),
     FunctionCall(String, Vec<ExpressionNode>),
 }
+
+#[derive(Debug,Clone)]
 pub enum NumberLiteral
 {
     Integer(i32),

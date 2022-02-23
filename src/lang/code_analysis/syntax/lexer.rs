@@ -13,7 +13,7 @@ pub struct Lexer<'a> {
     current: usize,
     diagnostics: Vec<String>,
     type_regex_map:HashMap<TokenKind,&'a str>,
-    line_text:Rc<LineText>
+    line_text:Rc<LineText>,
 }
 impl<'a> Lexer<'a> {
     //create a new instance of lexer
@@ -24,13 +24,16 @@ impl<'a> Lexer<'a> {
             current: 0,
             diagnostics: Vec::new(),
             type_regex_map: Lexer::create_type_regex_map(),
-            line_text:Rc::new(LineText::new(input_text))
+            line_text:Rc::new(LineText::new(input_text)),
         }
     }
     ///used to populate the type_regex_map with all the regexes on new instance of lexer
     fn create_type_regex_map()->HashMap<TokenKind,&'a str>
     {
         let mut map = HashMap::new();
+
+        map.insert(TokenKind::KeywordToken,r#"^(fun|while|for|int|float)"#);
+
         map.insert(TokenKind::IdentifierToken,"[a-zA-Z_][a-zA-Z0-9_]*");
         map.insert(TokenKind::NumberToken,r"[0-9]+(\.[0-9]+)");
 
