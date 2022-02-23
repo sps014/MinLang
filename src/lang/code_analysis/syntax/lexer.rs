@@ -32,8 +32,6 @@ impl<'a> Lexer<'a> {
     {
         let mut map = HashMap::new();
 
-        map.insert(TokenKind::KeywordToken,r#"^(fun|while|for|int|float)"#);
-
         map.insert(TokenKind::IdentifierToken,"[a-zA-Z_][a-zA-Z0-9_]*");
         map.insert(TokenKind::NumberToken,r"[0-9]+(\.[0-9]+)");
 
@@ -104,6 +102,17 @@ impl<'a> Lexer<'a> {
     fn next_token(&mut self) -> SyntaxToken
     {
         let current_str=self.current_str();
+
+        let keywords=vec![r"fun",r"if",r"else",r"while",r"int",r"float"];
+        for keyword in keywords.iter()
+        {
+            let c=Lexer::do_match(keyword.clone(),TokenKind::KeywordToken,&mut self.current,&current_str,self.line_text.borrow());
+            if c.is_some()
+            {
+                return c.unwrap();
+            }
+        }
+
         for (key,value) in self.type_regex_map.iter()
         {
             let c=Lexer::do_match(&value.clone(),key.clone(),&mut self.current,&current_str,self.line_text.borrow());

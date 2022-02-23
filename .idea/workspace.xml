@@ -16,8 +16,6 @@
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax/lexer.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/lexer.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax/parser.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/parser.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax/syntax_node.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/syntax_node.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/token/token_kind.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/token/token_kind.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -65,7 +63,7 @@
     <property name="node.js.selected.package.tslint" value="(autodetect)" />
     <property name="org.rust.cargo.project.model.PROJECT_DISCOVERY" value="true" />
     <property name="org.rust.disableDetachedFileInspectionD:/Projects/MinLang/src/lang/code_analysis/token/token_kind.rs" value="true" />
-    <property name="settings.editor.selected.configurable" value="preferences.general" />
+    <property name="settings.editor.selected.configurable" value="CPPToolchains" />
   </component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
@@ -132,7 +130,7 @@
       <workItem from="1645526094420" duration="14698000" />
       <workItem from="1645597953909" duration="4481000" />
       <workItem from="1645602496951" duration="5503000" />
-      <workItem from="1645609956590" duration="18181000" />
+      <workItem from="1645609956590" duration="19507000" />
     </task>
     <servers />
   </component>
@@ -155,13 +153,8 @@
       <breakpoints>
         <line-breakpoint enabled="true" type="com.jetbrains.cidr.execution.debugger.OCBreakpointType">
           <url>file://$PROJECT_DIR$/src/lang/code_analysis/syntax/parser.rs</url>
-          <line>122</line>
-          <option name="timeStamp" value="1" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" type="com.jetbrains.cidr.execution.debugger.OCBreakpointType">
-          <url>file://$PROJECT_DIR$/src/lang/code_analysis/syntax/parser.rs</url>
-          <line>121</line>
-          <option name="timeStamp" value="2" />
+          <line>78</line>
+          <option name="timeStamp" value="3" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>

@@ -1,5 +1,6 @@
 mod lang;
 use std::{collections::HashMap, io::stdin};
+use std::error::Error;
 use lang::code_analysis::syntax::lexer::Lexer;
 use crate::lang::code_analysis::syntax::parser::Parser;
 
@@ -12,7 +13,7 @@ fn main() {
         Ok(ast) =>
             println!("{:?}",ast),
 
-        Err(e) => println!("{:?}",e),
+        Err(e) => println!("error: {:?}",e.description()),
     }
 }
 
