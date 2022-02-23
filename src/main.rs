@@ -6,7 +6,10 @@ use crate::lang::code_analysis::syntax::parser::Parser;
 
 fn main() {
 
-    let lexer= Lexer::new(r"fun abc(test:int,alpha:float)".to_string());
+    let lexer= Lexer::new(r"fun abc(test:int,alpha:float)
+    {
+        let a= b+c*d;
+    }".to_string());
     let mut parser=Parser::new(lexer);
     let ast=parser.parse();
     match ast {
