@@ -21,4 +21,8 @@ impl TextSpan
         let (line_no,col_no) = line_text.get_point(position.0.clone());
         TextSpan{start:position.0,end:position.1,line_no,col_no}
     }
+    pub fn get_point_str(&self)->String
+    {
+        format!("line {} column {}",self.line_no,self.col_no)
+    }
 }

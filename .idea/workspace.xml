@@ -13,7 +13,13 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="44a0d877-f1c5-4682-8ee2-71f570a7ee1d" name="Default Changelist" comment="">
+      <change afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/parser.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/syntax_node.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax/lexer.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/lexer.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/text/text_span.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/text/text_span.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -126,7 +132,8 @@
       <workItem from="1645525752187" duration="273000" />
       <workItem from="1645526094420" duration="14698000" />
       <workItem from="1645597953909" duration="4481000" />
-      <workItem from="1645602496951" duration="5463000" />
+      <workItem from="1645602496951" duration="5503000" />
+      <workItem from="1645609956590" duration="8447000" />
     </task>
     <servers />
   </component>
