@@ -67,13 +67,15 @@ impl<'a> Parser<'a>
         else
         {
             Err(Error::new(ErrorKind::Other,
-                           format!("Expected token of kind {:?} but found {:?} at {}",kind,token.kind,
+                           format!("Expected token of kind {:?} but found {:?} at {}",kind,token.text,
                                    token.position.get_point_str())))
         }
     }
     fn match_token_str(&mut self,kind:TokenKind,val:&str) -> Result<SyntaxToken,Error>
     {
         let token=self.next_token();
+        dbg!(&token);
+        dbg!(&kind);
         if token.kind==kind && token.text==val
         {
             Ok(token)
@@ -81,7 +83,7 @@ impl<'a> Parser<'a>
         else
         {
             Err(Error::new(ErrorKind::Other,
-                           format!("Expected token of kind {:?} but found {:?} at {}",kind,token.kind,
+                           format!("Expected token of kind {:?} but found {:?} at {}",kind,token.text,
                                    token.position.get_point_str())))
         }
     }
@@ -94,7 +96,7 @@ impl<'a> Parser<'a>
         }
         else {
             Err(Error::new(ErrorKind::Other,
-                           format!("Expected token of kind {:?} but found {:?} at {}",token.kind,token.kind,
+                           format!("Expected token of kind {:?} but found {:?} at {}",token.kind,token.text,
                                    token.position.get_point_str())))
         }
     }
