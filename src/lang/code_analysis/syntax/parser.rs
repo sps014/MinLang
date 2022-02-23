@@ -148,7 +148,6 @@ impl<'a> Parser<'a>
             self.match_token(TokenKind::ColonToken)?;
             //eat the type
             let param_type=self.match_token(TokenKind::KeywordToken)?;
-            dbg!(&param_type);
             //if param_type is valid data type
             Self::match_data_type(&param_type)?;
             params.push(ParameterNode::new(param.text,param_type.text));
@@ -186,11 +185,19 @@ impl<'a> Parser<'a>
     }
     fn parse_statement(&mut self)->Result<StatementNode,Error>
     {
-        if self.current_token().kind==TokenKind::KeywordToken
+        let cur=self.current_token();
+        if cur.kind==TokenKind::KeywordToken
         {
-            if self.current_token().text=="let"
+            if cur.text=="let"
             {
                 return Ok(self.parse_declaration()?);
+            }
+        }
+        else if cur.kind==TokenKind::IdentifierToken
+        {
+            if self.peek_token(1).kind==TokenKind::EqualToken
+            {
+                return Ok(self.parse_assignment()?);
             }
         }
 
@@ -209,6 +216,17 @@ impl<'a> Parser<'a>
         //eat the semicolon
         self.match_token(TokenKind::SemicolonToken)?;
         Ok(StatementNode::Declaration(identifier.text,expression))
+    }
+    fn parse_assignment(&mut self)->Result<StatementNode,Error>
+    {
+        //eat the identifier
+        let identifier=self.match_token(TokenKind::IdentifierToken)?;
+        //eat the equal sign
+        self.match_token(TokenKind::EqualToken)?;
+        let expression=self.parse_expression(0)?;
+        //eat the semicolon
+        self.match_token(TokenKind::SemicolonToken)?;
+        Ok(StatementNode::Assignment(identifier.text,expression))
     }
     fn parse_expression(&mut self,parent_precedence:i32)->Result<ExpressionNode,Error>
     {
