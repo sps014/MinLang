@@ -14,6 +14,7 @@ impl LineText {
             line_width: LineText::calculate_line_width(text)
         }
     }
+    ///internally used to calculate the line widths of the text
     fn calculate_line_width(input:String)->Vec<usize>
     {
         let mut line_width = Vec::new();
@@ -36,9 +37,11 @@ impl LineText {
     {
         let mut line_number=0;
         let mut sum:usize=0;
+        // visit each line width
         for i in self.line_width.iter()
         {
-            if sum+i>start
+            //if the sum+current_line_size is greater than the start index, then we are in the line
+            if sum+*i>start
             {
                 break;
             }
