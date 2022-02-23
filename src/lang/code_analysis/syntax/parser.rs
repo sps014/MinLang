@@ -1,10 +1,11 @@
 use std::io::{Error, ErrorKind};
 use std::thread::park;
-use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, ParameterNode, ProgramNode, StatementNode};
+use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, NumberLiteral, ParameterNode, ProgramNode, StatementNode};
 use crate::lang::code_analysis::text::line_text::LineText;
 use crate::lang::code_analysis::text::text_span::TextSpan;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 use crate::lang::code_analysis::token::token_kind::TokenKind;
+use crate::lang::code_analysis::token::token_kind::TokenKind::IdentifierToken;
 use crate::Lexer;
 
 pub struct Parser<'a>
@@ -102,6 +103,7 @@ impl<'a> Parser<'a>
     pub fn parse(&mut self)->Result<ProgramNode,Error>
     {
         self.tokens = self.lexer.lex_all();
+        dbg!(&self.tokens);
         self.parse_program()
     }
 
@@ -255,6 +257,28 @@ impl<'a> Parser<'a>
     }
     fn parse_primary_expression(&mut self)->Result<ExpressionNode,Error>
     {
+        if self.current_token().kind==IdentifierToken
+        {
+            if self.peek_token(1).kind==TokenKind::OpenParenthesisToken
+            {
+                //return Ok(self.parse_function_call()?);
+            }
+            else
+            {
+                return Ok(ExpressionNode::Identifier(self.next_token().text.clone()));
+            }
+        }
+        else if self.current_token().kind==TokenKind::NumberToken
+        {
+            if self.current_token().text.contains('.')
+            {
+                return Ok(ExpressionNode::Number(NumberLiteral::Float(self.next_token().text.parse::<f64>().unwrap() as f32)));
+            }
+            else {
+                return Ok(ExpressionNode::Number(NumberLiteral::Integer(self.next_token().text.parse::<i32>().unwrap())));
+            }
+        }
+
         let identifier=self.match_token(TokenKind::IdentifierToken)?;
         Ok(ExpressionNode::Identifier(identifier.text))
     }
