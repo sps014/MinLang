@@ -13,8 +13,10 @@ pub enum TokenKind
     SlashToken,
     StarToken,
     BangToken,
+
     
     EqualEqualToken,
+    NotEqualToken,
     AmpersandAmpersandToken,
     PipePipeToken,
     BitWisePipeToken,
