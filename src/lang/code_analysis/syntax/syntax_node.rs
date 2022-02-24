@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::hash::Hash;
+use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 
 #[derive(Debug)]
 pub struct ProgramNode
@@ -16,14 +17,14 @@ impl ProgramNode {
 #[derive(Debug)]
 pub struct FunctionNode
 {
-    pub name: String,
-    pub return_type: String,
+    pub name: SyntaxToken,
+    pub return_type: Option<SyntaxToken>,
     pub parameters: Vec<ParameterNode>,
     pub body: Vec<StatementNode>,
 }
 
 impl FunctionNode {
-    pub fn new(name: String, return_type: String, parameters: Vec<ParameterNode>, body: Vec<StatementNode>) -> FunctionNode {
+    pub fn new(name: SyntaxToken, return_type: Option<SyntaxToken>, parameters: Vec<ParameterNode>, body: Vec<StatementNode>) -> FunctionNode {
         FunctionNode { name, return_type, parameters, body }
     }
 }
@@ -31,12 +32,12 @@ impl FunctionNode {
 #[derive(Debug)]
 pub struct ParameterNode
 {
-    pub name: String,
-    pub type_: String,
+    pub name: SyntaxToken,
+    pub type_: SyntaxToken,
 }
 impl ParameterNode
 {
-    pub fn new(name: String, type_: String) -> ParameterNode {
+    pub fn new(name: SyntaxToken, type_: SyntaxToken) -> ParameterNode {
         ParameterNode { name, type_ }
     }
 }
@@ -44,9 +45,9 @@ impl ParameterNode
 #[derive(Debug,Clone)]
 pub enum StatementNode
 {
-    Assignment(String, ExpressionNode),
-    Declaration(String, ExpressionNode),
-    FunctionInvocation(String, Vec<ExpressionNode>),
+    Assignment(SyntaxToken, ExpressionNode),
+    Declaration(SyntaxToken, ExpressionNode),
+    FunctionInvocation(SyntaxToken, Vec<ExpressionNode>),
     Return(Option<ExpressionNode>),
     /// If condition, then body, else if co
     IfElse(ExpressionNode, Vec<StatementNode>,Vec<(ExpressionNode,Vec<StatementNode>)>, Option<Vec<StatementNode>>),
@@ -56,17 +57,17 @@ pub enum StatementNode
 pub enum ExpressionNode
 {
     Number(NumberLiteral),
-    Binary(Box<ExpressionNode>, String, Box<ExpressionNode>),
-    Unary(String, Box<ExpressionNode>),
-    StringLiteral(String),
-    Identifier(String),
-    Parathized(Box<ExpressionNode>),
-    FunctionCall(String, Vec<ExpressionNode>),
+    Binary(Box<ExpressionNode>, SyntaxToken, Box<ExpressionNode>),
+    Unary(SyntaxToken, Box<ExpressionNode>),
+    StringLiteral(SyntaxToken),
+    Identifier(SyntaxToken),
+    Parenthesized(Box<ExpressionNode>),
+    FunctionCall(SyntaxToken, Vec<ExpressionNode>),
 }
 
 #[derive(Debug,Clone)]
 pub enum NumberLiteral
 {
-    Integer(i32),
-    Float(f32),
+    Integer(SyntaxToken),
+    Float(SyntaxToken),
 }
