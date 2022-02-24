@@ -8,8 +8,8 @@ fn main() {
 
     let lexer= Lexer::new(r"fun abc(test:int,alpha:float)
     {
-        let a= 5.6+c*9;
-        c=a+b;
+        let a= 5.6+c*9+abc(a,b);
+        test(45,7+9);
     }".to_string());
     let mut parser=Parser::new(lexer);
     let ast=parser.parse();
