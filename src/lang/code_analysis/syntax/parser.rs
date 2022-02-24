@@ -156,18 +156,19 @@ impl<'a> Parser<'a>
     }
     fn parse_statement(&mut self)->Result<StatementNode,Error>
     {
-        let cur=self.current_token();
-        if cur.kind==TokenKind::LetToken
+        let cur = self.current_token();
+        if cur.kind == TokenKind::LetToken
         {
             return Ok(self.parse_declaration()?);
-        }
-        else if cur.kind==TokenKind::ReturnToken
+        } else if cur.kind == TokenKind::ReturnToken
         {
             return Ok(self.parse_return()?);
-        }
-        else if cur.kind==TokenKind::IfToken
+        } else if cur.kind == TokenKind::IfToken
         {
             return Ok(self.parse_if_else()?);
+        } else if cur.kind == TokenKind::WhileToken
+        {
+            return Ok(self.parse_while()?);
         }
         else if cur.kind==TokenKind::IdentifierToken
         {
@@ -345,5 +346,12 @@ impl<'a> Parser<'a>
         Ok(StatementNode::IfElse(condition,then_branch,else_ifs,None))
     }
 
-    //fn parse_while
+    fn parse_while(&mut self)->Result<StatementNode,Error>
+    {
+        //eat the while keyword
+        self.match_token(TokenKind::WhileToken)?;
+        let condition=self.parse_expression(0)?;
+        let body=self.parse_block()?;
+        Ok(StatementNode::While(condition,body))
+    }
 }

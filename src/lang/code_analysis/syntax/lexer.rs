@@ -49,6 +49,11 @@ impl<'a> Lexer<'a> {
 
         map.push((TokenKind::EqualEqualToken,r"=="));
         map.push((TokenKind::EqualToken,r"="));
+        map.push((TokenKind::NotEqualToken,r"!="));
+        map.push((TokenKind::SmallerThanToken,r"<"));
+        map.push((TokenKind::SmallerThanEqualToken,r"<="));
+        map.push((TokenKind::GreaterThanToken,r">"));
+        map.push((TokenKind::GreaterThanEqualToken,r">="));
 
         map.push((TokenKind::SemicolonToken,r";"));
         map.push((TokenKind::ColonToken,r":"));

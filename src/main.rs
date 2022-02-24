@@ -11,6 +11,11 @@ fn main() {
         let a= 5.6+c*9+abc(a,b);
         test(45,7+9);
         return 5;
+        while(a>b)
+        {
+            a=a+b;
+            b=a-b;
+        }
         if a+b
         {
             return;
