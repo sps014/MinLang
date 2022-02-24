@@ -12,7 +12,7 @@ pub struct Lexer<'a> {
     input_text: String,
     current: usize,
     diagnostics: Vec<String>,
-    type_regex_map:HashMap<TokenKind,&'a str>,
+    type_regex_map:Vec<(TokenKind,&'a str)>,
     line_text:Rc<LineText>,
 }
 impl<'a> Lexer<'a> {
@@ -28,32 +28,46 @@ impl<'a> Lexer<'a> {
         }
     }
     ///used to populate the type_regex_map with all the regexes on new instance of lexer
-    fn create_type_regex_map()->HashMap<TokenKind,&'a str>
+    fn create_type_regex_map()->Vec<(TokenKind,&'a str)>
     {
-        let mut map = HashMap::new();
+        let mut map = vec![];
 
-        map.insert(TokenKind::IdentifierToken,"[a-zA-Z_][a-zA-Z0-9_]*");
-        map.insert(TokenKind::NumberToken,r"[0-9]+(\.[0-9]+)?");
+        map.push((TokenKind::FunToken,r"fun"));
+        map.push((TokenKind::IfToken,r"if"));
+        map.push((TokenKind::ElseToken,r"else"));
+        map.push((TokenKind::WhileToken,r"while"));
+        map.push((TokenKind::DataTypeToken,r"int"));
+        map.push((TokenKind::DataTypeToken,r"float"));
+        map.push((TokenKind::LetToken,r"let"));
+        map.push((TokenKind::ReturnToken,r"return"));
+        map.push((TokenKind::BreakToken,r"break"));
+        map.push((TokenKind::ContinueToken,r"continue"));
 
-        map.insert(TokenKind::EqualEqualToken,r"==");
-        map.insert(TokenKind::EqualToken,r"=");
 
-        map.insert(TokenKind::SemicolonToken,r";");
-        map.insert(TokenKind::ColonToken,r":");
-        map.insert(TokenKind::CommaToken,r",");
-        map.insert(TokenKind::DotToken,r"\.");
+        map.push((TokenKind::IfToken,r"fun"));
+        map.push((TokenKind::NumberToken,r"[0-9]+(\.[0-9]+)?"));
 
-        map.insert(TokenKind::PlusToken,r"\+");
-        map.insert(TokenKind::MinusToken,r"\-");
-        map.insert(TokenKind::StarToken,r"\*");
-        map.insert(TokenKind::SlashToken,r"/");
+        map.push((TokenKind::EqualEqualToken,r"=="));
+        map.push((TokenKind::EqualToken,r"="));
 
-        map.insert(TokenKind::OpenParenthesisToken,r"\(");
-        map.insert(TokenKind::CloseParenthesisToken,r"\)");
-        map.insert(TokenKind::CurlyOpenBracketToken,r"\{");
-        map.insert(TokenKind::CurlyCloseBracketToken,r"\}");
+        map.push((TokenKind::SemicolonToken,r";"));
+        map.push((TokenKind::ColonToken,r":"));
+        map.push((TokenKind::CommaToken,r","));
+        map.push((TokenKind::DotToken,r"\."));
 
-        map.insert(TokenKind::WhiteSpaceToken,r"\s+");
+        map.push((TokenKind::PlusToken,r"\+"));
+        map.push((TokenKind::MinusToken,r"\-"));
+        map.push((TokenKind::StarToken,r"\*"));
+        map.push((TokenKind::SlashToken,r"/"));
+
+        map.push((TokenKind::OpenParenthesisToken,r"\("));
+        map.push((TokenKind::CloseParenthesisToken,r"\)"));
+        map.push((TokenKind::CurlyOpenBracketToken,r"\{"));
+        map.push((TokenKind::CurlyCloseBracketToken,r"\}"));
+
+        map.push((TokenKind::WhiteSpaceToken,r"\s+"));
+
+        map.push((TokenKind::IdentifierToken,"[a-zA-Z_][a-zA-Z0-9_]*"));
         return map;
     }
 
@@ -102,16 +116,6 @@ impl<'a> Lexer<'a> {
     fn next_token(&mut self) -> SyntaxToken
     {
         let current_str=self.current_str();
-
-        let keywords=vec![r"fun",r"if",r"else",r"while",r"int",r"float",r"let",r"return"];
-        for keyword in keywords.iter()
-        {
-            let c=Lexer::do_match(keyword.clone(),TokenKind::KeywordToken,&mut self.current,&current_str,self.line_text.borrow());
-            if c.is_some()
-            {
-                return c.unwrap();
-            }
-        }
 
         for (key,value) in self.type_regex_map.iter()
         {

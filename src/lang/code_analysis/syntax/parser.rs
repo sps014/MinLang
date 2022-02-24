@@ -71,33 +71,6 @@ impl<'a> Parser<'a>
                                    token.position.get_point_str())))
         }
     }
-    fn match_token_str(&mut self,kind:TokenKind,val:&str) -> Result<SyntaxToken,Error>
-    {
-        let token=self.next_token();
-        if token.kind==kind && token.text==val
-        {
-            Ok(token)
-        }
-        else
-        {
-            Err(Error::new(ErrorKind::Other,
-                           format!("Expected token of kind {:?} but found {:?} at {}",kind,token.text,
-                                   token.position.get_point_str())))
-        }
-    }
-    pub fn match_data_type(token:&SyntaxToken)->Result<(String),Error>
-    {
-        if token.kind==TokenKind::KeywordToken
-            && (token.text=="int" || token.text=="float")
-        {
-            Ok(token.text.to_string())
-        }
-        else {
-            Err(Error::new(ErrorKind::Other,
-                           format!("Expected token of kind {:?} but found {:?} at {}",token.kind,token.text,
-                                   token.position.get_point_str())))
-        }
-    }
 
     pub fn parse(&mut self)->Result<ProgramNode,Error>
     {
@@ -120,19 +93,18 @@ impl<'a> Parser<'a>
     fn parse_function(&mut self)->Result<FunctionNode,Error>
     {
         //eat the fun keyword
-        self.match_token_str(TokenKind::KeywordToken,"fun")?;
+        self.match_token(TokenKind::FunToken)?;
         let function_name=self.match_token(TokenKind::IdentifierToken)?;
         let params=self.parse_formal_parameters()?;
+        let mut return_type:Option<SyntaxToken>=None;
         if self.current_token().kind==TokenKind::ColonToken
         {
             //eat the colon
             self.match_token(TokenKind::ColonToken)?;
-            let return_type=self.match_token(TokenKind::KeywordToken)?;
-            //check is return type is valid
-            Parser::match_data_type(&return_type)?;
+            return_type=Some(self.match_token(TokenKind::DataTypeToken)?);
         }
         let block=self.parse_block()?;
-        Ok(FunctionNode::new(function_name,None,params,block))
+        Ok(FunctionNode::new(function_name,return_type,params,block))
     }
     fn parse_formal_parameters(&mut self)->Result<Vec<ParameterNode>,Error>
     {
@@ -148,9 +120,7 @@ impl<'a> Parser<'a>
             //eat the colon
             self.match_token(TokenKind::ColonToken)?;
             //eat the type
-            let param_type=self.match_token(TokenKind::KeywordToken)?;
-            //if param_type is valid data type
-            Self::match_data_type(&param_type)?;
+            let param_type=self.match_token(TokenKind::DataTypeToken)?;
             params.push(ParameterNode::new(param,param_type));
             //if we have comma and it is not trailing comma
             if self.current_token().kind==TokenKind::CommaToken
@@ -187,20 +157,17 @@ impl<'a> Parser<'a>
     fn parse_statement(&mut self)->Result<StatementNode,Error>
     {
         let cur=self.current_token();
-        if cur.kind==TokenKind::KeywordToken
+        if cur.kind==TokenKind::LetToken
         {
-            if cur.text=="let"
-            {
-                return Ok(self.parse_declaration()?);
-            }
-            else if cur.text=="return"
-            {
-                return Ok(self.parse_return()?);
-            }
-            else if cur.text=="if"
-            {
-                return Ok(self.parse_if_else()?);
-            }
+            return Ok(self.parse_declaration()?);
+        }
+        else if cur.kind==TokenKind::ReturnToken
+        {
+            return Ok(self.parse_return()?);
+        }
+        else if cur.kind==TokenKind::IfToken
+        {
+            return Ok(self.parse_if_else()?);
         }
         else if cur.kind==TokenKind::IdentifierToken
         {
@@ -231,7 +198,7 @@ impl<'a> Parser<'a>
     fn parse_declaration(&mut self)->Result<StatementNode,Error>
     {
         //eat the keyword let
-        self.match_token_str(TokenKind::KeywordToken,"let")?;
+        self.match_token(TokenKind::LetToken)?;
         let identifier=self.match_token(TokenKind::IdentifierToken)?;
         //eat the equal sign
         self.match_token(TokenKind::EqualToken)?;
@@ -338,7 +305,7 @@ impl<'a> Parser<'a>
     fn parse_return(&mut self)->Result<StatementNode,Error>
     {
         //eat the return keyword
-        self.match_token_str(TokenKind::KeywordToken,"return")?;
+        self.match_token(TokenKind::ReturnToken)?;
         let mut expression:Option<ExpressionNode>=None;
         if self.current_token().kind!=TokenKind::SemicolonToken
         {
@@ -352,18 +319,18 @@ impl<'a> Parser<'a>
     fn parse_if_else(&mut self)->Result<StatementNode,Error>
     {
         //eat the if keyword
-        self.match_token_str(TokenKind::KeywordToken,"if")?;
+        self.match_token(TokenKind::IfToken)?;
         let condition=self.parse_expression(0)?;
         let then_branch=self.parse_block()?;
         let mut else_ifs=vec![];
-        while self.current_token().kind==TokenKind::KeywordToken && self.current_token().text=="else"
+        while self.current_token().kind==TokenKind::ElseToken
         {
             //eat the else keyword
-            self.match_token_str(TokenKind::KeywordToken,"else")?;
-            if self.current_token().kind==TokenKind::KeywordToken && self.current_token().text=="if"
+            self.match_token(TokenKind::ElseToken)?;
+            if self.current_token().kind==TokenKind::IfToken
             {
                 //eat the if keyword
-                self.match_token_str(TokenKind::KeywordToken,"if")?;
+                self.match_token(TokenKind::IfToken)?;
                 let condition=self.parse_expression(0)?;
                 let then_branch=self.parse_block()?;
                 else_ifs.push((condition,then_branch));
@@ -377,4 +344,6 @@ impl<'a> Parser<'a>
 
         Ok(StatementNode::IfElse(condition,then_branch,else_ifs,None))
     }
+
+    //fn parse_while
 }

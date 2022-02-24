@@ -13,13 +13,10 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="44a0d877-f1c5-4682-8ee2-71f570a7ee1d" name="Default Changelist" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax/lexer.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/lexer.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax/parser.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/parser.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax/syntax_node.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/syntax_node.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax_node.rs" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/token/token_kind.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/token/token_kind.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -135,7 +132,7 @@
       <workItem from="1645602496951" duration="5503000" />
       <workItem from="1645609956590" duration="24627000" />
       <workItem from="1645691207669" duration="3918000" />
-      <workItem from="1645703077355" duration="4520000" />
+      <workItem from="1645703077355" duration="5981000" />
     </task>
     <servers />
   </component>
