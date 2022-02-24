@@ -194,6 +194,10 @@ impl<'a> Parser<'a>
             {
                 return Ok(self.parse_declaration()?);
             }
+            else if cur.text=="return"
+            {
+                return Ok(self.parse_return()?);
+            }
         }
         else if cur.kind==TokenKind::IdentifierToken
         {
@@ -327,5 +331,21 @@ impl<'a> Parser<'a>
         //eat the close parenthesis
         self.match_token(TokenKind::CloseParenthesisToken)?;
         Ok(ExpressionNode::FunctionCall(function_name.text,arguments))
+    }
+    fn parse_return(&mut self)->Result<StatementNode,Error>
+    {
+        //eat the return keyword
+        self.match_token_str(TokenKind::KeywordToken,"return")?;
+        if(self.current_token().kind==TokenKind::SemicolonToken)
+        {
+            //eat the semicolon
+            self.match_token(TokenKind::SemicolonToken)?;
+            return Ok(StatementNode::Return(None));
+        }
+
+        let expression=self.parse_expression(0)?;
+        //eat the semicolon
+        self.match_token(TokenKind::SemicolonToken)?;
+        Ok(StatementNode::Return(Some(expression)))
     }
 }
