@@ -48,6 +48,8 @@ pub enum StatementNode
     Declaration(String, ExpressionNode),
     FunctionInvocation(String, Vec<ExpressionNode>),
     Return(Option<ExpressionNode>),
+    /// If condition, then body, else if co
+    IfElse(ExpressionNode, Vec<StatementNode>,Vec<(ExpressionNode,Vec<StatementNode>)>, Option<Vec<StatementNode>>),
 }
 
 #[derive(Debug,Clone)]

@@ -1,5 +1,4 @@
 use std::io::{Error, ErrorKind};
-use std::thread::park;
 use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, NumberLiteral, ParameterNode, ProgramNode, StatementNode};
 use crate::lang::code_analysis::text::line_text::LineText;
 use crate::lang::code_analysis::text::text_span::TextSpan;
@@ -198,6 +197,10 @@ impl<'a> Parser<'a>
             {
                 return Ok(self.parse_return()?);
             }
+            else if cur.text=="if"
+            {
+                return Ok(self.parse_if_else()?);
+            }
         }
         else if cur.kind==TokenKind::IdentifierToken
         {
@@ -347,5 +350,33 @@ impl<'a> Parser<'a>
         //eat the semicolon
         self.match_token(TokenKind::SemicolonToken)?;
         Ok(StatementNode::Return(Some(expression)))
+    }
+    fn parse_if_else(&mut self)->Result<StatementNode,Error>
+    {
+        //eat the if keyword
+        self.match_token_str(TokenKind::KeywordToken,"if")?;
+        let condition=self.parse_expression(0)?;
+        let then_branch=self.parse_block()?;
+        let mut else_ifs=vec![];
+        while self.current_token().kind==TokenKind::KeywordToken && self.current_token().text=="else"
+        {
+            //eat the else keyword
+            self.match_token_str(TokenKind::KeywordToken,"else")?;
+            if self.current_token().kind==TokenKind::KeywordToken && self.current_token().text=="if"
+            {
+                //eat the if keyword
+                self.match_token_str(TokenKind::KeywordToken,"if")?;
+                let condition=self.parse_expression(0)?;
+                let then_branch=self.parse_block()?;
+                else_ifs.push((condition,then_branch));
+            }
+            else
+            {
+                let else_branch=self.parse_block()?;
+                return Ok(StatementNode::IfElse(condition,then_branch,else_ifs,Some(else_branch)));
+            }
+        }
+
+        Ok(StatementNode::IfElse(condition,then_branch,else_ifs,None))
     }
 }
