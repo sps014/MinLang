@@ -3,7 +3,6 @@ pub enum TokenKind
 {
     EndOfFileToken,
     WhiteSpaceToken,
-    KeywordToken,
     BadToken,
 
     IdentifierToken,
@@ -36,4 +35,14 @@ pub enum TokenKind
     CurlyOpenBracketToken,
     CurlyCloseBracketToken,
 
+    IfToken,
+    ElseToken,
+    ForToken,
+    WhileToken,
+    ReturnToken,
+    BreakToken,
+    ContinueToken,
+    LetToken,
+    FunToken,
+    DataTypeToken,
 }

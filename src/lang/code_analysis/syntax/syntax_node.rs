@@ -51,6 +51,7 @@ pub enum StatementNode
     Return(Option<ExpressionNode>),
     /// If condition, then body, else if co
     IfElse(ExpressionNode, Vec<StatementNode>,Vec<(ExpressionNode,Vec<StatementNode>)>, Option<Vec<StatementNode>>),
+    While(ExpressionNode, Vec<StatementNode>),
 }
 
 #[derive(Debug,Clone)]
