@@ -132,7 +132,7 @@ impl<'a> Parser<'a>
             Parser::match_data_type(&return_type)?;
         }
         let block=self.parse_block()?;
-        Ok(FunctionNode::new(function_name.text,String::new(),params,block))
+        Ok(FunctionNode::new(function_name,None,params,block))
     }
     fn parse_formal_parameters(&mut self)->Result<Vec<ParameterNode>,Error>
     {
@@ -151,7 +151,7 @@ impl<'a> Parser<'a>
             let param_type=self.match_token(TokenKind::KeywordToken)?;
             //if param_type is valid data type
             Self::match_data_type(&param_type)?;
-            params.push(ParameterNode::new(param.text,param_type.text));
+            params.push(ParameterNode::new(param,param_type));
             //if we have comma and it is not trailing comma
             if self.current_token().kind==TokenKind::CommaToken
             {
@@ -238,7 +238,7 @@ impl<'a> Parser<'a>
         let expression=self.parse_expression(0)?;
         //eat the semicolon
         self.match_token(TokenKind::SemicolonToken)?;
-        Ok(StatementNode::Declaration(identifier.text,expression))
+        Ok(StatementNode::Declaration(identifier,expression))
     }
     fn parse_assignment(&mut self)->Result<StatementNode,Error>
     {
@@ -249,7 +249,7 @@ impl<'a> Parser<'a>
         let expression=self.parse_expression(0)?;
         //eat the semicolon
         self.match_token(TokenKind::SemicolonToken)?;
-        Ok(StatementNode::Assignment(identifier.text,expression))
+        Ok(StatementNode::Assignment(identifier,expression))
     }
     fn parse_expression(&mut self,parent_precedence:i32)->Result<ExpressionNode,Error>
     {
@@ -258,7 +258,7 @@ impl<'a> Parser<'a>
         if unary_precedence != 0 && unary_precedence >= parent_precedence {
             let operator_token = self.next_token();
             let operand = self.parse_expression(unary_precedence)?;
-            left = ExpressionNode::Unary(operator_token.text, Box::new(operand));
+            left = ExpressionNode::Unary(operator_token, Box::new(operand));
         } else {
             left = self.parse_primary_expression()?;
         }
@@ -272,7 +272,7 @@ impl<'a> Parser<'a>
             let operator_token = self.next_token();
             let right = self.parse_expression(precedence)?;
             left = ExpressionNode::Binary(Box::new(left),
-                                          operator_token.text, Box::new(right));
+                                          operator_token, Box::new(right));
         }
         Ok(left)
     }
@@ -286,7 +286,7 @@ impl<'a> Parser<'a>
             let expression=self.parse_expression(0)?;
             //eat the close parenthesis
             self.match_token(TokenKind::CloseParenthesisToken)?;
-            return Ok(ExpressionNode::Parathized(Box::new(expression)));
+            return Ok(ExpressionNode::Parenthesized(Box::new(expression)));
         }
         //parse identifiers
         if self.current_token().kind==IdentifierToken
@@ -297,22 +297,22 @@ impl<'a> Parser<'a>
             }
             else
             {
-                return Ok(ExpressionNode::Identifier(self.next_token().text.clone()));
+                return Ok(ExpressionNode::Identifier(self.next_token()));
             }
         }
         else if self.current_token().kind==TokenKind::NumberToken
         {
             if self.current_token().text.contains('.')
             {
-                return Ok(ExpressionNode::Number(NumberLiteral::Float(self.next_token().text.parse::<f64>().unwrap() as f32)));
+                return Ok(ExpressionNode::Number(NumberLiteral::Float(self.next_token())));
             }
             else {
-                return Ok(ExpressionNode::Number(NumberLiteral::Integer(self.next_token().text.parse::<i32>().unwrap())));
+                return Ok(ExpressionNode::Number(NumberLiteral::Integer(self.next_token())));
             }
         }
 
         let identifier=self.match_token(TokenKind::IdentifierToken)?;
-        Ok(ExpressionNode::Identifier(identifier.text))
+        Ok(ExpressionNode::Identifier(identifier))
     }
     fn parse_invocation_expression(&mut self)->Result<ExpressionNode,Error>
     {
@@ -333,23 +333,21 @@ impl<'a> Parser<'a>
         }
         //eat the close parenthesis
         self.match_token(TokenKind::CloseParenthesisToken)?;
-        Ok(ExpressionNode::FunctionCall(function_name.text,arguments))
+        Ok(ExpressionNode::FunctionCall(function_name,arguments))
     }
     fn parse_return(&mut self)->Result<StatementNode,Error>
     {
         //eat the return keyword
         self.match_token_str(TokenKind::KeywordToken,"return")?;
-        if(self.current_token().kind==TokenKind::SemicolonToken)
+        let mut expression:Option<ExpressionNode>=None;
+        if self.current_token().kind!=TokenKind::SemicolonToken
         {
-            //eat the semicolon
-            self.match_token(TokenKind::SemicolonToken)?;
-            return Ok(StatementNode::Return(None));
+            expression=Some(self.parse_expression(0)?);
         }
 
-        let expression=self.parse_expression(0)?;
         //eat the semicolon
         self.match_token(TokenKind::SemicolonToken)?;
-        Ok(StatementNode::Return(Some(expression)))
+        Ok(StatementNode::Return(expression))
     }
     fn parse_if_else(&mut self)->Result<StatementNode,Error>
     {

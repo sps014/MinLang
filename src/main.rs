@@ -13,7 +13,7 @@ fn main() {
         return 5;
         if a+b
         {
-            return 1;
+            return;
         }
         else if a+b
         {
