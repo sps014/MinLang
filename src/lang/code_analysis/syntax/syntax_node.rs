@@ -46,6 +46,7 @@ pub enum StatementNode
 {
     Assignment(String, ExpressionNode),
     Declaration(String, ExpressionNode),
+    FunctionInvocation(String, Vec<ExpressionNode>),
     Return(Option<ExpressionNode>),
 }
 
@@ -57,6 +58,7 @@ pub enum ExpressionNode
     Unary(String, Box<ExpressionNode>),
     StringLiteral(String),
     Identifier(String),
+    Parathized(Box<ExpressionNode>),
     FunctionCall(String, Vec<ExpressionNode>),
 }
 

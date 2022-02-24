@@ -5,7 +5,7 @@ use crate::lang::code_analysis::text::line_text::LineText;
 use crate::lang::code_analysis::text::text_span::TextSpan;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 use crate::lang::code_analysis::token::token_kind::TokenKind;
-use crate::lang::code_analysis::token::token_kind::TokenKind::IdentifierToken;
+use crate::lang::code_analysis::token::token_kind::TokenKind::{EndOfFileToken, IdentifierToken};
 use crate::Lexer;
 
 pub struct Parser<'a>
@@ -201,6 +201,20 @@ impl<'a> Parser<'a>
             {
                 return Ok(self.parse_assignment()?);
             }
+            else if self.peek_token(1).kind==TokenKind::OpenParenthesisToken
+            {
+                let r=self.parse_invocation_expression()?;
+                //eat the semicolon
+                self.match_token(TokenKind::SemicolonToken)?;
+                match r
+                {
+                    ExpressionNode::FunctionCall(name,params)=>
+                    {
+                        return Ok(StatementNode::FunctionInvocation(name,params));
+                    },
+                    _=>{}
+                }
+            }
         }
 
         Err(Error::new(ErrorKind::Other,
@@ -257,11 +271,22 @@ impl<'a> Parser<'a>
     }
     fn parse_primary_expression(&mut self)->Result<ExpressionNode,Error>
     {
+        //parse parenthesized expressions
+        if self.current_token().kind==TokenKind::OpenParenthesisToken
+        {
+            //eat the open parenthesis
+            self.match_token(TokenKind::OpenParenthesisToken)?;
+            let expression=self.parse_expression(0)?;
+            //eat the close parenthesis
+            self.match_token(TokenKind::CloseParenthesisToken)?;
+            return Ok(ExpressionNode::Parathized(Box::new(expression)));
+        }
+        //parse identifiers
         if self.current_token().kind==IdentifierToken
         {
             if self.peek_token(1).kind==TokenKind::OpenParenthesisToken
             {
-                //return Ok(self.parse_function_call()?);
+                return Ok(self.parse_invocation_expression()?);
             }
             else
             {
@@ -281,5 +306,26 @@ impl<'a> Parser<'a>
 
         let identifier=self.match_token(TokenKind::IdentifierToken)?;
         Ok(ExpressionNode::Identifier(identifier.text))
+    }
+    fn parse_invocation_expression(&mut self)->Result<ExpressionNode,Error>
+    {
+        let function_name=self.match_token(TokenKind::IdentifierToken)?;
+        //eat the open parenthesis
+        self.match_token(TokenKind::OpenParenthesisToken)?;
+        let mut arguments=Vec::new();
+        while self.current_token().kind!=TokenKind::CloseParenthesisToken && self.current_token().kind!=EndOfFileToken
+        {
+            //parse the argument
+            let argument=self.parse_expression(0)?;
+            arguments.push(argument);
+            if self.current_token().kind==TokenKind::CommaToken && self.peek_token(1).kind!=TokenKind::CloseParenthesisToken
+            {
+                //eat the comma
+                self.match_token(TokenKind::CommaToken)?;
+            }
+        }
+        //eat the close parenthesis
+        self.match_token(TokenKind::CloseParenthesisToken)?;
+        Ok(ExpressionNode::FunctionCall(function_name.text,arguments))
     }
 }
