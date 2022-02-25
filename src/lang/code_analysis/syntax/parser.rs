@@ -1,5 +1,5 @@
 use std::io::{Error, ErrorKind};
-use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, NumberLiteral, ParameterNode, ProgramNode, StatementNode};
+use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, TypeLiteral, ParameterNode, ProgramNode, StatementNode};
 use crate::lang::code_analysis::syntax::syntax_tree::SyntaxTree;
 use crate::lang::code_analysis::text::line_text::LineText;
 use crate::lang::code_analysis::text::text_span::TextSpan;
@@ -288,10 +288,10 @@ impl<'a> Parser<'a>
         {
             if self.current_token().text.contains('.')
             {
-                return Ok(ExpressionNode::Number(NumberLiteral::Float(self.next_token())));
+                return Ok(ExpressionNode::Number(TypeLiteral::Float(self.next_token())));
             }
             else {
-                return Ok(ExpressionNode::Number(NumberLiteral::Integer(self.next_token())));
+                return Ok(ExpressionNode::Number(TypeLiteral::Integer(self.next_token())));
             }
         }
 

@@ -36,8 +36,10 @@ impl<'a> Lexer<'a> {
         map.push((TokenKind::IfToken,r"if"));
         map.push((TokenKind::ElseToken,r"else"));
         map.push((TokenKind::WhileToken,r"while"));
+
         map.push((TokenKind::DataTypeToken,r"int"));
         map.push((TokenKind::DataTypeToken,r"float"));
+        map.push((TokenKind::DataTypeToken,r#""([^"\\]*(\\.[^"\\]*)*)""#));
         map.push((TokenKind::LetToken,r"let"));
         map.push((TokenKind::ReturnToken,r"return"));
         map.push((TokenKind::BreakToken,r"break"));
