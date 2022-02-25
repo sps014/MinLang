@@ -57,7 +57,7 @@ impl<'a> Parser<'a>
         if self.current_token_index + offset >= self.tokens.len(){Parser::new_eof_token()}
         else { self.tokens[self.current_token_index + offset].clone() }
     }
-
+    ///checks if the current token is of the given kind, returns that token, moves to next token else returns error
     fn match_token(&mut self,kind:TokenKind) -> Result<SyntaxToken,Error>
     {
         let token=self.next_token();
@@ -72,15 +72,14 @@ impl<'a> Parser<'a>
                                    token.position.get_point_str())))
         }
     }
-
+    ///parse all tokens from lexer and returns a syntax tree or error
     pub fn parse(&mut self)->Result<SyntaxTree,Error>
     {
         self.tokens = self.lexer.lex_all();
-        dbg!(&self.tokens);
         Ok(SyntaxTree::new(self.parse_program()?))
     }
 
-    //get all functions in the file
+    ///get all functions in the file
     fn parse_program(&mut self)->Result<ProgramNode,Error>
     {
         let mut functions=vec![];
@@ -91,6 +90,7 @@ impl<'a> Parser<'a>
         }
         Ok(ProgramNode::new(functions))
     }
+    ///parse a function
     fn parse_function(&mut self)->Result<FunctionNode,Error>
     {
         //eat the fun keyword
@@ -107,6 +107,7 @@ impl<'a> Parser<'a>
         let block=self.parse_block()?;
         Ok(FunctionNode::new(function_name,return_type,params,block))
     }
+    ///parse formal parameters
     fn parse_formal_parameters(&mut self)->Result<Vec<ParameterNode>,Error>
     {
         let mut params=vec![];
@@ -140,6 +141,7 @@ impl<'a> Parser<'a>
         Ok(params)
     }
 
+    ///parse a block
     fn parse_block(&mut self)->Result<Vec<StatementNode>,Error>
     {
         //eat the open curly brace
@@ -155,6 +157,7 @@ impl<'a> Parser<'a>
         self.match_token(TokenKind::CurlyCloseBracketToken)?;
         Ok(statements)
     }
+    ///parse a statement
     fn parse_statement(&mut self)->Result<StatementNode,Error>
     {
         let cur = self.current_token();
@@ -203,6 +206,8 @@ impl<'a> Parser<'a>
                        format!("Expected statement but found {:?} at {}",self.current_token().text,
                                self.current_token().position.get_point_str())))
     }
+
+    ///parse a variable declaration
     fn parse_declaration(&mut self)->Result<StatementNode,Error>
     {
         //eat the keyword let
@@ -215,6 +220,8 @@ impl<'a> Parser<'a>
         self.match_token(TokenKind::SemicolonToken)?;
         Ok(StatementNode::Declaration(identifier,expression))
     }
+
+    ///parse  return statement
     fn parse_assignment(&mut self)->Result<StatementNode,Error>
     {
         //eat the identifier
@@ -226,6 +233,7 @@ impl<'a> Parser<'a>
         self.match_token(TokenKind::SemicolonToken)?;
         Ok(StatementNode::Assignment(identifier,expression))
     }
+    ///parse a expression of valid token with precedence (default 0)
     fn parse_expression(&mut self,parent_precedence:i32)->Result<ExpressionNode,Error>
     {
         let mut left;
@@ -251,6 +259,7 @@ impl<'a> Parser<'a>
         }
         Ok(left)
     }
+    ///parse a term in expression like literal,identifier,function call
     fn parse_primary_expression(&mut self)->Result<ExpressionNode,Error>
     {
         //parse parenthesized expressions

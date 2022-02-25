@@ -2,18 +2,6 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 
-///Used to keep track of parent of the node of the given syntax node
-#[derive(Debug,Clone)]
-pub enum SyntaxNode
-{
-    Program(ProgramNode),
-    FunctionDeclaration(FunctionNode),
-    Parameter(ParameterNode),
-    Statement(StatementNode),
-    Expression(ExpressionNode),
-    Number(NumberLiteral),
-}
-
 #[derive(Debug,Clone)]
 pub struct ProgramNode
 {
@@ -80,7 +68,7 @@ pub enum ExpressionNode
     FunctionCall(SyntaxToken, Vec<ExpressionNode>),
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug,Clone,PartialEq)]
 pub enum NumberLiteral
 {
     Integer(SyntaxToken),
