@@ -1,5 +1,5 @@
 use std::io::{Error, ErrorKind};
-use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, NumberLiteral, ProgramNode, StatementNode};
+use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, TypeLiteral, ProgramNode, StatementNode};
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 use crate::Parser;
 
@@ -13,7 +13,7 @@ impl<'a> Anaylzer<'a> {
     pub fn analyze(&mut self) -> Result<(), Error> {
         let mut ast = self.parser.parse()?;
         let pgm= ast.get_root();
-        self.analyze_pgm(pgm.clone());
+        self.analyze_pgm(pgm.clone())?;
         Ok(())
     }
     fn analyze_pgm(&self,node:ProgramNode) -> Result<(), Error> {
@@ -43,11 +43,12 @@ impl<'a> Anaylzer<'a> {
         Ok(())
     }
     ///return type is returned currently int and float supported
-    fn analyze_declaration(&self,left:&SyntaxToken,right:&ExpressionNode,parent_function:&FunctionNode)->Result<(NumberLiteral),Error> {
+    fn analyze_declaration(&self,left:&SyntaxToken,right:&ExpressionNode,parent_function:&FunctionNode)->Result<(TypeLiteral),Error> {
         //return right type
-        Ok(self.analyze_expression(right,parent_function)?)
+        let right=self.analyze_expression(right,parent_function)?;
+        Ok(right)
     }
-    fn analyze_expression(&self,expression:&ExpressionNode,parent_function:&FunctionNode)->Result<(NumberLiteral),Error> {
+    fn analyze_expression(&self,expression:&ExpressionNode,parent_function:&FunctionNode)->Result<(TypeLiteral),Error> {
         match expression
         {
             ExpressionNode::Number(number) =>
@@ -59,12 +60,18 @@ impl<'a> Anaylzer<'a> {
             _=>return Err(Error::new(ErrorKind::Other,format!("Not implemented expression {:?}",expression)))
         };
     }
-    fn analyze_binary_expression(&self,left:&ExpressionNode,op:&SyntaxToken,right:&ExpressionNode,parent_function:&FunctionNode)->Result<(NumberLiteral),Error> {
+    fn analyze_binary_expression(&self,left:&ExpressionNode,op:&SyntaxToken,right:&ExpressionNode,parent_function:&FunctionNode)->Result<(TypeLiteral),Error> {
         let left_value = self.analyze_expression(left,parent_function)?;
         let right_value = self.analyze_expression(right,parent_function)?;
-        if left_value==right_value {
-            return Ok(left_value);
+        return match (&left_value,&right_value) {
+            (TypeLiteral::Float(_), TypeLiteral::Float(_))=>
+                 Ok(left_value),
+            (TypeLiteral::Integer(_), TypeLiteral::Integer(_))=>
+                 Ok(left_value),
+            (TypeLiteral::String(_), TypeLiteral::String(_))=>
+                 Ok(left_value),
+            _=>
+                 Err(Error::new(ErrorKind::Other,format!("Binary expression {:?} and {:?} are not same type",left_value,right_value)))
         }
-        Err(Error::new(ErrorKind::Other,format!("Binary expression {:?} and {:?} are not same type",left_value,right_value)))
     }
 }

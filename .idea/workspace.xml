@@ -13,13 +13,14 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="44a0d877-f1c5-4682-8ee2-71f570a7ee1d" name="Default Changelist" comment="">
+      <change afterPath="$PROJECT_DIR$/src/lang/semantic_analysis/symbol_table.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax/lexer.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/lexer.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax/parser.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/parser.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax/syntax_node.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/syntax_node.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/text/text_span.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/text/text_span.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/token/syntax_token.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/token/syntax_token.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/mod.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/lang/semantic_analysis/analyzer.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/semantic_analysis/analyzer.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lang/semantic_analysis/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/semantic_analysis/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -137,7 +138,7 @@
       <workItem from="1645691207669" duration="3918000" />
       <workItem from="1645703077355" duration="9415000" />
       <workItem from="1645779416034" duration="1700000" />
-      <workItem from="1645781395725" duration="5221000" />
+      <workItem from="1645781395725" duration="8216000" />
     </task>
     <servers />
   </component>
@@ -154,6 +155,22 @@
         </entry>
       </map>
     </option>
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" type="com.jetbrains.cidr.execution.debugger.OCBreakpointType">
+          <url>file://$PROJECT_DIR$/src/lang/semantic_analysis/analyzer.rs</url>
+          <line>48</line>
+          <option name="timeStamp" value="7" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="com.jetbrains.cidr.execution.debugger.OCBreakpointType">
+          <url>file://$PROJECT_DIR$/src/lang/semantic_analysis/analyzer.rs</url>
+          <line>26</line>
+          <option name="timeStamp" value="8" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

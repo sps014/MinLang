@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 use std::hash::Hash;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
+use crate::lang::code_analysis::token::token_kind::TokenKind;
 
 #[derive(Debug,Clone)]
 pub struct ProgramNode
@@ -59,18 +60,29 @@ pub enum StatementNode
 #[derive(Debug,Clone)]
 pub enum ExpressionNode
 {
-    Number(NumberLiteral),
+    Number(TypeLiteral),
     Binary(Box<ExpressionNode>, SyntaxToken, Box<ExpressionNode>),
     Unary(SyntaxToken, Box<ExpressionNode>),
-    StringLiteral(SyntaxToken),
     Identifier(SyntaxToken),
     Parenthesized(Box<ExpressionNode>),
     FunctionCall(SyntaxToken, Vec<ExpressionNode>),
 }
 
 #[derive(Debug,Clone,PartialEq)]
-pub enum NumberLiteral
+pub enum TypeLiteral
 {
     Integer(SyntaxToken),
     Float(SyntaxToken),
+    String(SyntaxToken),
+}
+
+impl TypeLiteral {
+    pub fn get_type(&self)->String
+    {
+        match self {
+            TypeLiteral::Integer(_) => "int",
+            TypeLiteral::Float(_) => "float",
+            TypeLiteral::String(_) => "string",
+        }.to_string()
+    }
 }

@@ -3,42 +3,23 @@ use std::{collections::HashMap, io::stdin};
 use std::error::Error;
 use lang::code_analysis::syntax::lexer::Lexer;
 use crate::lang::code_analysis::syntax::parser::Parser;
+use crate::lang::semantic_analysis::analyzer::Anaylzer;
 
 fn main() {
 
-    let lexer= Lexer::new(r"fun abc(test:int,alpha:float)
+    let input_text=r"fun abc(test:int,alpha:float)
     {
-        let a= 5.6+c*9+abc(a,b);
-        test(45,7+9);
-        return 5;
-        while(a>b)
-        {
-            a=a+b;
-            b=a-b;
-        }
-        if a+b
-        {
-            return;
-        }
-        else if a+b
-        {
-            return 5;
-        }
-        else
-        {
-            continue;
-            return 2;
-        }
+        let a=4+1.5;
 
-    }".to_string());
+    }";
 
-
+    let lexer= Lexer::new(input_text.to_string());
     let mut parser=Parser::new(lexer);
-
-    let ast=parser.parse();
-    match ast {
-        Ok(ast) =>
-            println!("{:?}",ast.get_root()),
+    let mut analyzer=Anaylzer::new(parser);
+    let result=analyzer.analyze();
+    match result{
+        Ok(()) =>
+            println!("No errors found"),
 
         Err(e) => println!("error: {:?}",e.description()),
     }
