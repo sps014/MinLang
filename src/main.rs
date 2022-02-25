@@ -9,7 +9,8 @@ fn main() {
 
     let input_text=r"fun abc(test:int,alpha:float)
     {
-        let a=4+1.5;
+        let b=5;
+        let a=4.7+1.5+b;
 
     }";
 

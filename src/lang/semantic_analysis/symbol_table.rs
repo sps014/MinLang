@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
+use crate::lang::code_analysis::syntax::syntax_node::TypeLiteral;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 
 pub struct  SymbolTable
 {
-    symbols: HashMap<String,SyntaxToken>,
+    symbols: HashMap<String,TypeLiteral>,
 }
 
 impl SymbolTable {
@@ -13,20 +14,20 @@ impl SymbolTable {
             symbols: HashMap::new(),
         }
     }
-    fn get_key_name(name:String,parent_name:String) -> String {
-        if parent_name.is_empty() {
-            name
-        } else {
-            format!("{}.{}",parent_name,name)
-        }
-    }
-    pub fn add_symbol(&mut self,name:String,token:SyntaxToken,parent:String)->Result<(),Error> {
-        let key=SymbolTable::get_key_name(name.clone(),parent);
 
-        return match self.symbols.insert(key,token)
+    pub fn add_symbol(&mut self,name:String,token:TypeLiteral)->Result<(),Error> {
+
+        return match self.symbols.insert(name.clone(),token)
         {
             Some(_) => Err(Error::new(ErrorKind::Other,format!("variable {} already exists",name))),
             None => Ok(()),
+        }
+    }
+    pub fn get_symbol(&self,name:String)->Result<TypeLiteral,Error> {
+        return match self.symbols.get(&name)
+        {
+            Some(token) => Ok(token.clone()),
+            None => Err(Error::new(ErrorKind::Other,format!("variable {} does not exist",name))),
         }
     }
 }
