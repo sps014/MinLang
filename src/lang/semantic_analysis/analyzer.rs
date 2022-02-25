@@ -44,6 +44,8 @@ impl<'a> Anaylzer<'a> {
         {
             StatementNode::Declaration(left,right) =>
                 self.analyze_declaration(left,right,parent_function,symbol_table)?,
+            StatementNode::Assignment(left,right) =>
+                self.analyze_assignment(left,right,parent_function,symbol_table)?,
             _=>return Err(Error::new(ErrorKind::Other,format!("Not implemented statement {:?}",statement)))
         };
         Ok(())
@@ -52,8 +54,14 @@ impl<'a> Anaylzer<'a> {
     fn analyze_declaration(&self,left:&SyntaxToken,right:&ExpressionNode,parent_function:&FunctionNode,symbol_table:&mut SymbolTable)->Result<(TypeLiteral),Error> {
         //return right type
         let right=self.analyze_expression(right,parent_function,symbol_table)?;
-        symbol_table.add_symbol(left.text.clone(),right.clone());
+        symbol_table.add_symbol(left.text.clone(),right.clone())?;
         Ok(right)
+    }
+    fn analyze_assignment(&self,left:&SyntaxToken,right:&ExpressionNode,parent_function:&FunctionNode,symbol_table:&mut SymbolTable)->Result<(TypeLiteral),Error> {
+        let right=self.analyze_expression(right,parent_function,symbol_table)?;
+        let left =symbol_table.get_symbol(left.text.clone())?;
+        self.compare_data_type(&left,&right)?;
+        Ok(left)
     }
     fn analyze_expression(&self,expression:&ExpressionNode,parent_function:&FunctionNode,symbol_table:&mut SymbolTable)->Result<(TypeLiteral),Error> {
         return match expression
@@ -72,17 +80,16 @@ impl<'a> Anaylzer<'a> {
     fn analyze_binary_expression(&self,left:&ExpressionNode,op:&SyntaxToken,right:&ExpressionNode,parent_function:&FunctionNode,symbol_table:&mut SymbolTable)->Result<(TypeLiteral),Error> {
         let left_value = self.analyze_expression(left,parent_function,symbol_table)?;
         let right_value = self.analyze_expression(right,parent_function,symbol_table)?;
-        return match (&left_value,&right_value) {
-            (TypeLiteral::Float(_), TypeLiteral::Float(_))=>
-                 Ok(left_value),
-            (TypeLiteral::Integer(_), TypeLiteral::Integer(_))=>
-                 Ok(left_value),
-            (TypeLiteral::String(_), TypeLiteral::String(_))=>
-                 Ok(left_value),
-            (l,r)=>
-                 Err(Error::new(ErrorKind::Other,format!("Binary expression {} and {} are not same type at {} and {}",
-                                                         l.get_type(),r.get_type(),l.get_line_str(),r.get_line_str())))
+        self.compare_data_type(&left_value,&right_value)?;
+        return Ok(left_value);
+    }
+    fn compare_data_type(&self,left:&TypeLiteral,right:&TypeLiteral)->Result<(),Error> {
+        if left.get_type()==right.get_type()
+        {
+            return Ok(())
         }
+        Err(Error::new(ErrorKind::Other,format!("Binary expression {} and {} are not same type at {} and {}",
+                                                left.get_type(),right.get_type(),left.get_line_str(),right.get_line_str())))
     }
     fn analyze_identifier(&self,id:&SyntaxToken,symbol_table:&mut SymbolTable)->Result<(TypeLiteral),Error> {
         symbol_table.get_symbol(id.text.clone())
