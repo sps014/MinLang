@@ -30,15 +30,12 @@ impl SymbolTable{
             None => Ok(()),
         }
     }
-    pub fn get_symbol(&self,name:String)->Result<TypeLiteral,Error> {
-        if self.symbols.contains_key(&name)
+    pub fn get_symbol(&self,name:SyntaxToken)->Result<TypeLiteral,Error> {
+        if self.symbols.contains_key(&name.text)
         {
-            return Ok(self.symbols.get(&name).unwrap().clone());
+            return Ok(self.symbols.get(&name.text).unwrap().clone());
         }
-        if self.parent.is_none()
-        {
-            return  Err(Error::new(ErrorKind::Other,format!("variable {} does not exist",name)));
-        }
+
         match self.parent
         {
             Some(ref parent) =>
@@ -48,7 +45,8 @@ impl SymbolTable{
                 }
             None =>
                 {
-                    return Err(Error::new(ErrorKind::Other, format!("variable {} does not exist", name)));
+                    return Err(Error::new(ErrorKind::Other, format!("variable {} does not exist at: {}"
+                                                                    , name.text,name.position.get_point_str())));
                 }
         }
 

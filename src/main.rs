@@ -4,7 +4,6 @@ use std::error::Error;
 use lang::code_analysis::syntax::lexer::Lexer;
 use crate::lang::code_analysis::syntax::parser::Parser;
 use crate::lang::semantic_analysis::analyzer::Anaylzer;
-
 fn main() {
 
     let input_text=r"fun abc(test:int,alpha:float)
@@ -12,13 +11,13 @@ fn main() {
         let b=5.0;
         let a=4.7+1.5+b;
         b=8.8;
-        let c=8;
-        if a+b
+        let c=6;
+        if a+b-d
         {
           let c=c+1;
-          if b+c
+          if c+7
           {
-             let c=b+1;
+             let c=1;
           }
         }
 
@@ -32,7 +31,7 @@ fn main() {
         Ok(()) =>
             println!("No errors found"),
 
-        Err(e) => println!("error: {:?}",e.description()),
+        Err(e) => println!("error: {}",e),
     }
 }
 
