@@ -1,19 +1,20 @@
 use std::borrow::Borrow;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use crate::lang::code_analysis::syntax::syntax_node::TypeLiteral;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 
-#[derive(Debug, Clone)]
-pub struct  SymbolTable
+#[derive(Debug)]
+pub struct SymbolTable
 {
     symbols: HashMap<String,TypeLiteral>,
-    parent: Option<Rc<SymbolTable>>,
+    parent: Option<Rc<RefCell<SymbolTable>>>,
 }
 
-impl SymbolTable {
-    pub fn new(parent:Option<Rc<SymbolTable>>) -> SymbolTable {
+impl SymbolTable{
+    pub fn new(parent:  Option<Rc<RefCell<SymbolTable>>>) -> SymbolTable {
         SymbolTable {
             symbols: HashMap::new(),
             parent
@@ -34,12 +35,22 @@ impl SymbolTable {
         {
             return Ok(self.symbols.get(&name).unwrap().clone());
         }
-
-        let p=self.parent.borrow();
-        if p.is_none()
+        if self.parent.is_none()
         {
             return  Err(Error::new(ErrorKind::Other,format!("variable {} does not exist",name)));
         }
-        return Ok(p.as_ref().unwrap().get_symbol(name)?);
+        match self.parent
+        {
+            Some(ref parent) =>
+                {
+                    let r=(*parent).as_ref().borrow().get_symbol(name)?;
+                    return Ok(r);
+                }
+            None =>
+                {
+                    return Err(Error::new(ErrorKind::Other, format!("variable {} does not exist", name)));
+                }
+        }
+
     }
 }
