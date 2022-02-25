@@ -30,11 +30,15 @@ impl<'a> Anaylzer<'a> {
         self.analyze_body(&function.body,function,None)?;
         Ok(())
     }
-    fn analyze_body(&self, body:&Vec<StatementNode>, parent_function:&FunctionNode, parent_table:Option<Rc<RefCell<SymbolTable>>>) ->Result<(),Error> {
 
+    fn analyze_body(&self, body:&Vec<StatementNode>, parent_function:&FunctionNode,
+                    parent_table:Option<&Rc<RefCell<SymbolTable>>>) ->Result<(),Error> {
 
-        let mut symbol_table =
-            Rc::new(RefCell::new(SymbolTable::new(parent_table)));
+        let parent_scope =match parent_table {
+            Some(t) => Some(Rc::clone(t)),
+            None => None,
+        };
+        let mut symbol_table = Rc::new(RefCell::new(SymbolTable::new(parent_scope)));
         for statement in body.iter() {
             self.analyze_statement(statement,parent_function,&symbol_table)?;
         }
@@ -106,24 +110,14 @@ impl<'a> Anaylzer<'a> {
         let r=(*symbol_table).as_ref().borrow_mut().get_symbol(id.text.clone())?;
         Ok(r)
     }
-    fn analyze_block(&self, body:&Vec<StatementNode>, parent_function:&FunctionNode,
-                     parent_table: &Rc<RefCell<SymbolTable>>) ->Result<(),Error> {
 
-
-        let mut symbol_table = Rc::new(
-            RefCell::new(SymbolTable::new(Some(Rc::clone(parent_table)))));
-        for statement in body.iter() {
-            self.analyze_statement(statement,parent_function,&mut symbol_table)?;
-        }
-        Ok(())
-    }
     fn analyze_if_else(&self, condition:&ExpressionNode, if_body:&Vec<StatementNode>,
                        else_if:&Vec<(ExpressionNode, Vec<StatementNode>)>,
                        else_body: &Option<Vec<StatementNode>>,
                        parent_function:&FunctionNode, symbol_table:&Rc<RefCell<SymbolTable>>) ->
     Result<(),Error>
     {
-        let r=self.analyze_block(if_body,parent_function,symbol_table)?;
+        let r=self.analyze_body(if_body,parent_function,Some(symbol_table))?;
         Ok(())
     }
 

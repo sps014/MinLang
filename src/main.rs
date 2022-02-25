@@ -12,6 +12,15 @@ fn main() {
         let b=5.0;
         let a=4.7+1.5+b;
         b=8.8;
+        let c=8;
+        if a+b
+        {
+          let c=c+1;
+          if b+c
+          {
+             let c=b+1;
+          }
+        }
 
     }";
 
