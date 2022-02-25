@@ -4,7 +4,7 @@ use crate::lang::code_analysis::text::line_text::LineText;
 
 /// a struct representing start and end of a token
 /// contains 2 fields of type usize
-#[derive(Debug,Copy,Clone)]
+#[derive(Debug,Copy,Clone,PartialEq)]
 pub struct TextSpan
 {
     pub start:usize, // start index of the token

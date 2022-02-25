@@ -24,3 +24,9 @@ impl SyntaxToken
         self.text.trim().to_string()
     }
 }
+
+impl PartialEq for SyntaxToken {
+    fn eq(&self, other: &SyntaxToken) -> bool {
+        self.kind == other.kind && self.text == other.text && self.position.start== other.position.start
+    }
+}
