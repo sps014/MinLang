@@ -1,4 +1,5 @@
 use std::io::{Error, ErrorKind};
+use std::rc::Rc;
 use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, TypeLiteral, ProgramNode, StatementNode};
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 use crate::lang::semantic_analysis::symbol_table::SymbolTable;
@@ -24,11 +25,13 @@ impl<'a> Anaylzer<'a> {
         Ok(())
     }
     fn analyze_function(&self,function:&FunctionNode) -> Result<(), Error> {
-        self.analyze_body(&function.body,function)?;
+        self.analyze_body(&function.body,function,None)?;
         Ok(())
     }
-    fn analyze_body(&self,body:&Vec<StatementNode>,parent_function:&FunctionNode)->Result<(),Error> {
-       let mut symbol_table = SymbolTable::new();
+    fn analyze_body(&self,body:&Vec<StatementNode>,parent_function:&FunctionNode,parent_table:Option<Rc<SymbolTable>>)->Result<(),Error> {
+
+
+        let mut symbol_table = SymbolTable::new(parent_table);
 
         for statement in body.iter() {
             self.analyze_statement(statement,parent_function,&mut symbol_table)?;
