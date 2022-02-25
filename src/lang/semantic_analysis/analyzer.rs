@@ -76,8 +76,9 @@ impl<'a> Anaylzer<'a> {
                  Ok(left_value),
             (TypeLiteral::String(_), TypeLiteral::String(_))=>
                  Ok(left_value),
-            _=>
-                 Err(Error::new(ErrorKind::Other,format!("Binary expression {:?} and {:?} are not same type",left_value,right_value)))
+            (l,r)=>
+                 Err(Error::new(ErrorKind::Other,format!("Binary expression {} and {} are not same type at {} and {}",
+                                                         l.get_type(),r.get_type(),l.get_line_str(),r.get_line_str())))
         }
     }
     fn analyze_identifier(&self,id:&SyntaxToken,symbol_table:&mut SymbolTable)->Result<(TypeLiteral),Error> {

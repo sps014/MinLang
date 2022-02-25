@@ -85,4 +85,12 @@ impl TypeLiteral {
             TypeLiteral::String(_) => "string",
         }.to_string()
     }
+    pub fn get_line_str(&self)->String
+    {
+        match self {
+            TypeLiteral::Integer(token) => token.position.get_point_str(),
+            TypeLiteral::Float(token) => token.position.get_point_str(),
+            TypeLiteral::String(token) =>token.position.get_point_str(),
+        }
+    }
 }
