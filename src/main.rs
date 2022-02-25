@@ -26,15 +26,19 @@ fn main() {
         }
         else
         {
+            continue;
             return 2;
         }
 
     }".to_string());
+
+
     let mut parser=Parser::new(lexer);
+
     let ast=parser.parse();
     match ast {
         Ok(ast) =>
-            println!("{:?}",ast),
+            println!("{:?}",ast.get_root()),
 
         Err(e) => println!("error: {:?}",e.description()),
     }

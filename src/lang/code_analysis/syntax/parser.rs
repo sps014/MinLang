@@ -1,5 +1,6 @@
 use std::io::{Error, ErrorKind};
 use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, NumberLiteral, ParameterNode, ProgramNode, StatementNode};
+use crate::lang::code_analysis::syntax::syntax_tree::SyntaxTree;
 use crate::lang::code_analysis::text::line_text::LineText;
 use crate::lang::code_analysis::text::text_span::TextSpan;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
@@ -72,11 +73,11 @@ impl<'a> Parser<'a>
         }
     }
 
-    pub fn parse(&mut self)->Result<ProgramNode,Error>
+    pub fn parse(&mut self)->Result<SyntaxTree,Error>
     {
         self.tokens = self.lexer.lex_all();
         dbg!(&self.tokens);
-        self.parse_program()
+        Ok(SyntaxTree::new(self.parse_program()?))
     }
 
     //get all functions in the file
@@ -169,6 +170,12 @@ impl<'a> Parser<'a>
         } else if cur.kind == TokenKind::WhileToken
         {
             return Ok(self.parse_while()?);
+        } else if cur.kind==TokenKind::BreakToken
+        {
+            return Ok(self.parse_break()?);
+        } else if cur.kind==TokenKind::ContinueToken
+        {
+           return Ok(self.parse_continue()?);
         }
         else if cur.kind==TokenKind::IdentifierToken
         {
@@ -353,5 +360,21 @@ impl<'a> Parser<'a>
         let condition=self.parse_expression(0)?;
         let body=self.parse_block()?;
         Ok(StatementNode::While(condition,body))
+    }
+    fn parse_break(&mut self)->Result<StatementNode,Error>
+    {
+        //eat the break keyword
+        self.match_token(TokenKind::BreakToken)?;
+        //eat the semicolon
+        self.match_token(TokenKind::SemicolonToken)?;
+        Ok(StatementNode::Break)
+    }
+    fn parse_continue(&mut self)->Result<StatementNode,Error>
+    {
+        //eat the continue keyword
+        self.match_token(TokenKind::ContinueToken)?;
+        //eat the semicolon
+        self.match_token(TokenKind::SemicolonToken)?;
+        Ok(StatementNode::Continue)
     }
 }
