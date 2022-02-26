@@ -1,19 +1,22 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use std::rc::Rc;
 use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, TypeLiteral, ProgramNode, StatementNode};
 use crate::lang::code_analysis::text::text_span::TextSpan;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 use crate::lang::semantic_analysis::function_control_flow::FunctionControlGraph;
+use crate::lang::semantic_analysis::function_table::{FunctionTable, FunctionTableInfo};
 use crate::lang::semantic_analysis::symbol_table::SymbolTable;
 use crate::Parser;
 
 pub struct Anaylzer<'a> {
     parser: Parser<'a>,
+    function_table:FunctionTable
 }
 impl<'a> Anaylzer<'a> {
     pub fn new(parser: Parser<'a>) -> Self {
-        Self { parser }
+        Self { parser, function_table: FunctionTable::new() }
     }
     pub fn analyze(&mut self) -> Result<(), Error> {
         let ast = self.parser.parse()?;
@@ -21,17 +24,19 @@ impl<'a> Anaylzer<'a> {
         self.analyze_pgm(pgm.clone())?;
         Ok(())
     }
-    fn analyze_pgm(&self,node:ProgramNode) -> Result<(), Error> {
+    fn analyze_pgm(&mut self,node:ProgramNode) -> Result<(), Error> {
      for function in node.functions.iter() {
          self.analyze_function(function)?;
      }
         Ok(())
     }
-    fn analyze_function(&self,function:&FunctionNode) -> Result<(), Error> {
+    fn analyze_function(&mut self,function:&FunctionNode) -> Result<(), Error> {
         self.analyze_body(&function.body,function,None,false)?;
         // check return
         let mut graph=FunctionControlGraph::new(function);
         //graph.build()?;
+        let cp=function.clone();
+        self.function_table.add_function(cp.name.text,FunctionTableInfo::from(function))?;
         Ok(())
     }
 
@@ -69,9 +74,36 @@ impl<'a> Anaylzer<'a> {
                 self.analyze_break(parent_function,&symbol_table,has_parent_while)?,
             StatementNode::Continue=>
                 self.analyze_continue(parent_function,&symbol_table,has_parent_while)?,
+            StatementNode::FunctionInvocation(name,params) =>
+                {self.analyze_function_call(name,params,parent_function,symbol_table)?;},
             _=>return Err(Error::new(ErrorKind::Other,format!("Not implemented statement {:?}",statement)))
         };
         Ok(())
+    }
+    fn analyze_function_call(&self,name:&SyntaxToken,params:&Vec<ExpressionNode>,
+                                   parent_function:&FunctionNode,
+                                   symbol_table:&Rc<RefCell<SymbolTable>>)->Result<TypeLiteral,Error> {
+        let function_name=name.text.clone();
+        let mut params_types=vec![];
+        for param in params.iter() {
+            params_types.push(self.analyze_expression(param,parent_function,symbol_table)?.get_type());
+        }
+        let store_sig=self.function_table.get_function(&function_name)?;
+
+        if store_sig.parameters.len()!=params_types.len() {
+            return Err(Error::new(ErrorKind::Other,format!("Function {} has {} params but {} params are given",
+                                                           function_name,store_sig.parameters.len(),params_types.len())));
+        }
+
+        for i in 0..params_types.len() {
+            if store_sig.parameters.get(i)!=params_types.get(i) {
+                return Err(Error::new(ErrorKind::Other,format!("Function {} has param {} of type {:?} but param {} of type {:?} is given",
+                                                               function_name,i,store_sig.parameters.get(i),i,params_types[i])));
+            }
+        }
+
+        //let r_type=&store_sig.return_type;
+        Ok(store_sig.return_type.unwrap_or(TypeLiteral::Void))
     }
     fn analyze_break(&self,parent_function:&FunctionNode,symbol_table:&Rc<RefCell<SymbolTable>>,has_parent_while:bool)->Result<(),Error> {
         if !has_parent_while {
@@ -121,6 +153,10 @@ impl<'a> Anaylzer<'a> {
                 Ok(self.analyze_binary_expression(left,opr,right,parent_function,symbol_table)?),
             ExpressionNode::Identifier(id)=>
                 Ok(self.analyze_identifier(id,symbol_table)?),
+            ExpressionNode::FunctionCall(name,params)=>
+                Ok(self.analyze_function_call(name,params,parent_function,symbol_table)?),
+            ExpressionNode::Parenthesized(expr)=>
+                Ok(self.analyze_expression(expr,parent_function,symbol_table)?),
             _=>return Err(Error::new(ErrorKind::Other,format!("Not implemented expression {:?}",expression)))
         };
     }
