@@ -1,27 +1,43 @@
 mod lang;
-use crate::lang::code_analysis::evaluator::Evaluator;
-use lang::code_analysis::parser::*;
-use std::{collections::HashMap, io::stdin};
-
+use lang::code_analysis::syntax::lexer::Lexer;
+use crate::lang::code_analysis::syntax::parser::Parser;
+use crate::lang::semantic_analysis::analyzer::Anaylzer;
 fn main() {
-    let mut variables: HashMap<String, i32> = HashMap::new();
 
-    loop {
-        println!("\n");
+    let input_text=r#"
+    fun get_pi(a:int) :float
+    {
+        return 3.14;
+    }
+    fun abc(test:int,alpha:float):float
+    {
+        let b=get_pi(5);
+        let d="88 this is some string"+"and some sara";
+        let a=4.7+1.5+b;
+        b=8.8;
+        let c=6;
+        if a+b
+        {
+          let c=c+1;
+          return a;
+          while c>10
+          {
+            break;
+          }
+        }
 
-        let mut line: String = String::new();
-        stdin().read_line(&mut line).unwrap();
-        let e = line.trim_end().to_string();
-        call(e, &mut variables);
+
+    }"#;
+
+    let lexer= Lexer::new(input_text.to_string());
+    let parser=Parser::new(lexer);
+    let mut analyzer=Anaylzer::new(parser);
+    let result=analyzer.analyze();
+    match result{
+        Ok(()) =>
+            println!("No errors found"),
+
+        Err(e) => println!("error: {}",e),
     }
 }
-fn call(input: String, variables: &mut HashMap<String, i32>) {
-    let mut p = Parser::new(input.as_str());
-    let tree = p.parse();
-    //println!("{:?}",tree.root);
-    let mut e = Evaluator::new(*tree.root);
-    match e.evaluate(variables) {
-        Ok(n) => {}
-        Err(e) => println!("Error occurred {}", e.to_string()),
-    }
-}
+
