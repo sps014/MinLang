@@ -6,20 +6,22 @@ use crate::lang::code_analysis::syntax::parser::Parser;
 use crate::lang::semantic_analysis::analyzer::Anaylzer;
 fn main() {
 
-    let input_text=r"fun abc(test:int,alpha:float)
+    let input_text=r"fun abc(test:int,alpha:float):float
     {
         let b=5.0;
         let a=4.7+1.5+b;
         b=8.8;
         let c=6;
-        if a+b-d
+        if a+b
         {
           let c=c+1;
-          if c+7
+          return a;
+          while c>10
           {
-             let c=1;
+            break;
           }
         }
+
 
     }";
 

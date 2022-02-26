@@ -4,6 +4,7 @@ use std::rc::Rc;
 use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, TypeLiteral, ProgramNode, StatementNode};
 use crate::lang::code_analysis::text::text_span::TextSpan;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
+use crate::lang::semantic_analysis::function_control_flow::FunctionControlGraph;
 use crate::lang::semantic_analysis::symbol_table::SymbolTable;
 use crate::Parser;
 
@@ -27,12 +28,15 @@ impl<'a> Anaylzer<'a> {
         Ok(())
     }
     fn analyze_function(&self,function:&FunctionNode) -> Result<(), Error> {
-        self.analyze_body(&function.body,function,None)?;
+        self.analyze_body(&function.body,function,None,false)?;
+        // check return
+        let mut graph=FunctionControlGraph::new(function);
+        //graph.build()?;
         Ok(())
     }
 
     fn analyze_body(&self, body:&Vec<StatementNode>, parent_function:&FunctionNode,
-                    parent_table:Option<&Rc<RefCell<SymbolTable>>>) ->Result<(),Error> {
+                    parent_table:Option<&Rc<RefCell<SymbolTable>>>,has_parent_loop:bool) ->Result<(),Error> {
 
         let parent_scope =match parent_table {
             Some(t) => Some(Rc::clone(t)),
@@ -40,12 +44,12 @@ impl<'a> Anaylzer<'a> {
         };
         let symbol_table = Rc::new(RefCell::new(SymbolTable::new(parent_scope)));
         for statement in body.iter() {
-            self.analyze_statement(statement,parent_function,&symbol_table)?;
+            self.analyze_statement(statement,parent_function,&symbol_table,has_parent_loop)?;
         }
-        dbg!(&symbol_table.borrow());
         Ok(())
     }
-    fn analyze_statement(&self,statement:&StatementNode,parent_function:&FunctionNode,symbol_table:&Rc<RefCell<SymbolTable>>)->Result<(),Error>
+    fn analyze_statement(&self,statement:&StatementNode,parent_function:&FunctionNode,
+                         symbol_table:&Rc<RefCell<SymbolTable>>,has_parent_while:bool)->Result<(),Error>
     {
         match statement
         {
@@ -56,9 +60,38 @@ impl<'a> Anaylzer<'a> {
             StatementNode::IfElse(condition,if_body,
                                   else_if,else_body)=>
                 self.analyze_if_else(condition,if_body,
-                                     else_if,else_body,parent_function,&symbol_table)?,
+                                     else_if,else_body,parent_function,&symbol_table,has_parent_while)?,
+            StatementNode::Return(expression) =>
+                self.analyze_return(expression,parent_function,&symbol_table)?,
+            StatementNode::While(condition,body) =>
+                self.analyze_while(condition,body,parent_function,&symbol_table)?,
+            StatementNode::Break=>
+                self.analyze_break(parent_function,&symbol_table,has_parent_while)?,
+            StatementNode::Continue=>
+                self.analyze_continue(parent_function,&symbol_table,has_parent_while)?,
             _=>return Err(Error::new(ErrorKind::Other,format!("Not implemented statement {:?}",statement)))
         };
+        Ok(())
+    }
+    fn analyze_break(&self,parent_function:&FunctionNode,symbol_table:&Rc<RefCell<SymbolTable>>,has_parent_while:bool)->Result<(),Error> {
+        if !has_parent_while {
+            return Err(Error::new(ErrorKind::Other,
+                                  format!("Break statement is not in a while loop in function {}",parent_function.name.text)));
+        }
+        Ok(())
+    }
+    fn analyze_continue(&self,parent_function:&FunctionNode,symbol_table:&Rc<RefCell<SymbolTable>>,has_parent_while:bool)->Result<(),Error> {
+        if !has_parent_while {
+            return Err(Error::new(ErrorKind::Other,
+                                  format!("Continue statement is not in a while loop in function {}",parent_function.name.text)));
+        }
+        Ok(())
+    }
+    fn analyze_while(&self,condition:&ExpressionNode,body:&Vec<StatementNode>,
+                     parent_function:&FunctionNode,symbol_table:&Rc<RefCell<SymbolTable>>)->Result<(),Error>
+    {
+        self.analyze_expression(condition,parent_function,symbol_table)?;
+        self.analyze_body(body,parent_function,Some(symbol_table),true)?;
         Ok(())
     }
     ///return type is returned currently int and float supported
@@ -115,25 +148,47 @@ impl<'a> Anaylzer<'a> {
     fn analyze_if_else(&self, condition:&ExpressionNode, if_body:&Vec<StatementNode>,
                        else_if:&Vec<(ExpressionNode, Vec<StatementNode>)>,
                        else_body: &Option<Vec<StatementNode>>,
-                       parent_function:&FunctionNode, symbol_table:&Rc<RefCell<SymbolTable>>) ->
+                       parent_function:&FunctionNode, symbol_table:&Rc<RefCell<SymbolTable>>,has_parent_while:bool) ->
     Result<(),Error>
     {
         //if condition
         self.analyze_expression(condition,parent_function,symbol_table)?;
         //if body
-        self.analyze_body(if_body,parent_function,Some(symbol_table))?;
+        self.analyze_body(if_body,parent_function,Some(symbol_table),has_parent_while)?;
 
         //else if block
         for i in else_if.iter()
         {
             self.analyze_expression(&i.0,parent_function,symbol_table)?;
-            self.analyze_body(&i.1,parent_function,Some(symbol_table))?;
+            self.analyze_body(&i.1,parent_function,Some(symbol_table),has_parent_while)?;
         }
         match else_body
         {
-            Some(body)=>self.analyze_body(body,parent_function,Some(symbol_table))?,
+            Some(body)=>self.analyze_body(body,parent_function,Some(symbol_table),has_parent_while)?,
             None=>()
         }
+        Ok(())
+    }
+    fn analyze_return(&self,expression:&Option<ExpressionNode>,parent_function:&FunctionNode,
+                      symbol_table:&Rc<RefCell<SymbolTable>>)->Result<(),Error> {
+        match (expression,&parent_function.return_type)
+        {
+            (Some(expression),&Some(ref return_type))=>
+            {
+                let r=self.analyze_expression(expression,parent_function,symbol_table)?;
+                if r.get_type()==return_type.get_type() {
+                    return Ok(())
+                }
+                return Err(Error::new(ErrorKind::Other,
+                                      format!("cannot convert return to {} from {}",
+                                              r.get_type(),return_type.get_type())))
+            },
+            (None,&Some(_))=>
+                return Err(Error::new(ErrorKind::Other,format!("return type mismatch at  {}",parent_function.name.position.get_point_str()))),
+            (Some(_),&None)=>
+                return Err(Error::new(ErrorKind::Other,format!("return type mismatch at {}",parent_function.name.position.get_point_str()))),
+            (None,&None)=>()
+        };
         Ok(())
     }
 
