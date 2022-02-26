@@ -1,26 +1,35 @@
 # MinLang
-A minimal scripting language.
+A minimal statically typed turing complete scripting language.
 
-It provide  Base or foundation for writing compilers, Left Recursion Free CFG can be handled by this and custom facilities can be added by Extending `Lexer` , `Parser` and `Bound Tree`. 
+#### features
+1. Statically typed
+2. Type inferencing
+3. turing complete
+4. Semantic analyzer
+5. ultra fast
+5. Clear error messages
+5. web assembly text code generator (wip)
+6. standard library (todo)
 
-<br/>Language can parse , evaluate and generate syntax tree for conditionals and iterations statements with endless nesting
-eg.
 
-```py
-a=7
+eg. 
 
-if a==7
-{
-  print(a)
-}
-
-while(a)
-{
-  print(a)
-  a++
-  if(a>20)
-   a=0
-}
+```kt
+    fun get_pi() :float
+    {
+        return 3.14;
+    }
+    fun abc(test:int,alpha:float):float
+    {
+        let b=get_pi(5);
+        let d="this is \"some\" string"+"another";
+        let a=0.0;
+        while a<b
+        {
+           a=a+1;
+        }
+        return a;
+    }
 
 #and so on
 ```
