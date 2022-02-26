@@ -11,7 +11,6 @@ A minimal statically typed turing complete scripting language.
 5. web assembly text code generator (wip)
 6. standard library (todo)
 
-
 eg. 
 
 ```kt
@@ -21,17 +20,27 @@ eg.
     }
     fun abc(test:int,alpha:float):float
     {
-        let b=get_pi(5);
+        let b=get_pi(5); // infered to float
         let d="this is \"some\" string"+"another";
-        let a=0.0;
-        while a<b
+        let a=0.0; // infered as float
+        let count=0; // infered as int
+        while a<b // no parenthesis required in condition
         {
            a=a+1;
+           //Infinite nesting
+           while 1
+           {
+              count=count+1;
+              if count>100 //supports if else ladder
+              {
+                 break; // support break and continue
+              }
+           }
         }
-        return a;
+        return a; //return control flow analysis
     }
 
-#and so on
+//and so on
 ```
 
 
