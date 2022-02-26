@@ -7,9 +7,9 @@ A minimal statically typed turing complete scripting language.
 3. turing complete
 4. Semantic analyzer
 5. ultra fast
-5. Clear error messages
-5. web assembly text code generator (wip)
-6. standard library (todo)
+6. Clear error messages
+7. web assembly text code generator 
+
 
 eg. 
 
