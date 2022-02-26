@@ -75,6 +75,7 @@ pub enum TypeLiteral
     Integer(SyntaxToken),
     Float(SyntaxToken),
     String(SyntaxToken),
+    Void,
 }
 
 impl TypeLiteral {
@@ -84,6 +85,7 @@ impl TypeLiteral {
             TypeLiteral::Integer(_) => "int",
             TypeLiteral::Float(_) => "float",
             TypeLiteral::String(_) => "string",
+            TypeLiteral::Void => "void",
         }.to_string()
     }
     pub fn get_line_str(&self)->String
@@ -92,6 +94,7 @@ impl TypeLiteral {
             TypeLiteral::Integer(token) => token.position.get_point_str(),
             TypeLiteral::Float(token) => token.position.get_point_str(),
             TypeLiteral::String(token) =>token.position.get_point_str(),
+            TypeLiteral::Void => "".to_string(),
         }
     }
     pub fn from_token(token: SyntaxToken) -> Result<TypeLiteral, Error> {
@@ -99,6 +102,7 @@ impl TypeLiteral {
             "int" => TypeLiteral::Integer(token),
             "float" => TypeLiteral::Float(token),
             "string" => TypeLiteral::String(token),
+            "void" => TypeLiteral::Void,
             _ => return Err(Error::new(ErrorKind::Other,"TypeLiteral::from_token: Unexpected token kind: {:?}"))
         };
         Ok(r)

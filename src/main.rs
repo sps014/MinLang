@@ -6,9 +6,14 @@ use crate::lang::code_analysis::syntax::parser::Parser;
 use crate::lang::semantic_analysis::analyzer::Anaylzer;
 fn main() {
 
-    let input_text=r"fun abc(test:int,alpha:float):float
+    let input_text=r"
+    fun get_pi(a:int) :float
     {
-        let b=5.0;
+        return 3.14;
+    }
+    fun abc(test:int,alpha:float):float
+    {
+        let b=get_pi(5.6);
         let a=4.7+1.5+b;
         b=8.8;
         let c=6;
