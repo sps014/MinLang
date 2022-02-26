@@ -5,6 +5,7 @@ use std::rc::Rc;
 use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, Type, ProgramNode, StatementNode};
 use crate::lang::code_analysis::text::text_span::TextSpan;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
+use crate::lang::code_analysis::token::token_kind::TokenKind;
 use crate::lang::semantic_analysis::function_control_flow::FunctionControlGraph;
 use crate::lang::semantic_analysis::function_table::{FunctionTable, FunctionTableInfo};
 use crate::lang::semantic_analysis::symbol_table::SymbolTable;
@@ -165,6 +166,12 @@ impl<'a> Anaylzer<'a> {
         let left_value = self.analyze_expression(left,parent_function,symbol_table)?;
         let right_value = self.analyze_expression(right,parent_function,symbol_table)?;
         self.compare_data_type(&left_value,&right_value,&opr.position)?;
+        match (&left_value,&opr.kind) {
+          (Type::String(_),TokenKind::PlusToken)=> {}
+          (Type::String(_),_)=>
+              return Err(Error::new(ErrorKind::Other,format!("Cannot perform operation {} on string",opr.text))),
+            (_,_)=>{}
+        };
         return Ok(left_value);
     }
     fn compare_data_type(&self, left:&Type, right:&Type, position:&TextSpan) ->Result<(),Error> {
