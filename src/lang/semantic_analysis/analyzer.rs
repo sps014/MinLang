@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use std::rc::Rc;
 use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, Type, ProgramNode, StatementNode};
@@ -35,7 +34,7 @@ impl<'a> Anaylzer<'a> {
         self.analyze_body(&function.body,function,None,false)?;
         // check return
         let mut graph=FunctionControlGraph::new(function);
-        //graph.build()?;
+        graph.build()?;
         let cp=function.clone();
         self.function_table.add_function(cp.name.text,FunctionTableInfo::from(function))?;
         Ok(())
@@ -72,12 +71,11 @@ impl<'a> Anaylzer<'a> {
             StatementNode::While(condition,body) =>
                 self.analyze_while(condition,body,parent_function,&symbol_table)?,
             StatementNode::Break=>
-                self.analyze_break(parent_function,&symbol_table,has_parent_while)?,
+                self.analyze_break(parent_function,has_parent_while)?,
             StatementNode::Continue=>
-                self.analyze_continue(parent_function,&symbol_table,has_parent_while)?,
+                self.analyze_continue(parent_function,has_parent_while)?,
             StatementNode::FunctionInvocation(name,params) =>
                 {self.analyze_function_call(name,params,parent_function,symbol_table)?;},
-            _=>return Err(Error::new(ErrorKind::Other,format!("Not implemented statement {:?}",statement)))
         };
         Ok(())
     }
@@ -106,14 +104,14 @@ impl<'a> Anaylzer<'a> {
         //let r_type=&store_sig.return_type;
         Ok(store_sig.return_type.unwrap_or(Type::Void))
     }
-    fn analyze_break(&self,parent_function:&FunctionNode,symbol_table:&Rc<RefCell<SymbolTable>>,has_parent_while:bool)->Result<(),Error> {
+    fn analyze_break(&self,parent_function:&FunctionNode,has_parent_while:bool)->Result<(),Error> {
         if !has_parent_while {
             return Err(Error::new(ErrorKind::Other,
                                   format!("Break statement is not in a while loop in function {}",parent_function.name.text)));
         }
         Ok(())
     }
-    fn analyze_continue(&self,parent_function:&FunctionNode,symbol_table:&Rc<RefCell<SymbolTable>>,has_parent_while:bool)->Result<(),Error> {
+    fn analyze_continue(&self,parent_function:&FunctionNode,has_parent_while:bool)->Result<(),Error> {
         if !has_parent_while {
             return Err(Error::new(ErrorKind::Other,
                                   format!("Continue statement is not in a while loop in function {}",parent_function.name.text)));
@@ -158,7 +156,6 @@ impl<'a> Anaylzer<'a> {
                 Ok(self.analyze_function_call(name,params,parent_function,symbol_table)?),
             ExpressionNode::Parenthesized(expr)=>
                 Ok(self.analyze_expression(expr,parent_function,symbol_table)?),
-            _=>return Err(Error::new(ErrorKind::Other,format!("Not implemented expression {:?}",expression)))
         };
     }
     fn analyze_binary_expression(&self,left:&ExpressionNode,opr:&SyntaxToken,right:&ExpressionNode,parent_function:&FunctionNode,

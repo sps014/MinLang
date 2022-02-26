@@ -1,5 +1,4 @@
 use std::borrow::Borrow;
-use std::collections::HashMap;
 use std::rc::Rc;
 use std::usize;
 use crate::lang::code_analysis::text::line_text::LineText;
@@ -36,6 +35,7 @@ impl<'a> Lexer<'a> {
         map.push((TokenKind::IfToken,r"if"));
         map.push((TokenKind::ElseToken,r"else"));
         map.push((TokenKind::WhileToken,r"while"));
+        map.push((TokenKind::ForToken,r"for"));
 
         map.push((TokenKind::DataTypeToken,r"int"));
         map.push((TokenKind::DataTypeToken,r"float"));
@@ -57,6 +57,12 @@ impl<'a> Lexer<'a> {
         map.push((TokenKind::SmallerThanEqualToken,r"<="));
         map.push((TokenKind::GreaterThanToken,r">"));
         map.push((TokenKind::GreaterThanEqualToken,r">="));
+
+        map.push((TokenKind::BangToken,r"!"));
+        map.push((TokenKind::AmpersandAmpersandToken,r"&&"));
+        map.push((TokenKind::PipePipeToken,r"\|\|"));
+        map.push((TokenKind::BitWiseAmpersandToken,r"&"));
+        map.push((TokenKind::BitWisePipeToken,r"\|"));
 
         map.push((TokenKind::SemicolonToken,r";"));
         map.push((TokenKind::ColonToken,r":"));
