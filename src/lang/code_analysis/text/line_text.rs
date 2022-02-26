@@ -1,8 +1,5 @@
-use crate::lang::code_analysis::text::text_span::TextSpan;
-
 pub struct LineText
 {
-    text: String,
     line_width: Vec<usize>
 }
 
@@ -10,7 +7,6 @@ impl LineText {
     pub fn new(text: String) -> LineText {
 
         LineText {
-            text: text.clone(),
             line_width: LineText::calculate_line_width(text)
         }
     }
@@ -19,7 +15,6 @@ impl LineText {
     {
         let mut line_width = Vec::new();
         let mut width = 0;
-        let parts=input.split("\n");
         for c in input.chars() {
             if c == '\n' {
                 line_width.push(width+1);

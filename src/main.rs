@@ -1,6 +1,4 @@
 mod lang;
-use std::{collections::HashMap, io::stdin};
-use std::error::Error;
 use lang::code_analysis::syntax::lexer::Lexer;
 use crate::lang::code_analysis::syntax::parser::Parser;
 use crate::lang::semantic_analysis::analyzer::Anaylzer;
@@ -14,7 +12,7 @@ fn main() {
     fun abc(test:int,alpha:float):float
     {
         let b=get_pi(5);
-        let d="88 this is some string"-"and some sara";
+        let d="88 this is some string"+"and some sara";
         let a=4.7+1.5+b;
         b=8.8;
         let c=6;
@@ -32,7 +30,7 @@ fn main() {
     }"#;
 
     let lexer= Lexer::new(input_text.to_string());
-    let mut parser=Parser::new(lexer);
+    let parser=Parser::new(lexer);
     let mut analyzer=Anaylzer::new(parser);
     let result=analyzer.analyze();
     match result{

@@ -3,6 +3,7 @@ use std::io::{Error, ErrorKind};
 use std::rc::Rc;
 use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, StatementNode};
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct FlowNode
 {
@@ -44,42 +45,41 @@ impl FunctionControlGraph
             function: function.clone(),
         }
     }
+    pub fn create_new_node_parent(&mut self, parent_node:&Rc<RefCell<FlowNode>>, has_return:Option<StatementNode>) -> Rc<RefCell<FlowNode>>
+    {
+        let new_node = Rc::new(RefCell::new(FlowNode::from(has_return)));
+        parent_node.borrow_mut().child_nodes.push(new_node.clone());
+        new_node
+    }
     pub fn build(&mut self)->Result<(),Error>
     {
         self.create_graph()?;
         dbg!(&self.root_node);
         match self.function.return_type {
             Some(_)=>self.check_non_void_return()?,
-            None=>self.check_void_return()?,
+            None=> {  },
         };
         Ok(())
     }
-    fn check_void_return(&self)->Result<(),Error>
-    {
-        Ok(())
-    }
-
-    fn check_non_void_return(&self)->Result<(),Error>
+    fn check_non_void_return(&mut self)->Result<(),Error>
     {
 
         Ok(())
     }
+
     fn create_graph(&mut self)->Result<(),Error>
     {
-        let flow_node = Rc::new(FlowNode{
-            child_nodes: Vec::new(),
-            has_return: None,
-        });
-
+        self.root_node = Some(Rc::new(RefCell::new(FlowNode::from(None))));
+        self.visit_nodes(&self.function.body.clone(),&self.root_node.clone().unwrap());
         Ok(())
     }
     fn visit_node(&mut self, statement:&StatementNode, parent:&Rc<RefCell<FlowNode>>) ->Result<Rc<RefCell<FlowNode>>,Error>
     {
         return  match statement {
-            StatementNode::Return(r)=>
+            StatementNode::Return(_)=>
                 self.visit_return(statement,parent),
-            StatementNode::IfElse(if_cond,if_body,else_pair,else_body)=>
-                self.visit_if_else(if_cond, if_body, else_pair, else_body, parent),
+            StatementNode::IfElse(_,if_body,else_pair,else_body)=>
+                self.visit_if_else(if_body, else_pair, else_body, parent),
             StatementNode::Declaration(_,_)=>
                 self.visit_declaration(parent),
             StatementNode::Assignment(_,_)=>
@@ -97,7 +97,7 @@ impl FunctionControlGraph
         }
         Ok(node)
     }
-    fn visit_if_else(&mut self, condition:&ExpressionNode, if_body:&Vec<StatementNode>,
+    fn visit_if_else(&mut self, if_body:&Vec<StatementNode>,
                      else_if:&Vec<(ExpressionNode, Vec<StatementNode>)>,
                      else_body: &Option<Vec<StatementNode>>,parent:&Rc<RefCell<FlowNode>>)
         ->Result<Rc<RefCell<FlowNode>>,Error>
@@ -134,13 +134,13 @@ impl FunctionControlGraph
     }
     fn visit_declaration(&mut self,parent:&Rc<RefCell<FlowNode>>)->Result<Rc<RefCell<FlowNode>>,Error>
     {
-        let mut declaration_flow = Rc::new(RefCell::new(FlowNode::new()));
+        let declaration_flow = Rc::new(RefCell::new(FlowNode::new()));
         (*parent).as_ref().borrow_mut().child_nodes.push(declaration_flow.clone());
         Ok(declaration_flow)
     }
     fn visit_assignment(&mut self,parent:&Rc<RefCell<FlowNode>>)->Result<Rc<RefCell<FlowNode>>,Error>
     {
-        let mut assignment_flow = Rc::new(RefCell::new(FlowNode::new()));
+        let assignment_flow = Rc::new(RefCell::new(FlowNode::new()));
         (*parent).as_ref().borrow_mut().child_nodes.push(assignment_flow.clone());
         Ok(assignment_flow)
     }

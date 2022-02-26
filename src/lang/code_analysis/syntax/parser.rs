@@ -85,7 +85,7 @@ impl<'a> Parser<'a>
         let mut functions=vec![];
         while self.current_token().kind!=TokenKind::EndOfFileToken
         {
-            let mut function=self.parse_function()?;
+            let function=self.parse_function()?;
             functions.push(function);
         }
         Ok(ProgramNode::new(functions))

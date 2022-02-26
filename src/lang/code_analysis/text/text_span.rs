@@ -1,5 +1,3 @@
-use std::rc::Rc;
-use std::slice::RChunks;
 use crate::lang::code_analysis::text::line_text::LineText;
 
 /// a struct representing start and end of a token

@@ -1,8 +1,6 @@
 use std::fmt::Debug;
-use std::hash::Hash;
 use std::io::{Error, ErrorKind};
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
-use crate::lang::code_analysis::token::token_kind::TokenKind;
 
 #[derive(Debug,Clone)]
 pub struct ProgramNode

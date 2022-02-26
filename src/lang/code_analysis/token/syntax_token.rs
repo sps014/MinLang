@@ -19,6 +19,7 @@ impl SyntaxToken
         }
     }
     ///returns a trimmed text value of the token
+    #[allow(dead_code)]
     pub fn get_trim(&self)->String
     {
         self.text.trim().to_string()
