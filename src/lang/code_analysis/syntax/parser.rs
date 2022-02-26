@@ -97,12 +97,13 @@ impl<'a> Parser<'a>
         self.match_token(TokenKind::FunToken)?;
         let function_name=self.match_token(TokenKind::IdentifierToken)?;
         let params=self.parse_formal_parameters()?;
-        let mut return_type:Option<SyntaxToken>=None;
+        let mut return_type:Option<TypeLiteral>=None;
         if self.current_token().kind==TokenKind::ColonToken
         {
             //eat the colon
             self.match_token(TokenKind::ColonToken)?;
-            return_type=Some(self.match_token(TokenKind::DataTypeToken)?);
+            let type_r=self.match_token(TokenKind::DataTypeToken)?;
+            return_type=Some(TypeLiteral::from_token(type_r)?);
         }
         let block=self.parse_block()?;
         Ok(FunctionNode::new(function_name,return_type,params,block))

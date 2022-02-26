@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::hash::Hash;
+use std::io::{Error, ErrorKind};
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 use crate::lang::code_analysis::token::token_kind::TokenKind;
 
@@ -19,13 +20,13 @@ impl ProgramNode {
 pub struct FunctionNode
 {
     pub name: SyntaxToken,
-    pub return_type: Option<SyntaxToken>,
+    pub return_type: Option<TypeLiteral>,
     pub parameters: Vec<ParameterNode>,
     pub body: Vec<StatementNode>,
 }
 
 impl FunctionNode {
-    pub fn new(name: SyntaxToken, return_type: Option<SyntaxToken>, parameters: Vec<ParameterNode>, body: Vec<StatementNode>) -> FunctionNode {
+    pub fn new(name: SyntaxToken, return_type: Option<TypeLiteral>, parameters: Vec<ParameterNode>, body: Vec<StatementNode>) -> FunctionNode {
         FunctionNode { name, return_type, parameters, body }
     }
 }
@@ -92,5 +93,14 @@ impl TypeLiteral {
             TypeLiteral::Float(token) => token.position.get_point_str(),
             TypeLiteral::String(token) =>token.position.get_point_str(),
         }
+    }
+    pub fn from_token(token: SyntaxToken) -> Result<TypeLiteral, Error> {
+        let r=match token.text.as_str()  {
+            "int" => TypeLiteral::Integer(token),
+            "float" => TypeLiteral::Float(token),
+            "string" => TypeLiteral::String(token),
+            _ => return Err(Error::new(ErrorKind::Other,"TypeLiteral::from_token: Unexpected token kind: {:?}"))
+        };
+        Ok(r)
     }
 }
