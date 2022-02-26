@@ -7,7 +7,8 @@ pub enum TokenKind
 
     IdentifierToken,
     NumberToken,
-
+    StringToken,
+    
     PlusToken,
     MinusToken,
     SlashToken,

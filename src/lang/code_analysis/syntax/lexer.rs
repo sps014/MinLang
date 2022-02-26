@@ -40,7 +40,7 @@ impl<'a> Lexer<'a> {
         map.push((TokenKind::DataTypeToken,r"int"));
         map.push((TokenKind::DataTypeToken,r"float"));
         map.push((TokenKind::DataTypeToken,r"void"));
-        map.push((TokenKind::DataTypeToken,r#""([^"\\]*(\\.[^"\\]*)*)""#));
+        map.push((TokenKind::StringToken,r#""([^"\\]*(\\.[^"\\]*)*)""#));
         map.push((TokenKind::LetToken,r"let"));
         map.push((TokenKind::ReturnToken,r"return"));
         map.push((TokenKind::BreakToken,r"break"));

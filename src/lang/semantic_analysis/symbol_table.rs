@@ -3,13 +3,13 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use std::rc::{Rc, Weak};
-use crate::lang::code_analysis::syntax::syntax_node::TypeLiteral;
+use crate::lang::code_analysis::syntax::syntax_node::Type;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 
 #[derive(Debug)]
 pub struct SymbolTable
 {
-    symbols: HashMap<String,TypeLiteral>,
+    symbols: HashMap<String, Type>,
     parent: Option<Rc<RefCell<SymbolTable>>>,
 }
 
@@ -21,7 +21,7 @@ impl SymbolTable{
         }
     }
 
-    pub fn add_symbol(&mut self,name:String,token:TypeLiteral)->Result<(),Error> {
+    pub fn add_symbol(&mut self, name:String, token: Type) ->Result<(),Error> {
 
         return match self.symbols.insert(name.clone(),token)
         {
@@ -30,7 +30,7 @@ impl SymbolTable{
             None => Ok(()),
         }
     }
-    pub fn get_symbol(&self,name:SyntaxToken)->Result<TypeLiteral,Error> {
+    pub fn get_symbol(&self,name:SyntaxToken)->Result<Type,Error> {
         if self.symbols.contains_key(&name.text)
         {
             return Ok(self.symbols.get(&name.text).unwrap().clone());

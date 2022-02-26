@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
-use crate::lang::code_analysis::syntax::syntax_node::{FunctionNode, TypeLiteral};
+use crate::lang::code_analysis::syntax::syntax_node::{FunctionNode, Type};
 
 #[derive(Debug, Clone)]
 pub struct FunctionTable {
@@ -40,12 +40,12 @@ impl FunctionTable {
 pub  struct FunctionTableInfo
 {
     pub name: String,
-    pub return_type: Option<TypeLiteral>,
+    pub return_type: Option<Type>,
     pub parameters: Vec<String>,
 }
 
 impl FunctionTableInfo {
-    pub fn new(name: String, return_type: Option<TypeLiteral>, parameters: Vec<String>) -> FunctionTableInfo {
+    pub fn new(name: String, return_type: Option<Type>, parameters: Vec<String>) -> FunctionTableInfo {
         FunctionTableInfo {
             name,
             return_type,

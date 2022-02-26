@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use std::rc::Rc;
-use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, TypeLiteral, ProgramNode, StatementNode};
+use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, Type, ProgramNode, StatementNode};
 use crate::lang::code_analysis::text::text_span::TextSpan;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 use crate::lang::semantic_analysis::function_control_flow::FunctionControlGraph;
@@ -82,7 +82,7 @@ impl<'a> Anaylzer<'a> {
     }
     fn analyze_function_call(&self,name:&SyntaxToken,params:&Vec<ExpressionNode>,
                                    parent_function:&FunctionNode,
-                                   symbol_table:&Rc<RefCell<SymbolTable>>)->Result<TypeLiteral,Error> {
+                                   symbol_table:&Rc<RefCell<SymbolTable>>)->Result<Type,Error> {
         let function_name=name.text.clone();
         let mut params_types=vec![];
         for param in params.iter() {
@@ -103,7 +103,7 @@ impl<'a> Anaylzer<'a> {
         }
 
         //let r_type=&store_sig.return_type;
-        Ok(store_sig.return_type.unwrap_or(TypeLiteral::Void))
+        Ok(store_sig.return_type.unwrap_or(Type::Void))
     }
     fn analyze_break(&self,parent_function:&FunctionNode,symbol_table:&Rc<RefCell<SymbolTable>>,has_parent_while:bool)->Result<(),Error> {
         if !has_parent_while {
@@ -142,10 +142,10 @@ impl<'a> Anaylzer<'a> {
         Ok(())
     }
     fn analyze_expression(&self,expression:&ExpressionNode,parent_function:&FunctionNode,
-                          symbol_table:&Rc<RefCell<SymbolTable>>)->Result<TypeLiteral,Error> {
+                          symbol_table:&Rc<RefCell<SymbolTable>>)->Result<Type,Error> {
         return match expression
         {
-            ExpressionNode::Number(number) =>
+            ExpressionNode::Literal(number) =>
                 Ok(number.clone()),
             ExpressionNode::Unary(_,right)=>
                 Ok(self.analyze_expression(right,parent_function,symbol_table)?),
@@ -161,13 +161,13 @@ impl<'a> Anaylzer<'a> {
         };
     }
     fn analyze_binary_expression(&self,left:&ExpressionNode,opr:&SyntaxToken,right:&ExpressionNode,parent_function:&FunctionNode,
-                                 symbol_table:&Rc<RefCell<SymbolTable>>)->Result<TypeLiteral,Error> {
+                                 symbol_table:&Rc<RefCell<SymbolTable>>)->Result<Type,Error> {
         let left_value = self.analyze_expression(left,parent_function,symbol_table)?;
         let right_value = self.analyze_expression(right,parent_function,symbol_table)?;
         self.compare_data_type(&left_value,&right_value,&opr.position)?;
         return Ok(left_value);
     }
-    fn compare_data_type(&self,left:&TypeLiteral,right:&TypeLiteral,position:&TextSpan)->Result<(),Error> {
+    fn compare_data_type(&self, left:&Type, right:&Type, position:&TextSpan) ->Result<(),Error> {
         if left.get_type()==right.get_type()
         {
             return Ok(())
@@ -176,7 +176,7 @@ impl<'a> Anaylzer<'a> {
                        format!("cannot convert from {} to {} at {}",
                        left.get_type(),right.get_type(),position.get_point_str())))
     }
-    fn analyze_identifier(&self,id:&SyntaxToken,symbol_table:&Rc<RefCell<SymbolTable>>)->Result<TypeLiteral,Error> {
+    fn analyze_identifier(&self,id:&SyntaxToken,symbol_table:&Rc<RefCell<SymbolTable>>)->Result<Type,Error> {
         let r=(*symbol_table).as_ref().borrow_mut().get_symbol(id.clone())?;
         Ok(r)
     }

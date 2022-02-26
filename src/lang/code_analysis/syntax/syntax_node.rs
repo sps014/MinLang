@@ -20,13 +20,13 @@ impl ProgramNode {
 pub struct FunctionNode
 {
     pub name: SyntaxToken,
-    pub return_type: Option<TypeLiteral>,
+    pub return_type: Option<Type>,
     pub parameters: Vec<ParameterNode>,
     pub body: Vec<StatementNode>,
 }
 
 impl FunctionNode {
-    pub fn new(name: SyntaxToken, return_type: Option<TypeLiteral>, parameters: Vec<ParameterNode>, body: Vec<StatementNode>) -> FunctionNode {
+    pub fn new(name: SyntaxToken, return_type: Option<Type>, parameters: Vec<ParameterNode>, body: Vec<StatementNode>) -> FunctionNode {
         FunctionNode { name, return_type, parameters, body }
     }
 }
@@ -61,7 +61,7 @@ pub enum StatementNode
 #[derive(Debug,Clone)]
 pub enum ExpressionNode
 {
-    Number(TypeLiteral),
+    Literal(Type),
     Binary(Box<ExpressionNode>, SyntaxToken, Box<ExpressionNode>),
     Unary(SyntaxToken, Box<ExpressionNode>),
     Identifier(SyntaxToken),
@@ -70,7 +70,7 @@ pub enum ExpressionNode
 }
 
 #[derive(Debug,Clone,PartialEq)]
-pub enum TypeLiteral
+pub enum Type
 {
     Integer(SyntaxToken),
     Float(SyntaxToken),
@@ -78,31 +78,31 @@ pub enum TypeLiteral
     Void,
 }
 
-impl TypeLiteral {
+impl Type {
     pub fn get_type(&self)->String
     {
         match self {
-            TypeLiteral::Integer(_) => "int",
-            TypeLiteral::Float(_) => "float",
-            TypeLiteral::String(_) => "string",
-            TypeLiteral::Void => "void",
+            Type::Integer(_) => "int",
+            Type::Float(_) => "float",
+            Type::String(_) => "string",
+            Type::Void => "void",
         }.to_string()
     }
     pub fn get_line_str(&self)->String
     {
         match self {
-            TypeLiteral::Integer(token) => token.position.get_point_str(),
-            TypeLiteral::Float(token) => token.position.get_point_str(),
-            TypeLiteral::String(token) =>token.position.get_point_str(),
-            TypeLiteral::Void => "".to_string(),
+            Type::Integer(token) => token.position.get_point_str(),
+            Type::Float(token) => token.position.get_point_str(),
+            Type::String(token) =>token.position.get_point_str(),
+            Type::Void => "".to_string(),
         }
     }
-    pub fn from_token(token: SyntaxToken) -> Result<TypeLiteral, Error> {
+    pub fn from_token(token: SyntaxToken) -> Result<Type, Error> {
         let r=match token.text.as_str()  {
-            "int" => TypeLiteral::Integer(token),
-            "float" => TypeLiteral::Float(token),
-            "string" => TypeLiteral::String(token),
-            "void" => TypeLiteral::Void,
+            "int" => Type::Integer(token),
+            "float" => Type::Float(token),
+            "string" => Type::String(token),
+            "void" => Type::Void,
             _ => return Err(Error::new(ErrorKind::Other,"TypeLiteral::from_token: Unexpected token kind: {:?}"))
         };
         Ok(r)
