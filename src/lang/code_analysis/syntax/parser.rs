@@ -1,5 +1,5 @@
 use std::io::{Error, ErrorKind};
-use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, TypeLiteral, ParameterNode, ProgramNode, StatementNode};
+use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, Type, ParameterNode, ProgramNode, StatementNode};
 use crate::lang::code_analysis::syntax::syntax_tree::SyntaxTree;
 use crate::lang::code_analysis::text::line_text::LineText;
 use crate::lang::code_analysis::text::text_span::TextSpan;
@@ -97,13 +97,13 @@ impl<'a> Parser<'a>
         self.match_token(TokenKind::FunToken)?;
         let function_name=self.match_token(TokenKind::IdentifierToken)?;
         let params=self.parse_formal_parameters()?;
-        let mut return_type:Option<TypeLiteral>=None;
+        let mut return_type:Option<Type>=None;
         if self.current_token().kind==TokenKind::ColonToken
         {
             //eat the colon
             self.match_token(TokenKind::ColonToken)?;
             let type_r=self.match_token(TokenKind::DataTypeToken)?;
-            return_type=Some(TypeLiteral::from_token(type_r)?);
+            return_type=Some(Type::from_token(type_r)?);
         }
         let block=self.parse_block()?;
         Ok(FunctionNode::new(function_name,return_type,params,block))
@@ -289,11 +289,15 @@ impl<'a> Parser<'a>
         {
             if self.current_token().text.contains('.')
             {
-                return Ok(ExpressionNode::Number(TypeLiteral::Float(self.next_token())));
+                return Ok(ExpressionNode::Literal(Type::Float(self.next_token())));
             }
             else {
-                return Ok(ExpressionNode::Number(TypeLiteral::Integer(self.next_token())));
+                return Ok(ExpressionNode::Literal(Type::Integer(self.next_token())));
             }
+        }
+        else if self.current_token().kind==TokenKind::StringToken
+        {
+            return Ok(ExpressionNode::Literal(Type::String(self.next_token())));
         }
 
         let identifier=self.match_token(TokenKind::IdentifierToken)?;
