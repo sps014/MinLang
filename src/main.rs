@@ -14,7 +14,7 @@ fn main() {
     fun abc(test:int,alpha:float):float
     {
         let b=get_pi(5);
-        let d="88 this is some string"+"and some sara";
+        let d="88 this is some string"-"and some sara";
         let a=4.7+1.5+b;
         b=8.8;
         let c=6;
