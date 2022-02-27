@@ -9,15 +9,19 @@ fn main() ->Result<(),Error>
 {
 
     let input_text=r#"
+    fun sum(a:int,b:int):int
+    {
+        return a+b;
+    }
     fun get(a:int,b:float)
     {
         //comment
-        let d=-a;
+        let c=1+sum(a,2);
         let f=b+1.0;
         while a>5
         {
             a=a-1;
-            if 1>10
+            if a>10
             {
                 break;
             }
@@ -25,12 +29,8 @@ fn main() ->Result<(),Error>
             {
                 continue;
             }
-            else
-            {
-                return;
-            }
         }
-        /* some multi line hints */
+        /* some multi line comments */
         return;
     }
    "#;

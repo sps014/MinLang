@@ -15,6 +15,7 @@
     <list default="true" id="44a0d877-f1c5-4682-8ee2-71f570a7ee1d" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/lang/code_generator/wasm_generator.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_generator/wasm_generator.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lang/semantic_analysis/analyzer.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/semantic_analysis/analyzer.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -143,7 +144,7 @@
       <workItem from="1645779416034" duration="1700000" />
       <workItem from="1645781395725" duration="27097000" />
       <workItem from="1645871040711" duration="22446000" />
-      <workItem from="1645947659369" duration="32674000" />
+      <workItem from="1645947659369" duration="34734000" />
     </task>
     <servers />
   </component>
