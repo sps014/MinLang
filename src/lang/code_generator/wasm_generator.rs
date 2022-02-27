@@ -1,20 +1,26 @@
+use std::borrow::Borrow;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
-use crate::lang::code_analysis::syntax::syntax_node::{FunctionNode, ParameterNode, ProgramNode};
+use std::rc::Rc;
+use crate::lang::code_analysis::syntax::syntax_node::{FunctionNode, ParameterNode, ProgramNode, StatementNode, Type};
 use crate::lang::code_analysis::syntax::syntax_tree::SyntaxTree;
 use crate::lang::code_analysis::text::indented_text_writer::IndentedTextWriter;
+use crate::lang::semantic_analysis::symbol_table::SymbolTable;
 use crate::Parser;
 
 pub struct WasmGenerator<'a>
 {
     syntax_tree:&'a SyntaxTree,
+    symbol_map:&'a HashMap<String,Rc<RefCell<SymbolTable>>>
 }
 impl<'a> WasmGenerator<'a>
 {
-    pub fn new (syntax_tree:&'a SyntaxTree) -> Self
+    pub fn new (syntax_tree:&'a SyntaxTree,symbol_map:&'a HashMap<String,Rc<RefCell<SymbolTable>>>) -> Self
     {
         Self
         {
-            syntax_tree
+            syntax_tree,symbol_map
         }
     }
     pub fn build(&self)->Result<IndentedTextWriter,Error>
@@ -45,6 +51,7 @@ impl<'a> WasmGenerator<'a>
             self.build_parameter(i,writer)?;
         }
         self.build_return(function,writer)?;
+        self.build_local_variable(function,writer)?;
 
         Ok(())
     }
@@ -69,6 +76,31 @@ impl<'a> WasmGenerator<'a>
             .as_str());
         writer.write(") ");
         Ok(())
+    }
+    fn build_local_variable(&self,function:&FunctionNode,writer:&mut IndentedTextWriter)->Result<(),Error>
+    {
+
+        // writer.write("(local ");
+        // writer.write(format!("${} {}",
+        //                      statement.name.text,
+        //                      WasmGenerator::get_wasm_type_from(statement.type_.text.clone())?)
+        //     .as_str());
+        // writer.write(") ");
+        let res=self.get_local_variables(self.symbol_map.get(&function.name.text.clone()).unwrap());
+        dbg!(&res);
+        Ok(())
+    }
+    fn get_local_variables(&self,symbol:&Rc<RefCell<SymbolTable>>)->Vec<(String,Type)>
+    {
+        let current_scope=(*symbol).as_ref().borrow();
+        let mut local_variables=current_scope.get_all();
+
+        for children in current_scope.children.iter()
+        {
+            let child_local_variables=self.get_local_variables(children);
+            local_variables.extend(child_local_variables);
+        }
+        local_variables
     }
     fn build_export(&self,function:&ProgramNode,writer:&mut IndentedTextWriter)->Result<(),Error>
     {
