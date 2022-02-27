@@ -13,8 +13,10 @@ fn main() {
         }
         else if 1==2
         {
-          if 1>2
+          while 1>2
           {
+             return 3.14;
+              break;
           }
           return 6.0;
         }
