@@ -17,7 +17,7 @@ fn main() ->Result<(),Error>
         while a>5
         {
             a=a-1;
-
+            break;
         }
         /* some multi line hints */
         return;

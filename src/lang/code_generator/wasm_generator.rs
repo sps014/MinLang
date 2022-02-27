@@ -91,29 +91,38 @@ impl<'a> WasmGenerator<'a>
             self.build_return(r,function,writer)?,
             StatementNode::While(c,b)=>
             self.build_while(c,b,function,writer)?,
+            StatementNode::Break=>
+            self.build_break(writer)?,
+            StatementNode::Continue=>
+            self.build_continue(writer)?,
+            StatementNode::IfElse(c,b,else_if,else_b)
+            =>self.build_if_else(c,b,else_if,else_b,function,writer)?,
             _=>return Err(Error::new(ErrorKind::Other,"unknown statement"))
         }
+        Ok(())
+    }
+    fn build_if_else(&self,condition:&ExpressionNode,body:&Vec<StatementNode>,
+                     else_if:&Vec<(ExpressionNode,Vec<StatementNode>)>,
+                     else_body:&Vec<StatementNode>,
+                     function:&FunctionNode,
+                     writer:&mut IndentedTextWriter)->Result<(),Error>
+    {
+        
+        Ok(())
+    }
+    fn build_break(&self,writer:&mut IndentedTextWriter)->Result<(),Error>
+    {
+        writer.write_line("br 1");
+        Ok(())
+    }
+    fn build_continue(&self,writer:&mut IndentedTextWriter)->Result<(),Error>
+    {
+        writer.write_line("br 0");
         Ok(())
     }
     fn build_while(&self,condition:&ExpressionNode,body:&Vec<StatementNode>,
                    function:&FunctionNode,writer:&mut IndentedTextWriter)->Result<(),Error>
     {
-        /*
-
-        _writer.WriteLine("(block");
-            _writer.Indent++;
-            _writer.WriteLine("(loop");
-            _writer.Indent++;
-            Visit( new IExpressionNode
-                .UnaryExpression(new SyntaxToken(TokenKind.BangToken,new TextSpan(),"!"),loop.Condition));
-            _writer.WriteLine("br_if 1");
-            Visit(loop.Body);
-            _writer.WriteLine("br 0");
-            _writer.Indent--;
-            _writer.WriteLine(")");
-            _writer.Indent--;
-            _writer.WriteLine(")");
-        */
         writer.write_line("(block");
         writer.indent();
         writer.write_line("(loop");
