@@ -9,12 +9,11 @@ fn main() ->Result<(),Error>
 {
 
     let input_text=r#"
-    fun get(a:int,b:float):int
+    fun get(a:int,b:float)
     {
         //comment
-        let c=0;
+        let d=a;
         /* some multi line hints */
-        return a;
     }
    "#;
 
