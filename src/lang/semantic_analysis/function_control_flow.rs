@@ -63,14 +63,15 @@ impl FunctionControlGraph
     }
     pub fn build(&mut self)->Result<(),Error>
     {
+        if self.function.return_type.is_none()
+        {
+            return Ok(());
+        }
         self.create_graph()?;
         //(*self.root_node.as_ref().unwrap()).as_ref().borrow().print(0);
 
         // do not check for non void as it is checked in the analyzer already
-        match self.function.return_type {
-            Some(_)=>self.check_non_void_return()?,
-            None=> {  },
-        };
+        self.check_non_void_return()?;
         Ok(())
     }
     fn check_non_void_return(&mut self)->Result<(),Error>

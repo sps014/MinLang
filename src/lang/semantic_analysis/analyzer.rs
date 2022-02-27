@@ -31,13 +31,21 @@ impl<'a> Anaylzer<'a> {
         Ok(())
     }
     fn analyze_function(&mut self,function:&FunctionNode) -> Result<(), Error> {
-        self.analyze_body(&function.body,function,None,false)?;
+        let param_table=Rc::new(RefCell::new(self.add_function_param_table(function)?));
+        self.analyze_body(&function.body,function,Some(&param_table),false)?;
         // check return
         let mut graph=FunctionControlGraph::new(function);
         graph.build()?;
         let cp=function.clone();
         self.function_table.add_function(cp.name.text,FunctionTableInfo::from(function))?;
         Ok(())
+    }
+    fn add_function_param_table(&mut self,function:&FunctionNode) -> Result<SymbolTable, Error> {
+        let mut param_table=SymbolTable::new(None);
+        for param in function.parameters.iter() {
+            param_table.add_symbol(param.name.text.clone(),Type::from_token(param.type_.clone())?)?;
+        }
+        Ok(param_table)
     }
 
     fn analyze_body(&self, body:&Vec<StatementNode>, parent_function:&FunctionNode,

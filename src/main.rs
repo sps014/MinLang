@@ -9,10 +9,11 @@ fn main() ->Result<(),Error>
 {
 
     let input_text=r#"
-    fun get()
+    fun get(a:int,b:float,a:float):int
     {
         //comment
         /* some multi line hints */
+        return a;
     }
    "#;
 
@@ -22,7 +23,9 @@ fn main() ->Result<(),Error>
     let mut analyzer=Anaylzer::new(&ast);
     analyzer.analyze()?;
     let generator=WasmGenerator::new(&ast);
-    println!("no errors");
+    let text=generator.build()?;
+    println!("{}",text.to_string());
+    println!("generated assembly successfully");
     Ok(())
 }
 
