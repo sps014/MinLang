@@ -6,6 +6,7 @@ use std::rc::Rc;
 use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, ParameterNode, ProgramNode, StatementNode, Type};
 use crate::lang::code_analysis::syntax::syntax_tree::SyntaxTree;
 use crate::lang::code_analysis::text::indented_text_writer::IndentedTextWriter;
+use crate::lang::code_analysis::text::text_span::TextSpan;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 use crate::lang::code_analysis::token::token_kind::TokenKind;
 use crate::lang::semantic_analysis::symbol_table::SymbolTable;
@@ -86,15 +87,32 @@ impl<'a> WasmGenerator<'a>
             self.build_declaration(left,function,expression,writer)?,
             StatementNode::Assignment(left,expression)=>
             self.build_assignment(left,expression,function,writer)?,
+            StatementNode::Return(r)=>
+            self.build_return(r,function,writer)?,
             _=>return Err(Error::new(ErrorKind::Other,"unknown statement"))
         }
+        Ok(())
+    }
+    fn build_return(&self,expression:&Option<ExpressionNode>,
+                    function:&FunctionNode,
+                    writer:&mut IndentedTextWriter)->Result<(),Error>
+    {
+        if expression.is_some()
+        {
+            let return_type=&function.return_type.clone().unwrap();
+            self.build_expression(&expression.clone().unwrap(),
+                                  &return_type.get_type()
+                                  ,function,writer)?;
+        }
+        writer.write_line("return");
         Ok(())
     }
     fn build_declaration(&self,left:&SyntaxToken,function:&FunctionNode,
                          expression:&ExpressionNode,writer:&mut IndentedTextWriter)->Result<(),Error>
     {
-        self.build_expression(&expression,left,function,
-                              writer)?;
+
+        self.build_expression(&expression,&self.table_read_type(&left.text,function),function,writer)?;
+
         writer.write_line(format!("local.set ${}",left.text).as_str());
         Ok(())
     }
@@ -102,12 +120,12 @@ impl<'a> WasmGenerator<'a>
                         function:&FunctionNode,
                         writer:&mut IndentedTextWriter)->Result<(),Error>
     {
-        self.build_expression(&expression,left,function,writer)?;
+        self.build_expression(&expression,&self.table_read_type(&left.text,function),function,writer)?;
         writer.write_line(format!("local.set ${}",left.text).as_str());
         Ok(())
     }
     fn build_expression(&self,expression:&ExpressionNode,
-                        left_side:&SyntaxToken,function:&FunctionNode,
+                        left_side:&String,function:&FunctionNode,
                         writer:&mut IndentedTextWriter)->Result<(),Error>
     {
         match expression.borrow()
@@ -118,20 +136,36 @@ impl<'a> WasmGenerator<'a>
             self.build_unary(opr,expression,left_side,function,writer)?,
             ExpressionNode::Binary(left,opr,right)=>
             self.build_binary(left,opr,right,left_side,function,writer)?,
-            _=>return Err(Error::new(ErrorKind::Other,"unknown expression"))
+            ExpressionNode::Literal(literal)=>
+            self.build_literal(literal,writer)?,
+            _=>return Err(Error::new(ErrorKind::Other,format!("unknown expression {:?}",expression)))
         }
         Ok(())
     }
+    fn build_literal(&self,literal:&Type,writer:&mut IndentedTextWriter)->Result<(),Error>
+    {
+        let type_=match literal {
+          Type::Integer(i)=>format!("i32.const {}",i.text),
+          Type::Float(f)=>format!("f32.const {}",f.text),
+            _=>return Err(Error::new(ErrorKind::Other,format!("unknown literal {:?}",literal)))
+        };
+        writer.write_line(type_.as_str());
+        Ok(())
+    }
+    fn table_read_type(&self,var_name:&String,function:&FunctionNode)->String
+    {
+        let func_lookup=self.combined_symbol_lookup.get(&function.name.text).unwrap();
+        return func_lookup.get(var_name).unwrap().clone().get_type();
+    }
     fn build_binary(&self,left_exp:&ExpressionNode,opr:&SyntaxToken,right_expr:&ExpressionNode,
-                   left:&SyntaxToken,function:&FunctionNode,
+                   left:&String,function:&FunctionNode,
                    writer:&mut IndentedTextWriter)->Result<(),Error>
     {
         self.build_expression(left_exp,left,function,writer)?;
         self.build_expression(right_expr,left,function,writer)?;
 
-        let func_lookup=self.combined_symbol_lookup.get(&function.name.text).unwrap();
         let symbol=WasmGenerator::get_wasm_type_from(
-            func_lookup.get(&left.text).unwrap().get_type()
+            left.clone()
         )?;
         match opr.kind {
             TokenKind::PlusToken =>
@@ -157,6 +191,9 @@ impl<'a> WasmGenerator<'a>
                     writer.write_line(format!("{}.ge",symbol).as_str()),
                 TokenKind::SmallerThanEqualToken=>
                     writer.write_line(format!("{}.le",symbol).as_str()),
+                TokenKind::PlusToken=>{},
+                TokenKind::MinusToken=>{},
+                TokenKind::StarToken=>{},
                 _=>return Err(Error::new(ErrorKind::Other,format!("unknown operator {}",opr.text)))
             };
         }
@@ -175,6 +212,9 @@ impl<'a> WasmGenerator<'a>
                     writer.write_line(format!("{}.ge_s",symbol).as_str()),
                 TokenKind::SmallerThanEqualToken=>
                     writer.write_line(format!("{}.le_s",symbol).as_str()),
+                TokenKind::PlusToken=>{},
+                TokenKind::MinusToken=>{},
+                TokenKind::StarToken=>{},
                 _=>return Err(Error::new(ErrorKind::Other,format!("unknown operator {}",opr.text)))
             };
         }
@@ -186,13 +226,12 @@ impl<'a> WasmGenerator<'a>
         Ok(())
     }
     fn build_unary(&self,opr:&SyntaxToken,expression:&ExpressionNode,
-                   left:&SyntaxToken,function:&FunctionNode,
+                   left:&String,function:&FunctionNode,
                    writer:&mut IndentedTextWriter)->Result<(),Error>
     {
         self.build_expression(expression,left,function,writer)?;
-        let func_lookup=self.combined_symbol_lookup.get(&function.name.text).unwrap();
         let symbol=WasmGenerator::get_wasm_type_from(
-            func_lookup.get(&left.text).unwrap().get_type()
+            left.clone()
         )?;
         match opr.kind {
             TokenKind::MinusToken=>
