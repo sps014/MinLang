@@ -89,8 +89,45 @@ impl<'a> WasmGenerator<'a>
             self.build_assignment(left,expression,function,writer)?,
             StatementNode::Return(r)=>
             self.build_return(r,function,writer)?,
+            StatementNode::While(c,b)=>
+            self.build_while(c,b,function,writer)?,
             _=>return Err(Error::new(ErrorKind::Other,"unknown statement"))
         }
+        Ok(())
+    }
+    fn build_while(&self,condition:&ExpressionNode,body:&Vec<StatementNode>,
+                   function:&FunctionNode,writer:&mut IndentedTextWriter)->Result<(),Error>
+    {
+        /*
+
+        _writer.WriteLine("(block");
+            _writer.Indent++;
+            _writer.WriteLine("(loop");
+            _writer.Indent++;
+            Visit( new IExpressionNode
+                .UnaryExpression(new SyntaxToken(TokenKind.BangToken,new TextSpan(),"!"),loop.Condition));
+            _writer.WriteLine("br_if 1");
+            Visit(loop.Body);
+            _writer.WriteLine("br 0");
+            _writer.Indent--;
+            _writer.WriteLine(")");
+            _writer.Indent--;
+            _writer.WriteLine(")");
+        */
+        writer.write_line("(block");
+        writer.indent();
+        writer.write_line("(loop");
+        writer.indent();
+        self.build_expression(condition,&"int".to_string(),function,writer)?;
+        writer.write_line(format!("i32.const 0").as_str());
+        writer.write_line(format!("i32.eq").as_str());
+        writer.write_line("br_if 1");
+        self.build_body(body,function,writer)?;
+        writer.write_line("br 0");
+        writer.unindent();
+        writer.write_line(")");
+        writer.unindent();
+        writer.write_line(")");
         Ok(())
     }
     fn build_return(&self,expression:&Option<ExpressionNode>,
