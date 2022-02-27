@@ -6,26 +6,28 @@ use std::rc::Rc;
 use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, ParameterNode, ProgramNode, StatementNode, Type};
 use crate::lang::code_analysis::syntax::syntax_tree::SyntaxTree;
 use crate::lang::code_analysis::text::indented_text_writer::IndentedTextWriter;
-use crate::lang::code_analysis::text::text_span::TextSpan;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 use crate::lang::code_analysis::token::token_kind::TokenKind;
+use crate::lang::semantic_analysis::analyzer::SemanticInfo;
+use crate::lang::semantic_analysis::function_table::FunctionTable;
 use crate::lang::semantic_analysis::symbol_table::SymbolTable;
-use crate::Parser;
 
+#[allow(dead_code)]
 pub struct WasmGenerator<'a>
 {
     syntax_tree:&'a SyntaxTree,
     symbol_map:&'a HashMap<String,Rc<RefCell<SymbolTable>>>,
+    function_table:&'a FunctionTable,
     //key 1: function name, key 2: parameter name
     combined_symbol_lookup:HashMap<String,HashMap<String,Type>>
 }
 impl<'a> WasmGenerator<'a>
 {
-    pub fn new (syntax_tree:&'a SyntaxTree,symbol_map:&'a HashMap<String,Rc<RefCell<SymbolTable>>>) -> Self
+    pub fn new (syntax_tree:&'a SyntaxTree,semantic_info:&'a SemanticInfo) -> Self
     {
         Self
         {
-            syntax_tree,symbol_map,
+            syntax_tree,symbol_map:&semantic_info.hash_map, function_table:&semantic_info.function_table,
             combined_symbol_lookup:HashMap::new()
         }
     }
@@ -97,8 +99,21 @@ impl<'a> WasmGenerator<'a>
             self.build_continue(writer)?,
             StatementNode::IfElse(c,b,else_if,else_b)
             =>self.build_if_else(c,b,else_if,else_b,function,writer)?,
-            _=>return Err(Error::new(ErrorKind::Other,"unknown statement"))
+            StatementNode::FunctionInvocation(n,p)
+            =>self.build_function_invocation(&n.text.clone(),p,function,writer)?,
         }
+        Ok(())
+    }
+    fn build_function_invocation(&self,name:&String,parameters:&Vec<ExpressionNode>,
+                                 function:&FunctionNode,writer:&mut IndentedTextWriter)
+                                 ->Result<(),Error>
+    {
+        for i in parameters.iter()
+        {
+            self.build_expression(i,&"int".to_string(),function,writer)?;
+        }
+        writer.write("call $");
+        writer.write_line(&name);
         Ok(())
     }
     fn build_if_else(&self,condition:&ExpressionNode,body:&Vec<StatementNode>,
@@ -125,42 +140,6 @@ impl<'a> WasmGenerator<'a>
                            function:&FunctionNode,index:usize,
                            writer:&mut IndentedTextWriter)->Result<(),Error>
     {
-        /*
-        if(index==arr.Count)
-            return;
-
-        var cur=arr[index];
-        //generate else
-        if (cur.Condition is  null && index == arr.Count - 1)
-        {
-            Visit(cur.Body);
-        }
-        //generate if then
-        else
-        {
-            Visit(cur.Condition!);
-            _writer.WriteLine("(if");
-            _writer.Indent++;
-            _writer.WriteLine("(then");
-            _writer.Indent++;
-            Visit(cur.Body);
-            _writer.Indent--;
-            _writer.WriteLine(")");
-
-
-            if (index + 1 < arr.Count)
-            {
-                _writer.WriteLine("(else");
-                _writer.Indent++;
-                RecursiveLadderBuildup(arr, index + 1);
-                _writer.Indent--;
-                _writer.WriteLine(")");
-            }
-
-            _writer.Indent--;
-            _writer.WriteLine(")");
-        }
-         */
         if index==parts.len()
         {
             return Ok(());
@@ -268,7 +247,10 @@ impl<'a> WasmGenerator<'a>
             self.build_binary(left,opr,right,left_side,function,writer)?,
             ExpressionNode::Literal(literal)=>
             self.build_literal(literal,writer)?,
-            _=>return Err(Error::new(ErrorKind::Other,format!("unknown expression {:?}",expression)))
+            ExpressionNode::FunctionCall(n,args)=>
+            self.build_function_invocation(&n.text.clone(),args,function,writer)?,
+            ExpressionNode::Parenthesized(e)
+            =>self.build_expression(e,left_side,function,writer)?,
         }
         Ok(())
     }

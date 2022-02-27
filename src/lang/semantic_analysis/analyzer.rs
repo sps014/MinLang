@@ -1,4 +1,4 @@
-use std::cell::{Ref, RefCell};
+use std::cell::{ RefCell};
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use std::rc::Rc;
@@ -10,7 +10,23 @@ use crate::lang::code_analysis::token::token_kind::TokenKind;
 use crate::lang::semantic_analysis::function_control_flow::FunctionControlGraph;
 use crate::lang::semantic_analysis::function_table::{FunctionTable, FunctionTableInfo};
 use crate::lang::semantic_analysis::symbol_table::SymbolTable;
-use crate::Parser;
+
+pub struct SemanticInfo<'a>
+{
+    pub hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>,
+    pub function_table: &'a FunctionTable,
+}
+
+impl<'a> SemanticInfo<'a> {
+    pub fn new(hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>, function_table: &FunctionTable) -> SemanticInfo
+    {
+        SemanticInfo {
+            hash_map,
+            function_table,
+        }
+    }
+}
+
 
 pub struct Anaylzer<'a> {
     syntax_tree:&'a SyntaxTree ,
@@ -20,17 +36,17 @@ impl<'a> Anaylzer<'a> {
     pub fn new(tree: &'a SyntaxTree) -> Self {
         Self { syntax_tree:tree.clone(), function_table: FunctionTable::new() }
     }
-    pub fn analyze(&mut self) -> Result<HashMap<String,Rc<RefCell<SymbolTable>>>, Error> {
+    pub fn analyze(&mut self) -> Result<SemanticInfo, Error> {
         let pgm= self.syntax_tree.get_root();
         self.analyze_pgm(pgm.clone())
     }
-    fn analyze_pgm(&mut self,node:ProgramNode) -> Result<HashMap<String,Rc<RefCell<SymbolTable>>>, Error> {
+    fn analyze_pgm(&mut self,node:ProgramNode) -> Result<SemanticInfo, Error> {
         let mut symbol_table_map=HashMap::new();
         for function in node.functions.iter() {
          let r=self.analyze_function(function)?;
          symbol_table_map.insert(function.name.text.clone(),r);
      }
-        Ok(symbol_table_map)
+        Ok(SemanticInfo::new(symbol_table_map,&self.function_table))
     }
     fn analyze_function(&mut self,function:&FunctionNode) -> Result<Rc<RefCell<SymbolTable>>, Error> {
         let param_table=Rc::new(RefCell::new(self.add_function_param_table(function)?));
