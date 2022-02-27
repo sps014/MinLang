@@ -143,7 +143,7 @@
       <workItem from="1645779416034" duration="1700000" />
       <workItem from="1645781395725" duration="27097000" />
       <workItem from="1645871040711" duration="22446000" />
-      <workItem from="1645947659369" duration="5040000" />
+      <workItem from="1645947659369" duration="9013000" />
     </task>
     <servers />
   </component>
@@ -160,6 +160,17 @@
         </entry>
       </map>
     </option>
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" type="com.jetbrains.cidr.execution.debugger.OCBreakpointType">
+          <url>file://$PROJECT_DIR$/src/lang/semantic_analysis/function_control_flow.rs</url>
+          <line>90</line>
+          <option name="timeStamp" value="8" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

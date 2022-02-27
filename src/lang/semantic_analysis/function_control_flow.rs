@@ -73,10 +73,45 @@ impl FunctionControlGraph
     }
     fn check_non_void_return(&mut self)->Result<(),Error>
     {
+        let root_node = &(*self.root_node.as_ref().unwrap()).as_ref().clone();
 
-        Ok(())
+        if self.dfs(&Rc::new(root_node.clone()))
+        {
+            return Ok(());
+        }
+        Err(Error::new(ErrorKind::Other,
+                       format!("error : '{}': not all code paths return a value",self.function.name.text)))
+
     }
+    //use dfs  and visit from right side depth by depth, if right most is true then all left will be true
+    fn dfs(&mut self,node:&Rc<RefCell<FlowNode>>)->bool
+    {
+        let new=&node.as_ref().borrow();
+        let mut ct_all_true=0;
+        for i in (0..new.child_nodes.len()).rev()
+        {
+            let child=self.dfs(&new.child_nodes[i]);
+            if child
+            {
+                ct_all_true+=1;
+            }
+            if child && new.child_nodes[i].as_ref().borrow().has_return
+            {
+                return true;
+            }
+        }
+        //println!("{}: {}",new.name,ct_all_true);
 
+        if new.child_nodes.len()!=0 && ct_all_true==new.child_nodes.len()
+        {
+            return true;
+        }
+        else if new.has_return
+        {
+            return true;
+        }
+        false
+    }
     fn create_graph(&mut self)->Result<(),Error>
     {
         self.root_node = Some(Rc::new(RefCell::new(FlowNode::from(false,"root".to_string()))));
@@ -99,22 +134,9 @@ impl FunctionControlGraph
                 self.visit_return(&r.clone().unwrap(), parent)?,
             StatementNode::IfElse(_,if_body,else_pair,else_body)=>
                 self.visit_if_else(if_body, else_pair, else_body, parent)?,
-              StatementNode::While(cond,expr)=>
-                self.visit_while(cond,expr,parent)?,
             _=>
                 {},
         };
-        Ok(())
-    }
-    fn visit_while(&mut self, cond:&ExpressionNode, expr:&Vec<StatementNode>, parent:&Rc<RefCell<FlowNode>>) ->Result<(),Error>
-    {
-        let mut node = Rc::new(RefCell::new(FlowNode::new("while".to_string())));
-        (*parent).as_ref().borrow_mut().child_nodes.push(node.clone());
-        self.visit_block(expr,&mut node)?;
-
-        //if while does not match
-        node = Rc::new(RefCell::new(FlowNode::new("while negation".to_string())));
-        (*parent).as_ref().borrow_mut().child_nodes.push(node.clone());
         Ok(())
     }
     fn visit_if_else(&mut self, if_body:&Vec<StatementNode>,
