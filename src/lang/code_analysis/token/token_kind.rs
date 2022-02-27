@@ -14,7 +14,7 @@ pub enum TokenKind
     SlashToken,
     StarToken,
     BangToken,
-
+    ModulusToken,
     
     EqualEqualToken,
     NotEqualToken,

@@ -60,7 +60,7 @@ impl<'a> Anaylzer<'a> {
         let symbol_table = Rc::new(RefCell::new(SymbolTable::new(parent_scope.clone())));
         if parent_scope.is_some()
         {
-            let mut parent_table=&parent_scope.unwrap();
+            let parent_table=&parent_scope.unwrap();
             (*parent_table).borrow_mut().add_child(symbol_table.clone());
         }
         for statement in body.iter() {

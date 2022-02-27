@@ -5,6 +5,9 @@ impl TokenKind {
         return match self {
             TokenKind::BitWiseAmpersandToken => 90,
             TokenKind::BitWisePipeToken => 80,
+
+            TokenKind::ModulusToken => 55,
+
             TokenKind::SlashToken => 50,
             TokenKind::StarToken => 50,
 

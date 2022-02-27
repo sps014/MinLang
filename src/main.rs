@@ -12,7 +12,7 @@ fn main() ->Result<(),Error>
     fun get(a:int,b:float)
     {
         //comment
-        let d=a;
+        let d=-a;
         /* some multi line hints */
     }
    "#;
@@ -22,7 +22,7 @@ fn main() ->Result<(),Error>
     let ast=parser.parse()?;
     let mut analyzer=Anaylzer::new(&ast);
     let symbol_info=analyzer.analyze()?;
-    let generator=WasmGenerator::new(&ast,&symbol_info);
+    let mut generator=WasmGenerator::new(&ast,&symbol_info);
     let text=generator.build()?;
     println!("{}",text.to_string());
     println!("generated assembly successfully");

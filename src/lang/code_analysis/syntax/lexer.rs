@@ -75,6 +75,7 @@ impl<'a> Lexer<'a> {
         map.push((TokenKind::MinusToken,r"\-"));
         map.push((TokenKind::StarToken,r"\*"));
         map.push((TokenKind::SlashToken,r"/"));
+        map.push((TokenKind::ModulusToken,r"%"));
 
         map.push((TokenKind::OpenParenthesisToken,r"\("));
         map.push((TokenKind::CloseParenthesisToken,r"\)"));
