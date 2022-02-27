@@ -95,6 +95,7 @@ impl Type {
             Type::Void => "".to_string(),
         }
     }
+
     pub fn from_token(token: SyntaxToken) -> Result<Type, Error> {
         let r=match token.text.as_str()  {
             "int" => Type::Integer(token),

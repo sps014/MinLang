@@ -13,7 +13,9 @@ fn main() ->Result<(),Error>
     {
         //comment
         let d=-a;
+        let f=b+1.0;
         /* some multi line hints */
+        return;
     }
    "#;
 
