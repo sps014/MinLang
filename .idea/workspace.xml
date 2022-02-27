@@ -14,6 +14,9 @@
   <component name="ChangeListManager">
     <list default="true" id="44a0d877-f1c5-4682-8ee2-71f570a7ee1d" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax/lexer.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/lexer.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax/precedence.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/precedence.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/token/token_kind.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/token/token_kind.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/lang/code_generator/wasm_generator.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_generator/wasm_generator.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
     </list>
@@ -143,7 +146,7 @@
       <workItem from="1645779416034" duration="1700000" />
       <workItem from="1645781395725" duration="27097000" />
       <workItem from="1645871040711" duration="22446000" />
-      <workItem from="1645947659369" duration="22609000" />
+      <workItem from="1645947659369" duration="25682000" />
     </task>
     <servers />
   </component>

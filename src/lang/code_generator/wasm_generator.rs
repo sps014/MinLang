@@ -7,13 +7,16 @@ use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNo
 use crate::lang::code_analysis::syntax::syntax_tree::SyntaxTree;
 use crate::lang::code_analysis::text::indented_text_writer::IndentedTextWriter;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
+use crate::lang::code_analysis::token::token_kind::TokenKind;
 use crate::lang::semantic_analysis::symbol_table::SymbolTable;
 use crate::Parser;
 
 pub struct WasmGenerator<'a>
 {
     syntax_tree:&'a SyntaxTree,
-    symbol_map:&'a HashMap<String,Rc<RefCell<SymbolTable>>>
+    symbol_map:&'a HashMap<String,Rc<RefCell<SymbolTable>>>,
+    //key 1: function name, key 2: parameter name
+    combined_symbol_lookup:HashMap<String,HashMap<String,Type>>
 }
 impl<'a> WasmGenerator<'a>
 {
@@ -21,16 +24,17 @@ impl<'a> WasmGenerator<'a>
     {
         Self
         {
-            syntax_tree,symbol_map
+            syntax_tree,symbol_map,
+            combined_symbol_lookup:HashMap::new()
         }
     }
-    pub fn build(&self)->Result<IndentedTextWriter,Error>
+    pub fn build(&mut self)->Result<IndentedTextWriter,Error>
     {
         let mut indented=IndentedTextWriter::new();
         self.build_module(&self.syntax_tree.clone().get_root(),&mut indented)?;
         Ok(indented)
     }
-    fn build_module(&self,program:&ProgramNode,writer:&mut IndentedTextWriter)->Result<(),Error>
+    fn build_module(&mut self,program:&ProgramNode,writer:&mut IndentedTextWriter)->Result<(),Error>
     {
         writer.write_line("(module");
         writer.indent();
@@ -43,7 +47,7 @@ impl<'a> WasmGenerator<'a>
         writer.write_line(")");
         Ok(())
     }
-    fn build_function(&self,function:&FunctionNode,writer:&mut IndentedTextWriter)->Result<(),Error>
+    fn build_function(&mut self,function:&FunctionNode,writer:&mut IndentedTextWriter)->Result<(),Error>
     {
         writer.write("(func $");
         writer.write(&function.name.text);
@@ -56,61 +60,165 @@ impl<'a> WasmGenerator<'a>
         writer.write_line("");
 
         writer.indent();
-        self.build_body(&function.body.clone(),writer)?;
+        self.build_body(&function.body.clone(),function,writer)?;
         writer.unindent();
 
         writer.write_line(")");
         Ok(())
     }
-    fn build_body(&self,statements:&Vec<StatementNode>,writer:&mut IndentedTextWriter)->Result<(),Error>
+    fn build_body(&self,statements:&Vec<StatementNode>,function:&FunctionNode,
+                  writer:&mut IndentedTextWriter)->Result<(),Error>
     {
         for i in statements.iter()
         {
-            self.build_statement(i,writer)?;
+            self.build_statement(i,function,writer)?;
         }
         Ok(())
     }
 
-    fn build_statement(&self,statement:&StatementNode,writer:&mut IndentedTextWriter)->Result<(),Error>
+    fn build_statement(&self,statement:&StatementNode,
+                       function:&FunctionNode,
+                       writer:&mut IndentedTextWriter)->Result<(),Error>
     {
         match statement.borrow()
         {
             StatementNode::Declaration(left,expression)=>
-            self.build_declaration(left,expression,writer)?,
+            self.build_declaration(left,function,expression,writer)?,
             StatementNode::Assignment(left,expression)=>
-            self.build_assignment(left,expression,writer)?,
+            self.build_assignment(left,expression,function,writer)?,
             _=>return Err(Error::new(ErrorKind::Other,"unknown statement"))
         }
         Ok(())
     }
-    fn build_declaration(&self,left:&SyntaxToken,expression:&ExpressionNode,writer:&mut IndentedTextWriter)->Result<(),Error>
+    fn build_declaration(&self,left:&SyntaxToken,function:&FunctionNode,
+                         expression:&ExpressionNode,writer:&mut IndentedTextWriter)->Result<(),Error>
     {
-        self.build_expression(&expression,writer)?;
+        self.build_expression(&expression,left,function,
+                              writer)?;
         writer.write_line(format!("local.set ${}",left.text).as_str());
         Ok(())
     }
-    fn build_assignment(&self,left:&SyntaxToken,expression:&ExpressionNode,writer:&mut IndentedTextWriter)->Result<(),Error>
+    fn build_assignment(&self,left:&SyntaxToken,expression:&ExpressionNode,
+                        function:&FunctionNode,
+                        writer:&mut IndentedTextWriter)->Result<(),Error>
     {
-        self.build_expression(&expression,writer)?;
+        self.build_expression(&expression,left,function,writer)?;
         writer.write_line(format!("local.set ${}",left.text).as_str());
         Ok(())
     }
-    fn build_expression(&self,expression:&ExpressionNode,writer:&mut IndentedTextWriter)->Result<(),Error>
+    fn build_expression(&self,expression:&ExpressionNode,
+                        left_side:&SyntaxToken,function:&FunctionNode,
+                        writer:&mut IndentedTextWriter)->Result<(),Error>
     {
         match expression.borrow()
         {
             ExpressionNode::Identifier(identifier)=>
             self.build_identifier(identifier,writer)?,
+            ExpressionNode::Unary(opr,expression)=>
+            self.build_unary(opr,expression,left_side,function,writer)?,
+            ExpressionNode::Binary(left,opr,right)=>
+            self.build_binary(left,opr,right,left_side,function,writer)?,
             _=>return Err(Error::new(ErrorKind::Other,"unknown expression"))
         }
         Ok(())
     }
-    fn build_identifier(&self,identifier:&SyntaxToken,writer:&mut IndentedTextWriter)->Result<(),Error>
+    fn build_binary(&self,left_exp:&ExpressionNode,opr:&SyntaxToken,right_expr:&ExpressionNode,
+                   left:&SyntaxToken,function:&FunctionNode,
+                   writer:&mut IndentedTextWriter)->Result<(),Error>
+    {
+        self.build_expression(left_exp,left,function,writer)?;
+        self.build_expression(right_expr,left,function,writer)?;
+
+        let func_lookup=self.combined_symbol_lookup.get(&function.name.text).unwrap();
+        let symbol=WasmGenerator::get_wasm_type_from(
+            func_lookup.get(&left.text).unwrap().get_type()
+        )?;
+        match opr.kind {
+            TokenKind::PlusToken =>
+                writer.write_line(format!("{}.add", symbol).as_str()),
+            TokenKind::MinusToken =>
+                writer.write_line(format!("{}.sub", symbol).as_str()),
+            TokenKind::StarToken =>
+                writer.write_line(format!("{}.mul", symbol).as_str()),
+            _=>{}
+        };
+        if symbol=="f32"
+        {
+            match opr.kind {
+                TokenKind::SlashToken=>
+                    writer.write_line(format!("{}.div",symbol).as_str()),
+                TokenKind::ModulusToken=>
+                    writer.write_line(format!("{}.rem",symbol).as_str()),
+                TokenKind::GreaterThanToken=>
+                    writer.write_line(format!("{}.gt",symbol).as_str()),
+                TokenKind::SmallerThanToken=>
+                    writer.write_line(format!("{}.lt",symbol).as_str()),
+                TokenKind::GreaterThanEqualToken=>
+                    writer.write_line(format!("{}.ge",symbol).as_str()),
+                TokenKind::SmallerThanEqualToken=>
+                    writer.write_line(format!("{}.le",symbol).as_str()),
+                _=>return Err(Error::new(ErrorKind::Other,format!("unknown operator {}",opr.text)))
+            };
+        }
+        else if symbol=="i32"
+        {
+            match opr.kind {
+                TokenKind::SlashToken=>
+                    writer.write_line(format!("{}.div_s",symbol).as_str()),
+                TokenKind::ModulusToken=>
+                    writer.write_line(format!("{}.rem_s",symbol).as_str()),
+                TokenKind::GreaterThanToken=>
+                    writer.write_line(format!("{}.gt_s",symbol).as_str()),
+                TokenKind::SmallerThanToken=>
+                    writer.write_line(format!("{}.lt_s",symbol).as_str()),
+                TokenKind::GreaterThanEqualToken=>
+                    writer.write_line(format!("{}.ge_s",symbol).as_str()),
+                TokenKind::SmallerThanEqualToken=>
+                    writer.write_line(format!("{}.le_s",symbol).as_str()),
+                _=>return Err(Error::new(ErrorKind::Other,format!("unknown operator {}",opr.text)))
+            };
+        }
+        else
+        {
+            return Err(Error::new(ErrorKind::Other,format!("unknown symbol {}",symbol).as_str()));
+        }
+
+        Ok(())
+    }
+    fn build_unary(&self,opr:&SyntaxToken,expression:&ExpressionNode,
+                   left:&SyntaxToken,function:&FunctionNode,
+                   writer:&mut IndentedTextWriter)->Result<(),Error>
+    {
+        self.build_expression(expression,left,function,writer)?;
+        let func_lookup=self.combined_symbol_lookup.get(&function.name.text).unwrap();
+        let symbol=WasmGenerator::get_wasm_type_from(
+            func_lookup.get(&left.text).unwrap().get_type()
+        )?;
+        match opr.kind {
+            TokenKind::MinusToken=>
+                {
+                    writer.write_line(format!("{}.const -1",symbol).as_str());
+                    writer.write_line(format!("{}.mul",symbol).as_str())
+                },
+            TokenKind::BangToken=>
+                {
+                    writer.write_line(format!("{}.const 0",symbol).as_str());
+                    writer.write_line(format!("{}.eq",symbol).as_str());
+                },
+            TokenKind::PlusToken=>{},
+            _=>return Err(Error::new(ErrorKind::Other,
+                                     format!("wasm does nor support unary operator {}",opr.text).as_str()))
+        };
+        Ok(())
+    }
+    fn build_identifier(&self,identifier:&SyntaxToken,
+                        writer:&mut IndentedTextWriter)->Result<(),Error>
     {
         writer.write_line(format!("local.get ${}",identifier.text).as_str());
         Ok(())
     }
-    fn build_return_type(&self, function:&FunctionNode, writer:&mut IndentedTextWriter) ->Result<(),Error>
+    fn build_return_type(&self, function:&FunctionNode,
+                         writer:&mut IndentedTextWriter) ->Result<(),Error>
     {
         if function.return_type.is_some()
         {
@@ -132,10 +240,11 @@ impl<'a> WasmGenerator<'a>
         writer.write(") ");
         Ok(())
     }
-    fn build_local_variable(&self,function:&FunctionNode,writer:&mut IndentedTextWriter)->Result<(),Error>
+    fn build_local_variable(&mut self,function:&FunctionNode,writer:&mut IndentedTextWriter)->Result<(),Error>
     {
 
         let res=self.get_local_variables(self.symbol_map.get(&function.name.text.clone()).unwrap())?;
+
         for (name,_type) in res.iter()
         {
             writer.write(" (local ");
@@ -145,6 +254,7 @@ impl<'a> WasmGenerator<'a>
                 .as_str());
             writer.write(") ");
         }
+        self.combined_symbol_lookup.insert(function.name.text.clone(),res);
         Ok(())
     }
     fn get_local_variables(&self,symbol:&Rc<RefCell<SymbolTable>>)->Result<HashMap<String,Type>,Error>
@@ -173,7 +283,6 @@ impl<'a> WasmGenerator<'a>
     }
     fn build_export(&self,program:&ProgramNode,writer:&mut IndentedTextWriter)->Result<(),Error>
     {
-        //            _writer.WriteLine($@"(export ""{function.Name}"" (func ${function.Name}))");
         for i in program.functions.iter()
         {
             writer.write_line(format!("(export \"{}\" (func ${}))",
