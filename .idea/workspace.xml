@@ -13,16 +13,11 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="44a0d877-f1c5-4682-8ee2-71f570a7ee1d" name="Default Changelist" comment="">
+      <change afterPath="$PROJECT_DIR$/src/lang/code_generator/mod.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/lang/code_generator/wasm_generator.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax/lexer.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/lexer.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax/parser.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/parser.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax/syntax_node.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/syntax_node.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/text/line_text.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/text/line_text.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/text/text_span.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/text/text_span.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/token/syntax_token.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/token/syntax_token.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/semantic_analysis/analyzer.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/semantic_analysis/analyzer.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lang/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/mod.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/lang/semantic_analysis/function_control_flow.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/semantic_analysis/function_control_flow.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/semantic_analysis/symbol_table.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/semantic_analysis/symbol_table.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -150,7 +145,8 @@
       <workItem from="1645703077355" duration="9415000" />
       <workItem from="1645779416034" duration="1700000" />
       <workItem from="1645781395725" duration="27097000" />
-      <workItem from="1645871040711" duration="18751000" />
+      <workItem from="1645871040711" duration="22446000" />
+      <workItem from="1645947659369" duration="3897000" />
     </task>
     <servers />
   </component>

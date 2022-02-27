@@ -7,27 +7,20 @@ fn main() {
     let input_text=r#"
     fun get_pi(a:int) :float
     {
+        if 1==2
+        {
+          return 3.14;
+        }
+        else if 1==2
+        {
+          if 1>2
+          {
+          }
+          return 6.0;
+        }
         return 3.14;
     }
-    fun abc(test:int,alpha:float):float
-    {
-        let b=get_pi(5);
-        let d="88 this is some string"+"and some sara";
-        let a=4.7+1.5+b;
-        b=8.8;
-        let c=6;
-        if a+b
-        {
-          let c=c+1;
-          return a;
-          while c>10
-          {
-            break;
-          }
-        }
-
-
-    }"#;
+   "#;
 
     let lexer= Lexer::new(input_text.to_string());
     let parser=Parser::new(lexer);
