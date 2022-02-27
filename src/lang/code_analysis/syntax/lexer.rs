@@ -46,6 +46,8 @@ impl<'a> Lexer<'a> {
         map.push((TokenKind::BreakToken,r"break"));
         map.push((TokenKind::ContinueToken,r"continue"));
 
+        map.push((TokenKind::LineCommentToken,"/s*/[^\n]*[\n]?"));
+        map.push((TokenKind::BlockCommentToken,r"/\*[^*]*\*+(?:[^/*][^*]*\*+)*/"));
 
         map.push((TokenKind::IfToken,r"fun"));
         map.push((TokenKind::NumberToken,r"[0-9]+(\.[0-9]+)?"));
@@ -80,7 +82,6 @@ impl<'a> Lexer<'a> {
         map.push((TokenKind::CurlyCloseBracketToken,r"\}"));
 
         map.push((TokenKind::WhiteSpaceToken,r"\s+"));
-
         map.push((TokenKind::IdentifierToken,"[a-zA-Z_][a-zA-Z0-9_]*"));
         return map;
     }
@@ -97,7 +98,10 @@ impl<'a> Lexer<'a> {
                 self.diagnostics.push(format!("unexpected token '{}' at {}",c.text,c.position.get_point_str()));
                 continue;
             }
-            else if c.kind==TokenKind::WhiteSpaceToken
+                //we ignore the comment parts
+            else if c.kind==TokenKind::WhiteSpaceToken ||
+                c.kind==TokenKind::LineCommentToken ||
+                c.kind==TokenKind::BlockCommentToken
             {
                 continue;
             }
@@ -152,7 +156,7 @@ impl<'a> Lexer<'a> {
         SyntaxToken::new(TokenKind::BadToken, TextSpan::new((self.current-1, self.current),self.line_text.borrow()),bt.to_string())
     }
 
-    ///match the current string with the regex and return the token if it is valid otherwise return None
+    ///match the current string with the regex and return the token if it is valid otherwise return None TODO: caching avoid re-computation
     fn do_match(regex_str:&str,token:TokenKind,current:&mut usize,current_str:&String,line_text:&LineText)->Option<SyntaxToken>
     {
         let re=regex::Regex::new(regex_str).unwrap(); //ugly workaround should probably cache the regex
