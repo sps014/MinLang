@@ -5,28 +5,10 @@ use crate::lang::semantic_analysis::analyzer::Anaylzer;
 fn main() {
 
     let input_text=r#"
-    fun get_pi(a:int) :float
+    fun get()
     {
-        if 1==2
-        {
-          return 3.14;
-        }
-        else if 1==2
-        {
-          return 6.0;
-        }
-        else
-        {
-           if 1<5
-           {
-             return 3.14;
-           }
-           else
-           {
-                return 1.1;
-           }
-        }
-
+        //comment
+        /* some multi line hints */
     }
    "#;
 

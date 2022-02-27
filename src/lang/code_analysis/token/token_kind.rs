@@ -48,4 +48,7 @@ pub enum TokenKind
     LetToken,
     FunToken,
     DataTypeToken,
+
+    LineCommentToken,
+    BlockCommentToken,
 }
