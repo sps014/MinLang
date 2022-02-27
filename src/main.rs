@@ -9,9 +9,10 @@ fn main() ->Result<(),Error>
 {
 
     let input_text=r#"
-    fun get(a:int,b:float,a:float):int
+    fun get(a:int,b:float):int
     {
         //comment
+        let c=0;
         /* some multi line hints */
         return a;
     }
@@ -21,8 +22,8 @@ fn main() ->Result<(),Error>
     let mut parser=Parser::new(lexer);
     let ast=parser.parse()?;
     let mut analyzer=Anaylzer::new(&ast);
-    analyzer.analyze()?;
-    let generator=WasmGenerator::new(&ast);
+    let symbol_info=analyzer.analyze()?;
+    let generator=WasmGenerator::new(&ast,&symbol_info);
     let text=generator.build()?;
     println!("{}",text.to_string());
     println!("generated assembly successfully");

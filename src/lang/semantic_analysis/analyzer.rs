@@ -1,4 +1,5 @@
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
+use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use std::rc::Rc;
 use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, Type, ProgramNode, StatementNode};
@@ -19,18 +20,19 @@ impl<'a> Anaylzer<'a> {
     pub fn new(tree: &'a SyntaxTree) -> Self {
         Self { syntax_tree:tree.clone(), function_table: FunctionTable::new() }
     }
-    pub fn analyze(&mut self) -> Result<(), Error> {
+    pub fn analyze(&mut self) -> Result<HashMap<String,Rc<RefCell<SymbolTable>>>, Error> {
         let pgm= self.syntax_tree.get_root();
-        self.analyze_pgm(pgm.clone())?;
-        Ok(())
+        self.analyze_pgm(pgm.clone())
     }
-    fn analyze_pgm(&mut self,node:ProgramNode) -> Result<(), Error> {
-     for function in node.functions.iter() {
-         self.analyze_function(function)?;
+    fn analyze_pgm(&mut self,node:ProgramNode) -> Result<HashMap<String,Rc<RefCell<SymbolTable>>>, Error> {
+        let mut symbol_table_map=HashMap::new();
+        for function in node.functions.iter() {
+         let r=self.analyze_function(function)?;
+         symbol_table_map.insert(function.name.text.clone(),r);
      }
-        Ok(())
+        Ok(symbol_table_map)
     }
-    fn analyze_function(&mut self,function:&FunctionNode) -> Result<(), Error> {
+    fn analyze_function(&mut self,function:&FunctionNode) -> Result<Rc<RefCell<SymbolTable>>, Error> {
         let param_table=Rc::new(RefCell::new(self.add_function_param_table(function)?));
         self.analyze_body(&function.body,function,Some(&param_table),false)?;
         // check return
@@ -38,7 +40,7 @@ impl<'a> Anaylzer<'a> {
         graph.build()?;
         let cp=function.clone();
         self.function_table.add_function(cp.name.text,FunctionTableInfo::from(function))?;
-        Ok(())
+        Ok(param_table.clone())
     }
     fn add_function_param_table(&mut self,function:&FunctionNode) -> Result<SymbolTable, Error> {
         let mut param_table=SymbolTable::new(None);
@@ -55,9 +57,15 @@ impl<'a> Anaylzer<'a> {
             Some(t) => Some(Rc::clone(t)),
             None => None,
         };
-        let symbol_table = Rc::new(RefCell::new(SymbolTable::new(parent_scope)));
+        let symbol_table = Rc::new(RefCell::new(SymbolTable::new(parent_scope.clone())));
+        if parent_scope.is_some()
+        {
+            let mut parent_table=&parent_scope.unwrap();
+            (*parent_table).borrow_mut().add_child(symbol_table.clone());
+        }
         for statement in body.iter() {
-            self.analyze_statement(statement,parent_function,&symbol_table,has_parent_loop)?;
+            let clone=&symbol_table.clone();
+            self.analyze_statement(statement,parent_function,&clone,has_parent_loop)?;
         }
         Ok(())
     }
