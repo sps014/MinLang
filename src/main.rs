@@ -1,8 +1,12 @@
 mod lang;
+
+use std::io::Error;
 use lang::code_analysis::syntax::lexer::Lexer;
 use crate::lang::code_analysis::syntax::parser::Parser;
+use crate::lang::code_generator::wasm_generator::WasmGenerator;
 use crate::lang::semantic_analysis::analyzer::Anaylzer;
-fn main() {
+fn main() ->Result<(),Error>
+{
 
     let input_text=r#"
     fun get()
@@ -13,14 +17,12 @@ fn main() {
    "#;
 
     let lexer= Lexer::new(input_text.to_string());
-    let parser=Parser::new(lexer);
-    let mut analyzer=Anaylzer::new(parser);
-    let result=analyzer.analyze();
-    match result{
-        Ok(()) =>
-            println!("No errors found"),
-
-        Err(e) => println!("error: {}",e),
-    }
+    let mut parser=Parser::new(lexer);
+    let ast=parser.parse()?;
+    let mut analyzer=Anaylzer::new(&ast);
+    analyzer.analyze()?;
+    let generator=WasmGenerator::new(&ast);
+    println!("no errors");
+    Ok(())
 }
 

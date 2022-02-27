@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::io::{Error, ErrorKind};
 use std::rc::Rc;
 use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, Type, ProgramNode, StatementNode};
+use crate::lang::code_analysis::syntax::syntax_tree::SyntaxTree;
 use crate::lang::code_analysis::text::text_span::TextSpan;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 use crate::lang::code_analysis::token::token_kind::TokenKind;
@@ -11,16 +12,15 @@ use crate::lang::semantic_analysis::symbol_table::SymbolTable;
 use crate::Parser;
 
 pub struct Anaylzer<'a> {
-    parser: Parser<'a>,
+    syntax_tree:&'a SyntaxTree ,
     function_table:FunctionTable
 }
 impl<'a> Anaylzer<'a> {
-    pub fn new(parser: Parser<'a>) -> Self {
-        Self { parser, function_table: FunctionTable::new() }
+    pub fn new(tree: &'a SyntaxTree) -> Self {
+        Self { syntax_tree:tree.clone(), function_table: FunctionTable::new() }
     }
     pub fn analyze(&mut self) -> Result<(), Error> {
-        let ast = self.parser.parse()?;
-        let pgm= ast.get_root();
+        let pgm= self.syntax_tree.get_root();
         self.analyze_pgm(pgm.clone())?;
         Ok(())
     }
