@@ -103,11 +103,95 @@ impl<'a> WasmGenerator<'a>
     }
     fn build_if_else(&self,condition:&ExpressionNode,body:&Vec<StatementNode>,
                      else_if:&Vec<(ExpressionNode,Vec<StatementNode>)>,
-                     else_body:&Vec<StatementNode>,
+                     else_body:&Option<Vec<StatementNode>>,
                      function:&FunctionNode,
                      writer:&mut IndentedTextWriter)->Result<(),Error>
     {
-        
+        let mut arr=Vec::new();
+        arr.push((Some(condition.clone()),body.clone()));
+        for i in else_if.iter()
+        {
+            arr.push((Some(i.0.clone()),i.1.clone()));
+        }
+        if else_body.is_some()
+        {
+            arr.push((None,else_body.clone().unwrap()));
+        }
+        self.build_if_else_parts(&arr,function,0,writer)?;
+
+        Ok(())
+    }
+    fn build_if_else_parts(&self,parts:&Vec<(Option<ExpressionNode>,Vec<StatementNode>)>,
+                           function:&FunctionNode,index:usize,
+                           writer:&mut IndentedTextWriter)->Result<(),Error>
+    {
+        /*
+        if(index==arr.Count)
+            return;
+
+        var cur=arr[index];
+        //generate else
+        if (cur.Condition is  null && index == arr.Count - 1)
+        {
+            Visit(cur.Body);
+        }
+        //generate if then
+        else
+        {
+            Visit(cur.Condition!);
+            _writer.WriteLine("(if");
+            _writer.Indent++;
+            _writer.WriteLine("(then");
+            _writer.Indent++;
+            Visit(cur.Body);
+            _writer.Indent--;
+            _writer.WriteLine(")");
+
+
+            if (index + 1 < arr.Count)
+            {
+                _writer.WriteLine("(else");
+                _writer.Indent++;
+                RecursiveLadderBuildup(arr, index + 1);
+                _writer.Indent--;
+                _writer.WriteLine(")");
+            }
+
+            _writer.Indent--;
+            _writer.WriteLine(")");
+        }
+         */
+        if index==parts.len()
+        {
+            return Ok(());
+        }
+        let cur=&parts[index];
+        //generate else
+        if cur.0.is_none() && index == parts.len() - 1
+        {
+            self.build_body(&cur.1,function,writer)?;
+        }
+        else
+        {
+            self.build_expression(&cur.0.clone().unwrap(),&"int".to_string(),function,writer)?;
+            writer.write_line("(if");
+            writer.indent();
+            writer.write_line("(then");
+            writer.indent();
+            self.build_body(&cur.1,function,writer)?;
+            writer.unindent();
+            writer.write_line(")");
+            if index+1<parts.len()
+            {
+                writer.write_line("(else");
+                writer.indent();
+                self.build_if_else_parts(parts,function,index+1,writer)?;
+                writer.unindent();
+                writer.write_line(")");
+            }
+            writer.unindent();
+            writer.write_line(")");
+        }
         Ok(())
     }
     fn build_break(&self,writer:&mut IndentedTextWriter)->Result<(),Error>
@@ -220,6 +304,8 @@ impl<'a> WasmGenerator<'a>
                 writer.write_line(format!("{}.sub", symbol).as_str()),
             TokenKind::StarToken =>
                 writer.write_line(format!("{}.mul", symbol).as_str()),
+            TokenKind::EqualEqualToken =>
+                writer.write_line(format!("{}.eq", symbol).as_str()),
             _=>{}
         };
         if symbol=="f32"
@@ -240,6 +326,7 @@ impl<'a> WasmGenerator<'a>
                 TokenKind::PlusToken=>{},
                 TokenKind::MinusToken=>{},
                 TokenKind::StarToken=>{},
+                TokenKind::EqualEqualToken=>{},
                 _=>return Err(Error::new(ErrorKind::Other,format!("unknown operator {}",opr.text)))
             };
         }
@@ -261,6 +348,7 @@ impl<'a> WasmGenerator<'a>
                 TokenKind::PlusToken=>{},
                 TokenKind::MinusToken=>{},
                 TokenKind::StarToken=>{},
+                TokenKind::EqualEqualToken=>{},
                 _=>return Err(Error::new(ErrorKind::Other,format!("unknown operator {}",opr.text)))
             };
         }
