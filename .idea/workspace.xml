@@ -12,10 +12,13 @@
     <cargoProject FILE="$PROJECT_DIR$/Cargo.toml" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="44a0d877-f1c5-4682-8ee2-71f570a7ee1d" name="Default Changelist" comment="">
+    <list default="true" id="2588e62c-ebde-45e8-b5d2-e5e4b6913ccc" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/src/sample/basic_sum.ml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/SyntaxExpressionTree.iml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/code_generator/wasm_generator.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_generator/wasm_generator.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lang/semantic_analysis/analyzer.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/semantic_analysis/analyzer.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -26,34 +29,17 @@
   <component name="ClangdSettings">
     <option name="formatViaClangd" value="false" />
   </component>
-  <component name="FileTemplateManagerImpl">
-    <option name="RECENT_TEMPLATES">
-      <list>
-        <option value="Rust File" />
-      </list>
-    </option>
-  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="GitSEFilterConfiguration">
-    <file-type-list>
-      <filtered-out-file-type name="LOCAL_BRANCH" />
-      <filtered-out-file-type name="REMOTE_BRANCH" />
-      <filtered-out-file-type name="TAG" />
-      <filtered-out-file-type name="COMMIT_BY_MESSAGE" />
-    </file-type-list>
-  </component>
   <component name="MacroExpansionManager">
-    <option name="directoryName" value="ohz0zpco" />
+    <option name="directoryName" value="2u30ckkz" />
   </component>
   <component name="MarkdownSettingsMigration">
     <option name="stateVersion" value="1" />
   </component>
-  <component name="ProjectId" id="1sl65Wldl0aGZmFq2taKmewvxz6" />
-  <component name="ProjectLevelVcsManager">
-    <ConfirmationsSetting value="2" id="Add" />
-  </component>
+  <component name="ProjectId" id="25hgulcJ5GC37Cf1dc0Jts8XYUs" />
+  <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
@@ -69,25 +55,29 @@
     <property name="node.js.detected.package.tslint" value="true" />
     <property name="node.js.selected.package.eslint" value="(autodetect)" />
     <property name="node.js.selected.package.tslint" value="(autodetect)" />
+    <property name="nodejs_package_manager_path" value="npm" />
     <property name="org.rust.cargo.project.model.PROJECT_DISCOVERY" value="true" />
-    <property name="org.rust.disableDetachedFileInspectionD:/Projects/MinLang/src/lang/code_analysis/token/token_kind.rs" value="true" />
-    <property name="settings.editor.selected.configurable" value="CPPToolchains" />
-  </component>
-  <component name="RecentsManager">
-    <key name="MoveFile.RECENT_KEYS">
-      <recent name="D:\Projects\MinLang\src\lang\code_analysis\syntax" />
-      <recent name="D:\Projects\MinLang\src\lang\code_analysis\token" />
-    </key>
+    <property name="settings.editor.selected.configurable" value="preferences.pluginManager" />
   </component>
   <component name="RunManager">
-    <configuration default="true" type="GradleAppRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" PASS_PARENT_ENVS_2="true">
+    <configuration name="Run min_lang" type="CargoCommandRunConfiguration" factoryName="Cargo Command" temporary="true">
+      <option name="command" value="run --package min_lang --bin min_lang" />
+      <option name="workingDirectory" value="file://$PROJECT_DIR$" />
+      <option name="channel" value="DEFAULT" />
+      <option name="requiredFeatures" value="true" />
+      <option name="allFeatures" value="false" />
+      <option name="emulateTerminal" value="false" />
+      <option name="withSudo" value="false" />
+      <option name="backtrace" value="SHORT" />
+      <envs />
+      <option name="isRedirectInput" value="false" />
+      <option name="redirectInputPath" value="" />
       <method v="2">
-        <option name="com.jetbrains.cidr.cpp.gradle.execution.GradleNativeBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+        <option name="CARGO.BUILD_TASK_PROVIDER" enabled="true" />
       </method>
     </configuration>
-    <configuration name="Run syntax_expression_tree" type="CargoCommandRunConfiguration" factoryName="Cargo Command" temporary="true">
-      <option name="command" value="run --package syntax_expression_tree --bin syntax_expression_tree" />
-      <option name="workingDirectory" value="file://$PROJECT_DIR$" />
+    <configuration default="true" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
+      <option name="command" value="run" />
       <option name="channel" value="DEFAULT" />
       <option name="requiredFeatures" value="true" />
       <option name="allFeatures" value="false" />
@@ -103,64 +93,30 @@
     </configuration>
     <recent_temporary>
       <list>
-        <item itemvalue="Cargo.Run syntax_expression_tree" />
+        <item itemvalue="Cargo.Run min_lang" />
       </list>
     </recent_temporary>
   </component>
   <component name="RustProjectSettings">
-    <option name="runExternalLinterOnTheFly" value="true" />
     <option name="toolchainHomeDirectory" value="$USER_HOME$/.cargo/bin" />
-    <option name="version" value="2" />
   </component>
   <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
-      <changelist id="44a0d877-f1c5-4682-8ee2-71f570a7ee1d" name="Default Changelist" comment="" />
-      <created>1621434649403</created>
+      <changelist id="2588e62c-ebde-45e8-b5d2-e5e4b6913ccc" name="Changes" comment="" />
+      <created>1645984960627</created>
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
-      <updated>1621434649403</updated>
-      <workItem from="1621434653157" duration="149000" />
-      <workItem from="1621435313930" duration="3200000" />
-      <workItem from="1621610835452" duration="1119000" />
-      <workItem from="1621612177706" duration="2007000" />
-      <workItem from="1622973182301" duration="146000" />
-      <workItem from="1630598388203" duration="355000" />
-      <workItem from="1631967367164" duration="35000" />
-      <workItem from="1631967597848" duration="99000" />
-      <workItem from="1644757400142" duration="46000" />
-      <workItem from="1644757466214" duration="2017000" />
-      <workItem from="1644911673369" duration="19000" />
-      <workItem from="1644911708464" duration="45000" />
-      <workItem from="1644911773940" duration="1756000" />
-      <workItem from="1645430163461" duration="7460000" />
-      <workItem from="1645525752187" duration="273000" />
-      <workItem from="1645526094420" duration="14698000" />
-      <workItem from="1645597953909" duration="4481000" />
-      <workItem from="1645602496951" duration="5503000" />
-      <workItem from="1645609956590" duration="24627000" />
-      <workItem from="1645691207669" duration="3918000" />
-      <workItem from="1645703077355" duration="9415000" />
-      <workItem from="1645779416034" duration="1700000" />
-      <workItem from="1645781395725" duration="27097000" />
-      <workItem from="1645871040711" duration="22446000" />
-      <workItem from="1645947659369" duration="34734000" />
+      <updated>1645984960627</updated>
+      <workItem from="1645984963761" duration="3226000" />
     </task>
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
-  <component name="Vcs.Log.Tabs.Properties">
-    <option name="TAB_STATES">
-      <map>
-        <entry key="MAIN">
-          <value>
-            <State />
-          </value>
-        </entry>
-      </map>
-    </option>
+  <component name="UnknownFeatures">
+    <option featureType="com.intellij.fileTypeFactory" implementationName="*.ml" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />
