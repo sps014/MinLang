@@ -37,6 +37,9 @@ impl<'a> Lexer<'a> {
         map.push((TokenKind::WhileToken,r"while"));
         map.push((TokenKind::ForToken,r"for"));
 
+        map.push((TokenKind::BooleanToken,r"true"));
+        map.push((TokenKind::BooleanToken,r"false"));
+
         map.push((TokenKind::DataTypeToken,r"int"));
         map.push((TokenKind::DataTypeToken,r"float"));
         map.push((TokenKind::DataTypeToken,r"void"));
@@ -55,10 +58,10 @@ impl<'a> Lexer<'a> {
         map.push((TokenKind::EqualEqualToken,r"=="));
         map.push((TokenKind::EqualToken,r"="));
         map.push((TokenKind::NotEqualToken,r"!="));
-        map.push((TokenKind::SmallerThanToken,r"<"));
         map.push((TokenKind::SmallerThanEqualToken,r"<="));
-        map.push((TokenKind::GreaterThanToken,r">"));
+        map.push((TokenKind::SmallerThanToken,r"<"));
         map.push((TokenKind::GreaterThanEqualToken,r">="));
+        map.push((TokenKind::GreaterThanToken,r">"));
 
         map.push((TokenKind::BangToken,r"!"));
         map.push((TokenKind::AmpersandAmpersandToken,r"&&"));

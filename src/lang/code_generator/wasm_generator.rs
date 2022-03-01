@@ -259,6 +259,7 @@ impl<'a> WasmGenerator<'a>
         let type_=match literal {
           Type::Integer(i)=>format!("i32.const {}",i.text),
           Type::Float(f)=>format!("f32.const {}",f.text),
+          Type::Boolean(f)=>format!("i32.const {}",if f.text=="true"{1}else{0}),
             _=>return Err(Error::new(ErrorKind::Other,format!("unknown literal {:?}",literal)))
         };
         writer.write_line(type_.as_str());
@@ -452,6 +453,7 @@ impl<'a> WasmGenerator<'a>
         {
             "int"=>"i32".to_string(),
             "float"=>"f32".to_string(),
+            "bool"=>"i32".to_string(),
             _=>return Err(Error::new(ErrorKind::Other,format!("unsupported type {}",typename)))
         };
         Ok(r)

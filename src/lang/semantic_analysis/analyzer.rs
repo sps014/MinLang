@@ -194,6 +194,7 @@ impl<'a> Anaylzer<'a> {
                                  symbol_table:&Rc<RefCell<SymbolTable>>)->Result<Type,Error> {
         let left_value = self.analyze_expression(left,parent_function,symbol_table)?;
         let right_value = self.analyze_expression(right,parent_function,symbol_table)?;
+
         self.compare_data_type(&left_value,&right_value,&opr.position)?;
         match (&left_value,&opr.kind) {
           (Type::String(_),TokenKind::PlusToken)=> {}

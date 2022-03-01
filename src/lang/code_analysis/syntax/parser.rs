@@ -273,8 +273,15 @@ impl<'a> Parser<'a>
             self.match_token(TokenKind::CloseParenthesisToken)?;
             return Ok(ExpressionNode::Parenthesized(Box::new(expression)));
         }
+        else if  self.current_token().kind==TokenKind::BooleanToken
+        {
+            return Ok(ExpressionNode::Literal(Type::Boolean(self.match_token(TokenKind::BooleanToken)?)));
+        }
+        else if self.current_token().kind==TokenKind::BooleanToken {
+            return Ok(ExpressionNode::Literal(Type::Boolean(self.match_token(TokenKind::BooleanToken)?)));
+        }
         //parse identifiers
-        if self.current_token().kind==IdentifierToken
+        else if self.current_token().kind==IdentifierToken
         {
             if self.peek_token(1).kind==TokenKind::OpenParenthesisToken
             {
