@@ -73,6 +73,7 @@ pub enum Type
     Integer(SyntaxToken),
     Float(SyntaxToken),
     String(SyntaxToken),
+    Boolean(SyntaxToken),
     Void,
 }
 
@@ -84,6 +85,7 @@ impl Type {
             Type::Float(_) => "float",
             Type::String(_) => "string",
             Type::Void => "void",
+            Type::Boolean(_) => "bool",
         }.to_string()
     }
     pub fn get_line_str(&self)->String
@@ -93,6 +95,7 @@ impl Type {
             Type::Float(token) => token.position.get_point_str(),
             Type::String(token) =>token.position.get_point_str(),
             Type::Void => "".to_string(),
+            Type::Boolean(token) => token.position.get_point_str(),
         }
     }
 
@@ -102,6 +105,7 @@ impl Type {
             "float" => Type::Float(token),
             "string" => Type::String(token),
             "void" => Type::Void,
+            "bool" => Type::Boolean(token),
             _ => return Err(Error::new(ErrorKind::Other,"TypeLiteral::from_token: Unexpected token kind: {:?}"))
         };
         Ok(r)
