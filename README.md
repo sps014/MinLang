@@ -1,14 +1,14 @@
 # MinLang
 A minimal statically typed turing complete scripting language.
 
-#### features
+#### language goals
 1. Statically typed
 2. Type inferencing
 3. turing complete
 4. Semantic analyzer with Control FLow analysis
 5. ultra fast
 6. Clear error messages
-7. web assembly text code generator 
+7. web assembly text code generator ,
 
 
 eg. 
