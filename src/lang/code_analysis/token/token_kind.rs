@@ -6,9 +6,9 @@ pub enum TokenKind
     BadToken,
 
     IdentifierToken,
-    NumberToken,
-    StringToken,
-    BooleanToken,
+    NumberLiteralToken,
+    StringLiteralToken,
+    BooleanLiteralToken,
     
     PlusToken,
     MinusToken,

@@ -65,6 +65,7 @@ pub enum ExpressionNode
     Identifier(SyntaxToken),
     Parenthesized(Box<ExpressionNode>),
     FunctionCall(SyntaxToken, Vec<ExpressionNode>),
+    TypeCast(SyntaxToken, Box<ExpressionNode>),
 }
 
 #[derive(Debug,Clone,PartialEq)]

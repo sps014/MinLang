@@ -1,13 +1,11 @@
-fun sum(a:int, b:int):int
+fun factorial(n:int):int
 {
-    let i=0;
-    while (true)
+    let r=1;
+    let i=2;
+    while i<=n
     {
+        r=r*i;
         i=i+1;
-        if (i>=5)
-        {
-            break;
-        }
     }
-    return a + b;
+    return r;
 }

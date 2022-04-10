@@ -13,13 +13,17 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="2588e62c-ebde-45e8-b5d2-e5e4b6913ccc" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/src/lang/code_generator/cpp_generator.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/sample/index.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax/lexer.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/lexer.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax/parser.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/parser.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/syntax/syntax_node.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/syntax/syntax_node.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/lang/code_analysis/token/token_kind.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_analysis/token/token_kind.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lang/code_generator/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_generator/mod.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/lang/code_generator/wasm_generator.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/code_generator/wasm_generator.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/lang/semantic_analysis/analyzer.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lang/semantic_analysis/analyzer.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/sample/basic_sum.ml" beforeDir="false" afterPath="$PROJECT_DIR$/src/sample/basic_sum.ml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/sample/basic_sum.wat" beforeDir="false" afterPath="$PROJECT_DIR$/src/sample/basic_sum.wat" afterDir="false" />
     </list>
@@ -31,6 +35,13 @@
   <component name="ClangdSettings">
     <option name="formatViaClangd" value="false" />
   </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Rust File" />
+      </list>
+    </option>
+  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
@@ -41,12 +52,15 @@
     <option name="stateVersion" value="1" />
   </component>
   <component name="ProjectId" id="25hgulcJ5GC37Cf1dc0Jts8XYUs" />
-  <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
+  <component name="ProjectLevelVcsManager" settingsEditedManually="true">
+    <ConfirmationsSetting value="2" id="Add" />
+  </component>
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
   <component name="PropertiesComponent">
+    <property name="ASKED_ADD_EXTERNAL_FILES" value="true" />
     <property name="RunOnceActivity.OpenProjectViewOnStart" value="true" />
     <property name="RunOnceActivity.ShowReadmeOnStart" value="true" />
     <property name="RunOnceActivity.cidr.known.project.marker" value="true" />
@@ -99,7 +113,16 @@
       <workItem from="1645984963761" duration="3306000" />
       <workItem from="1646019478002" duration="1411000" />
       <workItem from="1646058320508" duration="1943000" />
-      <workItem from="1646125365109" duration="1453000" />
+      <workItem from="1646125365109" duration="2112000" />
+      <workItem from="1646207193610" duration="2469000" />
+      <workItem from="1646215586231" duration="3973000" />
+      <workItem from="1646290329067" duration="654000" />
+      <workItem from="1646502071685" duration="21000" />
+      <workItem from="1646502115473" duration="1444000" />
+      <workItem from="1646635908003" duration="966000" />
+      <workItem from="1646993599626" duration="4433000" />
+      <workItem from="1647007531767" duration="20000" />
+      <workItem from="1648108619510" duration="3000" />
     </task>
     <servers />
   </component>
@@ -108,6 +131,20 @@
   </component>
   <component name="UnknownFeatures">
     <option featureType="com.intellij.fileTypeFactory" implementationName="*.ml" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <option name="ADD_EXTERNAL_FILES_SILENTLY" value="true" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

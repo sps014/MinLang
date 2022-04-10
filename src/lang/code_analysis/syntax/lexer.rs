@@ -37,13 +37,15 @@ impl<'a> Lexer<'a> {
         map.push((TokenKind::WhileToken,r"while"));
         map.push((TokenKind::ForToken,r"for"));
 
-        map.push((TokenKind::BooleanToken,r"true"));
-        map.push((TokenKind::BooleanToken,r"false"));
+        map.push((TokenKind::BooleanLiteralToken, r"true"));
+        map.push((TokenKind::BooleanLiteralToken, r"false"));
 
         map.push((TokenKind::DataTypeToken,r"int"));
         map.push((TokenKind::DataTypeToken,r"float"));
         map.push((TokenKind::DataTypeToken,r"void"));
-        map.push((TokenKind::StringToken,r#""([^"\\]*(\\.[^"\\]*)*)""#));
+        map.push((TokenKind::DataTypeToken,r"bool"));
+
+        map.push((TokenKind::StringLiteralToken, r#""([^"\\]*(\\.[^"\\]*)*)""#));
         map.push((TokenKind::LetToken,r"let"));
         map.push((TokenKind::ReturnToken,r"return"));
         map.push((TokenKind::BreakToken,r"break"));
@@ -53,7 +55,7 @@ impl<'a> Lexer<'a> {
         map.push((TokenKind::BlockCommentToken,r"/\*[^*]*\*+(?:[^/*][^*]*\*+)*/"));
 
         map.push((TokenKind::IfToken,r"fun"));
-        map.push((TokenKind::NumberToken,r"[0-9]+(\.[0-9]+)?"));
+        map.push((TokenKind::NumberLiteralToken, r"[0-9]+(\.[0-9]+)?"));
 
         map.push((TokenKind::EqualEqualToken,r"=="));
         map.push((TokenKind::EqualToken,r"="));

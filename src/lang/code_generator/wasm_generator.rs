@@ -251,6 +251,32 @@ impl<'a> WasmGenerator<'a>
             self.build_function_invocation(&n.text.clone(),args,function,writer)?,
             ExpressionNode::Parenthesized(e)
             =>self.build_expression(e,left_side,function,writer)?,
+            ExpressionNode::TypeCast(t,e)=>
+            self.build_type_cast(&t.text.clone(),e,left_side,function,writer)?,
+        }
+        Ok(())
+    }
+    fn build_type_cast(&self,type_name:&String,expression:&ExpressionNode,
+                       left_side:&String,function:&FunctionNode,
+                       writer:&mut IndentedTextWriter)->Result<(),Error>
+    {
+        self.build_expression(expression,left_side,function,writer)?;
+
+        match (type_name.as_str(),left_side.as_str()) {
+            ("float","int")=>
+                {
+                    self.build_expression(expression,&"float".to_string(),function,writer)?;
+                    writer.write_line(format!("f32.convert_i32_s").as_str());
+                },
+            ("int","float")=>
+                {
+                    self.build_expression(expression,&"int".to_string(),function,writer)?;
+                    writer.write_line(format!("i32.trunc_f32_s").as_str());
+                },
+
+            _=>return Err(Error::new(ErrorKind::Other,
+                                     format!("Unsupported type cast {} to {} in function {}",
+                                             type_name,left_side,function.name.text).as_str())),
         }
         Ok(())
     }

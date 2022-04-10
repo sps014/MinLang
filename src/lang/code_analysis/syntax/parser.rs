@@ -266,6 +266,10 @@ impl<'a> Parser<'a>
         //parse parenthesized expressions
         if self.current_token().kind==TokenKind::OpenParenthesisToken
         {
+            if self.peek_token(1).kind==TokenKind::DataTypeToken
+            {
+                return self.parse_type_cast();
+            }
             //eat the open parenthesis
             self.match_token(TokenKind::OpenParenthesisToken)?;
             let expression=self.parse_expression(0)?;
@@ -273,12 +277,12 @@ impl<'a> Parser<'a>
             self.match_token(TokenKind::CloseParenthesisToken)?;
             return Ok(ExpressionNode::Parenthesized(Box::new(expression)));
         }
-        else if  self.current_token().kind==TokenKind::BooleanToken
+        else if  self.current_token().kind==TokenKind::BooleanLiteralToken
         {
-            return Ok(ExpressionNode::Literal(Type::Boolean(self.match_token(TokenKind::BooleanToken)?)));
+            return Ok(ExpressionNode::Literal(Type::Boolean(self.match_token(TokenKind::BooleanLiteralToken)?)));
         }
-        else if self.current_token().kind==TokenKind::BooleanToken {
-            return Ok(ExpressionNode::Literal(Type::Boolean(self.match_token(TokenKind::BooleanToken)?)));
+        else if self.current_token().kind==TokenKind::BooleanLiteralToken {
+            return Ok(ExpressionNode::Literal(Type::Boolean(self.match_token(TokenKind::BooleanLiteralToken)?)));
         }
         //parse identifiers
         else if self.current_token().kind==IdentifierToken
@@ -292,7 +296,7 @@ impl<'a> Parser<'a>
                 return Ok(ExpressionNode::Identifier(self.next_token()));
             }
         }
-        else if self.current_token().kind==TokenKind::NumberToken
+        else if self.current_token().kind==TokenKind::NumberLiteralToken
         {
             if self.current_token().text.contains('.')
             {
@@ -302,13 +306,23 @@ impl<'a> Parser<'a>
                 return Ok(ExpressionNode::Literal(Type::Integer(self.next_token())));
             }
         }
-        else if self.current_token().kind==TokenKind::StringToken
+        else if self.current_token().kind==TokenKind::StringLiteralToken
         {
             return Ok(ExpressionNode::Literal(Type::String(self.next_token())));
         }
 
         let identifier=self.match_token(TokenKind::IdentifierToken)?;
         Ok(ExpressionNode::Identifier(identifier))
+    }
+    fn parse_type_cast(&mut self)->Result<ExpressionNode,Error>
+    {
+        //eat the open parenthesis
+        self.match_token(TokenKind::OpenParenthesisToken)?;
+        let type_token=self.match_token(TokenKind::DataTypeToken)?;
+        //eat the close parenthesis
+        self.match_token(TokenKind::CloseParenthesisToken)?;
+        let expression=self.parse_expression(0)?;
+        Ok(ExpressionNode::TypeCast(type_token,Box::new(expression)))
     }
     fn parse_invocation_expression(&mut self)->Result<ExpressionNode,Error>
     {

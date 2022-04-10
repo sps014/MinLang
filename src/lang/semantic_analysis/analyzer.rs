@@ -188,7 +188,18 @@ impl<'a> Anaylzer<'a> {
                 Ok(self.analyze_function_call(name,params,parent_function,symbol_table)?),
             ExpressionNode::Parenthesized(expr)=>
                 Ok(self.analyze_expression(expr,parent_function,symbol_table)?),
+            ExpressionNode::TypeCast(t,expr)=>
+                Ok(self.analyze_type_cast(t,expr,parent_function,symbol_table)?),
         };
+    }
+    fn analyze_type_cast(&self,t:&SyntaxToken,expr:&ExpressionNode,parent_function:&FunctionNode,
+                         symbol_table:&Rc<RefCell<SymbolTable>>)->Result<Type,Error> {
+        self.analyze_expression(expr,parent_function,symbol_table)?;
+        if t.text=="void" {
+            return Err(Error::new(ErrorKind::Other,
+                                  format!("Cannot cast to void type in function {}",parent_function.name.text)));
+        }
+        return Ok(Type::from_token(t.clone())?);
     }
     fn analyze_binary_expression(&self,left:&ExpressionNode,opr:&SyntaxToken,right:&ExpressionNode,parent_function:&FunctionNode,
                                  symbol_table:&Rc<RefCell<SymbolTable>>)->Result<Type,Error> {
