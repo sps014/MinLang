@@ -43,25 +43,17 @@ impl SymbolTable{
             None => Ok(()),
         }
     }
-    pub fn get_symbol(&self,name:SyntaxToken)->Result<Type,Error> {
-        if self.symbols.contains_key(&name.text)
-        {
-            return Ok(self.symbols.get(&name.text).unwrap().clone());
+    pub fn get_symbol(&self, name: &SyntaxToken) -> Result<Type, Error> {
+        if let Some(symbol) = self.symbols.get(&name.text) {
+            return Ok(symbol.clone());
         }
 
-        match self.parent
-        {
-            Some(ref parent) =>
-                {
-                    let r=(*parent).as_ref().borrow().get_symbol(name)?;
-                    return Ok(r);
-                }
-            None =>
-                {
-                    return Err(Error::new(ErrorKind::Other, format!("variable {} does not exist at: {}"
-                                                                    , name.text,name.position.get_point_str())));
-                }
+        match self.parent {
+            Some(ref parent) => parent.as_ref().borrow().get_symbol(name),
+            None => Err(Error::new(
+                ErrorKind::Other,
+                format!("variable {} does not exist at: {}", name.text, name.position.get_point_str()),
+            )),
         }
-
     }
 }

@@ -13,7 +13,7 @@ use crate::lang::code_analysis::syntax::syntax_tree::SyntaxTree;
 use crate::lang::code_generator::wasm::WasmGenerator;
 use crate::lang::code_generator::CodeGenerator;
 use crate::lang::diagnostics::DiagnosticBag;
-use crate::lang::semantic_analysis::analyzer::Anaylzer;
+use crate::lang::semantic_analysis::analyzer::Analyzer;
 
 pub enum Target {
     Wasm,
@@ -70,7 +70,7 @@ impl Compiler {
         info!("finished parsing");
         info!("starting semantic analysis");
         
-        let mut analyzer = Anaylzer::new(&ast, &arena);
+        let mut analyzer = Analyzer::new(&ast, &arena);
         let symbol_info = match analyzer.analyze(&mut diagnostics) {
             Ok(info) => info,
             Err(_) => {
@@ -94,8 +94,8 @@ impl Compiler {
         let text = generator.generate()?;
         
         info!("finished code generation");
-        fs::write(format!("{}", out_path), text)?;
-        info!("created file: {}", out_path.clone());
+        fs::write(out_path, text)?;
+        info!("created file: {}", out_path);
         Ok(())
     }
 
@@ -110,8 +110,10 @@ impl Compiler {
         file_contents: &mut std::collections::HashMap<String, String>,
     ) -> Result<(), Error> {
         let path = Path::new(file_path).canonicalize()?;
-        let path_str = path.to_str().unwrap().to_string();
-        
+        let path_str = path.to_str()
+            .ok_or_else(|| Error::new(ErrorKind::InvalidInput, format!("Non-UTF-8 file path: {:?}", path)))?
+            .to_string();
+
         if visited.contains(&path_str) {
             return Ok(()); // Already processed
         }
@@ -145,7 +147,7 @@ impl Compiler {
         diagnostics.extend(&file_diagnostics);
         
         let program = ast.get_root();
-        let parent_dir = path.parent().unwrap();
+        let parent_dir = path.parent().unwrap_or_else(|| Path::new(""));
         
         for import in &program.imports {
             let module_name = import.module_name.text.trim_matches('"');
@@ -154,7 +156,13 @@ impl Compiler {
                 import_path.set_extension("ml");
             }
             
-            let import_path_str = import_path.to_str().unwrap().to_string();
+            let import_path_str = match import_path.to_str() {
+                Some(s) => s.to_string(),
+                None => {
+                    diagnostics.report_error(format!("Non-UTF-8 import path: {:?}", import_path), Some(import.module_name.position.clone()));
+                    continue;
+                }
+            };
             if !import_path.exists() {
                 diagnostics.report_error(format!("Imported file not found: {}", import_path_str), Some(import.module_name.position.clone()));
                 continue;

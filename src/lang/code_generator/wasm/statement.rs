@@ -1,5 +1,6 @@
 use std::io::Error;
 use crate::lang::code_analysis::syntax::nodes::{StatementNode, FunctionNode, ExpressionNode};
+use crate::lang::code_analysis::syntax::nodes::types::strip_nullable;
 use crate::lang::code_analysis::text::indented_text_writer::IndentedTextWriter;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 use super::WasmGenerator;
@@ -27,45 +28,15 @@ impl<'a> WasmGenerator<'a> {
             StatementNode::Continue => self.build_continue(writer)?,
             StatementNode::IfElse(c, b, else_if, else_b) => self.build_if_else(c, b, else_if, else_b, function, writer)?,
             StatementNode::FunctionInvocation(n, generic_args, p) => {
-                let mut function_name = n.text.clone();
-                // If it's a generic call, mangle the name
-                if let Some(generics) = generic_args {
-                    if !generics.is_empty() {
-                        let type_str = generics[0].get_type();
-                        function_name = format!("{}_{}", function_name, type_str);
-                    }
-                } else if self.function_table.get_function(&function_name).is_err() {
-                    // Try to infer generic type from first argument if not explicit
-                    if !p.is_empty() {
-                        if let Ok(inferred_type) = self.infer_expression_type(&p[0], function) {
-                            let mangled = format!("{}_{}", function_name, inferred_type);
-                            if self.function_table.get_function(&mangled).is_ok() {
-                                function_name = mangled;
-                            }
-                        }
-                    }
-                }
+                let function_name = self.resolve_call_name(&n.text, generic_args, p, function);
                 self.build_function_invocation(&function_name, p, function, writer)?
             },
             StatementNode::MethodInvocation(obj, method, generic_args, params) => {
-                // Since it's an invocation as a statement, we don't care about the return value.
-                // We just call the method using build_method_call.
+                // Called purely for side effects: discard any returned value so the WASM stack
+                // stays balanced.
                 self.build_method_call(obj, method, generic_args, params, &"void".to_string(), function, writer)?;
-                // If the method returns a value, we should theoretically drop it, 
-                // but WASM requires `drop` if the function returns something.
-                // MinLang function invocation currently doesn't drop values.
-                // We will leave it as is, or we could look up the return type.
-                let obj_type = self.infer_expression_type(obj, function)?;
-                let struct_name = if obj_type.ends_with("?") {
-                    obj_type[..obj_type.len() - 1].to_string()
-                } else {
-                    obj_type.clone()
-                };
-                let mangled_name = format!("{}_{}", struct_name, method.text);
-                if let Ok(func_info) = self.function_table.get_function(&mangled_name) {
-                    if func_info.return_type.is_some() && func_info.return_type.as_ref().unwrap().get_type() != "void" {
-                        writer.write_line("drop");
-                    }
+                if self.method_returns_value(obj, method, function)? {
+                    writer.write_line("drop");
                 }
             },
         }
@@ -81,14 +52,14 @@ impl<'a> WasmGenerator<'a> {
             writer.write_line("local.set $scratch_ptr");
             writer.write_line("local.get $scratch_ptr");
             writer.write_line("call $retain");
-            
-            // Release old value (in case this declaration is inside a loop and the local is reused)
+
+            // Release old value (in case this declaration is inside a loop and the local is reused).
             writer.write_line(&format!("local.get ${}", left.text));
-            writer.write_line(&format!("call $release_{}", type_str.replace("[]", "_array").replace("?", "")));
-            
+            self.emit_release(&type_str, writer);
+
             writer.write_line("local.get $scratch_ptr");
         }
-        
+
         writer.write_line(&format!("local.set ${}", left.text));
         Ok(())
     }
@@ -96,25 +67,21 @@ impl<'a> WasmGenerator<'a> {
     /// Builds a variable assignment
     pub fn build_assignment(&mut self, left: &SyntaxToken, expression: &ExpressionNode<'a>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let type_str = self.table_read_type(&left.text, function);
-        
-        // Evaluate new value
+
         self.build_expression(expression, &type_str, function, writer)?;
-        
+
         if self.is_reference_type(&type_str) {
             writer.write_line("local.set $scratch_ptr");
-            
-            // Retain new value
+
+            // Retain the new value, then release the value previously held by this local.
             writer.write_line("local.get $scratch_ptr");
             writer.write_line("call $retain");
-            
-            // Release old value
             writer.write_line(&format!("local.get ${}", left.text));
-            writer.write_line(&format!("call $release_{}", type_str.replace("[]", "_array").replace("?", "")));
-            
-            // Store new value
+            self.emit_release(&type_str, writer);
+
             writer.write_line("local.get $scratch_ptr");
         }
-        
+
         writer.write_line(&format!("local.set ${}", left.text));
         Ok(())
     }
@@ -123,14 +90,8 @@ impl<'a> WasmGenerator<'a> {
     pub fn build_index_assignment(&mut self, arr: &ExpressionNode<'a>, index: &ExpressionNode<'a>, expression: &ExpressionNode<'a>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let array_type_str = self.infer_expression_type(arr, function)?;
         let inner_type_str = array_type_str[..array_type_str.len() - 2].to_string();
-        let wasm_type = WasmGenerator::get_wasm_type_from(inner_type_str.clone())?;
-        
-        let element_size = match inner_type_str.as_str() {
-            "bool" => 1,
-            "double" => 8,
-            _ => 4,
-        };
-        
+        let element_size = WasmGenerator::element_size_of(&inner_type_str);
+
         // Calculate the memory address: ptr + 4 + (index * element_size)
         self.build_expression(arr, &array_type_str, function, writer)?;
         writer.write_line("i32.const 4");
@@ -142,35 +103,9 @@ impl<'a> WasmGenerator<'a> {
         }
         writer.write_line("i32.add");
         writer.write_line("local.set $scratch_addr");
-        
-        if self.is_reference_type(&inner_type_str) {
-            self.build_expression(expression, &inner_type_str, function, writer)?;
-            writer.write_line("local.set $scratch_ptr");
-            
-            writer.write_line("local.get $scratch_ptr");
-            writer.write_line("call $retain");
-            
-            writer.write_line("local.get $scratch_addr");
-            writer.write_line("i32.load");
-            writer.write_line(&format!("call $release_{}", inner_type_str.replace("[]", "_array").replace("?", "")));
-            
-            writer.write_line("local.get $scratch_addr");
-            writer.write_line("local.get $scratch_ptr");
-        } else {
-            writer.write_line("local.get $scratch_addr");
-            self.build_expression(expression, &inner_type_str, function, writer)?;
-        }
-        
-        if inner_type_str == "bool" {
-            writer.write_line("i32.store8");
-        } else if wasm_type == "f64" {
-            writer.write_line("f64.store");
-        } else if wasm_type == "f32" {
-            writer.write_line("f32.store");
-        } else {
-            writer.write_line("i32.store");
-        }
-        
+
+        self.emit_store_with_refcount(&inner_type_str, expression, function, writer)?;
+        WasmGenerator::emit_store(&inner_type_str, writer)?;
         Ok(())
     }
 
@@ -186,8 +121,7 @@ impl<'a> WasmGenerator<'a> {
         let field_info = struct_info.fields.get(&member.text).unwrap();
         let offset = field_info.offset;
         let field_type_str = field_info.type_.get_type();
-        let wasm_type = WasmGenerator::get_wasm_type_from(field_type_str.clone())?;
-        
+
         // Address
         self.build_expression(obj, &obj_type_str, function, writer)?;
         if offset > 0 {
@@ -195,35 +129,33 @@ impl<'a> WasmGenerator<'a> {
             writer.write_line("i32.add");
         }
         writer.write_line("local.set $scratch_addr");
-        
-        if self.is_reference_type(&field_type_str) {
-            self.build_expression(expression, &field_type_str, function, writer)?;
+
+        self.emit_store_with_refcount(&field_type_str, expression, function, writer)?;
+        WasmGenerator::emit_store(&field_type_str, writer)?;
+        Ok(())
+    }
+
+    /// Given a target address already in `$scratch_addr`, evaluates `expression` and leaves
+    /// `[address, value]` on the stack ready for a store. For reference types it retains the new
+    /// value and releases the value previously stored at the address.
+    fn emit_store_with_refcount(&mut self, type_str: &str, expression: &ExpressionNode<'a>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        if self.is_reference_type(type_str) {
+            self.build_expression(expression, &type_str.to_string(), function, writer)?;
             writer.write_line("local.set $scratch_ptr");
-            
+
             writer.write_line("local.get $scratch_ptr");
             writer.write_line("call $retain");
-            
+
             writer.write_line("local.get $scratch_addr");
             writer.write_line("i32.load");
-            writer.write_line(&format!("call $release_{}", field_type_str.replace("[]", "_array").replace("?", "")));
-            
+            self.emit_release(type_str, writer);
+
             writer.write_line("local.get $scratch_addr");
             writer.write_line("local.get $scratch_ptr");
         } else {
             writer.write_line("local.get $scratch_addr");
-            self.build_expression(expression, &field_type_str, function, writer)?;
+            self.build_expression(expression, &type_str.to_string(), function, writer)?;
         }
-        
-        if field_type_str == "bool" {
-            writer.write_line("i32.store8");
-        } else if wasm_type == "f64" {
-            writer.write_line("f64.store");
-        } else if wasm_type == "f32" {
-            writer.write_line("f32.store");
-        } else {
-            writer.write_line("i32.store");
-        }
-        
         Ok(())
     }
 
@@ -231,45 +163,27 @@ impl<'a> WasmGenerator<'a> {
     pub fn build_return(&mut self, expression: &Option<ExpressionNode<'a>>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         if let Some(expr) = expression {
             let return_type = function.return_type.as_ref().unwrap();
-            self.build_expression(expr, &return_type.get_type(), function, writer)?;
-            
-            // If returning a reference type, we need to retain it so it survives the scope exit
             let ret_type_str = return_type.get_type();
-            let base_ret_type_str = if ret_type_str.ends_with("?") {
-                ret_type_str[..ret_type_str.len() - 1].to_string()
-            } else {
-                ret_type_str.clone()
-            };
-            
-            if self.is_reference_type(&base_ret_type_str) {
-                // Store in scratch_ptr, retain it, then we will release locals, then put it back on stack
+            self.build_expression(expr, &ret_type_str, function, writer)?;
+
+            // Stash the return value in a scratch local so locals can be released before we
+            // hand it back; reference types are additionally retained so they survive the scope.
+            if self.is_reference_type(strip_nullable(&ret_type_str)) {
                 writer.write_line("local.set $scratch_ptr");
                 writer.write_line("local.get $scratch_ptr");
                 writer.write_line("call $retain");
-            } else if return_type.get_type() == "double" {
+            } else if ret_type_str == "double" {
                 writer.write_line("local.set $scratch_double");
             } else {
-                writer.write_line("local.set $scratch_ptr"); // using scratch_ptr for i32/f32 return values temporarily
+                writer.write_line("local.set $scratch_ptr");
             }
         }
         
-        // Release all local reference variables in the current function scope
-        let locals = self.combined_symbol_lookup.get(&function.name.text).unwrap().clone();
-        for (name, type_) in locals.iter() {
-            let type_str = type_.get_type();
-            let base_type_str = if type_str.ends_with("?") {
-                type_str[..type_str.len() - 1].to_string()
-            } else {
-                type_str.clone()
-            };
-            
-            if self.is_reference_type(&base_type_str) {
-                writer.write_line(&format!("local.get ${}", name));
-                writer.write_line(&format!("call $release_{}", base_type_str.replace("[]", "_array").replace("?", "")));
-            }
-        }
+        // Release all local reference variables in the current function scope.
+        let func_name = self.current_mangled_name.clone().unwrap_or_else(|| function.name.text.clone());
+        self.emit_release_locals(&func_name, writer);
 
-        if let Some(_) = expression {
+        if expression.is_some() {
             let return_type = function.return_type.as_ref().unwrap();
             if return_type.get_type() == "double" {
                 writer.write_line("local.get $scratch_double");

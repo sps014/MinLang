@@ -2,375 +2,260 @@ use std::io::Error;
 use crate::lang::code_analysis::text::indented_text_writer::IndentedTextWriter;
 use super::WasmGenerator;
 
+/// The fixed WebAssembly runtime emitted into every module: memory globals plus the
+/// `$malloc`/`$free`/`$retain` allocator built on a freelist + bump pointer.
+///
+/// Block layout while allocated: `[size: i32][ref_count: i32][data...]`; while free:
+/// `[size: i32][next_free_ptr: i32]`. Returned pointers refer to `data` (block_start + 8).
+const RUNTIME_ALLOCATOR: &str = r#"(global $heap_ptr (mut i32) (i32.const 1024))
+(global $free_list_head (mut i32) (i32.const 0))
+
+(func $malloc (param $size i32) (result i32)
+    (local $curr i32)
+    (local $prev i32)
+    (local $next i32)
+    (local $block_size i32)
+    (local $new_ptr i32)
+    ;; round size up to a multiple of 4, then reserve 8 bytes for the header
+    local.get $size
+    i32.const 3
+    i32.add
+    i32.const -4
+    i32.and
+    local.set $size
+    local.get $size
+    i32.const 8
+    i32.add
+    local.set $size
+    ;; scan the freelist for a large-enough block
+    global.get $free_list_head
+    local.set $curr
+    i32.const 0
+    local.set $prev
+    (block $alloc_done
+        (loop $scan_freelist
+            local.get $curr
+            i32.eqz
+            br_if $alloc_done
+            local.get $curr
+            i32.load
+            local.set $block_size
+            local.get $block_size
+            local.get $size
+            i32.ge_s
+            (if
+                (then
+                    ;; unlink this block from the freelist
+                    local.get $curr
+                    i32.const 4
+                    i32.add
+                    i32.load
+                    local.set $next
+                    local.get $prev
+                    i32.eqz
+                    (if
+                        (then
+                            local.get $next
+                            global.set $free_list_head
+                        )
+                        (else
+                            local.get $prev
+                            i32.const 4
+                            i32.add
+                            local.get $next
+                            i32.store
+                        )
+                    )
+                    ;; ref_count = 1, return data pointer
+                    local.get $curr
+                    i32.const 4
+                    i32.add
+                    i32.const 1
+                    i32.store
+                    local.get $curr
+                    i32.const 8
+                    i32.add
+                    return
+                )
+            )
+            local.get $curr
+            local.set $prev
+            local.get $curr
+            i32.const 4
+            i32.add
+            i32.load
+            local.set $curr
+            br $scan_freelist
+        )
+    )
+    ;; no free block fit: bump-allocate fresh memory
+    global.get $heap_ptr
+    local.set $new_ptr
+    global.get $heap_ptr
+    local.get $size
+    i32.add
+    global.set $heap_ptr
+    local.get $new_ptr
+    local.get $size
+    i32.store
+    local.get $new_ptr
+    i32.const 4
+    i32.add
+    i32.const 1
+    i32.store
+    local.get $new_ptr
+    i32.const 8
+    i32.add
+)
+
+(func $free (param $ptr i32)
+    (local $block_start i32)
+    local.get $ptr
+    i32.eqz
+    br_if 0
+    local.get $ptr
+    i32.const 8
+    i32.sub
+    local.set $block_start
+    local.get $block_start
+    i32.const 4
+    i32.add
+    global.get $free_list_head
+    i32.store
+    local.get $block_start
+    global.set $free_list_head
+)
+
+(func $retain (param $ptr i32)
+    (local $ref_count_ptr i32)
+    local.get $ptr
+    i32.eqz
+    br_if 0
+    local.get $ptr
+    i32.const 4
+    i32.sub
+    local.set $ref_count_ptr
+    local.get $ref_count_ptr
+    local.get $ref_count_ptr
+    i32.load
+    i32.const 1
+    i32.add
+    i32.store
+)
+"#;
+
+/// The fixed string runtime: `$strlen`, `$concat_strings`, and the `$debug_get_free_list_head`
+/// helper used by tests. These are emitted after the type-specific `$release_*` functions.
+const RUNTIME_STRINGS: &str = r#"(func $strlen (param $ptr i32) (result i32)
+    (local $len i32)
+    i32.const 0
+    local.set $len
+    (block $end
+        (loop $start
+            local.get $ptr
+            local.get $len
+            i32.add
+            i32.load8_u
+            i32.eqz
+            br_if $end
+            local.get $len
+            i32.const 1
+            i32.add
+            local.set $len
+            br $start
+        )
+    )
+    local.get $len
+)
+
+(func $concat_strings (param $str1 i32) (param $str2 i32) (result i32)
+    (local $len1 i32)
+    (local $len2 i32)
+    (local $new_ptr i32)
+    (local $i i32)
+    local.get $str1
+    call $strlen
+    local.set $len1
+    local.get $str2
+    call $strlen
+    local.set $len2
+    local.get $len1
+    local.get $len2
+    i32.add
+    i32.const 1
+    i32.add
+    call $malloc
+    local.set $new_ptr
+    i32.const 0
+    local.set $i
+    (block $end1
+        (loop $start1
+            local.get $i
+            local.get $len1
+            i32.eq
+            br_if $end1
+            local.get $new_ptr
+            local.get $i
+            i32.add
+            local.get $str1
+            local.get $i
+            i32.add
+            i32.load8_u
+            i32.store8
+            local.get $i
+            i32.const 1
+            i32.add
+            local.set $i
+            br $start1
+        )
+    )
+    i32.const 0
+    local.set $i
+    (block $end2
+        (loop $start2
+            local.get $i
+            local.get $len2
+            i32.eq
+            br_if $end2
+            local.get $new_ptr
+            local.get $len1
+            i32.add
+            local.get $i
+            i32.add
+            local.get $str2
+            local.get $i
+            i32.add
+            i32.load8_u
+            i32.store8
+            local.get $i
+            i32.const 1
+            i32.add
+            local.set $i
+            br $start2
+        )
+    )
+    local.get $new_ptr
+    local.get $len1
+    local.get $len2
+    i32.add
+    i32.add
+    i32.const 0
+    i32.store8
+    local.get $new_ptr
+)
+
+(func $debug_get_free_list_head (result i32)
+    global.get $free_list_head
+)
+"#;
+
 impl<'a> WasmGenerator<'a> {
-    /// Builds the memory management functions ($malloc, $free, $retain, $release)
+    /// Builds the memory management runtime: the fixed allocator/string helpers (emitted from
+    /// templates) plus the per-type `$release_*` functions generated from the struct table.
     pub fn build_memory_management(&self, writer: &mut IndentedTextWriter) -> Result<(), Error> {
-        // Global variables for memory management
-        // $heap_ptr points to the end of the currently allocated bump memory
-        // $free_list_head points to the first free block in the freelist
-        writer.write_line("(global $heap_ptr (mut i32) (i32.const 1024))");
-        writer.write_line("(global $free_list_head (mut i32) (i32.const 0))");
-        writer.write_line("");
-
-        // $malloc: Allocates memory of the given size.
-        // Memory Block Layout:
-        // [size: i32] [ref_count: i32] [data...]
-        // When free, the layout is:
-        // [size: i32] [next_free_ptr: i32]
-        // The returned pointer points to the start of [data...] (i.e., block_start + 8)
-        writer.write_line("(func $malloc (param $size i32) (result i32)");
-        writer.indent();
-        writer.write_line("(local $curr i32)");
-        writer.write_line("(local $prev i32)");
-        writer.write_line("(local $next i32)");
-        writer.write_line("(local $block_size i32)");
-        writer.write_line("(local $new_ptr i32)");
-        
-        // Ensure size is a multiple of 4 for alignment
-        writer.write_line("local.get $size");
-        writer.write_line("i32.const 3");
-        writer.write_line("i32.add");
-        writer.write_line("i32.const -4"); // ~3 in two's complement
-        writer.write_line("i32.and");
-        writer.write_line("local.set $size");
-
-        // We need 8 extra bytes for the header (size + ref_count)
-        writer.write_line("local.get $size");
-        writer.write_line("i32.const 8");
-        writer.write_line("i32.add");
-        writer.write_line("local.set $size");
-
-        // Scan freelist
-        writer.write_line("global.get $free_list_head");
-        writer.write_line("local.set $curr");
-        writer.write_line("i32.const 0");
-        writer.write_line("local.set $prev");
-
-        writer.write_line("(block $alloc_done");
-        writer.indent();
-        writer.write_line("(loop $scan_freelist");
-        writer.indent();
-        
-        // If curr == 0, end of freelist reached
-        writer.write_line("local.get $curr");
-        writer.write_line("i32.eqz");
-        writer.write_line("br_if $alloc_done");
-
-        // Get block size
-        writer.write_line("local.get $curr");
-        writer.write_line("i32.load");
-        writer.write_line("local.set $block_size");
-
-        // If block_size >= size, we found a block!
-        writer.write_line("local.get $block_size");
-        writer.write_line("local.get $size");
-        writer.write_line("i32.ge_s");
-        writer.write_line("(if");
-        writer.indent();
-        writer.write_line("(then");
-        writer.indent();
-        
-        // Remove block from freelist
-        writer.write_line("local.get $curr");
-        writer.write_line("i32.const 4");
-        writer.write_line("i32.add");
-        writer.write_line("i32.load"); // Get next_free_ptr
-        writer.write_line("local.set $next");
-
-        writer.write_line("local.get $prev");
-        writer.write_line("i32.eqz");
-        writer.write_line("(if");
-        writer.indent();
-        writer.write_line("(then");
-        writer.indent();
-        writer.write_line("local.get $next");
-        writer.write_line("global.set $free_list_head");
-        writer.unindent();
-        writer.write_line(")");
-        writer.write_line("(else");
-        writer.indent();
-        writer.write_line("local.get $prev");
-        writer.write_line("i32.const 4");
-        writer.write_line("i32.add");
-        writer.write_line("local.get $next");
-        writer.write_line("i32.store");
-        writer.unindent();
-        writer.write_line(")");
-        writer.unindent();
-        writer.write_line(")");
-
-        // Initialize ref_count to 1
-        writer.write_line("local.get $curr");
-        writer.write_line("i32.const 4");
-        writer.write_line("i32.add");
-        writer.write_line("i32.const 1");
-        writer.write_line("i32.store");
-
-        // Return curr + 8
-        writer.write_line("local.get $curr");
-        writer.write_line("i32.const 8");
-        writer.write_line("i32.add");
-        writer.write_line("return");
-
-        writer.unindent();
-        writer.write_line(")");
-        writer.unindent();
-        writer.write_line(")");
-
-        // Move to next block
-        writer.write_line("local.get $curr");
-        writer.write_line("local.set $prev");
-        writer.write_line("local.get $curr");
-        writer.write_line("i32.const 4");
-        writer.write_line("i32.add");
-        writer.write_line("i32.load");
-        writer.write_line("local.set $curr");
-        writer.write_line("br $scan_freelist");
-
-        writer.unindent();
-        writer.write_line(")");
-        writer.unindent();
-        writer.write_line(")");
-
-        // If we reach here, no suitable block was found. Use bump allocator.
-        writer.write_line("global.get $heap_ptr");
-        writer.write_line("local.set $new_ptr");
-
-        // Update $heap_ptr
-        writer.write_line("global.get $heap_ptr");
-        writer.write_line("local.get $size");
-        writer.write_line("i32.add");
-        writer.write_line("global.set $heap_ptr");
-
-        // Initialize block header
-        writer.write_line("local.get $new_ptr");
-        writer.write_line("local.get $size");
-        writer.write_line("i32.store"); // Store size
-
-        writer.write_line("local.get $new_ptr");
-        writer.write_line("i32.const 4");
-        writer.write_line("i32.add");
-        writer.write_line("i32.const 1");
-        writer.write_line("i32.store"); // Store ref_count = 1
-
-        // Return new_ptr + 8
-        writer.write_line("local.get $new_ptr");
-        writer.write_line("i32.const 8");
-        writer.write_line("i32.add");
-
-        writer.unindent();
-        writer.write_line(")");
-        writer.write_line("");
-
-        // $free: Inserts a block back into the freelist
-        writer.write_line("(func $free (param $ptr i32)");
-        writer.indent();
-        writer.write_line("(local $block_start i32)");
-        
-        // If ptr is 0, do nothing
-        writer.write_line("local.get $ptr");
-        writer.write_line("i32.eqz");
-        writer.write_line("br_if 0");
-
-        // block_start = ptr - 8
-        writer.write_line("local.get $ptr");
-        writer.write_line("i32.const 8");
-        writer.write_line("i32.sub");
-        writer.write_line("local.set $block_start");
-
-        // Set next_free_ptr = free_list_head
-        writer.write_line("local.get $block_start");
-        writer.write_line("i32.const 4");
-        writer.write_line("i32.add");
-        writer.write_line("global.get $free_list_head");
-        writer.write_line("i32.store");
-
-        // free_list_head = block_start
-        writer.write_line("local.get $block_start");
-        writer.write_line("global.set $free_list_head");
-
-        writer.unindent();
-        writer.write_line(")");
-        writer.write_line("");
-
-        // $retain: Increments the reference count
-        writer.write_line("(func $retain (param $ptr i32)");
-        writer.indent();
-        writer.write_line("(local $ref_count_ptr i32)");
-        
-        // If ptr is 0, do nothing
-        writer.write_line("local.get $ptr");
-        writer.write_line("i32.eqz");
-        writer.write_line("br_if 0");
-
-        // ref_count_ptr = ptr - 4
-        writer.write_line("local.get $ptr");
-        writer.write_line("i32.const 4");
-        writer.write_line("i32.sub");
-        writer.write_line("local.set $ref_count_ptr");
-
-        // Increment ref_count
-        writer.write_line("local.get $ref_count_ptr");
-        writer.write_line("local.get $ref_count_ptr");
-        writer.write_line("i32.load");
-        writer.write_line("i32.const 1");
-        writer.write_line("i32.add");
-        writer.write_line("i32.store");
-
-        writer.unindent();
-        writer.write_line(")");
-        writer.write_line("");
-
-        // Generate type-specific release functions
+        writer.write_block(RUNTIME_ALLOCATOR);
         self.build_type_specific_releases(writer)?;
-
-        // $strlen: Calculates the length of a null-terminated string
-        writer.write_line("(func $strlen (param $ptr i32) (result i32)");
-        writer.indent();
-        writer.write_line("(local $len i32)");
-        writer.write_line("i32.const 0");
-        writer.write_line("local.set $len");
-        writer.write_line("(block $end");
-        writer.indent();
-        writer.write_line("(loop $start");
-        writer.indent();
-        writer.write_line("local.get $ptr");
-        writer.write_line("local.get $len");
-        writer.write_line("i32.add");
-        writer.write_line("i32.load8_u");
-        writer.write_line("i32.eqz");
-        writer.write_line("br_if $end");
-        writer.write_line("local.get $len");
-        writer.write_line("i32.const 1");
-        writer.write_line("i32.add");
-        writer.write_line("local.set $len");
-        writer.write_line("br $start");
-        writer.unindent();
-        writer.write_line(")");
-        writer.unindent();
-        writer.write_line(")");
-        writer.write_line("local.get $len");
-        writer.unindent();
-        writer.write_line(")");
-        writer.write_line("");
-
-        // $concat_strings: Concatenates two strings and returns a new allocated string
-        writer.write_line("(func $concat_strings (param $str1 i32) (param $str2 i32) (result i32)");
-        writer.indent();
-        writer.write_line("(local $len1 i32)");
-        writer.write_line("(local $len2 i32)");
-        writer.write_line("(local $new_ptr i32)");
-        writer.write_line("(local $i i32)");
-        
-        // len1 = strlen(str1)
-        writer.write_line("local.get $str1");
-        writer.write_line("call $strlen");
-        writer.write_line("local.set $len1");
-        
-        // len2 = strlen(str2)
-        writer.write_line("local.get $str2");
-        writer.write_line("call $strlen");
-        writer.write_line("local.set $len2");
-        
-        // new_ptr = malloc(len1 + len2 + 1)
-        writer.write_line("local.get $len1");
-        writer.write_line("local.get $len2");
-        writer.write_line("i32.add");
-        writer.write_line("i32.const 1");
-        writer.write_line("i32.add");
-        writer.write_line("call $malloc");
-        writer.write_line("local.set $new_ptr");
-        
-        // Copy str1
-        writer.write_line("i32.const 0");
-        writer.write_line("local.set $i");
-        writer.write_line("(block $end1");
-        writer.indent();
-        writer.write_line("(loop $start1");
-        writer.indent();
-        writer.write_line("local.get $i");
-        writer.write_line("local.get $len1");
-        writer.write_line("i32.eq");
-        writer.write_line("br_if $end1");
-        
-        writer.write_line("local.get $new_ptr");
-        writer.write_line("local.get $i");
-        writer.write_line("i32.add");
-        
-        writer.write_line("local.get $str1");
-        writer.write_line("local.get $i");
-        writer.write_line("i32.add");
-        writer.write_line("i32.load8_u");
-        
-        writer.write_line("i32.store8");
-        
-        writer.write_line("local.get $i");
-        writer.write_line("i32.const 1");
-        writer.write_line("i32.add");
-        writer.write_line("local.set $i");
-        writer.write_line("br $start1");
-        writer.unindent();
-        writer.write_line(")");
-        writer.unindent();
-        writer.write_line(")");
-        
-        // Copy str2
-        writer.write_line("i32.const 0");
-        writer.write_line("local.set $i");
-        writer.write_line("(block $end2");
-        writer.indent();
-        writer.write_line("(loop $start2");
-        writer.indent();
-        writer.write_line("local.get $i");
-        writer.write_line("local.get $len2");
-        writer.write_line("i32.eq");
-        writer.write_line("br_if $end2");
-        
-        writer.write_line("local.get $new_ptr");
-        writer.write_line("local.get $len1");
-        writer.write_line("i32.add");
-        writer.write_line("local.get $i");
-        writer.write_line("i32.add");
-        
-        writer.write_line("local.get $str2");
-        writer.write_line("local.get $i");
-        writer.write_line("i32.add");
-        writer.write_line("i32.load8_u");
-        
-        writer.write_line("i32.store8");
-        
-        writer.write_line("local.get $i");
-        writer.write_line("i32.const 1");
-        writer.write_line("i32.add");
-        writer.write_line("local.set $i");
-        writer.write_line("br $start2");
-        writer.unindent();
-        writer.write_line(")");
-        writer.unindent();
-        writer.write_line(")");
-        
-        // Null terminator
-        writer.write_line("local.get $new_ptr");
-        writer.write_line("local.get $len1");
-        writer.write_line("local.get $len2");
-        writer.write_line("i32.add");
-        writer.write_line("i32.add");
-        writer.write_line("i32.const 0");
-        writer.write_line("i32.store8");
-        
-        writer.write_line("local.get $new_ptr");
-        writer.unindent();
-        writer.write_line(")");
-        writer.write_line("");
-
-        // $debug_get_free_list_head: Returns the current free list head
-        writer.write_line("(func $debug_get_free_list_head (result i32)");
-        writer.indent();
-        writer.write_line("global.get $free_list_head");
-        writer.unindent();
-        writer.write_line(")");
-        writer.write_line("");
-
+        writer.write_block(RUNTIME_STRINGS);
         Ok(())
     }
 
@@ -443,7 +328,7 @@ impl<'a> WasmGenerator<'a> {
         
         // Deep release logic
         if let Some(info) = struct_info {
-            for (field_name, field_info) in &info.fields {
+            for (_, field_info) in &info.fields {
                 let field_type = field_info.type_.get_type();
                 if self.is_reference_type(&field_type) {
                     let release_func = field_type.replace("[]", "_array").replace("?", "");
@@ -521,10 +406,6 @@ impl<'a> WasmGenerator<'a> {
     }
 
     pub fn is_reference_type(&self, type_name: &str) -> bool {
-        let mut base_name = type_name;
-        if base_name.ends_with("?") {
-            base_name = &base_name[..base_name.len() - 1];
-        }
-        base_name == "string" || base_name.ends_with("[]") || self.struct_table.get_struct(base_name).is_some()
+        self.struct_table.is_reference_type(type_name)
     }
 }

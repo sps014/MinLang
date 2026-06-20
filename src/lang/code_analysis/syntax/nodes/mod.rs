@@ -10,4 +10,5 @@ pub use expression::ExpressionNode;
 pub use statement::StatementNode;
 pub use function::{FunctionNode, ParameterNode};
 pub use program::{ProgramNode, ImportNode};
+#[allow(unused_imports)]
 pub use struct_node::{StructDeclarationNode, StructFieldNode};

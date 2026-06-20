@@ -1,6 +1,4 @@
 #![allow(dead_code)]
-#![allow(unused_variables)]
-#![allow(unused_imports)]
 mod lang;
 
 use std::path::Path;
@@ -46,7 +44,13 @@ fn main()
     info!("Compiling file: {}", file_name);
 
     let compiler = Compiler::new(Target::Wasm);
-    let out_path = get_path_from_file_path(file_name);
+    let out_path = match get_path_from_file_path(file_name) {
+        Some(path) => path,
+        None => {
+            error!("Invalid source file path: {}", file_name);
+            return;
+        }
+    };
 
     match compiler.compile(file_name, &out_path)
     {
@@ -66,10 +70,12 @@ fn main()
     }
 }
 
-fn get_path_from_file_path(file_path:&String)->String
-{
-    let path=Path::new(file_path);
-    let file_name_without_ext=path.file_stem().unwrap().to_str().unwrap();
-    let result=path.parent().unwrap().join(format!("{}.wat",file_name_without_ext));
-    return result.to_str().unwrap().to_string();
+/// Derives the output `.wat` path that sits next to the given source file.
+/// Returns `None` if the path has no file stem or contains non-UTF-8 components.
+fn get_path_from_file_path(file_path: &str) -> Option<String> {
+    let path = Path::new(file_path);
+    let file_stem = path.file_stem()?.to_str()?;
+    let parent = path.parent().unwrap_or_else(|| Path::new(""));
+    let result = parent.join(format!("{}.wat", file_stem));
+    Some(result.to_str()?.to_string())
 }

@@ -7,6 +7,12 @@ impl<'a> WasmGenerator<'a> {
         for func in &program.functions {
             self.collect_strings_from_body(func.body);
         }
+        // Struct method bodies live outside `program.functions`, so collect them too.
+        for struct_decl in &program.structs {
+            for method in &struct_decl.methods {
+                self.collect_strings_from_body(method.body);
+            }
+        }
     }
 
     /// Collects all string literals from a body of statements
@@ -16,7 +22,8 @@ impl<'a> WasmGenerator<'a> {
                 StatementNode::Declaration(_, _, expr) | StatementNode::Assignment(_, expr) => {
                     self.collect_strings_from_expr(expr);
                 }
-                StatementNode::IndexAssignment(_, index, expr) => {
+                StatementNode::IndexAssignment(arr, index, expr) => {
+                    self.collect_strings_from_expr(arr);
                     self.collect_strings_from_expr(index);
                     self.collect_strings_from_expr(expr);
                 }
@@ -51,6 +58,12 @@ impl<'a> WasmGenerator<'a> {
                     self.collect_strings_from_expr(expr);
                 }
                 StatementNode::FunctionInvocation(_, _, params) => {
+                    for param in params {
+                        self.collect_strings_from_expr(param);
+                    }
+                }
+                StatementNode::MethodInvocation(obj, _, _, params) => {
+                    self.collect_strings_from_expr(obj);
                     for param in params {
                         self.collect_strings_from_expr(param);
                     }
@@ -111,6 +124,12 @@ impl<'a> WasmGenerator<'a> {
             }
             ExpressionNode::IsExpression(expr, _) => {
                 self.collect_strings_from_expr(expr);
+            }
+            ExpressionNode::MethodCall(obj, _, _, params) => {
+                self.collect_strings_from_expr(obj);
+                for param in params {
+                    self.collect_strings_from_expr(param);
+                }
             }
             _ => {}
         }

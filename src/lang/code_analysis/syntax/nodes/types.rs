@@ -1,6 +1,29 @@
 use std::io::{Error, ErrorKind};
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 
+/// Returns the given type name with a single trailing nullable (`?`) suffix removed.
+pub fn strip_nullable(type_name: &str) -> &str {
+    type_name.strip_suffix('?').unwrap_or(type_name)
+}
+
+/// Returns the given type name with a single trailing array (`[]`) suffix removed.
+pub fn strip_array(type_name: &str) -> &str {
+    type_name.strip_suffix("[]").unwrap_or(type_name)
+}
+
+/// Maps a type name to the suffix used in its generated `$release_*` runtime helper.
+/// Arrays become `_array` and nullable markers are dropped (e.g. `Node[]?` -> `Node_array`).
+pub fn release_func_suffix(type_name: &str) -> String {
+    type_name.replace("[]", "_array").replace('?', "")
+}
+
+/// Returns true if a type name denotes a heap-allocated, reference-counted value
+/// (strings, arrays, and structs). `known_struct` decides whether a bare name is a struct.
+pub fn is_reference_type_name(type_name: &str, known_struct: impl Fn(&str) -> bool) -> bool {
+    let base = strip_nullable(type_name);
+    base == "string" || base.ends_with("[]") || known_struct(base)
+}
+
 /// Represents a data type in the language
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
@@ -40,6 +63,21 @@ impl Type {
             Type::Generic(name) => name.clone(),
             Type::Nullable(inner) => format!("{}?", inner.get_type()),
         }
+    }
+
+    /// Returns true if this type is a nullable (`T?`) type.
+    pub fn is_nullable(&self) -> bool {
+        matches!(self, Type::Nullable(_))
+    }
+
+    /// Returns true if this type is an array (`T[]`) type.
+    pub fn is_array(&self) -> bool {
+        matches!(self, Type::Array(_))
+    }
+
+    /// Returns the type name with any trailing nullable (`?`) suffix removed.
+    pub fn base_name(&self) -> String {
+        strip_nullable(&self.get_type()).to_string()
     }
 
     /// Returns the line and column string of the type token

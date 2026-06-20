@@ -92,26 +92,16 @@ impl<'a> WasmGenerator<'a> {
         writer.write(" (local $scratch_double f64)");
         writer.write_line("");
         writer.indent();
-        
+
+        // Take ownership of reference-typed parameters; released at every exit point below.
+        self.emit_retain_params(function, writer);
+
         self.build_body(function.body, function, writer)?;
-        
-        // Release all local reference variables in case the function falls through without a return
-        let func_name = self.current_mangled_name.as_ref().unwrap_or(&function.name.text);
-        let locals = self.combined_symbol_lookup.get(func_name).unwrap().clone();
-        for (name, type_) in locals.iter() {
-            let type_str = type_.get_type();
-            let base_type_str = if type_str.ends_with("?") {
-                type_str[..type_str.len() - 1].to_string()
-            } else {
-                type_str.clone()
-            };
-            
-            if self.is_reference_type(&base_type_str) {
-                writer.write_line(&format!("local.get ${}", name));
-                writer.write_line(&format!("call $release_{}", base_type_str.replace("[]", "_array").replace("?", "")));
-            }
-        }
-        
+
+        // Release all local reference variables in case the function falls through without a return.
+        let func_name = self.current_mangled_name.clone().unwrap_or_else(|| function.name.text.clone());
+        self.emit_release_locals(&func_name, writer);
+
         writer.unindent();
 
         writer.write_line(")");

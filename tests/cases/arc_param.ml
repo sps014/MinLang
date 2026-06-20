@@ -1,0 +1,24 @@
+// Regression test: passing a reference (struct) into a function must not invalidate
+// the caller's binding. The callee now retains its parameter on entry so the matching
+// release at exit keeps the reference count balanced.
+struct Box {
+    value: int;
+}
+
+fun read_value(b: Box): int {
+    return b.value;
+}
+
+fun read_twice(b: Box): int {
+    let first = read_value(b);
+    let second = read_value(b);
+    return first + second;
+}
+
+fun main() {
+    let b = Box { value: 21 };
+    let total = read_twice(b);
+    // `b` must still be valid here after being passed through two function calls.
+    print_int(b.value);
+    print_int(total);
+}

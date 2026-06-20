@@ -508,11 +508,9 @@ impl<'a, 'b> Parser<'a, 'b>
             return Ok(ExpressionNode::Literal(Type::Boolean(self.match_token(TokenKind::BooleanToken))));
         }
         else if self.current_token().kind==TokenKind::NullToken {
-            let null_token = self.match_token(TokenKind::NullToken);
-            return Ok(ExpressionNode::Literal(Type::Nullable(Box::new(Type::Void)))); // Using Nullable(Void) to represent null literal
-        }
-        else if self.current_token().kind==TokenKind::BooleanToken {
-            return Ok(ExpressionNode::Literal(Type::Boolean(self.match_token(TokenKind::BooleanToken))));
+            self.match_token(TokenKind::NullToken);
+            // `Nullable(Void)` represents the `null` literal until its concrete type is known.
+            return Ok(ExpressionNode::Literal(Type::Nullable(Box::new(Type::Void))));
         }
         //parse identifiers
         else if self.current_token().kind==IdentifierToken

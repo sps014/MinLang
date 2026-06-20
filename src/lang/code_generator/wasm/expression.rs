@@ -1,5 +1,6 @@
 use std::io::{Error, ErrorKind};
 use crate::lang::code_analysis::syntax::nodes::{ExpressionNode, FunctionNode, Type};
+use crate::lang::code_analysis::syntax::nodes::types::strip_nullable;
 use crate::lang::code_analysis::text::indented_text_writer::IndentedTextWriter;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 use crate::lang::code_analysis::token::token_kind::TokenKind;
@@ -16,24 +17,7 @@ impl<'a> WasmGenerator<'a> {
             ExpressionNode::Binary(left, opr, right) => self.build_binary(left, opr, right, left_side, function, writer)?,
             ExpressionNode::Literal(literal) => self.build_literal(literal, writer)?,
             ExpressionNode::FunctionCall(n, generic_args, args) => {
-                let mut function_name = n.text.clone();
-                // If it's a generic call, mangle the name
-                if let Some(generics) = generic_args {
-                    if !generics.is_empty() {
-                        let type_str = generics[0].get_type();
-                        function_name = format!("{}_{}", function_name, type_str);
-                    }
-                } else if self.function_table.get_function(&function_name).is_err() {
-                    // Try to infer generic type from first argument if not explicit
-                    if !args.is_empty() {
-                        if let Ok(inferred_type) = self.infer_expression_type(&args[0], function) {
-                            let mangled = format!("{}_{}", function_name, inferred_type);
-                            if self.function_table.get_function(&mangled).is_ok() {
-                                function_name = mangled;
-                            }
-                        }
-                    }
-                }
+                let function_name = self.resolve_call_name(&n.text, generic_args, args, function);
                 self.build_function_invocation(&function_name, args, function, writer)?
             },
             ExpressionNode::Parenthesized(e) => self.build_expression(e, left_side, function, writer)?,
@@ -54,7 +38,7 @@ impl<'a> WasmGenerator<'a> {
     }
 
     /// Builds a type cast expression
-    pub fn build_cast(&mut self, target_type: &Type, expr: &ExpressionNode<'a>, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+    pub fn build_cast(&mut self, target_type: &Type, expr: &ExpressionNode<'a>, _left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let target_str = target_type.get_type();
         let source_str = self.infer_expression_type(expr, function)?;
         
@@ -71,7 +55,7 @@ impl<'a> WasmGenerator<'a> {
     }
 
     /// Builds a struct instantiation
-    pub fn build_struct_instantiation(&mut self, name: &SyntaxToken, generic_args: &Option<Vec<Type>>, fields: &Vec<(SyntaxToken, ExpressionNode<'a>)>, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+    pub fn build_struct_instantiation(&mut self, name: &SyntaxToken, generic_args: &Option<Vec<Type>>, fields: &Vec<(SyntaxToken, ExpressionNode<'a>)>, _left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let mut struct_name = name.text.clone();
         if let Some(args) = generic_args {
             if !args.is_empty() {
@@ -89,25 +73,16 @@ impl<'a> WasmGenerator<'a> {
         for (field_name, expr) in fields.iter() {
             let field_info = struct_info.fields.get(&field_name.text).unwrap();
             let offset = field_info.offset;
-            let wasm_type = WasmGenerator::get_wasm_type_from(field_info.type_.get_type())?;
-            
+            let field_type = field_info.type_.get_type();
+
             writer.write_line("local.get $scratch_ptr"); // ptr
             if offset > 0 {
                 writer.write_line(&format!("i32.const {}", offset));
                 writer.write_line("i32.add"); // ptr + offset
             }
-            
-            self.build_expression(expr, &field_info.type_.get_type(), function, writer)?;
-            
-            if field_info.type_.get_type() == "bool" {
-                writer.write_line("i32.store8");
-            } else if wasm_type == "f64" {
-                writer.write_line("f64.store");
-            } else if wasm_type == "f32" {
-                writer.write_line("f32.store");
-            } else {
-                writer.write_line("i32.store");
-            }
+
+            self.build_expression(expr, &field_type, function, writer)?;
+            WasmGenerator::emit_store(&field_type, writer)?;
         }
         
         // 3. Leave the pointer on the stack
@@ -116,35 +91,22 @@ impl<'a> WasmGenerator<'a> {
     }
 
     /// Builds a member access
-    pub fn build_member_access(&mut self, obj: &ExpressionNode<'a>, member: &SyntaxToken, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+    pub fn build_member_access(&mut self, obj: &ExpressionNode<'a>, member: &SyntaxToken, _left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let obj_type_str = self.infer_expression_type(obj, function)?;
-        let base_obj_type_str = if obj_type_str.ends_with("?") {
-            obj_type_str[..obj_type_str.len() - 1].to_string()
-        } else {
-            obj_type_str.clone()
-        };
+        let base_obj_type_str = strip_nullable(&obj_type_str).to_string();
         let struct_info = self.struct_table.get_struct(&base_obj_type_str).unwrap().clone();
         let field_info = struct_info.fields.get(&member.text).unwrap();
         let offset = field_info.offset;
-        let wasm_type = WasmGenerator::get_wasm_type_from(field_info.type_.get_type())?;
-        
+        let field_type = field_info.type_.get_type();
+
         self.build_expression(obj, &obj_type_str, function, writer)?; // ptr
-        
+
         if offset > 0 {
             writer.write_line(&format!("i32.const {}", offset));
             writer.write_line("i32.add"); // ptr + offset
         }
-        
-        if field_info.type_.get_type() == "bool" {
-            writer.write_line("i32.load8_u");
-        } else if wasm_type == "f64" {
-            writer.write_line("f64.load");
-        } else if wasm_type == "f32" {
-            writer.write_line("f32.load");
-        } else {
-            writer.write_line("i32.load");
-        }
-        
+
+        WasmGenerator::emit_load(&field_type, writer)?;
         Ok(())
     }
 
@@ -270,20 +232,10 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
-    pub fn build_method_call(&mut self, obj: &ExpressionNode<'a>, method: &SyntaxToken, generic_args: &Option<Vec<Type>>, params: &Vec<ExpressionNode<'a>>, _left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+    pub fn build_method_call(&mut self, obj: &ExpressionNode<'a>, method: &SyntaxToken, _generic_args: &Option<Vec<Type>>, params: &Vec<ExpressionNode<'a>>, _left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let obj_type = self.infer_expression_type(obj, function)?;
-        
-        let struct_name = if obj_type.ends_with("?") {
-            obj_type[..obj_type.len() - 1].to_string()
-        } else {
-            obj_type.clone()
-        };
-
-        let mut mangled_name = format!("{}_{}", struct_name, method.text);
-
-        // If it's a generic struct instance method, the struct name already has the generic type
-        // The analyzer resolves it correctly
-
+        let struct_name = strip_nullable(&obj_type);
+        let mangled_name = format!("{}_{}", struct_name, method.text);
         let func_info = self.function_table.get_function(&mangled_name)?;
         
         // 1. Evaluate 'this' (the object)
@@ -312,34 +264,20 @@ impl<'a> WasmGenerator<'a> {
         } else {
             "int".to_string() // Fallback, shouldn't happen if semantic analysis is correct
         };
-        let wasm_type = WasmGenerator::get_wasm_type_from(inner_type_str.clone())?;
-        
-        let element_size = match inner_type_str.as_str() {
-            "bool" => 1,
-            "double" => 8,
-            _ => 4,
-        };
+
+        let element_size = WasmGenerator::element_size_of(&inner_type_str);
         let total_size = 4 + (len * element_size); // 4 bytes for length + element_size per element
 
-        // 1. Allocate memory using $malloc
+        // 1. Allocate the backing buffer and keep its pointer in $scratch_ptr.
         writer.write_line(&format!("i32.const {}", total_size));
         writer.write_line("call $malloc");
-        
-        // We need to store the allocated pointer in a local variable temporarily,
-        // but we don't have a scratch local easily available.
-        // Wait, we can just use the stack.
-        // Stack: [ptr]
-        
-        // 2. Store the length at ptr + 0
-        // We need the ptr again, but WASM doesn't have `dup`.
-        // Let's use a hidden local for scratch space in every function, or just add one.
-        // Since we refactored `build_function`, let's add `(local $scratch_ptr i32)` to every function.
         writer.write_line("local.set $scratch_ptr");
-        
-        writer.write_line("local.get $scratch_ptr"); // ptr for store
+
+        // 2. Store the element count at offset 0.
+        writer.write_line("local.get $scratch_ptr");
         writer.write_line(&format!("i32.const {}", len));
         writer.write_line("i32.store");
-        
+
         // 3. Evaluate and store each element
         for (i, expr) in elements.iter().enumerate() {
             let offset = 4 + (i * element_size);
@@ -348,16 +286,7 @@ impl<'a> WasmGenerator<'a> {
             writer.write_line("i32.add"); // ptr + offset
             
             self.build_expression(expr, &inner_type_str, function, writer)?;
-            
-            if inner_type_str == "bool" {
-                writer.write_line("i32.store8");
-            } else if wasm_type == "f64" {
-                writer.write_line("f64.store");
-            } else if wasm_type == "f32" {
-                writer.write_line("f32.store");
-            } else {
-                writer.write_line("i32.store");
-            }
+            WasmGenerator::emit_store(&inner_type_str, writer)?;
         }
         
         // 4. Leave the pointer on the stack
@@ -368,39 +297,23 @@ impl<'a> WasmGenerator<'a> {
     /// Builds an array index access
     pub fn build_index_access(&mut self, array_expr: &ExpressionNode<'a>, index_expr: &ExpressionNode<'a>, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         // Here left_side is the expected type of the expression, which is the inner type of the array
-        let wasm_type = WasmGenerator::get_wasm_type_from(left_side.clone())?;
-        
-        let element_size = match left_side.as_str() {
-            "bool" => 1,
-            "double" => 8,
-            _ => 4,
-        };
-        
+        let element_size = WasmGenerator::element_size_of(left_side);
+
         // Calculate the memory address: ptr + 4 + (index * element_size)
         // Note: We pass a dummy type "int[]" to build_expression for the array ptr because we just need an i32 back
         self.build_expression(array_expr, &"int[]".to_string(), function, writer)?; // ptr
         writer.write_line("i32.const 4");
         writer.write_line("i32.add"); // ptr + 4
-        
+
         self.build_expression(index_expr, &"int".to_string(), function, writer)?; // index
         if element_size != 1 {
             writer.write_line(&format!("i32.const {}", element_size));
             writer.write_line("i32.mul"); // index * element_size
         }
-        
+
         writer.write_line("i32.add"); // ptr + 4 + (index * element_size)
-        
-        // Load the value
-        if left_side == "bool" {
-            writer.write_line("i32.load8_u");
-        } else if wasm_type == "f64" {
-            writer.write_line("f64.load");
-        } else if wasm_type == "f32" {
-            writer.write_line("f32.load");
-        } else {
-            writer.write_line("i32.load");
-        }
-        
+
+        WasmGenerator::emit_load(left_side, writer)?;
         Ok(())
     }
 }

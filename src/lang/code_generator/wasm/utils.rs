@@ -1,13 +1,115 @@
 use std::collections::HashMap;
-use std::io::{Error, ErrorKind};
+use std::io::Error;
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::lang::code_analysis::syntax::nodes::{FunctionNode, Type};
+use crate::lang::code_analysis::syntax::nodes::types::{release_func_suffix, strip_nullable};
 use crate::lang::code_analysis::text::indented_text_writer::IndentedTextWriter;
 use crate::lang::semantic_analysis::symbol_table::SymbolTable;
 use super::WasmGenerator;
 
 impl<'a> WasmGenerator<'a> {
+    /// Resolves a (possibly generic) function call to its concrete, mangled name.
+    /// Uses explicit generic arguments when present, otherwise infers the type from the
+    /// first argument and falls back to the plain name when no monomorphized variant exists.
+    pub fn resolve_call_name(&self, name: &str, generic_args: &Option<Vec<Type>>, args: &[crate::lang::code_analysis::syntax::nodes::ExpressionNode<'a>], function: &FunctionNode<'a>) -> String {
+        if let Some(generics) = generic_args {
+            if let Some(first) = generics.first() {
+                return format!("{}_{}", name, first.get_type());
+            }
+        }
+        if self.function_table.get_function(&name.to_string()).is_err() {
+            if let Some(first_arg) = args.first() {
+                if let Ok(inferred_type) = self.infer_expression_type(first_arg, function) {
+                    let mangled = format!("{}_{}", name, inferred_type);
+                    if self.function_table.get_function(&mangled).is_ok() {
+                        return mangled;
+                    }
+                }
+            }
+        }
+        name.to_string()
+    }
+
+    /// Returns true if the method invoked as `obj.method(...)` yields a non-void value
+    /// (used to decide whether a statement-level invocation must `drop` the result).
+    pub fn method_returns_value(&self, obj: &crate::lang::code_analysis::syntax::nodes::ExpressionNode<'a>, method: &crate::lang::code_analysis::token::syntax_token::SyntaxToken, function: &FunctionNode<'a>) -> Result<bool, Error> {
+        let obj_type = self.infer_expression_type(obj, function)?;
+        let struct_name = strip_nullable(&obj_type);
+        let mangled_name = format!("{}_{}", struct_name, method.text);
+        let returns_value = self.function_table.get_function(&mangled_name)
+            .ok()
+            .and_then(|info| info.return_type)
+            .map(|ret| ret.get_type() != "void")
+            .unwrap_or(false);
+        Ok(returns_value)
+    }
+
+    /// The byte size of a single element of the given (non-pointer) type.
+    /// Pointers (arrays, structs, strings) and `int`/`float` are 4 bytes.
+    pub fn element_size_of(type_name: &str) -> usize {
+        match type_name {
+            "bool" => 1,
+            "double" => 8,
+            _ => 4,
+        }
+    }
+
+    /// Emits a store instruction appropriate for a value of `type_name` already on the stack
+    /// (address and value must already be pushed).
+    pub fn emit_store(type_name: &str, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        let instruction = match WasmGenerator::get_wasm_type_from(type_name.to_string())?.as_str() {
+            _ if type_name == "bool" => "i32.store8",
+            "f64" => "f64.store",
+            "f32" => "f32.store",
+            _ => "i32.store",
+        };
+        writer.write_line(instruction);
+        Ok(())
+    }
+
+    /// Emits a load instruction appropriate for a value of `type_name`
+    /// (the address must already be on the stack).
+    pub fn emit_load(type_name: &str, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        let instruction = match WasmGenerator::get_wasm_type_from(type_name.to_string())?.as_str() {
+            _ if type_name == "bool" => "i32.load8_u",
+            "f64" => "f64.load",
+            "f32" => "f32.load",
+            _ => "i32.load",
+        };
+        writer.write_line(instruction);
+        Ok(())
+    }
+
+    /// Emits a `$release_*` call for the given (possibly nullable/array) reference type.
+    pub fn emit_release(&self, type_name: &str, writer: &mut IndentedTextWriter) {
+        writer.write_line(&format!("call $release_{}", release_func_suffix(strip_nullable(type_name))));
+    }
+
+    /// Retains every reference-typed parameter on function entry so the matching releases at
+    /// every exit point keep reference counts balanced (the callee owns its parameter bindings).
+    pub fn emit_retain_params(&self, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) {
+        for param in &function.parameters {
+            let base = strip_nullable(&self.resolve_type(&param.type_.get_type())).to_string();
+            if self.is_reference_type(&base) {
+                writer.write_line(&format!("local.get ${}", param.name.text));
+                writer.write_line("call $retain");
+            }
+        }
+    }
+
+    /// Releases every reference-typed local (and parameter) recorded for `func_name`.
+    /// Used both on fall-through exit and before an explicit `return`.
+    pub fn emit_release_locals(&self, func_name: &str, writer: &mut IndentedTextWriter) {
+        let locals = self.combined_symbol_lookup.get(func_name).unwrap().clone();
+        for (name, type_) in locals.iter() {
+            let base = strip_nullable(&type_.get_type()).to_string();
+            if self.is_reference_type(&base) {
+                writer.write_line(&format!("local.get ${}", name));
+                self.emit_release(&base, writer);
+            }
+        }
+    }
     /// Gets the WebAssembly type string from a MinLang type name
     pub fn get_wasm_type_from(typename: String) -> Result<String, Error> {
         let base_type = if typename.ends_with("[]") {
@@ -116,7 +218,7 @@ impl<'a> WasmGenerator<'a> {
                     Ok("void".to_string())
                 }
             },
-            ExpressionNode::FunctionCall(name, generic_args, args) => {
+            ExpressionNode::FunctionCall(name, _, _) => {
                 if let Ok(func) = self.function_table.get_function(&name.text) {
                     if let Some(ret_type) = &func.return_type {
                         Ok(ret_type.get_type())
@@ -171,11 +273,7 @@ impl<'a> WasmGenerator<'a> {
             ExpressionNode::IsExpression(_, _) => Ok("bool".to_string()),
             ExpressionNode::MethodCall(obj, method, _, _) => {
                 let obj_type = self.infer_expression_type(obj, function)?;
-                let struct_name = if obj_type.ends_with("?") {
-                    obj_type[..obj_type.len() - 1].to_string()
-                } else {
-                    obj_type.clone()
-                };
+                let struct_name = strip_nullable(&obj_type);
                 let mangled_name = format!("{}_{}", struct_name, method.text);
                 if let Ok(func_info) = self.function_table.get_function(&mangled_name) {
                     if let Some(ret) = &func_info.return_type {

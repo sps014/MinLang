@@ -64,6 +64,14 @@ impl IndentedTextWriter
         self.indent_string();
         self.string.push_str(text);
     }
+    /// Writes a multi-line block, applying the current indentation to each line.
+    pub fn write_block(&mut self, text:&str)
+    {
+        for line in text.lines()
+        {
+            self.write_line(line);
+        }
+    }
     pub fn to_string(&self) -> String
     {
         self.string.clone()
