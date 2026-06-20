@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use std::rc::{Rc};
-use crate::lang::code_analysis::syntax::syntax_node::Type;
+use crate::lang::code_analysis::syntax::nodes::Type;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 
 #[derive(Debug)]

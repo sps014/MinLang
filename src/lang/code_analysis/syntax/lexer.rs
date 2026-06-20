@@ -4,11 +4,11 @@ use crate::lang::code_analysis::text::line_text::LineText;
 use crate::lang::code_analysis::text::text_span::TextSpan;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 use crate::lang::code_analysis::token::token_kind::TokenKind;
+use crate::lang::diagnostics::DiagnosticBag;
 
 ///Lex's all token and all invalid tokens are reported via diagnostics
 pub struct Lexer {
     input_text: String,
-    diagnostics: Vec<String>,
     line_text: Rc<LineText>,
 }
 
@@ -18,13 +18,11 @@ impl Lexer {
         Lexer {
             line_text: Rc::new(LineText::new(input_text.clone())),
             input_text,
-            diagnostics: Vec::new(),
         }
     }
 
     //get all token
-    pub fn lex_all(&mut self) -> Vec<SyntaxToken> {
-        self.diagnostics.clear();
+    pub fn lex_all(&mut self, diagnostics: &mut DiagnosticBag) -> Vec<SyntaxToken> {
         let mut res = vec![];
         let mut lexer = TokenKind::lexer(&self.input_text);
 
@@ -36,7 +34,7 @@ impl Lexer {
 
             if kind == TokenKind::BadToken {
                 let text_span = TextSpan::new((span.start, span.end), &self.line_text);
-                self.diagnostics.push(format!("unexpected token '{}' at {}", text, text_span.get_point_str()));
+                diagnostics.report_error(format!("unexpected token '{}'", text), Some(text_span));
                 continue;
             } else if kind == TokenKind::WhiteSpaceToken ||
                       kind == TokenKind::LineCommentToken ||

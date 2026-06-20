@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
-use crate::lang::code_analysis::syntax::syntax_node::{FunctionNode, Type};
+use crate::lang::code_analysis::syntax::nodes::{FunctionNode, Type};
 use crate::lang::stdlib::StdlibFunction;
 
 #[derive(Debug, Clone)]

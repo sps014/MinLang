@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::io::{Error, ErrorKind};
 use std::rc::Rc;
-use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, StatementNode};
+use crate::lang::code_analysis::syntax::nodes::{ExpressionNode, FunctionNode, StatementNode};
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]

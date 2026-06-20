@@ -1,4 +1,4 @@
-use crate::lang::code_analysis::syntax::syntax_node::Type;
+use crate::lang::code_analysis::syntax::nodes::Type;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 use crate::lang::code_analysis::token::token_kind::TokenKind;
 use crate::lang::code_analysis::text::text_span::TextSpan;

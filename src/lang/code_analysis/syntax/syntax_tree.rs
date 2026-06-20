@@ -1,4 +1,4 @@
-use crate::lang::code_analysis::syntax::syntax_node::ProgramNode;
+use crate::lang::code_analysis::syntax::nodes::ProgramNode;
 
 pub struct SyntaxTree<'a> {
     root:ProgramNode<'a>,
