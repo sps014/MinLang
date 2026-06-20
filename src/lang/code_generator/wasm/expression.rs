@@ -10,6 +10,8 @@ impl<'a> WasmGenerator<'a> {
     pub fn build_expression(&self, expression: &ExpressionNode<'a>, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         match expression {
             ExpressionNode::Identifier(identifier) => self.build_identifier(identifier, writer)?,
+            ExpressionNode::ArrayLiteral(elements) => self.build_array_literal(elements, left_side, function, writer)?,
+            ExpressionNode::IndexAccess(array_expr, index_expr) => self.build_index_access(array_expr, index_expr, left_side, function, writer)?,
             ExpressionNode::Unary(opr, expression) => self.build_unary(opr, expression, left_side, function, writer)?,
             ExpressionNode::Binary(left, opr, right) => self.build_binary(left, opr, right, left_side, function, writer)?,
             ExpressionNode::Literal(literal) => self.build_literal(literal, writer)?,
@@ -113,11 +115,91 @@ impl<'a> WasmGenerator<'a> {
 
     /// Builds a function invocation
     pub fn build_function_invocation(&self, name: &String, parameters: &Vec<ExpressionNode<'a>>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
-        for i in parameters.iter() {
-            self.build_expression(i, &"int".to_string(), function, writer)?;
+        let func_info = self.function_table.get_function(name)?;
+        
+        for (i, expr) in parameters.iter().enumerate() {
+            let param_type = if i < func_info.parameters.len() {
+                func_info.parameters[i].clone()
+            } else {
+                "int".to_string() // Fallback if parameter count mismatch (should be caught by semantic analysis)
+            };
+            self.build_expression(expr, &param_type, function, writer)?;
         }
         writer.write("call $");
         writer.write_line(name);
+        Ok(())
+    }
+
+    /// Builds an array literal
+    pub fn build_array_literal(&self, elements: &Vec<ExpressionNode<'a>>, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        let len = elements.len();
+        let total_size = 4 + (len * 4); // 4 bytes for length + 4 bytes per element
+        
+        let inner_type_str = if left_side.ends_with("[]") {
+            left_side[..left_side.len() - 2].to_string()
+        } else {
+            "int".to_string() // Fallback, shouldn't happen if semantic analysis is correct
+        };
+        let wasm_type = WasmGenerator::get_wasm_type_from(inner_type_str.clone())?;
+
+        // 1. Get current heap ptr (this will be our array ptr)
+        writer.write_line("global.get $heap_ptr");
+        
+        // 2. Store the length at ptr + 0
+        writer.write_line("global.get $heap_ptr"); // ptr for store
+        writer.write_line(&format!("i32.const {}", len));
+        writer.write_line("i32.store");
+        
+        // 3. Evaluate and store each element
+        for (i, expr) in elements.iter().enumerate() {
+            let offset = 4 + (i * 4);
+            writer.write_line("global.get $heap_ptr"); // ptr
+            writer.write_line(&format!("i32.const {}", offset));
+            writer.write_line("i32.add"); // ptr + offset
+            
+            self.build_expression(expr, &inner_type_str, function, writer)?;
+            
+            if wasm_type == "f32" {
+                writer.write_line("f32.store");
+            } else {
+                writer.write_line("i32.store");
+            }
+        }
+        
+        // 4. Bump the heap pointer
+        writer.write_line("global.get $heap_ptr");
+        writer.write_line(&format!("i32.const {}", total_size));
+        writer.write_line("i32.add");
+        writer.write_line("global.set $heap_ptr");
+        
+        // The original ptr is still on the stack from step 1, which is exactly what we want to return
+        Ok(())
+    }
+
+    /// Builds an array index access
+    pub fn build_index_access(&self, array_expr: &ExpressionNode<'a>, index_expr: &ExpressionNode<'a>, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        // Here left_side is the expected type of the expression, which is the inner type of the array
+        let wasm_type = WasmGenerator::get_wasm_type_from(left_side.clone())?;
+        
+        // Calculate the memory address: ptr + 4 + (index * 4)
+        // Note: We pass a dummy type "int[]" to build_expression for the array ptr because we just need an i32 back
+        self.build_expression(array_expr, &"int[]".to_string(), function, writer)?; // ptr
+        writer.write_line("i32.const 4");
+        writer.write_line("i32.add"); // ptr + 4
+        
+        self.build_expression(index_expr, &"int".to_string(), function, writer)?; // index
+        writer.write_line("i32.const 4");
+        writer.write_line("i32.mul"); // index * 4
+        
+        writer.write_line("i32.add"); // ptr + 4 + (index * 4)
+        
+        // Load the value
+        if wasm_type == "f32" {
+            writer.write_line("f32.load");
+        } else {
+            writer.write_line("i32.load");
+        }
+        
         Ok(())
     }
 }

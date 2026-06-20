@@ -16,6 +16,10 @@ impl<'a> WasmGenerator<'a> {
                 StatementNode::Declaration(_, expr) | StatementNode::Assignment(_, expr) => {
                     self.collect_strings_from_expr(expr);
                 }
+                StatementNode::IndexAssignment(_, index, expr) => {
+                    self.collect_strings_from_expr(index);
+                    self.collect_strings_from_expr(expr);
+                }
                 StatementNode::IfElse(cond, if_body, else_ifs, else_body) => {
                     self.collect_strings_from_expr(cond);
                     self.collect_strings_from_body(if_body);
@@ -80,6 +84,15 @@ impl<'a> WasmGenerator<'a> {
                 for param in params {
                     self.collect_strings_from_expr(param);
                 }
+            }
+            ExpressionNode::ArrayLiteral(elements) => {
+                for element in elements {
+                    self.collect_strings_from_expr(element);
+                }
+            }
+            ExpressionNode::IndexAccess(array_expr, index_expr) => {
+                self.collect_strings_from_expr(array_expr);
+                self.collect_strings_from_expr(index_expr);
             }
             _ => {}
         }

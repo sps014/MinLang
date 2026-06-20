@@ -8,6 +8,7 @@ pub enum Type {
     Float(SyntaxToken),
     String(SyntaxToken),
     Boolean(SyntaxToken),
+    Array(Box<Type>),
     Void,
 }
 
@@ -15,13 +16,13 @@ impl Type {
     /// Returns the string representation of the type
     pub fn get_type(&self) -> String {
         match self {
-            Type::Integer(_) => "int",
-            Type::Float(_) => "float",
-            Type::String(_) => "string",
-            Type::Void => "void",
-            Type::Boolean(_) => "bool",
+            Type::Integer(_) => "int".to_string(),
+            Type::Float(_) => "float".to_string(),
+            Type::String(_) => "string".to_string(),
+            Type::Void => "void".to_string(),
+            Type::Boolean(_) => "bool".to_string(),
+            Type::Array(inner) => format!("{}[]", inner.get_type()),
         }
-        .to_string()
     }
 
     /// Returns the line and column string of the type token
@@ -32,6 +33,7 @@ impl Type {
             Type::String(token) => token.position.get_point_str(),
             Type::Void => "".to_string(),
             Type::Boolean(token) => token.position.get_point_str(),
+            Type::Array(inner) => inner.get_line_str(),
         }
     }
 

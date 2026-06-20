@@ -5,6 +5,7 @@ use super::expression::ExpressionNode;
 #[derive(Debug, Clone)]
 pub enum StatementNode<'a> {
     Assignment(SyntaxToken, ExpressionNode<'a>),
+    IndexAssignment(SyntaxToken, &'a ExpressionNode<'a>, ExpressionNode<'a>),
     Declaration(SyntaxToken, ExpressionNode<'a>),
     FunctionInvocation(SyntaxToken, Vec<ExpressionNode<'a>>),
     Return(Option<ExpressionNode<'a>>),

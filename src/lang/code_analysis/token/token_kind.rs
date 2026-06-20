@@ -76,6 +76,10 @@ pub enum TokenKind
     CurlyOpenBracketToken,
     #[token("}")]
     CurlyCloseBracketToken,
+    #[token("[")]
+    OpenBracketToken,
+    #[token("]")]
+    CloseBracketToken,
 
     #[token("if")]
     IfToken,

@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::io::{Error, ErrorKind};
 use std::rc::Rc;
-use crate::lang::code_analysis::syntax::nodes::{ExpressionNode, FunctionNode, StatementNode};
+use crate::lang::code_analysis::syntax::nodes::{ExpressionNode, FunctionNode, StatementNode, Type};
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
@@ -63,7 +63,7 @@ impl<'a> FunctionControlGraph<'a>
     }
     pub fn build(&mut self)->Result<(),Error>
     {
-        if self.function.return_type.is_none()
+        if self.function.return_type.is_none() || self.function.return_type.as_ref().unwrap() == &Type::Void
         {
             return Ok(());
         }

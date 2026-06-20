@@ -123,6 +123,21 @@ impl<'a, 'b> Parser<'a, 'b>
         let module_name = self.match_token(TokenKind::StringToken);
         Ok(ImportNode::new(module_name))
     }
+    /// Parses a Type from the token stream, including array types
+    fn parse_type(&mut self) -> Result<Type, Error> {
+        let type_token = self.match_token(TokenKind::DataTypeToken);
+        let mut parsed_type = Type::from_token(type_token)?;
+        
+        // Check for array suffix `[]`
+        while self.current_token().kind == TokenKind::OpenBracketToken {
+            self.match_token(TokenKind::OpenBracketToken);
+            self.match_token(TokenKind::CloseBracketToken);
+            parsed_type = Type::Array(Box::new(parsed_type));
+        }
+        
+        Ok(parsed_type)
+    }
+
     /// Parses a function declaration
     fn parse_function(&mut self)->Result<FunctionNode<'a>,Error>
     {
@@ -141,8 +156,7 @@ impl<'a, 'b> Parser<'a, 'b>
         {
             //eat the colon
             self.match_token(TokenKind::ColonToken);
-            let type_r=self.match_token(TokenKind::DataTypeToken);
-            return_type=Some(Type::from_token(type_r)?);
+            return_type=Some(self.parse_type()?);
         }
         let block=self.parse_block()?;
         Ok(FunctionNode::new(function_name,return_type,params,block,is_exported))
@@ -161,9 +175,20 @@ impl<'a, 'b> Parser<'a, 'b>
            let param=self.match_token(TokenKind::IdentifierToken);
             //eat the colon
             self.match_token(TokenKind::ColonToken);
-            //eat the type
-            let param_type=self.match_token(TokenKind::DataTypeToken);
-            params.push(ParameterNode::new(param,param_type));
+            
+            // Note: We keep the parameter type as a SyntaxToken in ParameterNode for now
+            // to avoid changing too much AST structure. We'll parse the actual type during semantic analysis.
+            // But we should consume the `[]` if it's an array type.
+            let mut param_type_token = self.match_token(TokenKind::DataTypeToken);
+            
+            // Check for array suffix `[]`
+            while self.current_token().kind == TokenKind::OpenBracketToken {
+                self.match_token(TokenKind::OpenBracketToken);
+                self.match_token(TokenKind::CloseBracketToken);
+                param_type_token.text.push_str("[]");
+            }
+            
+            params.push(ParameterNode::new(param,param_type_token));
             //if we have comma and it is not trailing comma
             if self.current_token().kind==TokenKind::CommaToken
             {
@@ -212,6 +237,8 @@ impl<'a, 'b> Parser<'a, 'b>
             TokenKind::IdentifierToken => {
                 if self.peek_token(1).kind == TokenKind::EqualToken {
                     Ok(self.parse_assignment()?)
+                } else if self.peek_token(1).kind == TokenKind::OpenBracketToken {
+                    Ok(self.parse_index_assignment()?)
                 } else if self.peek_token(1).kind == TokenKind::OpenParenthesisToken {
                     let r = self.parse_invocation_expression()?;
                     //eat the semicolon
@@ -249,12 +276,19 @@ impl<'a, 'b> Parser<'a, 'b>
         }
     }
 
-    /// Parses a variable declaration (e.g., `let x = 5;`)
+    /// Parses a variable declaration (e.g., `let x = 5;` or `let x: int[] = [1];`)
     fn parse_declaration(&mut self)->Result<StatementNode<'a>,Error>
     {
         //eat the keyword let
         self.match_token(TokenKind::LetToken);
         let identifier=self.match_token(TokenKind::IdentifierToken);
+        
+        // Optional type annotation
+        if self.current_token().kind == TokenKind::ColonToken {
+            self.match_token(TokenKind::ColonToken);
+            self.parse_type()?;
+        }
+        
         //eat the equal sign
         self.match_token(TokenKind::EqualToken);
         let expression=self.parse_expression(0)?;
@@ -274,6 +308,24 @@ impl<'a, 'b> Parser<'a, 'b>
         //eat the semicolon
         self.match_token(TokenKind::SemicolonToken);
         Ok(StatementNode::Assignment(identifier,expression))
+    }
+
+    /// Parses an array index assignment (e.g., `arr[0] = 5;`)
+    fn parse_index_assignment(&mut self)->Result<StatementNode<'a>,Error>
+    {
+        let identifier = self.match_token(TokenKind::IdentifierToken);
+        self.match_token(TokenKind::OpenBracketToken);
+        let index_expr = self.parse_expression(0)?;
+        self.match_token(TokenKind::CloseBracketToken);
+        self.match_token(TokenKind::EqualToken);
+        let value_expr = self.parse_expression(0)?;
+        self.match_token(TokenKind::SemicolonToken);
+        
+        Ok(StatementNode::IndexAssignment(
+            identifier,
+            self.arena.alloc(index_expr),
+            value_expr
+        ))
     }
     /// Parses an expression with operator precedence
     fn parse_expression(&mut self,parent_precedence:i32)->Result<ExpressionNode<'a>,Error>
@@ -314,6 +366,19 @@ impl<'a, 'b> Parser<'a, 'b>
             self.match_token(TokenKind::CloseParenthesisToken);
             return Ok(ExpressionNode::Parenthesized(self.arena.alloc(expression)));
         }
+        else if self.current_token().kind==TokenKind::OpenBracketToken {
+            // Array literal
+            self.match_token(TokenKind::OpenBracketToken);
+            let mut elements = Vec::new();
+            while self.current_token().kind != TokenKind::CloseBracketToken && self.current_token().kind != TokenKind::EndOfFileToken {
+                elements.push(self.parse_expression(0)?);
+                if self.current_token().kind == TokenKind::CommaToken {
+                    self.match_token(TokenKind::CommaToken);
+                }
+            }
+            self.match_token(TokenKind::CloseBracketToken);
+            return Ok(ExpressionNode::ArrayLiteral(elements));
+        }
         else if  self.current_token().kind==TokenKind::BooleanToken
         {
             return Ok(ExpressionNode::Literal(Type::Boolean(self.match_token(TokenKind::BooleanToken))));
@@ -330,7 +395,20 @@ impl<'a, 'b> Parser<'a, 'b>
             }
             else
             {
-                return Ok(ExpressionNode::Identifier(self.next_token()));
+                let mut expr = ExpressionNode::Identifier(self.next_token());
+                
+                // Check for index access
+                while self.current_token().kind == TokenKind::OpenBracketToken {
+                    self.match_token(TokenKind::OpenBracketToken);
+                    let index = self.parse_expression(0)?;
+                    self.match_token(TokenKind::CloseBracketToken);
+                    expr = ExpressionNode::IndexAccess(
+                        self.arena.alloc(expr),
+                        self.arena.alloc(index)
+                    );
+                }
+                
+                return Ok(expr);
             }
         }
         else if self.current_token().kind==TokenKind::NumberToken

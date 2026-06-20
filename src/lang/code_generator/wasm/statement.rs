@@ -18,6 +18,7 @@ impl<'a> WasmGenerator<'a> {
         match statement {
             StatementNode::Declaration(left, expression) => self.build_declaration(left, function, expression, writer)?,
             StatementNode::Assignment(left, expression) => self.build_assignment(left, expression, function, writer)?,
+            StatementNode::IndexAssignment(left, index, expression) => self.build_index_assignment(left, index, expression, function, writer)?,
             StatementNode::Return(r) => self.build_return(r, function, writer)?,
             StatementNode::While(c, b) => self.build_while(c, b, function, writer)?,
             StatementNode::For(init, cond, inc, body) => self.build_for(init, cond, inc, body, function, writer)?,
@@ -43,12 +44,48 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
+    /// Builds an array index assignment
+    pub fn build_index_assignment(&self, left: &SyntaxToken, index: &ExpressionNode<'a>, expression: &ExpressionNode<'a>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        let array_type_str = self.table_read_type(&left.text, function);
+        // Strip the "[]" to get the inner type
+        let inner_type_str = array_type_str[..array_type_str.len() - 2].to_string();
+        let wasm_type = WasmGenerator::get_wasm_type_from(inner_type_str.clone())?;
+        
+        // Calculate the memory address: ptr + 4 + (index * 4)
+        writer.write_line(&format!("local.get ${}", left.text)); // ptr
+        writer.write_line("i32.const 4");
+        writer.write_line("i32.add"); // ptr + 4
+        
+        self.build_expression(index, &"int".to_string(), function, writer)?; // index
+        writer.write_line("i32.const 4");
+        writer.write_line("i32.mul"); // index * 4
+        
+        writer.write_line("i32.add"); // ptr + 4 + (index * 4)
+        
+        // Evaluate the value to store
+        self.build_expression(expression, &inner_type_str, function, writer)?;
+        
+        // Store the value
+        if wasm_type == "f32" {
+            writer.write_line("f32.store");
+        } else {
+            writer.write_line("i32.store");
+        }
+        
+        Ok(())
+    }
+
     /// Builds a return statement
     pub fn build_return(&self, expression: &Option<ExpressionNode<'a>>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         if let Some(expr) = expression {
             let return_type = function.return_type.as_ref().unwrap();
             self.build_expression(expr, &return_type.get_type(), function, writer)?;
         }
+        
+        // Restore the heap pointer before returning
+        writer.write_line("local.get $saved_heap_ptr");
+        writer.write_line("global.set $heap_ptr");
+        
         writer.write_line("return");
         Ok(())
     }

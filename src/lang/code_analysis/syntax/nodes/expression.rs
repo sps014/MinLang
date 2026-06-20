@@ -5,9 +5,11 @@ use super::types::Type;
 #[derive(Debug, Clone)]
 pub enum ExpressionNode<'a> {
     Literal(Type),
+    ArrayLiteral(Vec<ExpressionNode<'a>>),
     Binary(&'a ExpressionNode<'a>, SyntaxToken, &'a ExpressionNode<'a>),
     Unary(SyntaxToken, &'a ExpressionNode<'a>),
     Identifier(SyntaxToken),
     Parenthesized(&'a ExpressionNode<'a>),
     FunctionCall(SyntaxToken, Vec<ExpressionNode<'a>>),
+    IndexAccess(&'a ExpressionNode<'a>, &'a ExpressionNode<'a>),
 }

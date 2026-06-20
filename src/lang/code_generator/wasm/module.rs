@@ -16,6 +16,7 @@ impl<'a> WasmGenerator<'a> {
     pub fn build_module(&mut self, program: &ProgramNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         writer.write_line("(module");
         writer.indent();
+        
         writer.write_line("(import \"env\" \"concat_strings\" (func $concat_strings (param i32 i32) (result i32)))");
         
         // Import stdlib functions
@@ -35,6 +36,10 @@ impl<'a> WasmGenerator<'a> {
             writer.write_line(&format!("(import \"env\" \"{}\" (func ${} (param {}){}))", 
                 std_func.name, std_func.name, params_str.trim(), result_str));
         }
+
+        // Global heap pointer for bump allocator
+        writer.write_line("(global $heap_ptr (mut i32) (i32.const 1024))"); // Start heap at 1024 to leave room for static strings
+
 
         writer.write_line("(memory 1)");
         for (s, offset) in &self.strings {
@@ -64,10 +69,23 @@ impl<'a> WasmGenerator<'a> {
         }
         self.build_return_type(function, writer)?;
         self.build_local_variable(function, writer)?;
+        
+        // Add hidden local variable to save the heap pointer for scope-based bump allocation
+        writer.write(" (local $saved_heap_ptr i32)");
         writer.write_line("");
 
         writer.indent();
+        
+        // Save the current heap pointer at the start of the function
+        writer.write_line("global.get $heap_ptr");
+        writer.write_line("local.set $saved_heap_ptr");
+        
         self.build_body(function.body, function, writer)?;
+        
+        // Restore the heap pointer at the end of the function (if it doesn't return early)
+        writer.write_line("local.get $saved_heap_ptr");
+        writer.write_line("global.set $heap_ptr");
+        
         writer.unindent();
 
         writer.write_line(")");
@@ -76,8 +94,9 @@ impl<'a> WasmGenerator<'a> {
 
     /// Builds the export declarations for the module
     pub fn build_export(&self, program: &ProgramNode, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        writer.write_line("(export \"memory\" (memory 0))");
         for i in program.functions.iter() {
-            if i.is_exported {
+            if i.is_exported || i.name.text == "main" {
                 writer.write_line(&format!("(export \"{}\" (func ${}))", i.name.text, i.name.text));
             }
         }

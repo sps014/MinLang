@@ -12,3 +12,8 @@ fun string_test(): string {
     let c = a + b;
     return c;
 }
+
+fun main(): void {
+    print_int(loop_test());
+    println(string_test());
+}

@@ -10,11 +10,19 @@ use super::WasmGenerator;
 impl<'a> WasmGenerator<'a> {
     /// Gets the WebAssembly type string from a MinLang type name
     pub fn get_wasm_type_from(typename: String) -> Result<String, Error> {
-        let r = match typename.as_str() {
+        let base_type = if typename.ends_with("[]") {
+            // Arrays are represented as pointers (i32)
+            return Ok("i32".to_string());
+        } else {
+            typename.as_str()
+        };
+
+        let r = match base_type {
             "int" => "i32".to_string(),
             "float" => "f32".to_string(),
             "bool" => "i32".to_string(),
             "string" => "i32".to_string(),
+            "void" => "".to_string(),
             _ => return Err(Error::new(ErrorKind::Other, format!("unsupported type {}", typename)))
         };
         Ok(r)

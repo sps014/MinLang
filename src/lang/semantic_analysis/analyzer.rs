@@ -106,6 +106,8 @@ impl<'a> Anaylzer<'a> {
                 self.analyze_declaration(left,right,parent_function,&symbol_table, diagnostics)?,
             StatementNode::Assignment(left,right) =>
                 self.analyze_assignment(left,right,parent_function,&symbol_table, diagnostics)?,
+            StatementNode::IndexAssignment(left, index, right) =>
+                self.analyze_index_assignment(left, index, right, parent_function, &symbol_table, diagnostics)?,
             StatementNode::IfElse(condition,if_body,
                                   else_if,else_body)=>
                 self.analyze_if_else(condition,if_body,
@@ -226,12 +228,73 @@ impl<'a> Anaylzer<'a> {
         self.compare_data_type(&l,&r,&left.position, diagnostics)?;
         Ok(())
     }
+    
+    fn analyze_index_assignment(&mut self, left: &SyntaxToken, index: &ExpressionNode<'a>, right: &ExpressionNode<'a>, parent_function: &FunctionNode<'a>, symbol_table: &Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag) -> Result<(), ()> {
+        let array_type = match (*symbol_table).as_ref().borrow().get_symbol(left.clone()) {
+            Ok(sym) => sym,
+            Err(e) => {
+                diagnostics.report_error(e.to_string(), Some(left.position.clone()));
+                return Ok(());
+            }
+        };
+
+        let inner_type = match array_type {
+            Type::Array(inner) => *inner,
+            _ => {
+                diagnostics.report_error(format!("Cannot index into non-array type {}", array_type.get_type()), Some(left.position.clone()));
+                return Ok(());
+            }
+        };
+
+        let index_type = self.analyze_expression(index, parent_function, symbol_table, diagnostics)?;
+        if index_type.get_type() != "int" {
+            diagnostics.report_error(format!("Array index must be of type int, got {}", index_type.get_type()), Some(left.position.clone()));
+        }
+
+        let right_type = self.analyze_expression(right, parent_function, symbol_table, diagnostics)?;
+        self.compare_data_type(&inner_type, &right_type, &left.position, diagnostics)?;
+        
+        Ok(())
+    }
     fn analyze_expression(&mut self,expression:&ExpressionNode<'a>,parent_function:&FunctionNode<'a>,
                           symbol_table:&Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag)->Result<Type,()> {
         return match expression
         {
             ExpressionNode::Literal(number) =>
                 Ok(number.clone()),
+            ExpressionNode::ArrayLiteral(elements) => {
+                if elements.is_empty() {
+                    diagnostics.report_error("Empty array literals are not supported yet".to_string(), None);
+                    return Ok(Type::Array(Box::new(Type::Void)));
+                }
+                
+                let first_type = self.analyze_expression(&elements[0], parent_function, symbol_table, diagnostics)?;
+                
+                for i in 1..elements.len() {
+                    let element_type = self.analyze_expression(&elements[i], parent_function, symbol_table, diagnostics)?;
+                    // We can't easily get the position of the element here without changing AST, so we pass None
+                    self.compare_data_type(&first_type, &element_type, &SyntaxToken::new(TokenKind::BadToken, crate::lang::code_analysis::text::text_span::TextSpan::new((0,0), &std::rc::Rc::new(crate::lang::code_analysis::text::line_text::LineText::new("".to_string()))), "".to_string()).position, diagnostics)?;
+                }
+                
+                Ok(Type::Array(Box::new(first_type)))
+            },
+            ExpressionNode::IndexAccess(array_expr, index_expr) => {
+                let array_type = self.analyze_expression(array_expr, parent_function, symbol_table, diagnostics)?;
+                let inner_type = match array_type {
+                    Type::Array(inner) => *inner,
+                    _ => {
+                        diagnostics.report_error(format!("Cannot index into non-array type {}", array_type.get_type()), None);
+                        Type::Void
+                    }
+                };
+                
+                let index_type = self.analyze_expression(index_expr, parent_function, symbol_table, diagnostics)?;
+                if index_type.get_type() != "int" {
+                    diagnostics.report_error(format!("Array index must be of type int, got {}", index_type.get_type()), None);
+                }
+                
+                Ok(inner_type)
+            },
             ExpressionNode::Unary(opr,right)=> {
                 let right_type = self.analyze_expression(right,parent_function,symbol_table, diagnostics)?;
                 match opr.kind {
