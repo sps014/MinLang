@@ -7,7 +7,7 @@ use super::WasmGenerator;
 
 impl<'a> WasmGenerator<'a> {
     /// Builds an expression
-    pub fn build_expression(&self, expression: &ExpressionNode<'a>, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+    pub fn build_expression(&mut self, expression: &ExpressionNode<'a>, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         match expression {
             ExpressionNode::Identifier(identifier) => self.build_identifier(identifier, writer)?,
             ExpressionNode::ArrayLiteral(elements) => self.build_array_literal(elements, left_side, function, writer)?,
@@ -22,7 +22,7 @@ impl<'a> WasmGenerator<'a> {
     }
 
     /// Builds a literal value
-    pub fn build_literal(&self, literal: &Type, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+    pub fn build_literal(&mut self, literal: &Type, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let type_ = match literal {
             Type::Integer(i) => format!("i32.const {}", i.text),
             Type::Float(f) => format!("f32.const {}", f.text),
@@ -38,7 +38,7 @@ impl<'a> WasmGenerator<'a> {
     }
 
     /// Builds a binary expression
-    pub fn build_binary(&self, left_exp: &ExpressionNode<'a>, opr: &SyntaxToken, right_expr: &ExpressionNode<'a>, left: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+    pub fn build_binary(&mut self, left_exp: &ExpressionNode<'a>, opr: &SyntaxToken, right_expr: &ExpressionNode<'a>, left: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         self.build_expression(left_exp, left, function, writer)?;
         self.build_expression(right_expr, left, function, writer)?;
 
@@ -89,7 +89,7 @@ impl<'a> WasmGenerator<'a> {
     }
 
     /// Builds a unary expression
-    pub fn build_unary(&self, opr: &SyntaxToken, expression: &ExpressionNode<'a>, left: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+    pub fn build_unary(&mut self, opr: &SyntaxToken, expression: &ExpressionNode<'a>, left: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         self.build_expression(expression, left, function, writer)?;
         let symbol = WasmGenerator::get_wasm_type_from(left.clone())?;
         match opr.kind {
@@ -108,13 +108,13 @@ impl<'a> WasmGenerator<'a> {
     }
 
     /// Builds an identifier reference
-    pub fn build_identifier(&self, identifier: &SyntaxToken, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+    pub fn build_identifier(&mut self, identifier: &SyntaxToken, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         writer.write_line(&format!("local.get ${}", identifier.text));
         Ok(())
     }
 
     /// Builds a function invocation
-    pub fn build_function_invocation(&self, name: &String, parameters: &Vec<ExpressionNode<'a>>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+    pub fn build_function_invocation(&mut self, name: &String, parameters: &Vec<ExpressionNode<'a>>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let func_info = self.function_table.get_function(name)?;
         
         for (i, expr) in parameters.iter().enumerate() {
@@ -131,7 +131,7 @@ impl<'a> WasmGenerator<'a> {
     }
 
     /// Builds an array literal
-    pub fn build_array_literal(&self, elements: &Vec<ExpressionNode<'a>>, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+    pub fn build_array_literal(&mut self, elements: &Vec<ExpressionNode<'a>>, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let len = elements.len();
         let total_size = 4 + (len * 4); // 4 bytes for length + 4 bytes per element
         
@@ -177,7 +177,7 @@ impl<'a> WasmGenerator<'a> {
     }
 
     /// Builds an array index access
-    pub fn build_index_access(&self, array_expr: &ExpressionNode<'a>, index_expr: &ExpressionNode<'a>, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+    pub fn build_index_access(&mut self, array_expr: &ExpressionNode<'a>, index_expr: &ExpressionNode<'a>, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         // Here left_side is the expected type of the expression, which is the inner type of the array
         let wasm_type = WasmGenerator::get_wasm_type_from(left_side.clone())?;
         

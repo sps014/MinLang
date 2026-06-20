@@ -26,6 +26,8 @@ pub struct WasmGenerator<'a> {
     pub combined_symbol_lookup: HashMap<String, HashMap<String, Type>>,
     pub strings: HashMap<String, usize>,
     pub next_string_offset: usize,
+    pub loop_counter: usize,
+    pub loop_stack: Vec<usize>,
 }
 
 impl<'a> CodeGenerator<'a> for WasmGenerator<'a> {
@@ -45,6 +47,8 @@ impl<'a> WasmGenerator<'a> {
             combined_symbol_lookup: HashMap::new(),
             strings: HashMap::new(),
             next_string_offset: 0,
+            loop_counter: 0,
+            loop_stack: Vec::new(),
         }
     }
 }

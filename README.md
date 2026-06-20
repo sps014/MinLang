@@ -1,53 +1,118 @@
-# MinLang
-A minimal statically typed turing complete scripting language.
+# MinLang Compiler
 
-#### language goals
-1. Statically typed
-2. Type inferencing
-3. turing complete
-4. Semantic analyzer with Control FLow analysis
-5. ultra fast
-6. Clear error messages
-7. web assembly text code generator ,
+MinLang is a statically typed, compiled programming language that targets WebAssembly (WASM). It features a clean syntax, scope-based memory management, and a robust compiler pipeline written entirely in Rust.
 
+## Features
 
-eg. 
+- **Static Typing**: Supports `int`, `float`, `string`, `bool`, and `void` types.
+- **Arrays**: Native support for arrays (`int[]`, `float[]`, `string[]`) with scope-based bump allocation.
+- **Control Flow**: `if`/`else if`/`else`, `while` loops, and `for` loops with `break` and `continue` support.
+- **Functions**: First-class functions with parameters and return types.
+- **WebAssembly Target**: Compiles directly to WebAssembly Text format (`.wat`) and executes via `wasmtime`.
+- **Standard Library**: Built-in functions like `print`, `println`, `print_int`, `print_float`, `sin`, `cos`, `abs`, and `sqrt`.
+- **Diagnostic System**: Comprehensive error reporting with line/column tracking for syntax and semantic errors.
 
-```kt
-    fun get_pi() :float
-    {
-        return 3.14;
+## Architecture
+
+The MinLang compiler pipeline consists of four main stages:
+
+1. **Lexer**: Tokenizes the source code into a stream of syntax tokens.
+2. **Parser**: Constructs an Abstract Syntax Tree (AST) using a recursive descent parsing strategy.
+3. **Semantic Analyzer**: Performs type checking, scope resolution, and control flow analysis to ensure program correctness.
+4. **Code Generator**: Translates the validated AST into WebAssembly Text format (`.wat`), handling memory allocation, function calls, and control structures.
+
+## Prerequisites
+
+To build and run the MinLang compiler, you need:
+
+- [Rust](https://www.rust-lang.org/tools/install) (latest stable version)
+- Cargo (included with Rust)
+
+## Installation
+
+Clone the repository and build the project using Cargo:
+
+```bash
+git clone <repository-url>
+cd MinLang
+cargo build --release
+```
+
+## Usage
+
+You can use the MinLang compiler via its command-line interface.
+
+### Running a Program
+
+To compile and immediately execute a MinLang file:
+
+```bash
+cargo run -- run path/to/your/file.ml
+```
+
+### Compiling a Program
+
+To compile a MinLang file to WebAssembly Text format (`.wat`) without executing it:
+
+```bash
+cargo run -- compile path/to/your/file.ml
+```
+
+## Language Examples
+
+### Hello World
+
+```minlang
+fun main(): void {
+    println("Hello, World!");
+}
+```
+
+### Arithmetic & Control Flow
+
+```minlang
+fun fib(n: int): int {
+    if n <= 1 {
+        return n;
     }
-    fun abc(test:int,alpha:float):float
-    {
-        let b=get_pi(5); // infered to float
-        let d="this is \"some\" string"+"another";
-        let a=0.0; // infered as float
-        let count=0; // infered as int
-        while a<b // no parenthesis required in condition
-        {
-           a=a+1;
-           //Infinite nesting
-           while 1
-           {
-              count=count+1;
-              if count>100 //supports if else ladder
-              {
-                 break; // support break and continue
-              }
-           }
-        }
-        return a; //return control flow analysis
+    return fib(n - 1) + fib(n - 2);
+}
+
+fun main(): void {
+    let result = fib(10);
+    print("Fibonacci of 10 is: ");
+    print_int(result);
+}
+```
+
+### Arrays & Loops
+
+```minlang
+fun main(): void {
+    let arr: int[] = [10, 20, 30, 40, 50];
+    let sum = 0;
+    
+    for let i = 0; i < 5; i = i + 1 {
+        sum = sum + arr[i];
     }
-
-//and so on
+    
+    print("Sum of array elements: ");
+    print_int(sum);
+}
 ```
 
+## Testing
 
-### Steps to Build
-1. Install Rust Language Compiler, if not already installed.
-2. Clone the Repo.
-3. Go to repo and run following command in terminal
+MinLang includes a comprehensive test suite covering unit tests for compiler stages and end-to-end (E2E) tests that execute compiled WebAssembly directly in Rust using `wasmtime`.
+
+To run the test suite:
+
+```bash
+cargo test
 ```
-cargo run
-```
+
+Test cases are located in `tests/cases/` and include `.ml` source files alongside their `.expected` outputs.
+
+## License
+
+This project is licensed under the MIT License.

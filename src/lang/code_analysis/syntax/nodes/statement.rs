@@ -1,12 +1,13 @@
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 use super::expression::ExpressionNode;
+use super::types::Type;
 
 /// Represents a statement node in the AST
 #[derive(Debug, Clone)]
 pub enum StatementNode<'a> {
     Assignment(SyntaxToken, ExpressionNode<'a>),
     IndexAssignment(SyntaxToken, &'a ExpressionNode<'a>, ExpressionNode<'a>),
-    Declaration(SyntaxToken, ExpressionNode<'a>),
+    Declaration(SyntaxToken, Option<Type>, ExpressionNode<'a>),
     FunctionInvocation(SyntaxToken, Vec<ExpressionNode<'a>>),
     Return(Option<ExpressionNode<'a>>),
     /// If condition, then body, else if pairs, else body

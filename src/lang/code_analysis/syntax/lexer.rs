@@ -58,3 +58,7 @@ impl Lexer {
         res
     }
 }
+
+#[cfg(test)]
+#[path = "tests/lexer_tests.rs"]
+mod tests;

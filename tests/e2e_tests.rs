@@ -1,0 +1,160 @@
+use std::fs;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+use wasmtime::*;
+use min_lang::lang::compiler::{Compiler, Target};
+use pretty_assertions::assert_eq;
+
+#[derive(Clone)]
+struct TestEnv {
+    output: Arc<Mutex<String>>,
+}
+
+impl TestEnv {
+    fn new() -> Self {
+        Self {
+            output: Arc::new(Mutex::new(String::new())),
+        }
+    }
+
+    fn print(&self, s: &str) {
+        self.output.lock().unwrap().push_str(s);
+    }
+
+    fn println(&self, s: &str) {
+        let mut out = self.output.lock().unwrap();
+        out.push_str(s);
+        out.push('\n');
+    }
+}
+
+fn read_string_from_memory(memory: &Memory, store: impl AsContext, ptr: i32) -> String {
+    let data = memory.data(&store);
+    let mut end = ptr as usize;
+    while end < data.len() && data[end] != 0 {
+        end += 1;
+    }
+    String::from_utf8_lossy(&data[ptr as usize..end]).into_owned()
+}
+
+fn run_test_case(ml_file: &Path) {
+    let expected_file = ml_file.with_extension("expected");
+    let expected_error_file = ml_file.with_extension("expected_error");
+    
+    let compiler = Compiler::new(Target::Wasm);
+    let wat_path = ml_file.with_extension("wat");
+    
+    let ml_file_str = ml_file.to_str().unwrap().to_string();
+    let wat_path_str = wat_path.to_str().unwrap().to_string();
+    
+    let compile_result = compiler.compile(&ml_file_str, &wat_path_str);
+    
+    if expected_error_file.exists() {
+        let expected_error = fs::read_to_string(&expected_error_file).unwrap();
+        assert!(compile_result.is_err(), "Expected compilation to fail for {:?}", ml_file);
+        // We could check the exact error message if we exposed it from Compiler, 
+        // but for now just ensuring it fails is good.
+        return;
+    }
+    
+    compile_result.expect(&format!("Compilation failed for {:?}", ml_file));
+
+    let expected_output = fs::read_to_string(&expected_file)
+        .unwrap_or_else(|_| panic!("Missing .expected file for {:?}", ml_file));
+
+    let wat_content = fs::read_to_string(&wat_path).unwrap();
+    
+    // 2. Parse WAT to Wasm binary
+    let wasm_bytes = wat::parse_str(&wat_content).expect("Failed to parse WAT");
+
+    // 3. Setup Wasmtime
+    let engine = Engine::default();
+    let module = Module::new(&engine, &wasm_bytes).expect("Failed to create module");
+    
+    let mut store = Store::new(&engine, ());
+    let mut linker = Linker::new(&engine);
+
+    // 4. Setup Host Functions
+    let env = TestEnv::new();
+    
+    // We need to extract memory later to read strings, so we'll pass it to host functions via a hack
+    // Wasmtime allows accessing memory from Caller
+    
+    let env_clone = env.clone();
+    linker.func_wrap("env", "print_int", move |v: i32| {
+        env_clone.println(&v.to_string());
+    }).unwrap();
+
+    let env_clone = env.clone();
+    linker.func_wrap("env", "print_float", move |v: f32| {
+        env_clone.println(&v.to_string());
+    }).unwrap();
+
+    let env_clone = env.clone();
+    linker.func_wrap("env", "print", move |mut caller: Caller<'_, ()>, ptr: i32| {
+        let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+        let s = read_string_from_memory(&memory, &caller, ptr);
+        env_clone.print(&s);
+    }).unwrap();
+
+    let env_clone = env.clone();
+    linker.func_wrap("env", "println", move |mut caller: Caller<'_, ()>, ptr: i32| {
+        let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+        let s = read_string_from_memory(&memory, &caller, ptr);
+        env_clone.println(&s);
+    }).unwrap();
+
+    linker.func_wrap("env", "concat_strings", |_: i32, _: i32| -> i32 {
+        0 // Dummy implementation for now, full stdlib needs actual memory management
+    }).unwrap();
+
+    linker.func_wrap("env", "sin", |v: f32| -> f32 { v.sin() }).unwrap();
+    linker.func_wrap("env", "cos", |v: f32| -> f32 { v.cos() }).unwrap();
+    linker.func_wrap("env", "abs", |v: f32| -> f32 { v.abs() }).unwrap();
+    linker.func_wrap("env", "sqrt", |v: f32| -> f32 { v.sqrt() }).unwrap();
+    linker.func_wrap("env", "strlen", |_: i32| -> i32 { 0 }).unwrap();
+    linker.func_wrap("env", "malloc", |_: i32| -> i32 { 0 }).unwrap();
+    linker.func_wrap("env", "free", |_: i32| {}).unwrap();
+
+    // 5. Instantiate and Run
+    let instance = linker.instantiate(&mut store, &module).expect("Failed to instantiate");
+    let main_func = instance.get_typed_func::<(), ()>(&mut store, "main")
+        .expect("Failed to get main function");
+    
+    main_func.call(&mut store, ()).expect("Execution failed");
+
+    // 6. Assert Output
+    let actual_output = env.output.lock().unwrap().clone();
+    assert_eq!(
+        actual_output.trim(),
+        expected_output.trim(),
+        "Output mismatch for {:?}", ml_file
+    );
+    
+    // Cleanup generated WAT
+    let _ = fs::remove_file(wat_path);
+}
+
+#[test]
+fn run_all_e2e_cases() {
+    let cases_dir = Path::new("tests/cases");
+    if !cases_dir.exists() {
+        return;
+    }
+
+    let mut ran_any = false;
+    for entry in fs::read_dir(cases_dir).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        
+        if path.extension().and_then(|s| s.to_str()) == Some("ml") {
+            println!("Running E2E test: {:?}", path);
+            run_test_case(&path);
+            ran_any = true;
+        }
+    }
+    
+    if !ran_any {
+        println!("No .ml files found in tests/cases/");
+    }
+}

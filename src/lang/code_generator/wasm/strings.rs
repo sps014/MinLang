@@ -13,7 +13,7 @@ impl<'a> WasmGenerator<'a> {
     pub fn collect_strings_from_body(&mut self, body: &[StatementNode<'a>]) {
         for stmt in body {
             match stmt {
-                StatementNode::Declaration(_, expr) | StatementNode::Assignment(_, expr) => {
+                StatementNode::Declaration(_, _, expr) | StatementNode::Assignment(_, expr) => {
                     self.collect_strings_from_expr(expr);
                 }
                 StatementNode::IndexAssignment(_, index, expr) => {

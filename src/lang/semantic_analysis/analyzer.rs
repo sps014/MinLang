@@ -42,10 +42,19 @@ impl<'a> Anaylzer<'a> {
     }
     fn analyze_pgm(&mut self,node:&ProgramNode<'a>, diagnostics: &mut DiagnosticBag) -> Result<SemanticInfo<'_>, ()> {
         let mut symbol_table_map=HashMap::new();
+        
+        // Pass 1: Register all functions in the function table
         for function in node.functions.iter() {
-         let r=self.analyze_function(function, diagnostics)?;
-         symbol_table_map.insert(function.name.text.clone(),r);
-     }
+            if let Err(e) = self.function_table.add_function(function.name.text.clone(),FunctionTableInfo::from(function)) {
+                diagnostics.report_error(e.to_string(), Some(function.name.position.clone()));
+            }
+        }
+        
+        // Pass 2: Analyze function bodies
+        for function in node.functions.iter() {
+            let r=self.analyze_function(function, diagnostics)?;
+            symbol_table_map.insert(function.name.text.clone(),r);
+        }
         Ok(SemanticInfo::new(symbol_table_map,&self.function_table))
     }
     fn analyze_function(&mut self,function:&FunctionNode<'a>, diagnostics: &mut DiagnosticBag) -> Result<Rc<RefCell<SymbolTable>>, ()> {
@@ -54,9 +63,6 @@ impl<'a> Anaylzer<'a> {
         // check return
         let mut graph=FunctionControlGraph::new(function);
         if let Err(e) = graph.build() {
-            diagnostics.report_error(e.to_string(), Some(function.name.position.clone()));
-        }
-        if let Err(e) = self.function_table.add_function(function.name.text.clone(),FunctionTableInfo::from(function)) {
             diagnostics.report_error(e.to_string(), Some(function.name.position.clone()));
         }
         Ok(param_table.clone())
@@ -102,8 +108,8 @@ impl<'a> Anaylzer<'a> {
     {
         match statement
         {
-            StatementNode::Declaration(left,right) =>
-                self.analyze_declaration(left,right,parent_function,&symbol_table, diagnostics)?,
+            StatementNode::Declaration(left, type_annotation, right) =>
+                self.analyze_declaration(left, type_annotation, right,parent_function,&symbol_table, diagnostics)?,
             StatementNode::Assignment(left,right) =>
                 self.analyze_assignment(left,right,parent_function,&symbol_table, diagnostics)?,
             StatementNode::IndexAssignment(left, index, right) =>
@@ -206,11 +212,16 @@ impl<'a> Anaylzer<'a> {
         Ok(())
     }
     ///return type is returned currently int and float supported
-    fn analyze_declaration(&mut self,left:&SyntaxToken,right:&ExpressionNode<'a>,parent_function:&FunctionNode<'a>,
+    fn analyze_declaration(&mut self,left:&SyntaxToken, type_annotation: &Option<Type>, right:&ExpressionNode<'a>,parent_function:&FunctionNode<'a>,
                            symbol_table:&Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag)->Result<(),()> {
         //return right type
-        let right=self.analyze_expression(right,parent_function,symbol_table, diagnostics)?;
-        if let Err(e) = (*symbol_table).as_ref().borrow_mut().add_symbol(left.text.clone(),right.clone()) {
+        let right_type=self.analyze_expression(right,parent_function,symbol_table, diagnostics)?;
+        
+        if let Some(t) = type_annotation {
+            self.compare_data_type(t, &right_type, &left.position, diagnostics)?;
+        }
+        
+        if let Err(e) = (*symbol_table).as_ref().borrow_mut().add_symbol(left.text.clone(),right_type.clone()) {
             diagnostics.report_error(e.to_string(), Some(left.position.clone()));
         }
         Ok(())
@@ -425,3 +436,7 @@ impl<'a> Anaylzer<'a> {
     }
 
 }
+
+#[cfg(test)]
+#[path = "tests/analyzer_tests.rs"]
+mod tests;

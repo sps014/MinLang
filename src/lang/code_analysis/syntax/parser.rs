@@ -284,9 +284,10 @@ impl<'a, 'b> Parser<'a, 'b>
         let identifier=self.match_token(TokenKind::IdentifierToken);
         
         // Optional type annotation
+        let mut type_annotation = None;
         if self.current_token().kind == TokenKind::ColonToken {
             self.match_token(TokenKind::ColonToken);
-            self.parse_type()?;
+            type_annotation = Some(self.parse_type()?);
         }
         
         //eat the equal sign
@@ -294,7 +295,7 @@ impl<'a, 'b> Parser<'a, 'b>
         let expression=self.parse_expression(0)?;
         //eat the semicolon
         self.match_token(TokenKind::SemicolonToken);
-        Ok(StatementNode::Declaration(identifier,expression))
+        Ok(StatementNode::Declaration(identifier, type_annotation, expression))
     }
 
     /// Parses a variable assignment (e.g., `x = 5;`)
@@ -557,3 +558,7 @@ impl<'a, 'b> Parser<'a, 'b>
         Ok(StatementNode::Continue)
     }
 }
+
+#[cfg(test)]
+#[path = "tests/parser_tests.rs"]
+mod tests;

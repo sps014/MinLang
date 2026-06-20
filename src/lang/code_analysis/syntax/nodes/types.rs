@@ -45,7 +45,17 @@ impl Type {
             "string" => Type::String(token),
             "void" => Type::Void,
             "bool" => Type::Boolean(token),
-            _ => return Err(Error::new(ErrorKind::Other, "TypeLiteral::from_token: Unexpected token kind")),
+            _ => {
+                // Handle array types like "int[]"
+                if token.text.ends_with("[]") {
+                    let base_type_str = &token.text[0..token.text.len() - 2];
+                    let mut base_token = token.clone();
+                    base_token.text = base_type_str.to_string();
+                    let base_type = Type::from_token(base_token)?;
+                    return Ok(Type::Array(Box::new(base_type)));
+                }
+                return Err(Error::new(ErrorKind::Other, format!("TypeLiteral::from_token: Unexpected token kind '{}'", token.text)));
+            }
         };
         Ok(r)
     }
