@@ -13,7 +13,7 @@ pub enum ExpressionNode<'a> {
     FunctionCall(SyntaxToken, Option<Vec<Type>>, Vec<ExpressionNode<'a>>),
     IndexAccess(&'a ExpressionNode<'a>, &'a ExpressionNode<'a>),
     Cast(Type, &'a ExpressionNode<'a>),
-    StructInstantiation(SyntaxToken, Vec<(SyntaxToken, ExpressionNode<'a>)>),
+    StructInstantiation(SyntaxToken, Option<Vec<Type>>, Vec<(SyntaxToken, ExpressionNode<'a>)>),
     MemberAccess(&'a ExpressionNode<'a>, SyntaxToken),
     IsExpression(&'a ExpressionNode<'a>, Type),
 }

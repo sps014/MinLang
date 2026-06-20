@@ -446,7 +446,7 @@ impl<'a> WasmGenerator<'a> {
             for (field_name, field_info) in &info.fields {
                 let field_type = field_info.type_.get_type();
                 if self.is_reference_type(&field_type) {
-                    let release_func = field_type.replace("[]", "_array");
+                    let release_func = field_type.replace("[]", "_array").replace("?", "");
                     writer.write_line("local.get $ptr");
                     if field_info.offset > 0 {
                         writer.write_line(&format!("i32.const {}", field_info.offset));
@@ -459,7 +459,7 @@ impl<'a> WasmGenerator<'a> {
         } else if type_name.ends_with("[]") {
             let inner_type = &type_name[..type_name.len() - 2];
             if self.is_reference_type(inner_type) {
-                let release_func = inner_type.replace("[]", "_array");
+                let release_func = inner_type.replace("[]", "_array").replace("?", "");
                 
                 // Get length
                 writer.write_line("local.get $ptr");
@@ -521,6 +521,10 @@ impl<'a> WasmGenerator<'a> {
     }
 
     pub fn is_reference_type(&self, type_name: &str) -> bool {
-        type_name == "string" || type_name.ends_with("[]") || self.struct_table.get_struct(type_name).is_some()
+        let mut base_name = type_name;
+        if base_name.ends_with("?") {
+            base_name = &base_name[..base_name.len() - 1];
+        }
+        base_name == "string" || base_name.ends_with("[]") || self.struct_table.get_struct(base_name).is_some()
     }
 }

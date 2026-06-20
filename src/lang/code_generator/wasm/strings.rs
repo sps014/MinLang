@@ -55,6 +55,10 @@ impl<'a> WasmGenerator<'a> {
                         self.collect_strings_from_expr(param);
                     }
                 }
+                StatementNode::MemberAssignment(obj, _, expr) => {
+                    self.collect_strings_from_expr(obj);
+                    self.collect_strings_from_expr(expr);
+                }
                 _ => {}
             }
         }
@@ -93,6 +97,20 @@ impl<'a> WasmGenerator<'a> {
             ExpressionNode::IndexAccess(array_expr, index_expr) => {
                 self.collect_strings_from_expr(array_expr);
                 self.collect_strings_from_expr(index_expr);
+            }
+            ExpressionNode::StructInstantiation(_, _, fields) => {
+                for (_, expr) in fields {
+                    self.collect_strings_from_expr(expr);
+                }
+            }
+            ExpressionNode::MemberAccess(obj, _) => {
+                self.collect_strings_from_expr(obj);
+            }
+            ExpressionNode::Cast(_, expr) => {
+                self.collect_strings_from_expr(expr);
+            }
+            ExpressionNode::IsExpression(expr, _) => {
+                self.collect_strings_from_expr(expr);
             }
             _ => {}
         }

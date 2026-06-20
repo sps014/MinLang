@@ -150,7 +150,15 @@ impl<'a> WasmGenerator<'a> {
             },
             ExpressionNode::Parenthesized(expr) => self.infer_expression_type(expr, function),
             ExpressionNode::Cast(target_type, _) => Ok(target_type.get_type()),
-            ExpressionNode::StructInstantiation(name, _) => Ok(name.text.clone()),
+            ExpressionNode::StructInstantiation(name, generic_args, _) => {
+                let mut struct_name = name.text.clone();
+                if let Some(args) = generic_args {
+                    if !args.is_empty() {
+                        struct_name = format!("{}_{}", struct_name, args[0].get_type());
+                    }
+                }
+                Ok(struct_name)
+            },
             ExpressionNode::MemberAccess(obj, member) => {
                 let obj_type = self.infer_expression_type(obj, function)?;
                 if let Some(struct_info) = self.struct_table.get_struct(&obj_type) {

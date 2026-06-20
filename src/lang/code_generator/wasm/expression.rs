@@ -38,7 +38,7 @@ impl<'a> WasmGenerator<'a> {
             },
             ExpressionNode::Parenthesized(e) => self.build_expression(e, left_side, function, writer)?,
             ExpressionNode::Cast(target_type, expr) => self.build_cast(target_type, expr, left_side, function, writer)?,
-            ExpressionNode::StructInstantiation(name, fields) => self.build_struct_instantiation(name, fields, left_side, function, writer)?,
+            ExpressionNode::StructInstantiation(name, generic_args, fields) => self.build_struct_instantiation(name, generic_args, fields, left_side, function, writer)?,
             ExpressionNode::MemberAccess(obj, member) => self.build_member_access(obj, member, left_side, function, writer)?,
             ExpressionNode::IsExpression(left, right_type) => {
                 let left_type = self.infer_expression_type(left, function)?;
@@ -70,8 +70,14 @@ impl<'a> WasmGenerator<'a> {
     }
 
     /// Builds a struct instantiation
-    pub fn build_struct_instantiation(&mut self, name: &SyntaxToken, fields: &Vec<(SyntaxToken, ExpressionNode<'a>)>, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
-        let struct_info = self.struct_table.get_struct(&name.text).unwrap().clone();
+    pub fn build_struct_instantiation(&mut self, name: &SyntaxToken, generic_args: &Option<Vec<Type>>, fields: &Vec<(SyntaxToken, ExpressionNode<'a>)>, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        let mut struct_name = name.text.clone();
+        if let Some(args) = generic_args {
+            if !args.is_empty() {
+                struct_name = format!("{}_{}", struct_name, args[0].get_type());
+            }
+        }
+        let struct_info = self.struct_table.get_struct(&struct_name).unwrap().clone();
         
         // 1. Allocate memory using $malloc
         writer.write_line(&format!("i32.const {}", struct_info.size));

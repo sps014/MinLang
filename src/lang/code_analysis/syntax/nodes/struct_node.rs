@@ -9,12 +9,13 @@ pub struct StructFieldNode {
 #[derive(Debug, Clone)]
 pub struct StructDeclarationNode {
     pub name: SyntaxToken,
+    pub generic_parameters: Option<Vec<SyntaxToken>>,
     pub fields: Vec<StructFieldNode>,
     pub is_exported: bool,
 }
 
 impl StructDeclarationNode {
-    pub fn new(name: SyntaxToken, fields: Vec<StructFieldNode>, is_exported: bool) -> Self {
-        Self { name, fields, is_exported }
+    pub fn new(name: SyntaxToken, generic_parameters: Option<Vec<SyntaxToken>>, fields: Vec<StructFieldNode>, is_exported: bool) -> Self {
+        Self { name, generic_parameters, fields, is_exported }
     }
 }

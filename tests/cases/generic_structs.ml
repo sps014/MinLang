@@ -1,0 +1,30 @@
+struct Box<T> {
+    val: T;
+}
+
+struct Pair<T> {
+    first: T;
+    second: T;
+}
+
+fun print_box_int(b: Box<int>) {
+    print(b.val);
+}
+
+fun print_box_float(b: Box<float>) {
+    print(b.val);
+}
+
+fun main(): void {
+    let int_box = Box<int> { val: 42 };
+    let float_box = Box<float> { val: 3.14159f };
+    let str_box = Box<string> { val: "Hello Generic Structs!\n" };
+    
+    print_box_int(int_box);
+    print_box_float(float_box);
+    print(str_box.val);
+
+    let p = Pair<int> { first: 10, second: 20 };
+    print(p.first);
+    print(p.second);
+}

@@ -130,6 +130,21 @@ impl<'a, 'b> Parser<'a, 'b>
         
         self.match_token(TokenKind::StructToken);
         let struct_name = self.match_token(TokenKind::IdentifierToken);
+
+        let mut generic_parameters = None;
+        if self.current_token().kind == TokenKind::SmallerThanToken {
+            self.match_token(TokenKind::SmallerThanToken);
+            let mut params = Vec::new();
+            while self.current_token().kind != TokenKind::GreaterThanToken && self.current_token().kind != TokenKind::EndOfFileToken {
+                params.push(self.match_token(TokenKind::IdentifierToken));
+                if self.current_token().kind == TokenKind::CommaToken {
+                    self.match_token(TokenKind::CommaToken);
+                }
+            }
+            self.match_token(TokenKind::GreaterThanToken);
+            generic_parameters = Some(params);
+        }
+
         self.match_token(TokenKind::CurlyOpenBracketToken);
         
         let mut fields = Vec::new();
@@ -162,7 +177,7 @@ impl<'a, 'b> Parser<'a, 'b>
         }
         
         self.match_token(TokenKind::CurlyCloseBracketToken);
-        Ok(crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode::new(struct_name, fields, is_exported))
+        Ok(crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode::new(struct_name, generic_parameters, fields, is_exported))
     }
     
     /// Parses an import statement
@@ -180,6 +195,22 @@ impl<'a, 'b> Parser<'a, 'b>
             self.match_token(TokenKind::IdentifierToken)
         };
         let mut parsed_type = Type::from_token(type_token)?;
+        
+        // Check for generic arguments
+        if let Type::Struct(token, _) = &parsed_type {
+            if self.current_token().kind == TokenKind::SmallerThanToken {
+                self.match_token(TokenKind::SmallerThanToken);
+                let mut args = Vec::new();
+                while self.current_token().kind != TokenKind::GreaterThanToken && self.current_token().kind != TokenKind::EndOfFileToken {
+                    args.push(self.parse_type()?);
+                    if self.current_token().kind == TokenKind::CommaToken {
+                        self.match_token(TokenKind::CommaToken);
+                    }
+                }
+                self.match_token(TokenKind::GreaterThanToken);
+                parsed_type = Type::Struct(token.clone(), Some(args));
+            }
+        }
         
         // Check for array suffix `[]`
         while self.current_token().kind == TokenKind::OpenBracketToken {
@@ -479,15 +510,21 @@ impl<'a, 'b> Parser<'a, 'b>
         else if self.current_token().kind==IdentifierToken
         {
             let mut is_invocation = false;
+            let mut is_struct_instantiation = false;
+            
             if self.peek_token(1).kind==TokenKind::OpenParenthesisToken {
                 is_invocation = true;
+            } else if self.peek_token(1).kind==TokenKind::CurlyOpenBracketToken {
+                is_struct_instantiation = true;
             } else if self.peek_token(1).kind == TokenKind::SmallerThanToken {
-                // Check if it's a generic invocation like `Test<int>(...)`
+                // Check if it's a generic invocation like `Test<int>(...)` or `Box<int> { ... }`
                 let mut i = 2;
                 while self.peek_token(i).kind != TokenKind::EndOfFileToken {
                     if self.peek_token(i).kind == TokenKind::GreaterThanToken {
                         if self.peek_token(i + 1).kind == TokenKind::OpenParenthesisToken {
                             is_invocation = true;
+                        } else if self.peek_token(i + 1).kind == TokenKind::CurlyOpenBracketToken {
+                            is_struct_instantiation = true;
                         }
                         break;
                     }
@@ -502,10 +539,25 @@ impl<'a, 'b> Parser<'a, 'b>
             {
                 return Ok(self.parse_invocation_expression()?);
             }
-            else if self.peek_token(1).kind==TokenKind::CurlyOpenBracketToken
+            else if is_struct_instantiation
             {
-                // Struct instantiation: Point { x: 10, y: 20 }
+                // Struct instantiation: Point { x: 10, y: 20 } or Box<int> { val: 42 }
                 let struct_name = self.match_token(TokenKind::IdentifierToken);
+                
+                let mut generic_arguments = None;
+                if self.current_token().kind == TokenKind::SmallerThanToken {
+                    self.match_token(TokenKind::SmallerThanToken);
+                    let mut args = Vec::new();
+                    while self.current_token().kind != TokenKind::GreaterThanToken && self.current_token().kind != TokenKind::EndOfFileToken {
+                        args.push(self.parse_type()?);
+                        if self.current_token().kind == TokenKind::CommaToken {
+                            self.match_token(TokenKind::CommaToken);
+                        }
+                    }
+                    self.match_token(TokenKind::GreaterThanToken);
+                    generic_arguments = Some(args);
+                }
+                
                 self.match_token(TokenKind::CurlyOpenBracketToken);
                 let mut fields = Vec::new();
                 while self.current_token().kind != TokenKind::CurlyCloseBracketToken && self.current_token().kind != TokenKind::EndOfFileToken {
@@ -518,7 +570,7 @@ impl<'a, 'b> Parser<'a, 'b>
                     }
                 }
                 self.match_token(TokenKind::CurlyCloseBracketToken);
-                return Ok(ExpressionNode::StructInstantiation(struct_name, fields));
+                return Ok(ExpressionNode::StructInstantiation(struct_name, generic_arguments, fields));
             }
             else
             {

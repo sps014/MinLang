@@ -103,7 +103,7 @@ impl<'a> WasmGenerator<'a> {
             
             if self.is_reference_type(&base_type_str) {
                 writer.write_line(&format!("local.get ${}", name));
-                writer.write_line(&format!("call $release_{}", base_type_str.replace("[]", "_array")));
+                writer.write_line(&format!("call $release_{}", base_type_str.replace("[]", "_array").replace("?", "")));
             }
         }
         

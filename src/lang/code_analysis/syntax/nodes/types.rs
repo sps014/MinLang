@@ -10,7 +10,7 @@ pub enum Type {
     String(SyntaxToken),
     Boolean(SyntaxToken),
     Array(Box<Type>),
-    Struct(SyntaxToken),
+    Struct(SyntaxToken, Option<Vec<Type>>),
     Generic(String),
     Nullable(Box<Type>),
     Void,
@@ -27,7 +27,16 @@ impl Type {
             Type::Void => "void".to_string(),
             Type::Boolean(_) => "bool".to_string(),
             Type::Array(inner) => format!("{}[]", inner.get_type()),
-            Type::Struct(token) => token.text.clone(),
+            Type::Struct(token, generic_args) => {
+                let mut name = token.text.clone();
+                if let Some(args) = generic_args {
+                    if !args.is_empty() {
+                        name.push_str("_");
+                        name.push_str(&args[0].get_type());
+                    }
+                }
+                name
+            },
             Type::Generic(name) => name.clone(),
             Type::Nullable(inner) => format!("{}?", inner.get_type()),
         }
@@ -43,7 +52,7 @@ impl Type {
             Type::Void => "".to_string(),
             Type::Boolean(token) => token.position.get_point_str(),
             Type::Array(inner) => inner.get_line_str(),
-            Type::Struct(token) => token.position.get_point_str(),
+            Type::Struct(token, _) => token.position.get_point_str(),
             Type::Generic(_) => "".to_string(), // Can be improved
             Type::Nullable(inner) => inner.get_line_str(),
         }
@@ -67,7 +76,7 @@ impl Type {
                     
                     // Restrict nullable to reference types
                     match &base_type {
-                        Type::String(_) | Type::Array(_) | Type::Struct(_) | Type::Void => {
+                        Type::String(_) | Type::Array(_) | Type::Struct(_, _) | Type::Void => {
                             return Ok(Type::Nullable(Box::new(base_type)));
                         },
                         _ => {
@@ -84,7 +93,7 @@ impl Type {
                     return Ok(Type::Array(Box::new(base_type)));
                 }
                 // If it's not a built-in type or array, assume it's a struct type
-                return Ok(Type::Struct(token));
+                return Ok(Type::Struct(token, None));
             }
         };
         Ok(r)

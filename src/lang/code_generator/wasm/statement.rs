@@ -131,7 +131,7 @@ impl<'a> WasmGenerator<'a> {
             
             writer.write_line("local.get $scratch_addr");
             writer.write_line("i32.load");
-            writer.write_line(&format!("call $release_{}", inner_type_str.replace("[]", "_array")));
+            writer.write_line(&format!("call $release_{}", inner_type_str.replace("[]", "_array").replace("?", "")));
             
             writer.write_line("local.get $scratch_addr");
             writer.write_line("local.get $scratch_ptr");
@@ -184,7 +184,7 @@ impl<'a> WasmGenerator<'a> {
             
             writer.write_line("local.get $scratch_addr");
             writer.write_line("i32.load");
-            writer.write_line(&format!("call $release_{}", field_type_str.replace("[]", "_array")));
+            writer.write_line(&format!("call $release_{}", field_type_str.replace("[]", "_array").replace("?", "")));
             
             writer.write_line("local.get $scratch_addr");
             writer.write_line("local.get $scratch_ptr");
@@ -244,7 +244,7 @@ impl<'a> WasmGenerator<'a> {
             
             if self.is_reference_type(&base_type_str) {
                 writer.write_line(&format!("local.get ${}", name));
-                writer.write_line(&format!("call $release_{}", base_type_str.replace("[]", "_array")));
+                writer.write_line(&format!("call $release_{}", base_type_str.replace("[]", "_array").replace("?", "")));
             }
         }
 

@@ -41,10 +41,11 @@ pub struct Anaylzer<'a> {
     arena: &'a Bump,
     generic_functions: HashMap<String, &'a FunctionNode<'a>>,
     instantiated_generics: HashMap<String, (String, &'a FunctionNode<'a>)>,
+    generic_structs: HashMap<String, &'a crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode>,
 }
 impl<'a> Anaylzer<'a> {
     pub fn new(tree: &'a SyntaxTree<'a>, arena: &'a Bump) -> Self {
-        Self { syntax_tree:tree, function_table: FunctionTable::new(), struct_table: StructTable::new(), arena, generic_functions: HashMap::new(), instantiated_generics: HashMap::new() }
+        Self { syntax_tree:tree, function_table: FunctionTable::new(), struct_table: StructTable::new(), arena, generic_functions: HashMap::new(), instantiated_generics: HashMap::new(), generic_structs: HashMap::new() }
     }
     pub fn analyze(&mut self, diagnostics: &mut DiagnosticBag) -> Result<SemanticInfo<'_>, ()> {
         let pgm= self.syntax_tree.get_root();
@@ -55,6 +56,10 @@ impl<'a> Anaylzer<'a> {
         
         // Pass 0: Register all structs
         for struct_decl in node.structs.iter() {
+            if struct_decl.generic_parameters.is_some() {
+                self.generic_structs.insert(struct_decl.name.text.clone(), struct_decl);
+                continue;
+            }
             if let Err(e) = self.struct_table.add_struct(struct_decl) {
                 diagnostics.report_error(e, Some(struct_decl.name.position.clone()));
             }
@@ -122,6 +127,63 @@ impl<'a> Anaylzer<'a> {
 
         Ok(SemanticInfo::new(symbol_table_map,&self.function_table, &self.struct_table, self.instantiated_generics.clone()))
     }
+    fn ensure_struct_instantiated(&mut self, mangled_name: &str, position: &TextSpan, diagnostics: &mut DiagnosticBag) {
+        if self.struct_table.get_struct(&mangled_name.to_string()).is_some() {
+            return;
+        }
+
+        // Try to derive base name and argument from mangled name
+        let parts: Vec<&str> = mangled_name.split('_').collect();
+        if parts.len() < 2 {
+            return;
+        }
+        
+        let base_name = parts[0];
+        let concrete_type_str = parts[1..].join("_");
+
+        if let Some(template) = self.generic_structs.get(base_name) {
+            let mut new_fields = Vec::new();
+            for field in &template.fields {
+                let mut field_type_token = field.type_token.clone();
+                
+                // If it's the generic parameter T (or whatever it's called)
+                let gen_param_name = template.generic_parameters.as_ref().unwrap()[0].text.clone();
+                
+                let is_generic = field_type_token.text == gen_param_name 
+                    || field_type_token.text == format!("{}[]", gen_param_name) 
+                    || field_type_token.text == format!("{}?", gen_param_name);
+                
+                if is_generic {
+                    if field_type_token.text == gen_param_name {
+                        field_type_token.text = concrete_type_str.clone();
+                    } else if field_type_token.text.ends_with("[]") {
+                        field_type_token.text = format!("{}[]", concrete_type_str);
+                    } else if field_type_token.text.ends_with("?") {
+                        field_type_token.text = format!("{}?", concrete_type_str);
+                    }
+                }
+                
+                new_fields.push(crate::lang::code_analysis::syntax::nodes::struct_node::StructFieldNode {
+                    name: field.name.clone(),
+                    type_token: field_type_token,
+                });
+            }
+
+            let mut new_name_token = template.name.clone();
+            new_name_token.text = mangled_name.to_string();
+            let new_decl = crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode::new(
+                new_name_token,
+                None, // Stripped of generics
+                new_fields,
+                template.is_exported
+            );
+
+            if let Err(e) = self.struct_table.add_struct(&new_decl) {
+                diagnostics.report_error(e, Some(position.clone()));
+            }
+        }
+    }
+
     fn analyze_function(&mut self,function:&FunctionNode<'a>, diagnostics: &mut DiagnosticBag) -> Result<Rc<RefCell<SymbolTable>>, ()> {
         let param_table=Rc::new(RefCell::new(self.add_function_param_table(function, diagnostics)?));
         self.analyze_body(function.body,function,Some(&param_table),false, diagnostics)?;
@@ -227,7 +289,7 @@ impl<'a> Anaylzer<'a> {
                 let mut new_params = Vec::new();
                 for p in &template.parameters {
                     let mut p_type = p.type_.clone();
-                    if matches!(p_type, Type::Struct(_)) && p_type.get_type() == "T" {
+                    if matches!(p_type, Type::Struct(_, _)) && p_type.get_type() == "T" {
                         let dummy_span = crate::lang::code_analysis::text::text_span::TextSpan::new((0, 0), &Rc::new(crate::lang::code_analysis::text::line_text::LineText::new("".to_string())));
                         let dummy_token = SyntaxToken::new(TokenKind::DataTypeToken, dummy_span, concrete_type_str.clone());
                         p_type = match concrete_type_str.as_str() {
@@ -243,7 +305,7 @@ impl<'a> Anaylzer<'a> {
                 }
                 
                 let return_type = match &template.return_type {
-                    Some(Type::Struct(t)) if t.text == "T" => {
+                    Some(Type::Struct(t, _)) if t.text == "T" => {
                         let dummy_span = crate::lang::code_analysis::text::text_span::TextSpan::new((0, 0), &Rc::new(crate::lang::code_analysis::text::line_text::LineText::new("".to_string())));
                         let dummy_token = SyntaxToken::new(TokenKind::DataTypeToken, dummy_span, concrete_type_str.clone());
                         Some(match concrete_type_str.as_str() {
@@ -397,10 +459,24 @@ impl<'a> Anaylzer<'a> {
         let obj_type = self.analyze_expression(obj, parent_function, symbol_table, diagnostics)?;
         
         let struct_name = match obj_type {
-            Type::Struct(token) => token.text,
+            Type::Struct(token, generic_args) => {
+                let mut n = token.text.clone();
+                if let Some(args) = generic_args {
+                    if !args.is_empty() {
+                        n = format!("{}_{}", n, args[0].get_type());
+                    }
+                }
+                n
+            },
             Type::Nullable(ref inner) => {
-                if let Type::Struct(token) = &**inner {
-                    token.text.clone()
+                if let Type::Struct(token, generic_args) = &**inner {
+                    let mut n = token.text.clone();
+                    if let Some(args) = generic_args {
+                        if !args.is_empty() {
+                            n = format!("{}_{}", n, args[0].get_type());
+                        }
+                    }
+                    n
                 } else {
                     diagnostics.report_error(format!("Cannot access member of non-struct type {}", obj_type.get_type()), Some(member.position.clone()));
                     return Ok(());
@@ -411,6 +487,8 @@ impl<'a> Anaylzer<'a> {
                 return Ok(());
             }
         };
+
+        self.ensure_struct_instantiated(&struct_name, &member.position, diagnostics);
 
         let field_type = {
             let struct_info = match self.struct_table.get_struct(&struct_name) {
@@ -511,8 +589,17 @@ impl<'a> Anaylzer<'a> {
             },
             ExpressionNode::Parenthesized(expr)=>
                 Ok(self.analyze_expression(expr,parent_function,symbol_table, diagnostics)?),
-            ExpressionNode::StructInstantiation(name, fields) => {
-                let struct_name = name.text.clone();
+            ExpressionNode::StructInstantiation(name, generic_args, fields) => {
+                let mut struct_name = name.text.clone();
+                if let Some(args) = generic_args {
+                    if !args.is_empty() {
+                        struct_name = format!("{}_{}", struct_name, args[0].get_type());
+                    }
+                }
+                
+                // Monomorphize generic struct if needed
+                self.ensure_struct_instantiated(&struct_name, &name.position, diagnostics);
+                
                 let struct_info = match self.struct_table.get_struct(&struct_name) {
                     Some(info) => info.clone(),
                     None => {
@@ -545,16 +632,32 @@ impl<'a> Anaylzer<'a> {
                     }
                 }
 
-                Ok(Type::Struct(name.clone()))
+                let mut dummy_token = name.clone();
+                dummy_token.text = struct_name.clone();
+                Ok(Type::Struct(dummy_token, None))
             },
             ExpressionNode::MemberAccess(obj, member) => {
                 let obj_type = self.analyze_expression(obj, parent_function, symbol_table, diagnostics)?;
                 
                 let struct_name = match obj_type {
-                    Type::Struct(token) => token.text,
+                    Type::Struct(token, generic_args) => {
+                        let mut n = token.text.clone();
+                        if let Some(args) = generic_args {
+                            if !args.is_empty() {
+                                n = format!("{}_{}", n, args[0].get_type());
+                            }
+                        }
+                        n
+                    },
                     Type::Nullable(ref inner) => {
-                        if let Type::Struct(token) = &**inner {
-                            token.text.clone()
+                        if let Type::Struct(token, generic_args) = &**inner {
+                            let mut n = token.text.clone();
+                            if let Some(args) = generic_args {
+                                if !args.is_empty() {
+                                    n = format!("{}_{}", n, args[0].get_type());
+                                }
+                            }
+                            n
                         } else {
                             diagnostics.report_error(format!("Cannot access member of non-struct type {}", obj_type.get_type()), Some(member.position.clone()));
                             return Ok(Type::Void);
@@ -565,6 +668,8 @@ impl<'a> Anaylzer<'a> {
                         return Ok(Type::Void);
                     }
                 };
+
+                self.ensure_struct_instantiated(&struct_name, &member.position, diagnostics);
 
                 let struct_info = match self.struct_table.get_struct(&struct_name) {
                     Some(info) => info,
@@ -590,6 +695,19 @@ impl<'a> Anaylzer<'a> {
                 let target_type_str = target_type.get_type();
                 let expr_type_str = expr_type.get_type();
                 
+                // If target type is a struct, ensure it's instantiated
+                if target_type_str != "int" && target_type_str != "float" && target_type_str != "double" && target_type_str != "bool" && target_type_str != "string" && target_type_str != "void" {
+                    let base_type_str = if target_type_str.ends_with("[]") {
+                        &target_type_str[..target_type_str.len() - 2]
+                    } else if target_type_str.ends_with("?") {
+                        &target_type_str[..target_type_str.len() - 1]
+                    } else {
+                        &target_type_str
+                    };
+                    let pos = SyntaxToken::new(TokenKind::BadToken, crate::lang::code_analysis::text::text_span::TextSpan::new((0,0), &std::rc::Rc::new(crate::lang::code_analysis::text::line_text::LineText::new("".to_string()))), "".to_string()).position;
+                    self.ensure_struct_instantiated(base_type_str, &pos, diagnostics);
+                }
+
                 // Allow int <-> float casts
                 if (target_type_str == "int" && expr_type_str == "float") ||
                    (target_type_str == "float" && expr_type_str == "int") ||
@@ -680,7 +798,17 @@ impl<'a> Anaylzer<'a> {
         } else {
             type_name
         };
-        base_name == "string" || base_name.ends_with("[]") || self.struct_table.get_struct(base_name).is_some()
+        
+        if base_name == "string" || base_name.ends_with("[]") || self.struct_table.get_struct(base_name).is_some() {
+            return true;
+        }
+
+        let parts: Vec<&str> = base_name.split('_').collect();
+        if parts.len() >= 2 && self.generic_structs.contains_key(parts[0]) {
+            return true;
+        }
+
+        false
     }
     fn analyze_identifier(&mut self,id:&SyntaxToken,symbol_table:&Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag)->Result<Type,()> {
         let r= match (*symbol_table).as_ref().borrow_mut().get_symbol(id.clone()) {
