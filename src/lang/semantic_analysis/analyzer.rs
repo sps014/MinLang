@@ -19,16 +19,18 @@ pub struct SemanticInfo<'a>
     pub function_table: &'a FunctionTable,
     pub struct_table: &'a StructTable,
     pub instantiated_generics: HashMap<String, (String, &'a FunctionNode<'a>)>,
+    pub struct_methods: Vec<&'a FunctionNode<'a>>,
 }
 
 impl<'a> SemanticInfo<'a> {
-    pub fn new(hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>, function_table: &'a FunctionTable, struct_table: &'a StructTable, instantiated_generics: HashMap<String, (String, &'a FunctionNode<'a>)>) -> SemanticInfo<'a>
+    pub fn new(hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>, function_table: &'a FunctionTable, struct_table: &'a StructTable, instantiated_generics: HashMap<String, (String, &'a FunctionNode<'a>)>, struct_methods: Vec<&'a FunctionNode<'a>>) -> SemanticInfo<'a>
     {
         SemanticInfo {
             hash_map,
             function_table,
             struct_table,
             instantiated_generics,
+            struct_methods,
         }
     }
 }
@@ -41,11 +43,12 @@ pub struct Anaylzer<'a> {
     arena: &'a Bump,
     generic_functions: HashMap<String, &'a FunctionNode<'a>>,
     instantiated_generics: HashMap<String, (String, &'a FunctionNode<'a>)>,
-    generic_structs: HashMap<String, &'a crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode>,
+    generic_structs: HashMap<String, &'a crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode<'a>>,
+    struct_methods: Vec<&'a FunctionNode<'a>>,
 }
 impl<'a> Anaylzer<'a> {
     pub fn new(tree: &'a SyntaxTree<'a>, arena: &'a Bump) -> Self {
-        Self { syntax_tree:tree, function_table: FunctionTable::new(), struct_table: StructTable::new(), arena, generic_functions: HashMap::new(), instantiated_generics: HashMap::new(), generic_structs: HashMap::new() }
+        Self { syntax_tree:tree, function_table: FunctionTable::new(), struct_table: StructTable::new(), arena, generic_functions: HashMap::new(), instantiated_generics: HashMap::new(), generic_structs: HashMap::new(), struct_methods: Vec::new() }
     }
     pub fn analyze(&mut self, diagnostics: &mut DiagnosticBag) -> Result<SemanticInfo<'_>, ()> {
         let pgm= self.syntax_tree.get_root();
@@ -63,6 +66,7 @@ impl<'a> Anaylzer<'a> {
             if let Err(e) = self.struct_table.add_struct(struct_decl) {
                 diagnostics.report_error(e, Some(struct_decl.name.position.clone()));
             }
+            self.register_struct_methods(struct_decl, &struct_decl.name.text, None, diagnostics);
         }
         
         // Pass 1: Register all functions in the function table
@@ -125,7 +129,15 @@ impl<'a> Anaylzer<'a> {
             symbol_table_map.insert(mangled_name.clone(), r);
         }
 
-        Ok(SemanticInfo::new(symbol_table_map,&self.function_table, &self.struct_table, self.instantiated_generics.clone()))
+        // Pass 4: Analyze struct methods
+        // Copy the struct_methods to avoid borrowing issues during analysis
+        let methods_to_analyze = self.struct_methods.clone();
+        for method in methods_to_analyze {
+            let r = self.analyze_function(method, diagnostics)?;
+            symbol_table_map.insert(method.name.text.clone(), r);
+        }
+
+        Ok(SemanticInfo::new(symbol_table_map,&self.function_table, &self.struct_table, self.instantiated_generics.clone(), self.struct_methods.clone()))
     }
     fn ensure_struct_instantiated(&mut self, mangled_name: &str, position: &TextSpan, diagnostics: &mut DiagnosticBag) {
         if self.struct_table.get_struct(&mangled_name.to_string()).is_some() {
@@ -175,11 +187,76 @@ impl<'a> Anaylzer<'a> {
                 new_name_token,
                 None, // Stripped of generics
                 new_fields,
+                template.methods.clone(), // Methods will be processed separately
                 template.is_exported
             );
 
             if let Err(e) = self.struct_table.add_struct(&new_decl) {
                 diagnostics.report_error(e, Some(position.clone()));
+            }
+            
+            self.register_struct_methods(&new_decl, mangled_name, Some(&concrete_type_str), diagnostics);
+        }
+    }
+
+    fn register_struct_methods(&mut self, struct_decl: &crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode<'a>, struct_type_str: &str, concrete_type_str: Option<&str>, diagnostics: &mut DiagnosticBag) {
+        for method in &struct_decl.methods {
+            let mangled_name = format!("{}_{}", struct_type_str, method.name.text);
+            
+            // Create a new FunctionNode with the mangled name and injected `this` parameter
+            let mut new_method = method.clone();
+            let mut new_name_token = method.name.clone();
+            new_name_token.text = mangled_name.clone();
+            new_method.name = new_name_token;
+
+            // Substitute generic parameters if needed
+            if let Some(concrete_str) = concrete_type_str {
+                for p in &mut new_method.parameters {
+                    if matches!(p.type_, Type::Struct(_, _)) && p.type_.get_type() == "T" {
+                        let dummy_span = crate::lang::code_analysis::text::text_span::TextSpan::new((0, 0), &std::rc::Rc::new(crate::lang::code_analysis::text::line_text::LineText::new("".to_string())));
+                        let dummy_token = SyntaxToken::new(crate::lang::code_analysis::token::token_kind::TokenKind::DataTypeToken, dummy_span, concrete_str.to_string());
+                        p.type_ = match concrete_str {
+                            "int" => Type::Integer(dummy_token),
+                            "float" => Type::Float(dummy_token),
+                            "double" => Type::Double(dummy_token),
+                            "string" => Type::String(dummy_token),
+                            "bool" => Type::Boolean(dummy_token),
+                            _ => Type::Struct(dummy_token, None),
+                        };
+                    }
+                }
+                
+                if let Some(ret) = &new_method.return_type {
+                    if matches!(ret, Type::Struct(_, _)) && ret.get_type() == "T" {
+                        let dummy_span = crate::lang::code_analysis::text::text_span::TextSpan::new((0, 0), &std::rc::Rc::new(crate::lang::code_analysis::text::line_text::LineText::new("".to_string())));
+                        let dummy_token = SyntaxToken::new(crate::lang::code_analysis::token::token_kind::TokenKind::DataTypeToken, dummy_span, concrete_str.to_string());
+                        new_method.return_type = Some(match concrete_str {
+                            "int" => Type::Integer(dummy_token),
+                            "float" => Type::Float(dummy_token),
+                            "double" => Type::Double(dummy_token),
+                            "string" => Type::String(dummy_token),
+                            "bool" => Type::Boolean(dummy_token),
+                            _ => Type::Struct(dummy_token, None),
+                        });
+                    }
+                }
+            }
+            
+            // Inject `this` parameter
+            let dummy_span = crate::lang::code_analysis::text::text_span::TextSpan::new((0,0), &std::rc::Rc::new(crate::lang::code_analysis::text::line_text::LineText::new("".to_string())));
+            let this_type_token = SyntaxToken::new(crate::lang::code_analysis::token::token_kind::TokenKind::IdentifierToken, dummy_span.clone(), struct_type_str.to_string());
+            let this_type = Type::Struct(this_type_token, None);
+            let this_token = SyntaxToken::new(crate::lang::code_analysis::token::token_kind::TokenKind::IdentifierToken, dummy_span, "this".to_string());
+            let this_param = crate::lang::code_analysis::syntax::nodes::function::ParameterNode::new(this_token, this_type);
+            
+            new_method.parameters.insert(0, this_param);
+            
+            // Allocate the new method in the arena
+            let method_ref = self.arena.alloc(new_method);
+            self.struct_methods.push(method_ref);
+            
+            if let Err(e) = self.function_table.add_function(mangled_name.clone(), FunctionTableInfo::from(method_ref)) {
+                diagnostics.report_error(e.to_string(), Some(method.name.position.clone()));
             }
         }
     }
@@ -252,6 +329,8 @@ impl<'a> Anaylzer<'a> {
                 self.analyze_continue(parent_function,has_parent_while, diagnostics)?,
             StatementNode::FunctionInvocation(name, generic_args, params) =>
                 {self.analyze_function_call(name, generic_args, params,parent_function,symbol_table, diagnostics)?;},
+            StatementNode::MethodInvocation(obj, method, generic_args, params) =>
+                {self.analyze_method_call(obj, method, generic_args, params, parent_function, symbol_table, diagnostics)?;},
         };
         Ok(())
     }
@@ -355,6 +434,79 @@ impl<'a> Anaylzer<'a> {
         //let r_type=&store_sig.return_type;
         Ok(store_sig.return_type.unwrap_or(Type::Void))
     }
+    fn analyze_method_call(&mut self, obj: &ExpressionNode<'a>, method: &SyntaxToken, generic_args: &Option<Vec<Type>>, params: &Vec<ExpressionNode<'a>>, parent_function: &FunctionNode<'a>, symbol_table: &Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag) -> Result<Type, ()> {
+        let obj_type = self.analyze_expression(obj, parent_function, symbol_table, diagnostics)?;
+        
+        let struct_name = match obj_type {
+            Type::Struct(token, gen_args) => {
+                let mut n = token.text.clone();
+                if let Some(args) = gen_args {
+                    if !args.is_empty() {
+                        n = format!("{}_{}", n, args[0].get_type());
+                    }
+                }
+                n
+            },
+            Type::Nullable(ref inner) => {
+                if let Type::Struct(token, gen_args) = &**inner {
+                    let mut n = token.text.clone();
+                    if let Some(args) = gen_args {
+                        if !args.is_empty() {
+                            n = format!("{}_{}", n, args[0].get_type());
+                        }
+                    }
+                    n
+                } else {
+                    diagnostics.report_error(format!("Cannot call method on non-struct type {}", obj_type.get_type()), Some(method.position.clone()));
+                    return Ok(Type::Void);
+                }
+            },
+            _ => {
+                diagnostics.report_error(format!("Cannot call method on non-struct type {}", obj_type.get_type()), Some(method.position.clone()));
+                return Ok(Type::Void);
+            }
+        };
+
+        self.ensure_struct_instantiated(&struct_name, &method.position, diagnostics);
+        
+        let mangled_name = format!("{}_{}", struct_name, method.text);
+        
+        let store_sig = match self.function_table.get_function(&mangled_name) {
+            Ok(s) => s.clone(),
+            Err(e) => {
+                diagnostics.report_error(e.to_string(), Some(method.position.clone()));
+                return Ok(Type::Void);
+            }
+        };
+
+        let mut expected_params = store_sig.parameters.clone();
+        
+        // Remove 'this' from the expected params check since we supply it implicitly
+        if !expected_params.is_empty() {
+            expected_params.remove(0);
+        }
+
+        if expected_params.len() != params.len() {
+            diagnostics.report_error(format!("function {} expects {} parameters, got {}", mangled_name, expected_params.len(), params.len()), Some(method.position.clone()));
+            return Ok(store_sig.return_type.unwrap_or(Type::Void));
+        }
+
+        for (i, param) in params.iter().enumerate() {
+            let param_type = self.analyze_expression(param, parent_function, symbol_table, diagnostics)?;
+            let expected_type_str = &expected_params[i];
+
+            if expected_type_str == "int" && param_type.get_type() == "float" || expected_type_str == "float" && param_type.get_type() == "int" || expected_type_str == "double" && param_type.get_type() == "int" || expected_type_str == "int" && param_type.get_type() == "double" || expected_type_str == "float" && param_type.get_type() == "double" || expected_type_str == "double" && param_type.get_type() == "float" {
+                continue;
+            }
+
+            if param_type.get_type() != *expected_type_str {
+                diagnostics.report_error(format!("function {} expects parameter {} to be {}, got {}", mangled_name, i + 1, expected_type_str, param_type.get_type()), Some(method.position.clone()));
+            }
+        }
+
+        Ok(store_sig.return_type.unwrap_or(Type::Void))
+    }
+
     fn analyze_break(&mut self,parent_function:&FunctionNode<'a>,has_parent_while:bool, diagnostics: &mut DiagnosticBag)->Result<(),()> {
         if !has_parent_while {
             diagnostics.report_error(
@@ -726,7 +878,8 @@ impl<'a> Anaylzer<'a> {
                     Ok(target_type.clone())
                 }
             },
-        };
+            ExpressionNode::MethodCall(obj, method, generic_args, params) => self.analyze_method_call(obj, method, generic_args, params, parent_function, symbol_table, diagnostics),
+        }
     }
     fn analyze_binary_expression(&mut self,left:&ExpressionNode<'a>,opr:&SyntaxToken,right:&ExpressionNode<'a>,parent_function:&FunctionNode<'a>,
                                  symbol_table:&Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag)->Result<Type,()> {

@@ -1,0 +1,48 @@
+struct Counter {
+    count: int;
+
+    fun increment() {
+        this.count = this.count + 1;
+    }
+
+    fun add(amount: int) {
+        this.count = this.count + amount;
+    }
+
+    fun get(): int {
+        return this.count;
+    }
+}
+
+struct GenericBox<T> {
+    val: T;
+
+    fun print_val() {
+        if (this.val is int) {
+            print_int(this.val);
+        } else if (this.val is float) {
+            print_float(this.val);
+        } else if (this.val is string) {
+            print_string(this.val);
+        }
+    }
+
+    fun set_val(new_val: T) {
+        this.val = new_val;
+    }
+}
+
+fun main() {
+    let c = Counter { count: 0 };
+    c.increment();
+    c.add(4);
+    print(c.get());
+
+    let int_box = GenericBox<int> { val: 42 };
+    int_box.print_val();
+    int_box.set_val(100);
+    int_box.print_val();
+
+    let str_box = GenericBox<string> { val: "Hello Methods\n" };
+    str_box.print_val();
+}

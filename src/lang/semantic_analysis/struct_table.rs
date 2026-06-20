@@ -28,7 +28,7 @@ impl StructTable {
         }
     }
 
-    pub fn add_struct(&mut self, struct_decl: &StructDeclarationNode) -> Result<(), String> {
+    pub fn add_struct(&mut self, struct_decl: &StructDeclarationNode<'_>) -> Result<(), String> {
         let name = struct_decl.name.text.clone();
         if self.structs.contains_key(&name) {
             return Err(format!("Struct '{}' is already defined", name));

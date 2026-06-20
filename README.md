@@ -7,7 +7,7 @@ MinLang is a statically typed, compiled programming language that targets WebAss
 - **Static Typing**: Supports `int`, `float`, `double`, `string`, `bool`, and `void` types.
 - **Nullable Types**: Reference types can be nullable using the `?` suffix (e.g., `Node?`) and assigned `null`.
 - **Type Casting**: C-style explicit type casting (e.g., `(float)10`, `(int)3.14`).
-- **Structs**: User-defined composite data types with field access and assignment. Supports C-style memory alignment.
+- **Structs**: User-defined composite data types with field access and assignment. Supports C-style memory alignment. Structs also support defining internal methods with an implicit `this` parameter (e.g., `obj.method()`).
 - **Generics**: Support for generic functions (e.g., `fun Test<T>(data: T)`) via compile-time monomorphization and type instantiation.
 - **Compile-Time Type Testing**: `is` operator for compile-time type matching (e.g. `if (data is int) { ... }`) combined with dead-code elimination.
 - **Export Control**: Functions and structs can be marked with `export` to expose them to the host environment. The compiler ensures exported functions do not expose private structs.
@@ -98,6 +98,10 @@ fun main(): void {
 struct Node {
     value: int;
     next: Node?;
+
+    fun has_next(): bool {
+        return this.next != null;
+    }
 }
 
 fun create_list(n: int): Node? {
@@ -121,8 +125,12 @@ fun main(): void {
     let curr = list;
     while (curr != null) {
         print_int(curr.value);
+        if (curr.has_next()) {
+            print(" -> ");
+        }
         curr = curr.next;
     }
+    print("\n");
     
     // Memory is allocated via a fast Freelist allocator
     // and managed via Automatic Reference Counting (ARC).

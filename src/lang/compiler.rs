@@ -104,7 +104,7 @@ impl Compiler {
         file_path: &String,
         visited: &mut HashSet<String>,
         all_functions: &mut Vec<crate::lang::code_analysis::syntax::nodes::FunctionNode<'a>>,
-        all_structs: &mut Vec<crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode>,
+        all_structs: &mut Vec<crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode<'a>>,
         arena: &'a Bump,
         diagnostics: &mut DiagnosticBag,
         file_contents: &mut std::collections::HashMap<String, String>,

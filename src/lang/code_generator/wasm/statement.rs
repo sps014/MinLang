@@ -47,6 +47,27 @@ impl<'a> WasmGenerator<'a> {
                 }
                 self.build_function_invocation(&function_name, p, function, writer)?
             },
+            StatementNode::MethodInvocation(obj, method, generic_args, params) => {
+                // Since it's an invocation as a statement, we don't care about the return value.
+                // We just call the method using build_method_call.
+                self.build_method_call(obj, method, generic_args, params, &"void".to_string(), function, writer)?;
+                // If the method returns a value, we should theoretically drop it, 
+                // but WASM requires `drop` if the function returns something.
+                // MinLang function invocation currently doesn't drop values.
+                // We will leave it as is, or we could look up the return type.
+                let obj_type = self.infer_expression_type(obj, function)?;
+                let struct_name = if obj_type.ends_with("?") {
+                    obj_type[..obj_type.len() - 1].to_string()
+                } else {
+                    obj_type.clone()
+                };
+                let mangled_name = format!("{}_{}", struct_name, method.text);
+                if let Ok(func_info) = self.function_table.get_function(&mangled_name) {
+                    if func_info.return_type.is_some() && func_info.return_type.as_ref().unwrap().get_type() != "void" {
+                        writer.write_line("drop");
+                    }
+                }
+            },
         }
         Ok(())
     }

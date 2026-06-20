@@ -121,7 +121,7 @@ impl<'a, 'b> Parser<'a, 'b>
     }
     
     /// Parses a struct declaration
-    fn parse_struct_declaration(&mut self) -> Result<crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode, Error> {
+    fn parse_struct_declaration(&mut self) -> Result<crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode<'a>, Error> {
         let mut is_exported = false;
         if self.current_token().kind == TokenKind::ExportToken {
             self.match_token(TokenKind::ExportToken);
@@ -148,36 +148,41 @@ impl<'a, 'b> Parser<'a, 'b>
         self.match_token(TokenKind::CurlyOpenBracketToken);
         
         let mut fields = Vec::new();
+        let mut methods = Vec::new();
         while self.current_token().kind != TokenKind::CurlyCloseBracketToken && self.current_token().kind != TokenKind::EndOfFileToken {
-            let field_name = self.match_token(TokenKind::IdentifierToken);
-            self.match_token(TokenKind::ColonToken);
-            
-            let mut field_type_token = if self.current_token().kind == TokenKind::DataTypeToken {
-                self.match_token(TokenKind::DataTypeToken)
+            if self.current_token().kind == TokenKind::FunToken || self.current_token().kind == TokenKind::ExportToken {
+                methods.push(self.parse_function()?);
             } else {
-                self.match_token(TokenKind::IdentifierToken)
-            };
-            
-            while self.current_token().kind == TokenKind::OpenBracketToken {
-                self.match_token(TokenKind::OpenBracketToken);
-                self.match_token(TokenKind::CloseBracketToken);
-                field_type_token.text.push_str("[]");
+                let field_name = self.match_token(TokenKind::IdentifierToken);
+                self.match_token(TokenKind::ColonToken);
+                
+                let mut field_type_token = if self.current_token().kind == TokenKind::DataTypeToken {
+                    self.match_token(TokenKind::DataTypeToken)
+                } else {
+                    self.match_token(TokenKind::IdentifierToken)
+                };
+                
+                while self.current_token().kind == TokenKind::OpenBracketToken {
+                    self.match_token(TokenKind::OpenBracketToken);
+                    self.match_token(TokenKind::CloseBracketToken);
+                    field_type_token.text.push_str("[]");
+                }
+                
+                if self.current_token().kind == TokenKind::QuestionMarkToken {
+                    self.match_token(TokenKind::QuestionMarkToken);
+                    field_type_token.text.push_str("?");
+                }
+                
+                self.match_token(TokenKind::SemicolonToken);
+                fields.push(crate::lang::code_analysis::syntax::nodes::struct_node::StructFieldNode {
+                    name: field_name,
+                    type_token: field_type_token,
+                });
             }
-            
-            if self.current_token().kind == TokenKind::QuestionMarkToken {
-                self.match_token(TokenKind::QuestionMarkToken);
-                field_type_token.text.push_str("?");
-            }
-            
-            self.match_token(TokenKind::SemicolonToken);
-            fields.push(crate::lang::code_analysis::syntax::nodes::struct_node::StructFieldNode {
-                name: field_name,
-                type_token: field_type_token,
-            });
         }
         
         self.match_token(TokenKind::CurlyCloseBracketToken);
-        Ok(crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode::new(struct_name, generic_parameters, fields, is_exported))
+        Ok(crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode::new(struct_name, generic_parameters, fields, methods, is_exported))
     }
     
     /// Parses an import statement
@@ -354,6 +359,9 @@ impl<'a, 'b> Parser<'a, 'b>
                     match expr {
                         ExpressionNode::FunctionCall(name, generic_args, params) => {
                             Ok(StatementNode::FunctionInvocation(name, generic_args, params))
+                        },
+                        ExpressionNode::MethodCall(obj, member, generic_args, params) => {
+                            Ok(StatementNode::MethodInvocation(obj, member, generic_args, params))
                         },
                         _ => {
                             self.diagnostics.report_error(
@@ -589,10 +597,61 @@ impl<'a, 'b> Parser<'a, 'b>
                     } else if self.current_token().kind == TokenKind::DotToken {
                         self.match_token(TokenKind::DotToken);
                         let member = self.match_token(TokenKind::IdentifierToken);
-                        expr = ExpressionNode::MemberAccess(
-                            self.arena.alloc(expr),
-                            member
-                        );
+                        
+                        let mut generic_args = None;
+                        if self.current_token().kind == TokenKind::SmallerThanToken {
+                            // Method generic args
+                            let mut i = 1;
+                            let mut is_generic = false;
+                            while self.peek_token(i).kind != TokenKind::EndOfFileToken {
+                                if self.peek_token(i).kind == TokenKind::GreaterThanToken {
+                                    if self.peek_token(i + 1).kind == TokenKind::OpenParenthesisToken {
+                                        is_generic = true;
+                                    }
+                                    break;
+                                }
+                                if self.peek_token(i).kind == TokenKind::SemicolonToken || self.peek_token(i).kind == TokenKind::CurlyOpenBracketToken {
+                                    break;
+                                }
+                                i += 1;
+                            }
+                            if is_generic {
+                                self.match_token(TokenKind::SmallerThanToken);
+                                let mut args = Vec::new();
+                                while self.current_token().kind != TokenKind::GreaterThanToken && self.current_token().kind != TokenKind::EndOfFileToken {
+                                    args.push(self.parse_type()?);
+                                    if self.current_token().kind == TokenKind::CommaToken {
+                                        self.match_token(TokenKind::CommaToken);
+                                    }
+                                }
+                                self.match_token(TokenKind::GreaterThanToken);
+                                generic_args = Some(args);
+                            }
+                        }
+                        
+                        if self.current_token().kind == TokenKind::OpenParenthesisToken {
+                            self.match_token(TokenKind::OpenParenthesisToken);
+                            let mut params = Vec::new();
+                            while self.current_token().kind != TokenKind::CloseParenthesisToken && self.current_token().kind != TokenKind::EndOfFileToken {
+                                params.push(self.parse_expression(0)?);
+                                if self.current_token().kind == TokenKind::CommaToken {
+                                    self.match_token(TokenKind::CommaToken);
+                                }
+                            }
+                            self.match_token(TokenKind::CloseParenthesisToken);
+                            
+                            expr = ExpressionNode::MethodCall(
+                                self.arena.alloc(expr),
+                                member,
+                                generic_args,
+                                params
+                            );
+                        } else {
+                            expr = ExpressionNode::MemberAccess(
+                                self.arena.alloc(expr),
+                                member
+                            );
+                        }
                     } else {
                         break;
                     }

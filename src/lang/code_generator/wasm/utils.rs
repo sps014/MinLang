@@ -169,6 +169,21 @@ impl<'a> WasmGenerator<'a> {
                 Ok("void".to_string())
             },
             ExpressionNode::IsExpression(_, _) => Ok("bool".to_string()),
+            ExpressionNode::MethodCall(obj, method, _, _) => {
+                let obj_type = self.infer_expression_type(obj, function)?;
+                let struct_name = if obj_type.ends_with("?") {
+                    obj_type[..obj_type.len() - 1].to_string()
+                } else {
+                    obj_type.clone()
+                };
+                let mangled_name = format!("{}_{}", struct_name, method.text);
+                if let Ok(func_info) = self.function_table.get_function(&mangled_name) {
+                    if let Some(ret) = &func_info.return_type {
+                        return Ok(ret.get_type());
+                    }
+                }
+                Ok("void".to_string())
+            },
         }
     }
 }

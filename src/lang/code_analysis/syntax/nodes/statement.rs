@@ -10,6 +10,7 @@ pub enum StatementNode<'a> {
     MemberAssignment(&'a ExpressionNode<'a>, SyntaxToken, ExpressionNode<'a>),
     Declaration(SyntaxToken, Option<Type>, ExpressionNode<'a>),
     FunctionInvocation(SyntaxToken, Option<Vec<Type>>, Vec<ExpressionNode<'a>>),
+    MethodInvocation(&'a ExpressionNode<'a>, SyntaxToken, Option<Vec<Type>>, Vec<ExpressionNode<'a>>),
     Return(Option<ExpressionNode<'a>>),
     /// If condition, then body, else if pairs, else body
     IfElse(

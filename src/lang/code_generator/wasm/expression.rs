@@ -48,6 +48,7 @@ impl<'a> WasmGenerator<'a> {
                     writer.write_line("i32.const 0");
                 }
             },
+            ExpressionNode::MethodCall(obj, method, generic_args, params) => self.build_method_call(obj, method, generic_args, params, left_side, function, writer)?,
         }
         Ok(())
     }
@@ -266,6 +267,39 @@ impl<'a> WasmGenerator<'a> {
         }
         writer.write("call $");
         writer.write_line(name);
+        Ok(())
+    }
+
+    pub fn build_method_call(&mut self, obj: &ExpressionNode<'a>, method: &SyntaxToken, generic_args: &Option<Vec<Type>>, params: &Vec<ExpressionNode<'a>>, _left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        let obj_type = self.infer_expression_type(obj, function)?;
+        
+        let struct_name = if obj_type.ends_with("?") {
+            obj_type[..obj_type.len() - 1].to_string()
+        } else {
+            obj_type.clone()
+        };
+
+        let mut mangled_name = format!("{}_{}", struct_name, method.text);
+
+        // If it's a generic struct instance method, the struct name already has the generic type
+        // The analyzer resolves it correctly
+
+        let func_info = self.function_table.get_function(&mangled_name)?;
+        
+        // 1. Evaluate 'this' (the object)
+        self.build_expression(obj, &obj_type, function, writer)?;
+        
+        // 2. Evaluate remaining parameters
+        for (i, expr) in params.iter().enumerate() {
+            let param_type = if i + 1 < func_info.parameters.len() {
+                func_info.parameters[i + 1].clone() // i+1 because 'this' is at index 0
+            } else {
+                "int".to_string() // Fallback
+            };
+            self.build_expression(expr, &param_type, function, writer)?;
+        }
+        
+        writer.write_line(&format!("call ${}", mangled_name));
         Ok(())
     }
 

@@ -16,4 +16,5 @@ pub enum ExpressionNode<'a> {
     StructInstantiation(SyntaxToken, Option<Vec<Type>>, Vec<(SyntaxToken, ExpressionNode<'a>)>),
     MemberAccess(&'a ExpressionNode<'a>, SyntaxToken),
     IsExpression(&'a ExpressionNode<'a>, Type),
+    MethodCall(&'a ExpressionNode<'a>, SyntaxToken, Option<Vec<Type>>, Vec<ExpressionNode<'a>>),
 }

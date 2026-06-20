@@ -19,13 +19,13 @@ impl ImportNode {
 #[derive(Debug, Clone)]
 pub struct ProgramNode<'a> {
     pub imports: Vec<ImportNode>,
-    pub structs: Vec<StructDeclarationNode>,
+    pub structs: Vec<StructDeclarationNode<'a>>,
     pub functions: Vec<FunctionNode<'a>>,
 }
 
 impl<'a> ProgramNode<'a> {
     /// Creates a new program node
-    pub fn new(imports: Vec<ImportNode>, structs: Vec<StructDeclarationNode>, functions: Vec<FunctionNode<'a>>) -> ProgramNode<'a> {
+    pub fn new(imports: Vec<ImportNode>, structs: Vec<StructDeclarationNode<'a>>, functions: Vec<FunctionNode<'a>>) -> ProgramNode<'a> {
         ProgramNode { imports, structs, functions }
     }
 }

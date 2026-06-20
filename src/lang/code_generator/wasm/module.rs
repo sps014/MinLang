@@ -64,6 +64,11 @@ impl<'a> WasmGenerator<'a> {
             self.current_generic_type = None;
             self.current_mangled_name = None;
         }
+        for method in self.struct_methods {
+            self.current_mangled_name = Some(method.name.text.clone());
+            self.build_function(method, writer)?;
+            self.current_mangled_name = None;
+        }
 
         self.build_export(program, writer)?;
         writer.unindent();
