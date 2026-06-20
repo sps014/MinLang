@@ -15,11 +15,39 @@ impl<'a> WasmGenerator<'a> {
             ExpressionNode::Unary(opr, expression) => self.build_unary(opr, expression, left_side, function, writer)?,
             ExpressionNode::Binary(left, opr, right) => self.build_binary(left, opr, right, left_side, function, writer)?,
             ExpressionNode::Literal(literal) => self.build_literal(literal, writer)?,
-            ExpressionNode::FunctionCall(n, args) => self.build_function_invocation(&n.text.clone(), args, function, writer)?,
+            ExpressionNode::FunctionCall(n, generic_args, args) => {
+                let mut function_name = n.text.clone();
+                // If it's a generic call, mangle the name
+                if let Some(generics) = generic_args {
+                    if !generics.is_empty() {
+                        let type_str = generics[0].get_type();
+                        function_name = format!("{}_{}", function_name, type_str);
+                    }
+                } else if self.function_table.get_function(&function_name).is_err() {
+                    // Try to infer generic type from first argument if not explicit
+                    if !args.is_empty() {
+                        if let Ok(inferred_type) = self.infer_expression_type(&args[0], function) {
+                            let mangled = format!("{}_{}", function_name, inferred_type);
+                            if self.function_table.get_function(&mangled).is_ok() {
+                                function_name = mangled;
+                            }
+                        }
+                    }
+                }
+                self.build_function_invocation(&function_name, args, function, writer)?
+            },
             ExpressionNode::Parenthesized(e) => self.build_expression(e, left_side, function, writer)?,
             ExpressionNode::Cast(target_type, expr) => self.build_cast(target_type, expr, left_side, function, writer)?,
             ExpressionNode::StructInstantiation(name, fields) => self.build_struct_instantiation(name, fields, left_side, function, writer)?,
             ExpressionNode::MemberAccess(obj, member) => self.build_member_access(obj, member, left_side, function, writer)?,
+            ExpressionNode::IsExpression(left, right_type) => {
+                let left_type = self.infer_expression_type(left, function)?;
+                if left_type == right_type.get_type() {
+                    writer.write_line("i32.const 1");
+                } else {
+                    writer.write_line("i32.const 0");
+                }
+            },
         }
         Ok(())
     }

@@ -22,6 +22,7 @@ impl TokenKind {
             TokenKind::SmallerThanToken => 15,
             TokenKind::EqualEqualToken => 15,
             TokenKind::NotEqualToken => 15,
+            TokenKind::IsToken => 15,
             TokenKind::AmpersandAmpersandToken => 20,
             TokenKind::PipePipeToken => 10,
 

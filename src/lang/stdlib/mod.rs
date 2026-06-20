@@ -29,7 +29,7 @@ impl StdlibFunction {
         vec![
             // I/O
             StdlibFunction {
-                name: "print".to_string(),
+                name: "print_string".to_string(),
                 parameters: vec!["string".to_string()],
                 return_type: None, // void
             },

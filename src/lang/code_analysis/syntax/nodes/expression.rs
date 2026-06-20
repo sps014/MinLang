@@ -10,9 +10,10 @@ pub enum ExpressionNode<'a> {
     Unary(SyntaxToken, &'a ExpressionNode<'a>),
     Identifier(SyntaxToken),
     Parenthesized(&'a ExpressionNode<'a>),
-    FunctionCall(SyntaxToken, Vec<ExpressionNode<'a>>),
+    FunctionCall(SyntaxToken, Option<Vec<Type>>, Vec<ExpressionNode<'a>>),
     IndexAccess(&'a ExpressionNode<'a>, &'a ExpressionNode<'a>),
     Cast(Type, &'a ExpressionNode<'a>),
     StructInstantiation(SyntaxToken, Vec<(SyntaxToken, ExpressionNode<'a>)>),
     MemberAccess(&'a ExpressionNode<'a>, SyntaxToken),
+    IsExpression(&'a ExpressionNode<'a>, Type),
 }

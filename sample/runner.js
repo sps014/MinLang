@@ -16,7 +16,7 @@ function readString(ptr) {
 
 const importObject = {
     env: {
-        print: (arg) => process.stdout.write(readString(arg)),
+        print_string: (arg) => process.stdout.write(readString(arg)),
         println: (arg) => console.log(readString(arg)),
         print_int: (arg) => console.log(arg),
         print_float: (arg) => console.log(arg),

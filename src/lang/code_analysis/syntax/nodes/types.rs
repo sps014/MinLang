@@ -11,6 +11,7 @@ pub enum Type {
     Boolean(SyntaxToken),
     Array(Box<Type>),
     Struct(SyntaxToken),
+    Generic(String),
     Nullable(Box<Type>),
     Void,
 }
@@ -27,6 +28,7 @@ impl Type {
             Type::Boolean(_) => "bool".to_string(),
             Type::Array(inner) => format!("{}[]", inner.get_type()),
             Type::Struct(token) => token.text.clone(),
+            Type::Generic(name) => name.clone(),
             Type::Nullable(inner) => format!("{}?", inner.get_type()),
         }
     }
@@ -42,6 +44,7 @@ impl Type {
             Type::Boolean(token) => token.position.get_point_str(),
             Type::Array(inner) => inner.get_line_str(),
             Type::Struct(token) => token.position.get_point_str(),
+            Type::Generic(_) => "".to_string(), // Can be improved
             Type::Nullable(inner) => inner.get_line_str(),
         }
     }

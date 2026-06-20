@@ -38,7 +38,7 @@ impl<'a> WasmGenerator<'a> {
         // Memory management functions
         self.build_memory_management(writer)?;
 
-        writer.write_line("(memory 1)");
+        writer.write_line("(memory 10)");
         for (s, offset) in &self.strings {
             let unquoted = if s.starts_with('"') && s.ends_with('"') {
                 &s[1..s.len()-1]
@@ -52,8 +52,19 @@ impl<'a> WasmGenerator<'a> {
         }
         
         for i in program.functions.iter() {
+            if i.generic_parameters.is_some() {
+                continue;
+            }
             self.build_function(i, writer)?;
         }
+        for (mangled_name, (concrete_type, template)) in self.instantiated_generics {
+            self.current_generic_type = Some(concrete_type.clone());
+            self.current_mangled_name = Some(mangled_name.clone());
+            self.build_function(template, writer)?;
+            self.current_generic_type = None;
+            self.current_mangled_name = None;
+        }
+
         self.build_export(program, writer)?;
         writer.unindent();
         writer.write_line(")");
@@ -62,8 +73,9 @@ impl<'a> WasmGenerator<'a> {
 
     /// Builds a single WebAssembly function
     pub fn build_function(&mut self, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        let func_name = self.current_mangled_name.as_ref().unwrap_or(&function.name.text);
         writer.write("(func $");
-        writer.write(&function.name.text);
+        writer.write(func_name);
         for i in function.parameters.iter() {
             self.build_parameter(i, writer)?;
         }
@@ -79,7 +91,8 @@ impl<'a> WasmGenerator<'a> {
         self.build_body(function.body, function, writer)?;
         
         // Release all local reference variables in case the function falls through without a return
-        let locals = self.combined_symbol_lookup.get(&function.name.text).unwrap().clone();
+        let func_name = self.current_mangled_name.as_ref().unwrap_or(&function.name.text);
+        let locals = self.combined_symbol_lookup.get(func_name).unwrap().clone();
         for (name, type_) in locals.iter() {
             let type_str = type_.get_type();
             let base_type_str = if type_str.ends_with("?") {
@@ -114,7 +127,8 @@ impl<'a> WasmGenerator<'a> {
     /// Builds a single function parameter
     pub fn build_parameter(&self, parameter: &ParameterNode, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         writer.write("( ");
-        writer.write(&format!("param ${} {}", parameter.name.text, WasmGenerator::get_wasm_type_from(parameter.type_.get_type())?));
+        let resolved_type = self.resolve_type(&parameter.type_.get_type());
+        writer.write(&format!("param ${} {}", parameter.name.text, WasmGenerator::get_wasm_type_from(resolved_type)?));
         writer.write(") ");
         Ok(())
     }
@@ -122,10 +136,13 @@ impl<'a> WasmGenerator<'a> {
     /// Builds the return type of a function
     pub fn build_return_type(&self, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         if let Some(return_type) = &function.return_type {
-            let return_type_name = WasmGenerator::get_wasm_type_from(return_type.get_type())?;
-            writer.write(" (result ");
-            writer.write(&return_type_name);
-            writer.write(")");
+            let resolved_type = self.resolve_type(&return_type.get_type());
+            if resolved_type != "void" {
+                let return_type_name = WasmGenerator::get_wasm_type_from(resolved_type)?;
+                writer.write(" (result ");
+                writer.write(&return_type_name);
+                writer.write(")");
+            }
         }
         Ok(())
     }

@@ -30,6 +30,9 @@ pub struct WasmGenerator<'a> {
     pub next_string_offset: usize,
     pub loop_counter: usize,
     pub loop_stack: Vec<usize>,
+    pub current_generic_type: Option<String>,
+    pub current_mangled_name: Option<String>,
+    pub instantiated_generics: &'a HashMap<String, (String, &'a crate::lang::code_analysis::syntax::nodes::FunctionNode<'a>)>,
 }
 
 impl<'a> CodeGenerator<'a> for WasmGenerator<'a> {
@@ -52,6 +55,9 @@ impl<'a> WasmGenerator<'a> {
             next_string_offset: 12, // Start at 12 so 0 can be used as null pointer, and 4-11 for the first string's header
             loop_counter: 0,
             loop_stack: Vec::new(),
+            current_generic_type: None,
+            current_mangled_name: None,
+            instantiated_generics: &semantic_info.instantiated_generics,
         }
     }
 }

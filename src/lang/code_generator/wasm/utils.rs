@@ -32,15 +32,28 @@ impl<'a> WasmGenerator<'a> {
         Ok(r)
     }
 
+    /// Helper to resolve generic types to concrete types during generation
+    pub fn resolve_type(&self, type_str: &str) -> String {
+        if type_str == "T" {
+            if let Some(concrete) = &self.current_generic_type {
+                return concrete.clone();
+            }
+        }
+        type_str.to_string()
+    }
+
     /// Reads the type of a variable from the symbol table
     pub fn table_read_type(&self, var_name: &String, function: &FunctionNode<'a>) -> String {
-        let func_lookup = self.combined_symbol_lookup.get(&function.name.text).unwrap();
-        func_lookup.get(var_name).unwrap().clone().get_type()
+        let func_name = self.current_mangled_name.as_ref().unwrap_or(&function.name.text);
+        let func_lookup = self.combined_symbol_lookup.get(func_name).unwrap();
+        let t = func_lookup.get(var_name).unwrap().clone().get_type();
+        self.resolve_type(&t)
     }
 
     /// Builds local variable declarations for a function
     pub fn build_local_variable(&mut self, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
-        let res = self.get_local_variables(self.symbol_map.get(&function.name.text.clone()).unwrap())?;
+        let func_name = self.current_mangled_name.as_ref().unwrap_or(&function.name.text).clone();
+        let res = self.get_local_variables(self.symbol_map.get(&func_name).unwrap())?;
 
         let mut param_names = std::collections::HashSet::new();
         for param in &function.parameters {
@@ -52,11 +65,12 @@ impl<'a> WasmGenerator<'a> {
             if param_names.contains(name) {
                 continue;
             }
+            let resolved_type = self.resolve_type(&_type.get_type());
             writer.write(" (local ");
-            writer.write(&format!("${} {}", name, WasmGenerator::get_wasm_type_from(_type.get_type())?));
+            writer.write(&format!("${} {}", name, WasmGenerator::get_wasm_type_from(resolved_type)?));
             writer.write(") ");
         }
-        self.combined_symbol_lookup.insert(function.name.text.clone(), res);
+        self.combined_symbol_lookup.insert(func_name, res);
         Ok(())
     }
 
@@ -84,7 +98,7 @@ impl<'a> WasmGenerator<'a> {
     pub fn infer_expression_type(&self, expression: &crate::lang::code_analysis::syntax::nodes::ExpressionNode<'a>, function: &FunctionNode<'a>) -> Result<String, Error> {
         use crate::lang::code_analysis::syntax::nodes::ExpressionNode;
         match expression {
-            ExpressionNode::Literal(t) => Ok(t.get_type()),
+            ExpressionNode::Literal(t) => Ok(self.resolve_type(&t.get_type())),
             ExpressionNode::Identifier(id) => Ok(self.table_read_type(&id.text, function)),
             ExpressionNode::ArrayLiteral(elements) => {
                 if elements.is_empty() {
@@ -102,7 +116,7 @@ impl<'a> WasmGenerator<'a> {
                     Ok("void".to_string())
                 }
             },
-            ExpressionNode::FunctionCall(name, _) => {
+            ExpressionNode::FunctionCall(name, generic_args, args) => {
                 if let Ok(func) = self.function_table.get_function(&name.text) {
                     if let Some(ret_type) = &func.return_type {
                         Ok(ret_type.get_type())
@@ -146,6 +160,7 @@ impl<'a> WasmGenerator<'a> {
                 }
                 Ok("void".to_string())
             },
+            ExpressionNode::IsExpression(_, _) => Ok("bool".to_string()),
         }
     }
 }

@@ -32,7 +32,7 @@ pub fn execute_wasm(wat_path: &str) -> Result<(), Box<dyn std::error::Error>> {
         println!("{}", v);
     })?;
 
-    linker.func_wrap("env", "print", |mut caller: Caller<'_, ()>, ptr: i32| {
+    linker.func_wrap("env", "print_string", |mut caller: Caller<'_, ()>, ptr: i32| {
         let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
         let s = read_string_from_memory(&memory, &caller, ptr);
         print!("{}", s);

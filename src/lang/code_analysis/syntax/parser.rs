@@ -209,6 +209,21 @@ impl<'a, 'b> Parser<'a, 'b>
         //eat the fun keyword
         self.match_token(TokenKind::FunToken);
         let function_name=self.match_token(TokenKind::IdentifierToken);
+        
+        let mut generic_parameters = None;
+        if self.current_token().kind == TokenKind::SmallerThanToken {
+            self.match_token(TokenKind::SmallerThanToken);
+            let mut params = Vec::new();
+            while self.current_token().kind != TokenKind::GreaterThanToken && self.current_token().kind != TokenKind::EndOfFileToken {
+                params.push(self.match_token(TokenKind::IdentifierToken));
+                if self.current_token().kind == TokenKind::CommaToken {
+                    self.match_token(TokenKind::CommaToken);
+                }
+            }
+            self.match_token(TokenKind::GreaterThanToken);
+            generic_parameters = Some(params);
+        }
+
         let params=self.parse_formal_parameters()?;
         let mut return_type:Option<Type>=None;
         if self.current_token().kind==TokenKind::ColonToken
@@ -218,7 +233,7 @@ impl<'a, 'b> Parser<'a, 'b>
             return_type=Some(self.parse_type()?);
         }
         let block=self.parse_block()?;
-        Ok(FunctionNode::new(function_name,return_type,params,block,is_exported))
+        Ok(FunctionNode::new(function_name,generic_parameters,return_type,params,block,is_exported))
     }
     /// Parses formal parameters for a function declaration
     fn parse_formal_parameters(&mut self)->Result<Vec<ParameterNode>,Error>
@@ -306,8 +321,8 @@ impl<'a, 'b> Parser<'a, 'b>
                 } else if self.current_token().kind == TokenKind::SemicolonToken {
                     self.match_token(TokenKind::SemicolonToken);
                     match expr {
-                        ExpressionNode::FunctionCall(name, params) => {
-                            Ok(StatementNode::FunctionInvocation(name, params))
+                        ExpressionNode::FunctionCall(name, generic_args, params) => {
+                            Ok(StatementNode::FunctionInvocation(name, generic_args, params))
                         },
                         _ => {
                             self.diagnostics.report_error(
@@ -379,9 +394,14 @@ impl<'a, 'b> Parser<'a, 'b>
             }
 
             let operator_token = self.next_token();
-            let right = self.parse_expression(precedence)?;
-            left = ExpressionNode::Binary(self.arena.alloc(left),
-                                          operator_token, self.arena.alloc(right));
+            if operator_token.kind == TokenKind::IsToken {
+                let right_type = self.parse_type()?;
+                left = ExpressionNode::IsExpression(self.arena.alloc(left), right_type);
+            } else {
+                let right = self.parse_expression(precedence)?;
+                left = ExpressionNode::Binary(self.arena.alloc(left),
+                                              operator_token, self.arena.alloc(right));
+            }
         }
         Ok(left)
     }
@@ -458,7 +478,27 @@ impl<'a, 'b> Parser<'a, 'b>
         //parse identifiers
         else if self.current_token().kind==IdentifierToken
         {
-            if self.peek_token(1).kind==TokenKind::OpenParenthesisToken
+            let mut is_invocation = false;
+            if self.peek_token(1).kind==TokenKind::OpenParenthesisToken {
+                is_invocation = true;
+            } else if self.peek_token(1).kind == TokenKind::SmallerThanToken {
+                // Check if it's a generic invocation like `Test<int>(...)`
+                let mut i = 2;
+                while self.peek_token(i).kind != TokenKind::EndOfFileToken {
+                    if self.peek_token(i).kind == TokenKind::GreaterThanToken {
+                        if self.peek_token(i + 1).kind == TokenKind::OpenParenthesisToken {
+                            is_invocation = true;
+                        }
+                        break;
+                    }
+                    if self.peek_token(i).kind == TokenKind::SemicolonToken || self.peek_token(i).kind == TokenKind::CurlyOpenBracketToken {
+                        break;
+                    }
+                    i += 1;
+                }
+            }
+
+            if is_invocation
             {
                 return Ok(self.parse_invocation_expression()?);
             }
@@ -549,6 +589,21 @@ impl<'a, 'b> Parser<'a, 'b>
     fn parse_invocation_expression(&mut self)->Result<ExpressionNode<'a>,Error>
     {
         let function_name=self.match_token(TokenKind::IdentifierToken);
+        
+        let mut generic_arguments = None;
+        if self.current_token().kind == TokenKind::SmallerThanToken {
+            self.match_token(TokenKind::SmallerThanToken);
+            let mut args = Vec::new();
+            while self.current_token().kind != TokenKind::GreaterThanToken && self.current_token().kind != TokenKind::EndOfFileToken {
+                args.push(self.parse_type()?);
+                if self.current_token().kind == TokenKind::CommaToken {
+                    self.match_token(TokenKind::CommaToken);
+                }
+            }
+            self.match_token(TokenKind::GreaterThanToken);
+            generic_arguments = Some(args);
+        }
+
         //eat the open parenthesis
         self.match_token(TokenKind::OpenParenthesisToken);
         let mut arguments=Vec::new();
@@ -565,7 +620,7 @@ impl<'a, 'b> Parser<'a, 'b>
         }
         //eat the close parenthesis
         self.match_token(TokenKind::CloseParenthesisToken);
-        Ok(ExpressionNode::FunctionCall(function_name,arguments))
+        Ok(ExpressionNode::FunctionCall(function_name, generic_arguments, arguments))
     }
     /// Parses a return statement
     fn parse_return(&mut self)->Result<StatementNode<'a>,Error>

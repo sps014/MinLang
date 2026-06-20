@@ -10,7 +10,8 @@ fn analyze_code(code: &str) -> DiagnosticBag {
     let mut parser = Parser::new(lexer, &arena, &mut diagnostics);
     
     if let Ok(tree) = parser.parse() {
-        let mut analyzer = Anaylzer::new(&tree);
+        let arena = bumpalo::Bump::new();
+        let mut analyzer = Anaylzer::new(&tree, &arena);
         let _ = analyzer.analyze(&mut diagnostics);
     }
     

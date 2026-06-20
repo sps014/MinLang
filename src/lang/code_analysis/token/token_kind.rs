@@ -109,6 +109,8 @@ pub enum TokenKind
     StructToken,
     #[token("null")]
     NullToken,
+    #[token("is")]
+    IsToken,
     
     #[token("int")]
     #[token("float")]

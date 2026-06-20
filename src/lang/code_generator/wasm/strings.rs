@@ -50,7 +50,7 @@ impl<'a> WasmGenerator<'a> {
                 StatementNode::Return(Some(expr)) => {
                     self.collect_strings_from_expr(expr);
                 }
-                StatementNode::FunctionInvocation(_, params) => {
+                StatementNode::FunctionInvocation(_, _, params) => {
                     for param in params {
                         self.collect_strings_from_expr(param);
                     }
@@ -80,7 +80,7 @@ impl<'a> WasmGenerator<'a> {
             ExpressionNode::Parenthesized(inner) => {
                 self.collect_strings_from_expr(inner);
             }
-            ExpressionNode::FunctionCall(_, params) => {
+            ExpressionNode::FunctionCall(_, _, params) => {
                 for param in params {
                     self.collect_strings_from_expr(param);
                 }

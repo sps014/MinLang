@@ -20,6 +20,7 @@ impl ParameterNode {
 #[derive(Debug, Clone)]
 pub struct FunctionNode<'a> {
     pub name: SyntaxToken,
+    pub generic_parameters: Option<Vec<SyntaxToken>>,
     pub return_type: Option<Type>,
     pub parameters: Vec<ParameterNode>,
     pub body: &'a [StatementNode<'a>],
@@ -30,6 +31,7 @@ impl<'a> FunctionNode<'a> {
     /// Creates a new function node
     pub fn new(
         name: SyntaxToken,
+        generic_parameters: Option<Vec<SyntaxToken>>,
         return_type: Option<Type>,
         parameters: Vec<ParameterNode>,
         body: &'a [StatementNode<'a>],
@@ -37,6 +39,7 @@ impl<'a> FunctionNode<'a> {
     ) -> FunctionNode<'a> {
         FunctionNode {
             name,
+            generic_parameters,
             return_type,
             parameters,
             body,

@@ -70,7 +70,7 @@ impl Compiler {
         info!("finished parsing");
         info!("starting semantic analysis");
         
-        let mut analyzer = Anaylzer::new(&ast);
+        let mut analyzer = Anaylzer::new(&ast, &arena);
         let symbol_info = match analyzer.analyze(&mut diagnostics) {
             Ok(info) => info,
             Err(_) => {
@@ -120,6 +120,12 @@ impl Compiler {
         let mut file = File::open(&path)?;
         let mut text = String::new();
         file.read_to_string(&mut text)?;
+        
+        // Inject generic `print` function if this is the main file
+        if visited.len() == 1 {
+            let print_impl = "\nfun print<T>(data: T) {\n    if (data is int) {\n        print_int(data);\n    } else if (data is float) {\n        print_float(data);\n    } else if (data is double) {\n        print_double(data);\n    } else if (data is string) {\n        print_string(data);\n    }\n}\n";
+            text.push_str(print_impl);
+        }
         
         file_contents.insert(path_str.clone(), text.clone());
         

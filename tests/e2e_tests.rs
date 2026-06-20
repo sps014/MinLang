@@ -93,7 +93,7 @@ fn run_test_case(ml_file: &Path) {
     }).unwrap();
 
     let env_clone = env.clone();
-    linker.func_wrap("env", "print", move |mut caller: Caller<'_, ()>, ptr: i32| {
+    linker.func_wrap("env", "print_string", move |mut caller: Caller<'_, ()>, ptr: i32| {
         let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
         let s = read_string_from_memory(&memory, &caller, ptr);
         env_clone.print(&s);

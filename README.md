@@ -8,13 +8,15 @@ MinLang is a statically typed, compiled programming language that targets WebAss
 - **Nullable Types**: Reference types can be nullable using the `?` suffix (e.g., `Node?`) and assigned `null`.
 - **Type Casting**: C-style explicit type casting (e.g., `(float)10`, `(int)3.14`).
 - **Structs**: User-defined composite data types with field access and assignment. Supports C-style memory alignment.
+- **Generics**: Support for generic functions (e.g., `fun Test<T>(data: T)`) via compile-time monomorphization and type instantiation.
+- **Compile-Time Type Testing**: `is` operator for compile-time type matching (e.g. `if (data is int) { ... }`) combined with dead-code elimination.
 - **Export Control**: Functions and structs can be marked with `export` to expose them to the host environment. The compiler ensures exported functions do not expose private structs.
 - **Arrays**: Native support for arrays (`int[]`, `float[]`, `double[]`, `string[]`, `Struct[]`).
 - **Memory Management**: Automatic Reference Counting (ARC) backed by a fast Freelist allocator in WebAssembly. Memory is automatically retained on assignment/return and released when variables go out of scope.
 - **Control Flow**: `if`/`else if`/`else`, `while` loops, and `for` loops with `break` and `continue` support. Parentheses are required around conditions (e.g., `if (x > 0) { ... }`).
 - **Functions**: First-class functions with parameters and return types.
 - **WebAssembly Target**: Compiles directly to WebAssembly Text format (`.wat`) and executes via `wasmtime`.
-- **Standard Library**: Built-in functions like `print`, `print_int`, `print_float`, `print_double`, `sin`, `cos`, `abs`, and `sqrt`.
+- **Standard Library**: Built-in functions like `print` (generic for any type), `print_int`, `print_float`, `print_double`, `sin`, `cos`, `abs`, and `sqrt`.
 - **Diagnostic System**: Comprehensive error reporting with line/column tracking and Rust-style squiggly lines for syntax and semantic errors.
 
 ## Architecture
@@ -86,7 +88,7 @@ fun fib(n: int): int {
 fun main(): void {
     let result = fib(10);
     print("Fibonacci of 10 is: ");
-    print_int(result);
+    print(result);
 }
 ```
 

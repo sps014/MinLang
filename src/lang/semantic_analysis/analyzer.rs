@@ -1,3 +1,4 @@
+use bumpalo::Bump;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -17,15 +18,17 @@ pub struct SemanticInfo<'a>
     pub hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>,
     pub function_table: &'a FunctionTable,
     pub struct_table: &'a StructTable,
+    pub instantiated_generics: HashMap<String, (String, &'a FunctionNode<'a>)>,
 }
 
 impl<'a> SemanticInfo<'a> {
-    pub fn new(hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>, function_table: &'a FunctionTable, struct_table: &'a StructTable) -> SemanticInfo<'a>
+    pub fn new(hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>, function_table: &'a FunctionTable, struct_table: &'a StructTable, instantiated_generics: HashMap<String, (String, &'a FunctionNode<'a>)>) -> SemanticInfo<'a>
     {
         SemanticInfo {
             hash_map,
             function_table,
             struct_table,
+            instantiated_generics,
         }
     }
 }
@@ -35,16 +38,19 @@ pub struct Anaylzer<'a> {
     syntax_tree:&'a SyntaxTree<'a>,
     function_table:FunctionTable,
     struct_table:StructTable,
+    arena: &'a Bump,
+    generic_functions: HashMap<String, &'a FunctionNode<'a>>,
+    instantiated_generics: HashMap<String, (String, &'a FunctionNode<'a>)>,
 }
 impl<'a> Anaylzer<'a> {
-    pub fn new(tree: &'a SyntaxTree<'a>) -> Self {
-        Self { syntax_tree:tree, function_table: FunctionTable::new(), struct_table: StructTable::new() }
+    pub fn new(tree: &'a SyntaxTree<'a>, arena: &'a Bump) -> Self {
+        Self { syntax_tree:tree, function_table: FunctionTable::new(), struct_table: StructTable::new(), arena, generic_functions: HashMap::new(), instantiated_generics: HashMap::new() }
     }
     pub fn analyze(&mut self, diagnostics: &mut DiagnosticBag) -> Result<SemanticInfo<'_>, ()> {
         let pgm= self.syntax_tree.get_root();
         self.analyze_pgm(pgm, diagnostics)
     }
-    fn analyze_pgm(&mut self,node:&ProgramNode<'a>, diagnostics: &mut DiagnosticBag) -> Result<SemanticInfo<'_>, ()> {
+    fn analyze_pgm(&mut self,node:&'a ProgramNode<'a>, diagnostics: &mut DiagnosticBag) -> Result<SemanticInfo<'_>, ()> {
         let mut symbol_table_map=HashMap::new();
         
         // Pass 0: Register all structs
@@ -56,6 +62,11 @@ impl<'a> Anaylzer<'a> {
         
         // Pass 1: Register all functions in the function table
         for function in node.functions.iter() {
+            if function.generic_parameters.is_some() {
+                self.generic_functions.insert(function.name.text.clone(), function);
+                continue;
+            }
+
             if function.is_exported {
                 // Check if any parameter or return type is a struct, and if so, check if it's exported
                 let mut types_to_check = vec![];
@@ -90,10 +101,26 @@ impl<'a> Anaylzer<'a> {
         
         // Pass 2: Analyze function bodies
         for function in node.functions.iter() {
+            if function.generic_parameters.is_some() {
+                continue;
+            }
             let r=self.analyze_function(function, diagnostics)?;
             symbol_table_map.insert(function.name.text.clone(),r);
         }
-        Ok(SemanticInfo::new(symbol_table_map,&self.function_table, &self.struct_table))
+        
+        // Pass 3: Analyze generic instances
+        // The AST nodes for generics will be analyzed here, so any errors inside generics 
+        // with specific concrete types will be reported.
+        let generics_to_analyze: Vec<_> = self.instantiated_generics.iter()
+            .map(|(k, v)| (k.clone(), v.0.clone(), v.1))
+            .collect();
+            
+        for (mangled_name, concrete_type, template) in generics_to_analyze {
+            let r = self.analyze_function(template, diagnostics)?;
+            symbol_table_map.insert(mangled_name.clone(), r);
+        }
+
+        Ok(SemanticInfo::new(symbol_table_map,&self.function_table, &self.struct_table, self.instantiated_generics.clone()))
     }
     fn analyze_function(&mut self,function:&FunctionNode<'a>, diagnostics: &mut DiagnosticBag) -> Result<Rc<RefCell<SymbolTable>>, ()> {
         let param_table=Rc::new(RefCell::new(self.add_function_param_table(function, diagnostics)?));
@@ -161,19 +188,87 @@ impl<'a> Anaylzer<'a> {
                 self.analyze_break(parent_function,has_parent_while, diagnostics)?,
             StatementNode::Continue=>
                 self.analyze_continue(parent_function,has_parent_while, diagnostics)?,
-            StatementNode::FunctionInvocation(name,params) =>
-                {self.analyze_function_call(name,params,parent_function,symbol_table, diagnostics)?;},
+            StatementNode::FunctionInvocation(name, generic_args, params) =>
+                {self.analyze_function_call(name, generic_args, params,parent_function,symbol_table, diagnostics)?;},
         };
         Ok(())
     }
-    fn analyze_function_call(&mut self,name:&SyntaxToken,params:&Vec<ExpressionNode<'a>>,
+    fn analyze_function_call(&mut self,name:&SyntaxToken,generic_args: &Option<Vec<Type>>,params:&Vec<ExpressionNode<'a>>,
                                    parent_function:&FunctionNode<'a>,
                                    symbol_table:&Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag)->Result<Type,()> {
-        let function_name=name.text.clone();
+        let mut function_name=name.text.clone();
         let mut params_types=vec![];
         for param in params.iter() {
             params_types.push(self.analyze_expression(param,parent_function,symbol_table, diagnostics)?.get_type());
         }
+
+        // Monomorphization logic
+        if self.generic_functions.contains_key(&function_name) {
+            let concrete_type_str = if let Some(generics) = generic_args {
+                if !generics.is_empty() {
+                    generics[0].get_type()
+                } else {
+                    "void".to_string()
+                }
+            } else if !params_types.is_empty() {
+                params_types[0].clone()
+            } else {
+                "void".to_string()
+            };
+
+            let mangled_name = format!("{}_{}", function_name, concrete_type_str);
+            
+            // If we haven't instantiated this concrete function yet, do it now
+            if self.function_table.get_function(&mangled_name).is_err() {
+                let template = *self.generic_functions.get(&function_name).unwrap();
+                
+                self.instantiated_generics.insert(mangled_name.clone(), (concrete_type_str.clone(), template));
+                
+                let mut new_params = Vec::new();
+                for p in &template.parameters {
+                    let mut p_type = p.type_.clone();
+                    if matches!(p_type, Type::Struct(_)) && p_type.get_type() == "T" {
+                        let dummy_span = crate::lang::code_analysis::text::text_span::TextSpan::new((0, 0), &Rc::new(crate::lang::code_analysis::text::line_text::LineText::new("".to_string())));
+                        let dummy_token = SyntaxToken::new(TokenKind::DataTypeToken, dummy_span, concrete_type_str.clone());
+                        p_type = match concrete_type_str.as_str() {
+                            "int" => Type::Integer(dummy_token),
+                            "float" => Type::Float(dummy_token),
+                            "double" => Type::Double(dummy_token),
+                            "string" => Type::String(dummy_token),
+                            "bool" => Type::Boolean(dummy_token),
+                            _ => Type::Void,
+                        };
+                    }
+                    new_params.push(p_type);
+                }
+                
+                let return_type = match &template.return_type {
+                    Some(Type::Struct(t)) if t.text == "T" => {
+                        let dummy_span = crate::lang::code_analysis::text::text_span::TextSpan::new((0, 0), &Rc::new(crate::lang::code_analysis::text::line_text::LineText::new("".to_string())));
+                        let dummy_token = SyntaxToken::new(TokenKind::DataTypeToken, dummy_span, concrete_type_str.clone());
+                        Some(match concrete_type_str.as_str() {
+                            "int" => Type::Integer(dummy_token),
+                            "float" => Type::Float(dummy_token),
+                            "double" => Type::Double(dummy_token),
+                            "string" => Type::String(dummy_token),
+                            "bool" => Type::Boolean(dummy_token),
+                            _ => Type::Void,
+                        })
+                    },
+                    other => other.clone()
+                };
+
+                let info = FunctionTableInfo {
+                    name: mangled_name.clone(),
+                    parameters: new_params.iter().map(|p| p.get_type()).collect(),
+                    return_type,
+                };
+                
+                let _ = self.function_table.add_function(mangled_name.clone(), info);
+            }
+            function_name = mangled_name;
+        }
+
         let store_sig = match self.function_table.get_function(&function_name) {
             Ok(sig) => sig,
             Err(e) => {
@@ -404,8 +499,16 @@ impl<'a> Anaylzer<'a> {
                 Ok(self.analyze_binary_expression(left,opr,right,parent_function,symbol_table, diagnostics)?),
             ExpressionNode::Identifier(id)=>
                 Ok(self.analyze_identifier(id,symbol_table, diagnostics)?),
-            ExpressionNode::FunctionCall(name,params)=>
-                Ok(self.analyze_function_call(name,params,parent_function,symbol_table, diagnostics)?),
+            ExpressionNode::FunctionCall(name,generic_args,params)=>
+                Ok(self.analyze_function_call(name,generic_args,params,parent_function,symbol_table, diagnostics)?),
+            ExpressionNode::IsExpression(left, right_type) => {
+                let left_type = self.analyze_expression(left, parent_function, symbol_table, diagnostics)?;
+                
+                // Get the position from the type if possible, or just create an empty span
+                let empty_span = crate::lang::code_analysis::text::text_span::TextSpan::new((0,0), &Rc::new(crate::lang::code_analysis::text::line_text::LineText::new("".to_string())));
+                let dummy_token = SyntaxToken::new(TokenKind::BooleanToken, empty_span, "true".to_string());
+                Ok(Type::Boolean(dummy_token))
+            },
             ExpressionNode::Parenthesized(expr)=>
                 Ok(self.analyze_expression(expr,parent_function,symbol_table, diagnostics)?),
             ExpressionNode::StructInstantiation(name, fields) => {
@@ -596,23 +699,60 @@ impl<'a> Anaylzer<'a> {
                        parent_function:&FunctionNode<'a>, symbol_table:&Rc<RefCell<SymbolTable>>,has_parent_while:bool, diagnostics: &mut DiagnosticBag) ->
     Result<(),()>
     {
-        //if condition
-        let cond_type = self.analyze_expression(condition,parent_function,symbol_table, diagnostics)?;
-        if cond_type.get_type() != "bool" {
-            diagnostics.report_error(format!("if condition must be bool, got {}", cond_type.get_type()), None);
+        // Check for constant expression from `is`
+        let mut is_constant_true = false;
+        let mut is_constant_false = false;
+        
+        if let ExpressionNode::IsExpression(left, right_type) = condition {
+            let left_t = self.analyze_expression(left, parent_function, symbol_table, diagnostics)?;
+            if left_t.get_type() == right_type.get_type() {
+                is_constant_true = true;
+            } else {
+                is_constant_false = true;
+            }
         }
-        //if body
-        self.analyze_body(if_body,parent_function,Some(symbol_table),has_parent_while, diagnostics)?;
+        
+        if !is_constant_false {
+            //if condition
+            let cond_type = self.analyze_expression(condition,parent_function,symbol_table, diagnostics)?;
+            if cond_type.get_type() != "bool" {
+                diagnostics.report_error(format!("if condition must be bool, got {}", cond_type.get_type()), None);
+            }
+            //if body
+            self.analyze_body(if_body,parent_function,Some(symbol_table),has_parent_while, diagnostics)?;
+        }
+        
+        if is_constant_true {
+            return Ok(());
+        }
 
         //else if block
         for i in else_if.iter()
         {
-            let elif_cond_type = self.analyze_expression(&i.0,parent_function,symbol_table, diagnostics)?;
-            if elif_cond_type.get_type() != "bool" {
-                diagnostics.report_error(format!("else if condition must be bool, got {}", elif_cond_type.get_type()), None);
+            let mut elif_constant_true = false;
+            let mut elif_constant_false = false;
+            if let ExpressionNode::IsExpression(left, right_type) = &i.0 {
+                let left_t = self.analyze_expression(left, parent_function, symbol_table, diagnostics)?;
+                if left_t.get_type() == right_type.get_type() {
+                    elif_constant_true = true;
+                } else {
+                    elif_constant_false = true;
+                }
             }
-            self.analyze_body(&i.1,parent_function,Some(symbol_table),has_parent_while, diagnostics)?;
+
+            if !elif_constant_false {
+                let elif_cond_type = self.analyze_expression(&i.0,parent_function,symbol_table, diagnostics)?;
+                if elif_cond_type.get_type() != "bool" {
+                    diagnostics.report_error(format!("else if condition must be bool, got {}", elif_cond_type.get_type()), None);
+                }
+                self.analyze_body(&i.1,parent_function,Some(symbol_table),has_parent_while, diagnostics)?;
+            }
+            
+            if elif_constant_true {
+                return Ok(());
+            }
         }
+        
         match else_body
         {
             Some(body)=>self.analyze_body(body,parent_function,Some(symbol_table),has_parent_while, diagnostics)?,

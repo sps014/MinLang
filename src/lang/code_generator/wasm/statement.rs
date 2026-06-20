@@ -26,7 +26,27 @@ impl<'a> WasmGenerator<'a> {
             StatementNode::Break => self.build_break(writer)?,
             StatementNode::Continue => self.build_continue(writer)?,
             StatementNode::IfElse(c, b, else_if, else_b) => self.build_if_else(c, b, else_if, else_b, function, writer)?,
-            StatementNode::FunctionInvocation(n, p) => self.build_function_invocation(&n.text.clone(), p, function, writer)?,
+            StatementNode::FunctionInvocation(n, generic_args, p) => {
+                let mut function_name = n.text.clone();
+                // If it's a generic call, mangle the name
+                if let Some(generics) = generic_args {
+                    if !generics.is_empty() {
+                        let type_str = generics[0].get_type();
+                        function_name = format!("{}_{}", function_name, type_str);
+                    }
+                } else if self.function_table.get_function(&function_name).is_err() {
+                    // Try to infer generic type from first argument if not explicit
+                    if !p.is_empty() {
+                        if let Ok(inferred_type) = self.infer_expression_type(&p[0], function) {
+                            let mangled = format!("{}_{}", function_name, inferred_type);
+                            if self.function_table.get_function(&mangled).is_ok() {
+                                function_name = mangled;
+                            }
+                        }
+                    }
+                }
+                self.build_function_invocation(&function_name, p, function, writer)?
+            },
         }
         Ok(())
     }
@@ -357,6 +377,25 @@ impl<'a> WasmGenerator<'a> {
         if cur.0.is_none() && index == parts.len() - 1 {
             self.build_body(cur.1, function, writer)?;
         } else {
+            let mut is_constant_true = false;
+            let mut is_constant_false = false;
+            if let Some(ExpressionNode::IsExpression(left, right_type)) = cur.0 {
+                let left_type = self.infer_expression_type(left, function)?;
+                if left_type == right_type.get_type() {
+                    is_constant_true = true;
+                } else {
+                    is_constant_false = true;
+                }
+            }
+
+            if is_constant_true {
+                self.build_body(cur.1, function, writer)?;
+                return Ok(());
+            } else if is_constant_false {
+                self.build_if_else_parts(parts, function, index + 1, writer)?;
+                return Ok(());
+            }
+
             self.build_expression(cur.0.unwrap(), &"int".to_string(), function, writer)?;
             writer.write_line("(if");
             writer.indent();
