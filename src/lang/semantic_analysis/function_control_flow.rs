@@ -46,19 +46,19 @@ impl FlowNode
     }
 }
 #[derive(Debug)]
-pub struct  FunctionControlGraph
+pub struct  FunctionControlGraph<'a>
 {
     root_node: Option<Rc<RefCell<FlowNode>>>,
-    function:FunctionNode,
+    function:&'a FunctionNode<'a>,
 }
 
-impl FunctionControlGraph
+impl<'a> FunctionControlGraph<'a>
 {
-    pub fn new(function:&FunctionNode) -> FunctionControlGraph
+    pub fn new(function:&'a FunctionNode<'a>) -> FunctionControlGraph<'a>
     {
         Self {
             root_node: None,
-            function: function.clone(),
+            function,
         }
     }
     pub fn build(&mut self)->Result<(),Error>
@@ -124,11 +124,11 @@ impl FunctionControlGraph
     fn create_graph(&mut self)->Result<(),Error>
     {
         self.root_node = Some(Rc::new(RefCell::new(FlowNode::from(false,"root".to_string()))));
-        self.visit_block(&self.function.body.clone(), &self.root_node.clone().unwrap())?;
+        self.visit_block(self.function.body, &self.root_node.clone().unwrap())?;
         Ok(())
     }
     //visit a block and pass parent accordingly
-    fn visit_block(&mut self, nodes:&Vec<StatementNode>, parent:&Rc<RefCell<FlowNode>>) ->Result<(),Error>
+    fn visit_block(&mut self, nodes:&[StatementNode<'a>], parent:&Rc<RefCell<FlowNode>>)->Result<(),Error>
     {
         let mut node = parent.clone();
         for i in nodes.iter()
@@ -138,11 +138,11 @@ impl FunctionControlGraph
         Ok(())
     }
     // only two statements have impact on control path return and branches and we can ignore the rest of  the branches
-    fn visit_node(&mut self, statement:&StatementNode, parent:&Rc<RefCell<FlowNode>>) ->Result<(),Error>
+    fn visit_node(&mut self, statement:&StatementNode<'a>, parent:&Rc<RefCell<FlowNode>>) ->Result<(),Error>
     {
           match statement {
             StatementNode::Return(r)=>
-                self.visit_return(&r.clone().unwrap(), parent)?,
+                self.visit_return(r.as_ref().unwrap(), parent)?,
             StatementNode::IfElse(_,if_body,else_pair,else_body)=>
                 self.visit_if_else(if_body, else_pair, else_body, parent)?,
             _=>
@@ -150,9 +150,9 @@ impl FunctionControlGraph
         };
         Ok(())
     }
-    fn visit_if_else(&mut self, if_body:&Vec<StatementNode>,
-                     else_if:&Vec<(ExpressionNode, Vec<StatementNode>)>,
-                     else_body: &Option<Vec<StatementNode>>,parent:&Rc<RefCell<FlowNode>>)
+    fn visit_if_else(&mut self, if_body:&[StatementNode<'a>],
+                     else_if:&Vec<(ExpressionNode<'a>, &'a [StatementNode<'a>])>,
+                     else_body: &Option<&'a [StatementNode<'a>]>,parent:&Rc<RefCell<FlowNode>>)
         ->Result<(),Error>
     {
         //if body
@@ -169,7 +169,7 @@ impl FunctionControlGraph
             //add to parent
             (*parent).as_ref().borrow_mut().child_nodes.push(if_body_node.clone());
             //visit it's body for sub nodes
-            self.visit_block(&i.1, &mut if_body_node)?;
+            self.visit_block(i.1, &mut if_body_node)?;
         }
         match else_body {
             //if we have else body add it to the graph
@@ -191,7 +191,7 @@ impl FunctionControlGraph
     }
 
     //add return node to parent block and mark: has return
-    fn visit_return(&mut self,return_node:&ExpressionNode,parent:&Rc<RefCell<FlowNode>>)->Result<(),Error>
+    fn visit_return(&mut self,return_node:&ExpressionNode<'a>,parent:&Rc<RefCell<FlowNode>>)->Result<(),Error>
     {
         let return_flow = Rc::new(RefCell::new(FlowNode::from(true,format!("return {:?}",return_node))));
         (*parent).as_ref().borrow_mut().child_nodes.push(return_flow.clone());

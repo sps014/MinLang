@@ -1,4 +1,5 @@
 use std::io::{Error, ErrorKind};
+use bumpalo::Bump;
 use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, Type, ParameterNode, ProgramNode, StatementNode, ImportNode};
 use crate::lang::code_analysis::syntax::syntax_tree::SyntaxTree;
 use crate::lang::code_analysis::text::line_text::LineText;
@@ -10,21 +11,23 @@ use crate::Lexer;
 
 pub struct Parser<'a>
 {
-    lexer:Lexer<'a>,
+    lexer:Lexer,
     tokens:Vec<SyntaxToken>,
     current_token_index:usize,
+    arena: &'a Bump,
 }
 
 impl<'a> Parser<'a>
 {
     ///creates a new instance of the parser from a lexer instance
-    pub fn new(lexer:Lexer<'a>) -> Self
+    pub fn new(lexer:Lexer, arena: &'a Bump) -> Self
     {
         Self
         {
             lexer,
             tokens:Vec::new(),
             current_token_index:0,
+            arena,
         }
     }
     //returns the new eof token
@@ -73,14 +76,14 @@ impl<'a> Parser<'a>
         }
     }
     ///parse all tokens from lexer and returns a syntax tree or error
-    pub fn parse(&mut self)->Result<SyntaxTree,Error>
+    pub fn parse(&mut self)->Result<SyntaxTree<'a>,Error>
     {
         self.tokens = self.lexer.lex_all();
         Ok(SyntaxTree::new(self.parse_program()?))
     }
 
     ///get all functions in the file
-    fn parse_program(&mut self)->Result<ProgramNode,Error>
+    fn parse_program(&mut self)->Result<ProgramNode<'a>,Error>
     {
         let mut imports=vec![];
         let mut functions=vec![];
@@ -104,7 +107,7 @@ impl<'a> Parser<'a>
         Ok(ImportNode::new(module_name))
     }
     ///parse a function
-    fn parse_function(&mut self)->Result<FunctionNode,Error>
+    fn parse_function(&mut self)->Result<FunctionNode<'a>,Error>
     {
         let mut is_exported = false;
         if self.current_token().kind == TokenKind::ExportToken {
@@ -162,7 +165,7 @@ impl<'a> Parser<'a>
     }
 
     ///parse a block
-    fn parse_block(&mut self)->Result<Vec<StatementNode>,Error>
+    fn parse_block(&mut self)->Result<&'a [StatementNode<'a>],Error>
     {
         //eat the open curly brace
         self.match_token(TokenKind::CurlyOpenBracketToken)?;
@@ -175,10 +178,10 @@ impl<'a> Parser<'a>
         }
         //eat the close curly brace
         self.match_token(TokenKind::CurlyCloseBracketToken)?;
-        Ok(statements)
+        Ok(self.arena.alloc_slice_fill_iter(statements))
     }
     ///parse a statement
-    fn parse_statement(&mut self)->Result<StatementNode,Error>
+    fn parse_statement(&mut self)->Result<StatementNode<'a>,Error>
     {
         let cur = self.current_token();
         if cur.kind == TokenKind::LetToken
@@ -231,7 +234,7 @@ impl<'a> Parser<'a>
     }
 
     ///parse a variable declaration
-    fn parse_declaration(&mut self)->Result<StatementNode,Error>
+    fn parse_declaration(&mut self)->Result<StatementNode<'a>,Error>
     {
         //eat the keyword let
         self.match_token(TokenKind::LetToken)?;
@@ -245,7 +248,7 @@ impl<'a> Parser<'a>
     }
 
     ///parse  return statement
-    fn parse_assignment(&mut self)->Result<StatementNode,Error>
+    fn parse_assignment(&mut self)->Result<StatementNode<'a>,Error>
     {
         //eat the identifier
         let identifier=self.match_token(TokenKind::IdentifierToken)?;
@@ -257,14 +260,14 @@ impl<'a> Parser<'a>
         Ok(StatementNode::Assignment(identifier,expression))
     }
     ///parse a expression of valid token with precedence (default 0)
-    fn parse_expression(&mut self,parent_precedence:i32)->Result<ExpressionNode,Error>
+    fn parse_expression(&mut self,parent_precedence:i32)->Result<ExpressionNode<'a>,Error>
     {
         let mut left;
         let unary_precedence = self.current_token().kind.get_unary_precedence();
         if unary_precedence != 0 && unary_precedence >= parent_precedence {
             let operator_token = self.next_token();
             let operand = self.parse_expression(unary_precedence)?;
-            left = ExpressionNode::Unary(operator_token, Box::new(operand));
+            left = ExpressionNode::Unary(operator_token, self.arena.alloc(operand));
         } else {
             left = self.parse_primary_expression()?;
         }
@@ -277,13 +280,13 @@ impl<'a> Parser<'a>
 
             let operator_token = self.next_token();
             let right = self.parse_expression(precedence)?;
-            left = ExpressionNode::Binary(Box::new(left),
-                                          operator_token, Box::new(right));
+            left = ExpressionNode::Binary(self.arena.alloc(left),
+                                          operator_token, self.arena.alloc(right));
         }
         Ok(left)
     }
     ///parse a term in expression like literal,identifier,function call
-    fn parse_primary_expression(&mut self)->Result<ExpressionNode,Error>
+    fn parse_primary_expression(&mut self)->Result<ExpressionNode<'a>,Error>
     {
         //parse parenthesized expressions
         if self.current_token().kind==TokenKind::OpenParenthesisToken
@@ -293,7 +296,7 @@ impl<'a> Parser<'a>
             let expression=self.parse_expression(0)?;
             //eat the close parenthesis
             self.match_token(TokenKind::CloseParenthesisToken)?;
-            return Ok(ExpressionNode::Parenthesized(Box::new(expression)));
+            return Ok(ExpressionNode::Parenthesized(self.arena.alloc(expression)));
         }
         else if  self.current_token().kind==TokenKind::BooleanToken
         {
@@ -332,7 +335,7 @@ impl<'a> Parser<'a>
         let identifier=self.match_token(TokenKind::IdentifierToken)?;
         Ok(ExpressionNode::Identifier(identifier))
     }
-    fn parse_invocation_expression(&mut self)->Result<ExpressionNode,Error>
+    fn parse_invocation_expression(&mut self)->Result<ExpressionNode<'a>,Error>
     {
         let function_name=self.match_token(TokenKind::IdentifierToken)?;
         //eat the open parenthesis
@@ -353,7 +356,7 @@ impl<'a> Parser<'a>
         self.match_token(TokenKind::CloseParenthesisToken)?;
         Ok(ExpressionNode::FunctionCall(function_name,arguments))
     }
-    fn parse_return(&mut self)->Result<StatementNode,Error>
+    fn parse_return(&mut self)->Result<StatementNode<'a>,Error>
     {
         //eat the return keyword
         self.match_token(TokenKind::ReturnToken)?;
@@ -367,7 +370,7 @@ impl<'a> Parser<'a>
         self.match_token(TokenKind::SemicolonToken)?;
         Ok(StatementNode::Return(expression))
     }
-    fn parse_if_else(&mut self)->Result<StatementNode,Error>
+    fn parse_if_else(&mut self)->Result<StatementNode<'a>,Error>
     {
         //eat the if keyword
         self.match_token(TokenKind::IfToken)?;
@@ -396,15 +399,15 @@ impl<'a> Parser<'a>
         Ok(StatementNode::IfElse(condition,then_branch,else_ifs,None))
     }
 
-    fn parse_for(&mut self)->Result<StatementNode,Error>
+    fn parse_for(&mut self)->Result<StatementNode<'a>,Error>
     {
         self.match_token(TokenKind::ForToken)?;
-        let mut init = None;
+        let mut init: Option<&'a StatementNode<'a>> = None;
         if self.current_token().kind != TokenKind::SemicolonToken {
             if self.current_token().kind == TokenKind::LetToken {
-                init = Some(Box::new(self.parse_declaration()?));
+                init = Some(self.arena.alloc(self.parse_declaration()?));
             } else {
-                init = Some(Box::new(self.parse_assignment()?));
+                init = Some(self.arena.alloc(self.parse_assignment()?));
             }
         } else {
             self.match_token(TokenKind::SemicolonToken)?;
@@ -416,19 +419,19 @@ impl<'a> Parser<'a>
         }
         self.match_token(TokenKind::SemicolonToken)?;
 
-        let mut increment = None;
+        let mut increment: Option<&'a StatementNode<'a>> = None;
         if self.current_token().kind != TokenKind::CurlyOpenBracketToken {
             let identifier=self.match_token(TokenKind::IdentifierToken)?;
             self.match_token(TokenKind::EqualToken)?;
             let expression=self.parse_expression(0)?;
-            increment = Some(Box::new(StatementNode::Assignment(identifier,expression)));
+            increment = Some(self.arena.alloc(StatementNode::Assignment(identifier,expression)));
         }
 
         let body=self.parse_block()?;
         Ok(StatementNode::For(init,condition,increment,body))
     }
 
-    fn parse_while(&mut self)->Result<StatementNode,Error>
+    fn parse_while(&mut self)->Result<StatementNode<'a>,Error>
     {
         //eat the while keyword
         self.match_token(TokenKind::WhileToken)?;
@@ -436,7 +439,7 @@ impl<'a> Parser<'a>
         let body=self.parse_block()?;
         Ok(StatementNode::While(condition,body))
     }
-    fn parse_break(&mut self)->Result<StatementNode,Error>
+    fn parse_break(&mut self)->Result<StatementNode<'a>,Error>
     {
         //eat the break keyword
         self.match_token(TokenKind::BreakToken)?;
@@ -444,7 +447,7 @@ impl<'a> Parser<'a>
         self.match_token(TokenKind::SemicolonToken)?;
         Ok(StatementNode::Break)
     }
-    fn parse_continue(&mut self)->Result<StatementNode,Error>
+    fn parse_continue(&mut self)->Result<StatementNode<'a>,Error>
     {
         //eat the continue keyword
         self.match_token(TokenKind::ContinueToken)?;

@@ -14,7 +14,7 @@ use crate::lang::semantic_analysis::symbol_table::SymbolTable;
 #[allow(dead_code)]
 pub struct WasmGenerator<'a>
 {
-    syntax_tree:&'a SyntaxTree,
+    syntax_tree:&'a SyntaxTree<'a>,
     symbol_map:&'a HashMap<String,Rc<RefCell<SymbolTable>>>,
     function_table:&'a FunctionTable,
     //key 1: function name, key 2: parameter name
@@ -24,7 +24,7 @@ pub struct WasmGenerator<'a>
 }
 impl<'a> WasmGenerator<'a>
 {
-    pub fn new (syntax_tree:&'a SyntaxTree,semantic_info:&'a SemanticInfo) -> Self
+    pub fn new (syntax_tree:&'a SyntaxTree<'a>,semantic_info:&'a SemanticInfo) -> Self
     {
         Self
         {
@@ -36,17 +36,17 @@ impl<'a> WasmGenerator<'a>
     }
     pub fn build(&mut self)->Result<IndentedTextWriter,Error>
     {
-        self.collect_strings_from_program(&self.syntax_tree.get_root());
+        self.collect_strings_from_program(self.syntax_tree.get_root());
         let mut indented=IndentedTextWriter::new();
-        self.build_module(&self.syntax_tree.get_root(),&mut indented)?;
+        self.build_module(self.syntax_tree.get_root(),&mut indented)?;
         Ok(indented)
     }
-    fn collect_strings_from_program(&mut self, program: &ProgramNode) {
+    fn collect_strings_from_program(&mut self, program: &ProgramNode<'a>) {
         for func in &program.functions {
-            self.collect_strings_from_body(&func.body);
+            self.collect_strings_from_body(func.body);
         }
     }
-    fn collect_strings_from_body(&mut self, body: &Vec<StatementNode>) {
+    fn collect_strings_from_body(&mut self, body: &[StatementNode<'a>]) {
         for stmt in body {
             match stmt {
                 StatementNode::Declaration(_, expr) | StatementNode::Assignment(_, expr) => {
@@ -69,13 +69,13 @@ impl<'a> WasmGenerator<'a>
                 }
                 StatementNode::For(init, cond, inc, body) => {
                     if let Some(init_stmt) = init {
-                        self.collect_strings_from_body(&vec![*init_stmt.clone()]);
+                        self.collect_strings_from_body(std::slice::from_ref(*init_stmt));
                     }
                     if let Some(cond_expr) = cond {
                         self.collect_strings_from_expr(cond_expr);
                     }
                     if let Some(inc_stmt) = inc {
-                        self.collect_strings_from_body(&vec![*inc_stmt.clone()]);
+                        self.collect_strings_from_body(std::slice::from_ref(*inc_stmt));
                     }
                     self.collect_strings_from_body(body);
                 }
@@ -91,7 +91,7 @@ impl<'a> WasmGenerator<'a>
             }
         }
     }
-    fn collect_strings_from_expr(&mut self, expr: &ExpressionNode) {
+    fn collect_strings_from_expr(&mut self, expr: &ExpressionNode<'a>) {
         match expr {
             ExpressionNode::Literal(Type::String(token)) => {
                 let s = token.text.clone();
@@ -118,7 +118,7 @@ impl<'a> WasmGenerator<'a>
             _ => {}
         }
     }
-    fn build_module(&mut self,program:&ProgramNode,writer:&mut IndentedTextWriter)->Result<(),Error>
+    fn build_module(&mut self,program:&ProgramNode<'a>,writer:&mut IndentedTextWriter)->Result<(),Error>
     {
         writer.write_line("(module");
         writer.indent();
@@ -162,7 +162,7 @@ impl<'a> WasmGenerator<'a>
         writer.write_line(")");
         Ok(())
     }
-    fn build_function(&mut self,function:&FunctionNode,writer:&mut IndentedTextWriter)->Result<(),Error>
+    fn build_function(&mut self,function:&FunctionNode<'a>,writer:&mut IndentedTextWriter)->Result<(),Error>
     {
         writer.write("(func $");
         writer.write(&function.name.text);
@@ -175,13 +175,13 @@ impl<'a> WasmGenerator<'a>
         writer.write_line("");
 
         writer.indent();
-        self.build_body(&function.body.clone(),function,writer)?;
+        self.build_body(function.body,function,writer)?;
         writer.unindent();
 
         writer.write_line(")");
         Ok(())
     }
-    fn build_body(&self,statements:&Vec<StatementNode>,function:&FunctionNode,
+    fn build_body(&self,statements:&[StatementNode<'a>],function:&FunctionNode<'a>,
                   writer:&mut IndentedTextWriter)->Result<(),Error>
     {
         for i in statements.iter()
@@ -191,8 +191,8 @@ impl<'a> WasmGenerator<'a>
         Ok(())
     }
 
-    fn build_statement(&self,statement:&StatementNode,
-                       function:&FunctionNode,
+    fn build_statement(&self,statement:&StatementNode<'a>,
+                       function:&FunctionNode<'a>,
                        writer:&mut IndentedTextWriter)->Result<(),Error>
     {
         match statement
@@ -218,8 +218,8 @@ impl<'a> WasmGenerator<'a>
         }
         Ok(())
     }
-    fn build_function_invocation(&self,name:&String,parameters:&Vec<ExpressionNode>,
-                                 function:&FunctionNode,writer:&mut IndentedTextWriter)
+    fn build_function_invocation(&self,name:&String,parameters:&Vec<ExpressionNode<'a>>,
+                                 function:&FunctionNode<'a>,writer:&mut IndentedTextWriter)
                                  ->Result<(),Error>
     {
         for i in parameters.iter()
@@ -230,28 +230,28 @@ impl<'a> WasmGenerator<'a>
         writer.write_line(&name);
         Ok(())
     }
-    fn build_if_else(&self,condition:&ExpressionNode,body:&Vec<StatementNode>,
-                     else_if:&Vec<(ExpressionNode,Vec<StatementNode>)>,
-                     else_body:&Option<Vec<StatementNode>>,
-                     function:&FunctionNode,
+    fn build_if_else(&self,condition:&ExpressionNode<'a>,body:&'a [StatementNode<'a>],
+                     else_if:&Vec<(ExpressionNode<'a>,&'a [StatementNode<'a>])>,
+                     else_body:&Option<&'a [StatementNode<'a>]>,
+                     function:&FunctionNode<'a>,
                      writer:&mut IndentedTextWriter)->Result<(),Error>
     {
-        let mut arr=Vec::new();
-        arr.push((Some(condition.clone()),body.clone()));
+        let mut arr: Vec<(Option<&ExpressionNode<'a>>, &'a [StatementNode<'a>])> = Vec::new();
+        arr.push((Some(condition),body));
         for i in else_if.iter()
         {
-            arr.push((Some(i.0.clone()),i.1.clone()));
+            arr.push((Some(&i.0),i.1));
         }
         if else_body.is_some()
         {
-            arr.push((None,else_body.clone().unwrap()));
+            arr.push((None,else_body.unwrap()));
         }
         self.build_if_else_parts(&arr,function,0,writer)?;
 
         Ok(())
     }
-    fn build_if_else_parts(&self,parts:&Vec<(Option<ExpressionNode>,Vec<StatementNode>)>,
-                           function:&FunctionNode,index:usize,
+    fn build_if_else_parts(&self,parts:&Vec<(Option<&ExpressionNode<'a>>,&'a [StatementNode<'a>])>,
+                           function:&FunctionNode<'a>,index:usize,
                            writer:&mut IndentedTextWriter)->Result<(),Error>
     {
         if index==parts.len()
@@ -262,16 +262,16 @@ impl<'a> WasmGenerator<'a>
         //generate else
         if cur.0.is_none() && index == parts.len() - 1
         {
-            self.build_body(&cur.1,function,writer)?;
+            self.build_body(cur.1,function,writer)?;
         }
         else
         {
-            self.build_expression(&cur.0.clone().unwrap(),&"int".to_string(),function,writer)?;
+            self.build_expression(cur.0.unwrap(),&"int".to_string(),function,writer)?;
             writer.write_line("(if");
             writer.indent();
             writer.write_line("(then");
             writer.indent();
-            self.build_body(&cur.1,function,writer)?;
+            self.build_body(cur.1,function,writer)?;
             writer.unindent();
             writer.write_line(")");
             if index+1<parts.len()
@@ -297,8 +297,8 @@ impl<'a> WasmGenerator<'a>
         writer.write_line("br 0");
         Ok(())
     }
-    fn build_while(&self,condition:&ExpressionNode,body:&Vec<StatementNode>,
-                   function:&FunctionNode,writer:&mut IndentedTextWriter)->Result<(),Error>
+    fn build_while(&self,condition:&ExpressionNode<'a>,body:&[StatementNode<'a>],
+                   function:&FunctionNode<'a>,writer:&mut IndentedTextWriter)->Result<(),Error>
     {
         writer.write_line("(block");
         writer.indent();
@@ -316,9 +316,9 @@ impl<'a> WasmGenerator<'a>
         writer.write_line(")");
         Ok(())
     }
-    fn build_for(&self,init:&Option<Box<StatementNode>>,condition:&Option<ExpressionNode>,
-                 increment:&Option<Box<StatementNode>>,body:&Vec<StatementNode>,
-                 function:&FunctionNode,writer:&mut IndentedTextWriter)->Result<(),Error>
+    fn build_for(&self,init:&Option<&'a StatementNode<'a>>,condition:&Option<ExpressionNode<'a>>,
+                 increment:&Option<&'a StatementNode<'a>>,body:&[StatementNode<'a>],
+                 function:&FunctionNode<'a>,writer:&mut IndentedTextWriter)->Result<(),Error>
     {
         if let Some(init_stmt) = init {
             self.build_statement(init_stmt, function, writer)?;
@@ -348,22 +348,22 @@ impl<'a> WasmGenerator<'a>
         writer.write_line(")");
         Ok(())
     }
-    fn build_return(&self,expression:&Option<ExpressionNode>,
-                    function:&FunctionNode,
+    fn build_return(&self,expression:&Option<ExpressionNode<'a>>,
+                    function:&FunctionNode<'a>,
                     writer:&mut IndentedTextWriter)->Result<(),Error>
     {
         if expression.is_some()
         {
             let return_type=&function.return_type.clone().unwrap();
-            self.build_expression(&expression.clone().unwrap(),
+            self.build_expression(expression.as_ref().unwrap(),
                                   &return_type.get_type()
                                   ,function,writer)?;
         }
         writer.write_line("return");
         Ok(())
     }
-    fn build_declaration(&self,left:&SyntaxToken,function:&FunctionNode,
-                         expression:&ExpressionNode,writer:&mut IndentedTextWriter)->Result<(),Error>
+    fn build_declaration(&self,left:&SyntaxToken,function:&FunctionNode<'a>,
+                         expression:&ExpressionNode<'a>,writer:&mut IndentedTextWriter)->Result<(),Error>
     {
 
         self.build_expression(&expression,&self.table_read_type(&left.text,function),function,writer)?;
@@ -371,16 +371,16 @@ impl<'a> WasmGenerator<'a>
         writer.write_line(format!("local.set ${}",left.text).as_str());
         Ok(())
     }
-    fn build_assignment(&self,left:&SyntaxToken,expression:&ExpressionNode,
-                        function:&FunctionNode,
+    fn build_assignment(&self,left:&SyntaxToken,expression:&ExpressionNode<'a>,
+                        function:&FunctionNode<'a>,
                         writer:&mut IndentedTextWriter)->Result<(),Error>
     {
         self.build_expression(&expression,&self.table_read_type(&left.text,function),function,writer)?;
         writer.write_line(format!("local.set ${}",left.text).as_str());
         Ok(())
     }
-    fn build_expression(&self,expression:&ExpressionNode,
-                        left_side:&String,function:&FunctionNode,
+    fn build_expression(&self,expression:&ExpressionNode<'a>,
+                        left_side:&String,function:&FunctionNode<'a>,
                         writer:&mut IndentedTextWriter)->Result<(),Error>
     {
         match expression
@@ -415,13 +415,13 @@ impl<'a> WasmGenerator<'a>
         writer.write_line(type_.as_str());
         Ok(())
     }
-    fn table_read_type(&self,var_name:&String,function:&FunctionNode)->String
+    fn table_read_type(&self,var_name:&String,function:&FunctionNode<'a>)->String
     {
         let func_lookup=self.combined_symbol_lookup.get(&function.name.text).unwrap();
         return func_lookup.get(var_name).unwrap().clone().get_type();
     }
-    fn build_binary(&self,left_exp:&ExpressionNode,opr:&SyntaxToken,right_expr:&ExpressionNode,
-                   left:&String,function:&FunctionNode,
+    fn build_binary(&self,left_exp:&ExpressionNode<'a>,opr:&SyntaxToken,right_expr:&ExpressionNode<'a>,
+                   left:&String,function:&FunctionNode<'a>,
                    writer:&mut IndentedTextWriter)->Result<(),Error>
     {
         self.build_expression(left_exp,left,function,writer)?;
@@ -499,8 +499,8 @@ impl<'a> WasmGenerator<'a>
 
         Ok(())
     }
-    fn build_unary(&self,opr:&SyntaxToken,expression:&ExpressionNode,
-                   left:&String,function:&FunctionNode,
+    fn build_unary(&self,opr:&SyntaxToken,expression:&ExpressionNode<'a>,
+                   left:&String,function:&FunctionNode<'a>,
                    writer:&mut IndentedTextWriter)->Result<(),Error>
     {
         self.build_expression(expression,left,function,writer)?;
@@ -530,7 +530,7 @@ impl<'a> WasmGenerator<'a>
         writer.write_line(format!("local.get ${}",identifier.text).as_str());
         Ok(())
     }
-    fn build_return_type(&self, function:&FunctionNode,
+    fn build_return_type(&self, function:&FunctionNode<'a>,
                          writer:&mut IndentedTextWriter) ->Result<(),Error>
     {
         if function.return_type.is_some()
@@ -553,7 +553,7 @@ impl<'a> WasmGenerator<'a>
         writer.write(") ");
         Ok(())
     }
-    fn build_local_variable(&mut self,function:&FunctionNode,writer:&mut IndentedTextWriter)->Result<(),Error>
+    fn build_local_variable(&mut self,function:&FunctionNode<'a>,writer:&mut IndentedTextWriter)->Result<(),Error>
     {
 
         let res=self.get_local_variables(self.symbol_map.get(&function.name.text.clone()).unwrap())?;

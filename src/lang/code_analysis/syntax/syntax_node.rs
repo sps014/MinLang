@@ -14,30 +14,30 @@ impl ImportNode {
 }
 
 #[derive(Debug,Clone)]
-pub struct ProgramNode
+pub struct ProgramNode<'a>
 {
     pub imports: Vec<ImportNode>,
-    pub functions: Vec<FunctionNode>,
+    pub functions: Vec<FunctionNode<'a>>,
 }
 
-impl ProgramNode {
-    pub fn new(imports: Vec<ImportNode>, functions: Vec<FunctionNode>) -> ProgramNode {
+impl<'a> ProgramNode<'a> {
+    pub fn new(imports: Vec<ImportNode>, functions: Vec<FunctionNode<'a>>) -> ProgramNode<'a> {
         ProgramNode { imports, functions }
     }
 }
 
 #[derive(Debug,Clone)]
-pub struct FunctionNode
+pub struct FunctionNode<'a>
 {
     pub name: SyntaxToken,
     pub return_type: Option<Type>,
     pub parameters: Vec<ParameterNode>,
-    pub body: Vec<StatementNode>,
+    pub body: &'a [StatementNode<'a>],
     pub is_exported: bool,
 }
 
-impl FunctionNode {
-    pub fn new(name: SyntaxToken, return_type: Option<Type>, parameters: Vec<ParameterNode>, body: Vec<StatementNode>, is_exported: bool) -> FunctionNode {
+impl<'a> FunctionNode<'a> {
+    pub fn new(name: SyntaxToken, return_type: Option<Type>, parameters: Vec<ParameterNode>, body: &'a [StatementNode<'a>], is_exported: bool) -> FunctionNode<'a> {
         FunctionNode { name, return_type, parameters, body, is_exported }
     }
 }
@@ -56,29 +56,29 @@ impl ParameterNode
 }
 
 #[derive(Debug,Clone)]
-pub enum StatementNode
+pub enum StatementNode<'a>
 {
-    Assignment(SyntaxToken, ExpressionNode),
-    Declaration(SyntaxToken, ExpressionNode),
-    FunctionInvocation(SyntaxToken, Vec<ExpressionNode>),
-    Return(Option<ExpressionNode>),
+    Assignment(SyntaxToken, ExpressionNode<'a>),
+    Declaration(SyntaxToken, ExpressionNode<'a>),
+    FunctionInvocation(SyntaxToken, Vec<ExpressionNode<'a>>),
+    Return(Option<ExpressionNode<'a>>),
     /// If condition, then body, else if co
-    IfElse(ExpressionNode, Vec<StatementNode>,Vec<(ExpressionNode,Vec<StatementNode>)>, Option<Vec<StatementNode>>),
-    While(ExpressionNode, Vec<StatementNode>),
-    For(Option<Box<StatementNode>>, Option<ExpressionNode>, Option<Box<StatementNode>>, Vec<StatementNode>),
+    IfElse(ExpressionNode<'a>, &'a [StatementNode<'a>], Vec<(ExpressionNode<'a>, &'a [StatementNode<'a>])>, Option<&'a [StatementNode<'a>]>),
+    While(ExpressionNode<'a>, &'a [StatementNode<'a>]),
+    For(Option<&'a StatementNode<'a>>, Option<ExpressionNode<'a>>, Option<&'a StatementNode<'a>>, &'a [StatementNode<'a>]),
     Break,
     Continue,
 }
 
 #[derive(Debug,Clone)]
-pub enum ExpressionNode
+pub enum ExpressionNode<'a>
 {
     Literal(Type),
-    Binary(Box<ExpressionNode>, SyntaxToken, Box<ExpressionNode>),
-    Unary(SyntaxToken, Box<ExpressionNode>),
+    Binary(&'a ExpressionNode<'a>, SyntaxToken, &'a ExpressionNode<'a>),
+    Unary(SyntaxToken, &'a ExpressionNode<'a>),
     Identifier(SyntaxToken),
-    Parenthesized(Box<ExpressionNode>),
-    FunctionCall(SyntaxToken, Vec<ExpressionNode>),
+    Parenthesized(&'a ExpressionNode<'a>),
+    FunctionCall(SyntaxToken, Vec<ExpressionNode<'a>>),
 }
 
 #[derive(Debug,Clone,PartialEq)]

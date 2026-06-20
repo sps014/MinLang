@@ -29,18 +29,18 @@ impl<'a> SemanticInfo<'a> {
 
 
 pub struct Anaylzer<'a> {
-    syntax_tree:&'a SyntaxTree ,
+    syntax_tree:&'a SyntaxTree<'a> ,
     function_table:FunctionTable
 }
 impl<'a> Anaylzer<'a> {
-    pub fn new(tree: &'a SyntaxTree) -> Self {
+    pub fn new(tree: &'a SyntaxTree<'a>) -> Self {
         Self { syntax_tree:tree, function_table: FunctionTable::new() }
     }
     pub fn analyze(&mut self) -> Result<SemanticInfo<'_>, Error> {
         let pgm= self.syntax_tree.get_root();
-        self.analyze_pgm(pgm.clone())
+        self.analyze_pgm(pgm)
     }
-    fn analyze_pgm(&mut self,node:ProgramNode) -> Result<SemanticInfo<'_>, Error> {
+    fn analyze_pgm(&mut self,node:&ProgramNode<'a>) -> Result<SemanticInfo<'_>, Error> {
         let mut symbol_table_map=HashMap::new();
         for function in node.functions.iter() {
          let r=self.analyze_function(function)?;
@@ -48,17 +48,16 @@ impl<'a> Anaylzer<'a> {
      }
         Ok(SemanticInfo::new(symbol_table_map,&self.function_table))
     }
-    fn analyze_function(&mut self,function:&FunctionNode) -> Result<Rc<RefCell<SymbolTable>>, Error> {
+    fn analyze_function(&mut self,function:&FunctionNode<'a>) -> Result<Rc<RefCell<SymbolTable>>, Error> {
         let param_table=Rc::new(RefCell::new(self.add_function_param_table(function)?));
-        self.analyze_body(&function.body,function,Some(&param_table),false)?;
+        self.analyze_body(function.body,function,Some(&param_table),false)?;
         // check return
         let mut graph=FunctionControlGraph::new(function);
         graph.build()?;
-        let cp=function.clone();
-        self.function_table.add_function(cp.name.text,FunctionTableInfo::from(function))?;
+        self.function_table.add_function(function.name.text.clone(),FunctionTableInfo::from(function))?;
         Ok(param_table.clone())
     }
-    fn add_function_param_table(&mut self,function:&FunctionNode) -> Result<SymbolTable, Error> {
+    fn add_function_param_table(&mut self,function:&FunctionNode<'a>) -> Result<SymbolTable, Error> {
         let mut param_table=SymbolTable::new(None);
         for param in function.parameters.iter() {
             param_table.add_symbol(param.name.text.clone(),Type::from_token(param.type_.clone())?)?;
@@ -66,7 +65,7 @@ impl<'a> Anaylzer<'a> {
         Ok(param_table)
     }
 
-    fn analyze_body(&self, body:&Vec<StatementNode>, parent_function:&FunctionNode,
+    fn analyze_body(&self, body:&[StatementNode<'a>], parent_function:&FunctionNode<'a>,
                     parent_table:Option<&Rc<RefCell<SymbolTable>>>,has_parent_loop:bool) ->Result<(),Error> {
 
         let parent_scope =match parent_table {
@@ -85,7 +84,7 @@ impl<'a> Anaylzer<'a> {
         }
         Ok(())
     }
-    fn analyze_statement(&self,statement:&StatementNode,parent_function:&FunctionNode,
+    fn analyze_statement(&self,statement:&StatementNode<'a>,parent_function:&FunctionNode<'a>,
                          symbol_table:&Rc<RefCell<SymbolTable>>,has_parent_while:bool)->Result<(),Error>
     {
         match statement
@@ -113,8 +112,8 @@ impl<'a> Anaylzer<'a> {
         };
         Ok(())
     }
-    fn analyze_function_call(&self,name:&SyntaxToken,params:&Vec<ExpressionNode>,
-                                   parent_function:&FunctionNode,
+    fn analyze_function_call(&self,name:&SyntaxToken,params:&Vec<ExpressionNode<'a>>,
+                                   parent_function:&FunctionNode<'a>,
                                    symbol_table:&Rc<RefCell<SymbolTable>>)->Result<Type,Error> {
         let function_name=name.text.clone();
         let mut params_types=vec![];
@@ -138,22 +137,22 @@ impl<'a> Anaylzer<'a> {
         //let r_type=&store_sig.return_type;
         Ok(store_sig.return_type.unwrap_or(Type::Void))
     }
-    fn analyze_break(&self,parent_function:&FunctionNode,has_parent_while:bool)->Result<(),Error> {
+    fn analyze_break(&self,parent_function:&FunctionNode<'a>,has_parent_while:bool)->Result<(),Error> {
         if !has_parent_while {
             return Err(Error::new(ErrorKind::Other,
                                   format!("Break statement is not in a while loop in function {}",parent_function.name.text)));
         }
         Ok(())
     }
-    fn analyze_continue(&self,parent_function:&FunctionNode,has_parent_while:bool)->Result<(),Error> {
+    fn analyze_continue(&self,parent_function:&FunctionNode<'a>,has_parent_while:bool)->Result<(),Error> {
         if !has_parent_while {
             return Err(Error::new(ErrorKind::Other,
                                   format!("Continue statement is not in a while loop in function {}",parent_function.name.text)));
         }
         Ok(())
     }
-    fn analyze_while(&self,condition:&ExpressionNode,body:&Vec<StatementNode>,
-                     parent_function:&FunctionNode,symbol_table:&Rc<RefCell<SymbolTable>>)->Result<(),Error>
+    fn analyze_while(&self,condition:&ExpressionNode<'a>,body:&[StatementNode<'a>],
+                     parent_function:&FunctionNode<'a>,symbol_table:&Rc<RefCell<SymbolTable>>)->Result<(),Error>
     {
         let cond_type = self.analyze_expression(condition,parent_function,symbol_table)?;
         if cond_type.get_type() != "bool" {
@@ -162,9 +161,9 @@ impl<'a> Anaylzer<'a> {
         self.analyze_body(body,parent_function,Some(symbol_table),true)?;
         Ok(())
     }
-    fn analyze_for(&self,init:&Option<Box<StatementNode>>,condition:&Option<ExpressionNode>,
-                   increment:&Option<Box<StatementNode>>,body:&Vec<StatementNode>,
-                   parent_function:&FunctionNode,symbol_table:&Rc<RefCell<SymbolTable>>)->Result<(),Error>
+    fn analyze_for(&self,init:&Option<&'a StatementNode<'a>>,condition:&Option<ExpressionNode<'a>>,
+                   increment:&Option<&'a StatementNode<'a>>,body:&[StatementNode<'a>],
+                   parent_function:&FunctionNode<'a>,symbol_table:&Rc<RefCell<SymbolTable>>)->Result<(),Error>
     {
         let for_scope = Rc::new(RefCell::new(SymbolTable::new(Some(symbol_table.clone()))));
         (*symbol_table).borrow_mut().add_child(for_scope.clone());
@@ -185,21 +184,21 @@ impl<'a> Anaylzer<'a> {
         Ok(())
     }
     ///return type is returned currently int and float supported
-    fn analyze_declaration(&self,left:&SyntaxToken,right:&ExpressionNode,parent_function:&FunctionNode,
+    fn analyze_declaration(&self,left:&SyntaxToken,right:&ExpressionNode<'a>,parent_function:&FunctionNode<'a>,
                            symbol_table:&Rc<RefCell<SymbolTable>>)->Result<(),Error> {
         //return right type
         let right=self.analyze_expression(right,parent_function,symbol_table)?;
         (*symbol_table).as_ref().borrow_mut().add_symbol(left.text.clone(),right.clone())?;
         Ok(())
     }
-    fn analyze_assignment(&self,left:&SyntaxToken,right:&ExpressionNode,parent_function:&FunctionNode,
+    fn analyze_assignment(&self,left:&SyntaxToken,right:&ExpressionNode<'a>,parent_function:&FunctionNode<'a>,
                           symbol_table:&Rc<RefCell<SymbolTable>>)->Result<(),Error> {
         let r=self.analyze_expression(right,parent_function,symbol_table)?;
         let l =(*symbol_table).as_ref().borrow().get_symbol(left.clone())?;
         self.compare_data_type(&l,&r,&left.position)?;
         Ok(())
     }
-    fn analyze_expression(&self,expression:&ExpressionNode,parent_function:&FunctionNode,
+    fn analyze_expression(&self,expression:&ExpressionNode<'a>,parent_function:&FunctionNode<'a>,
                           symbol_table:&Rc<RefCell<SymbolTable>>)->Result<Type,Error> {
         return match expression
         {
@@ -233,7 +232,7 @@ impl<'a> Anaylzer<'a> {
                 Ok(self.analyze_expression(expr,parent_function,symbol_table)?),
         };
     }
-    fn analyze_binary_expression(&self,left:&ExpressionNode,opr:&SyntaxToken,right:&ExpressionNode,parent_function:&FunctionNode,
+    fn analyze_binary_expression(&self,left:&ExpressionNode<'a>,opr:&SyntaxToken,right:&ExpressionNode<'a>,parent_function:&FunctionNode<'a>,
                                  symbol_table:&Rc<RefCell<SymbolTable>>)->Result<Type,Error> {
         let left_value = self.analyze_expression(left,parent_function,symbol_table)?;
         let right_value = self.analyze_expression(right,parent_function,symbol_table)?;
@@ -270,10 +269,10 @@ impl<'a> Anaylzer<'a> {
         Ok(r)
     }
 
-    fn analyze_if_else(&self, condition:&ExpressionNode, if_body:&Vec<StatementNode>,
-                       else_if:&Vec<(ExpressionNode, Vec<StatementNode>)>,
-                       else_body: &Option<Vec<StatementNode>>,
-                       parent_function:&FunctionNode, symbol_table:&Rc<RefCell<SymbolTable>>,has_parent_while:bool) ->
+    fn analyze_if_else(&self, condition:&ExpressionNode<'a>, if_body:&[StatementNode<'a>],
+                       else_if:&Vec<(ExpressionNode<'a>, &'a [StatementNode<'a>])>,
+                       else_body: &Option<&'a [StatementNode<'a>]>,
+                       parent_function:&FunctionNode<'a>, symbol_table:&Rc<RefCell<SymbolTable>>,has_parent_while:bool) ->
     Result<(),Error>
     {
         //if condition
@@ -300,7 +299,7 @@ impl<'a> Anaylzer<'a> {
         }
         Ok(())
     }
-    fn analyze_return(&self,expression:&Option<ExpressionNode>,parent_function:&FunctionNode,
+    fn analyze_return(&self,expression:&Option<ExpressionNode<'a>>,parent_function:&FunctionNode<'a>,
                       symbol_table:&Rc<RefCell<SymbolTable>>)->Result<(),Error> {
         match (expression,&parent_function.return_type)
         {

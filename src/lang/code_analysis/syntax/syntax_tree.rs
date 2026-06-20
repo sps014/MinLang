@@ -1,15 +1,15 @@
 use crate::lang::code_analysis::syntax::syntax_node::ProgramNode;
 
-pub struct SyntaxTree {
-    root:ProgramNode,
+pub struct SyntaxTree<'a> {
+    root:ProgramNode<'a>,
 }
-impl SyntaxTree {
-    pub fn new(root:ProgramNode) -> SyntaxTree {
+impl<'a> SyntaxTree<'a> {
+    pub fn new(root:ProgramNode<'a>) -> SyntaxTree<'a> {
         SyntaxTree {
             root,
         }
     }
-    pub fn get_root(&self) -> ProgramNode {
-        self.root.clone()
+    pub fn get_root(&self) -> &ProgramNode<'a> {
+        &self.root
     }
 }
