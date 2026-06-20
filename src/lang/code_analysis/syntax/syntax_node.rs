@@ -3,14 +3,26 @@ use std::io::{Error, ErrorKind};
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 
 #[derive(Debug,Clone)]
+pub struct ImportNode
+{
+    pub module_name: SyntaxToken,
+}
+impl ImportNode {
+    pub fn new(module_name: SyntaxToken) -> ImportNode {
+        ImportNode { module_name }
+    }
+}
+
+#[derive(Debug,Clone)]
 pub struct ProgramNode
 {
+    pub imports: Vec<ImportNode>,
     pub functions: Vec<FunctionNode>,
 }
 
 impl ProgramNode {
-    pub fn new(functions: Vec<FunctionNode>) -> ProgramNode {
-        ProgramNode { functions }
+    pub fn new(imports: Vec<ImportNode>, functions: Vec<FunctionNode>) -> ProgramNode {
+        ProgramNode { imports, functions }
     }
 }
 
@@ -21,11 +33,12 @@ pub struct FunctionNode
     pub return_type: Option<Type>,
     pub parameters: Vec<ParameterNode>,
     pub body: Vec<StatementNode>,
+    pub is_exported: bool,
 }
 
 impl FunctionNode {
-    pub fn new(name: SyntaxToken, return_type: Option<Type>, parameters: Vec<ParameterNode>, body: Vec<StatementNode>) -> FunctionNode {
-        FunctionNode { name, return_type, parameters, body }
+    pub fn new(name: SyntaxToken, return_type: Option<Type>, parameters: Vec<ParameterNode>, body: Vec<StatementNode>, is_exported: bool) -> FunctionNode {
+        FunctionNode { name, return_type, parameters, body, is_exported }
     }
 }
 

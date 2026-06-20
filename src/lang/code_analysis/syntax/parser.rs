@@ -1,5 +1,5 @@
 use std::io::{Error, ErrorKind};
-use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, Type, ParameterNode, ProgramNode, StatementNode};
+use crate::lang::code_analysis::syntax::syntax_node::{ExpressionNode, FunctionNode, Type, ParameterNode, ProgramNode, StatementNode, ImportNode};
 use crate::lang::code_analysis::syntax::syntax_tree::SyntaxTree;
 use crate::lang::code_analysis::text::line_text::LineText;
 use crate::lang::code_analysis::text::text_span::TextSpan;
@@ -82,17 +82,36 @@ impl<'a> Parser<'a>
     ///get all functions in the file
     fn parse_program(&mut self)->Result<ProgramNode,Error>
     {
+        let mut imports=vec![];
         let mut functions=vec![];
+        
+        while self.current_token().kind == TokenKind::ImportToken {
+            imports.push(self.parse_import()?);
+        }
+        
         while self.current_token().kind!=TokenKind::EndOfFileToken
         {
             let function=self.parse_function()?;
             functions.push(function);
         }
-        Ok(ProgramNode::new(functions))
+        Ok(ProgramNode::new(imports, functions))
+    }
+    
+    fn parse_import(&mut self)->Result<ImportNode,Error>
+    {
+        self.match_token(TokenKind::ImportToken)?;
+        let module_name = self.match_token(TokenKind::StringToken)?;
+        Ok(ImportNode::new(module_name))
     }
     ///parse a function
     fn parse_function(&mut self)->Result<FunctionNode,Error>
     {
+        let mut is_exported = false;
+        if self.current_token().kind == TokenKind::ExportToken {
+            self.match_token(TokenKind::ExportToken)?;
+            is_exported = true;
+        }
+        
         //eat the fun keyword
         self.match_token(TokenKind::FunToken)?;
         let function_name=self.match_token(TokenKind::IdentifierToken)?;
@@ -106,7 +125,7 @@ impl<'a> Parser<'a>
             return_type=Some(Type::from_token(type_r)?);
         }
         let block=self.parse_block()?;
-        Ok(FunctionNode::new(function_name,return_type,params,block))
+        Ok(FunctionNode::new(function_name,return_type,params,block,is_exported))
     }
     ///parse formal parameters
     fn parse_formal_parameters(&mut self)->Result<Vec<ParameterNode>,Error>

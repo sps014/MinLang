@@ -50,6 +50,8 @@ impl<'a> Lexer<'a> {
         map.push((TokenKind::ReturnToken,r"return\b"));
         map.push((TokenKind::BreakToken,r"break\b"));
         map.push((TokenKind::ContinueToken,r"continue\b"));
+        map.push((TokenKind::ImportToken,r"import\b"));
+        map.push((TokenKind::ExportToken,r"export\b"));
 
         map.push((TokenKind::LineCommentToken,"/s*/[^\n]*[\n]?"));
         map.push((TokenKind::BlockCommentToken,r"/\*[^*]*\*+(?:[^/*][^*]*\*+)*/"));

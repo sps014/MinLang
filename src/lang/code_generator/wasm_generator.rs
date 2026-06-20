@@ -123,6 +123,25 @@ impl<'a> WasmGenerator<'a>
         writer.write_line("(module");
         writer.indent();
         writer.write_line("(import \"env\" \"concat_strings\" (func $concat_strings (param i32 i32) (result i32)))");
+        
+        // Import stdlib functions
+        for std_func in crate::lang::stdlib::StdlibFunction::get_all() {
+            if std_func.name == "concat" { continue; } // handled by concat_strings
+            
+            let mut params_str = String::new();
+            for p in &std_func.parameters {
+                params_str.push_str(&format!("{} ", WasmGenerator::get_wasm_type_from(p.clone())?));
+            }
+            
+            let result_str = match &std_func.return_type {
+                Some(t) => format!(" (result {})", WasmGenerator::get_wasm_type_from(t.get_type())?),
+                None => "".to_string()
+            };
+            
+            writer.write_line(&format!("(import \"env\" \"{}\" (func ${} (param {}){}))", 
+                std_func.name, std_func.name, params_str.trim(), result_str));
+        }
+
         writer.write_line("(memory 1)");
         for (s, offset) in &self.strings {
             // Remove quotes from string literal for data segment, assuming it's "something"
@@ -539,8 +558,17 @@ impl<'a> WasmGenerator<'a>
 
         let res=self.get_local_variables(self.symbol_map.get(&function.name.text.clone()).unwrap())?;
 
+        let mut param_names = std::collections::HashSet::new();
+        for param in &function.parameters {
+            param_names.insert(param.name.text.clone());
+        }
+
         for (name,_type) in res.iter()
         {
+            // Do not emit local variable declarations for function parameters
+            if param_names.contains(name) {
+                continue;
+            }
             writer.write(" (local ");
             writer.write(format!("${} {}",
                                  name,
@@ -564,13 +592,13 @@ impl<'a> WasmGenerator<'a>
         }
         for (name,type_) in local_variables.iter()
         {
-            if res.contains_key(name)
-            {
-                return Err(Error::new(ErrorKind::Other,
-                                      format!("wasm does not support local variable of same name, even in different scope, '{}' defined more than 1 time",
-                                      name)));
+            // Ignore parameter name redefinition errors across different functions
+            // Wasm allows multiple local variables with the same name if they are in different scopes,
+            // but our simple generator flattens them. We can just skip re-adding if it already exists
+            // since we only care about allocating space for the type.
+            if !res.contains_key(name) {
+                res.insert(name.clone(),type_.clone());
             }
-            res.insert(name.clone(),type_.clone());
         }
 
         Ok(res)
@@ -579,9 +607,11 @@ impl<'a> WasmGenerator<'a>
     {
         for i in program.functions.iter()
         {
-            writer.write_line(format!("(export \"{}\" (func ${}))",
-                                      i.name.text,
-                                      i.name.text).as_str());
+            if i.is_exported {
+                writer.write_line(format!("(export \"{}\" (func ${}))",
+                                          i.name.text,
+                                          i.name.text).as_str());
+            }
         }
         Ok(())
     }

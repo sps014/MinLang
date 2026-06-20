@@ -48,6 +48,8 @@ pub enum TokenKind
     ContinueToken,
     LetToken,
     FunToken,
+    ImportToken,
+    ExportToken,
     DataTypeToken,
 
     LineCommentToken,

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use crate::lang::code_analysis::syntax::syntax_node::{FunctionNode, Type};
+use crate::lang::stdlib::StdlibFunction;
 
 #[derive(Debug, Clone)]
 pub struct FunctionTable {
@@ -10,9 +11,20 @@ pub struct FunctionTable {
 
 impl FunctionTable {
     pub fn new() -> FunctionTable {
-        FunctionTable {
+        let mut table = FunctionTable {
             functions: HashMap::new(),
+        };
+        
+        for std_func in StdlibFunction::get_all() {
+            let info = FunctionTableInfo::new(
+                std_func.name.clone(),
+                std_func.return_type,
+                std_func.parameters,
+            );
+            table.functions.insert(std_func.name, info);
         }
+        
+        table
     }
 
     pub fn add_function(&mut self, name: String, function_info: FunctionTableInfo) -> Result<(), Error>
