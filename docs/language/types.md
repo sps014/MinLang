@@ -15,14 +15,14 @@
 
 Append `[]` to any type to get an array of that type:
 
-```minlang
+```kotlin
 let nums: int[] = [10, 20, 30];
 let names: string[] = ["a", "b", "c"];
 ```
 
 Array access is zero-indexed:
 
-```minlang
+```kotlin
 let first = nums[0];   // 10
 nums[1] = 99;
 ```
@@ -33,7 +33,7 @@ Arrays are fixed-size once created from a literal. For a growable list, use [`Li
 
 Any reference type can be marked nullable with `?`. A nullable variable may hold either a real value or `null`:
 
-```minlang
+```kotlin
 let node: Node? = null;
 node = Node { value: 5, next: null };
 ```
@@ -52,7 +52,7 @@ A universal container that can hold any value at runtime. Useful for heterogeneo
 
 Use a C-style cast to convert between numeric types or between a value and `object`:
 
-```minlang
+```kotlin
 let n = 7;
 let f = (float)n;        // int -> float
 let back = (int)f;       // float -> int

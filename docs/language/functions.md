@@ -2,7 +2,7 @@
 
 ## Defining a function
 
-```minlang
+```kotlin
 fun add(a: int, b: int): int {
     return a + b;
 }
@@ -14,7 +14,7 @@ fun add(a: int, b: int): int {
 
 ## Calling a function
 
-```minlang
+```kotlin
 let result = add(3, 4);
 ```
 
@@ -22,7 +22,7 @@ let result = add(3, 4);
 
 Use `return`:
 
-```minlang
+```kotlin
 fun clamp(value: int, lo: int, hi: int): int {
     if (value < lo) { return lo; }
     if (value > hi) { return hi; }
@@ -36,7 +36,7 @@ The compiler checks that all code paths return a value when the return type is n
 
 Functions can call themselves:
 
-```minlang
+```kotlin
 fun fib(n: int): int {
     if (n <= 1) { return n; }
     return fib(n - 1) + fib(n - 2);
@@ -47,7 +47,7 @@ fun fib(n: int): int {
 
 Add `<TypeParam>` after the function name to make it generic. The type parameter stands in for any concrete type:
 
-```minlang
+```kotlin
 fun identity<T>(value: T): T {
     return value;
 }
@@ -63,7 +63,7 @@ The compiler generates a separate copy of the function body for each distinct ty
 
 Multiple type parameters are allowed:
 
-```minlang
+```kotlin
 fun pair_first<A, B>(a: A, b: B): A {
     return a;
 }
@@ -73,7 +73,7 @@ fun pair_first<A, B>(a: A, b: B): A {
 
 Mark a function `export` to expose it to the WebAssembly host environment:
 
-```minlang
+```kotlin
 export fun compute(n: int): int {
     return n * n;
 }

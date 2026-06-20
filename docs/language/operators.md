@@ -12,13 +12,13 @@
 
 Both operands must be the same type. Use an explicit cast if they differ:
 
-```minlang
+```kotlin
 let x = 7 / (float)2;   // 3.5
 ```
 
 String concatenation uses `+`:
 
-```minlang
+```kotlin
 let msg = "Hello, " + name + "!";
 ```
 
@@ -51,7 +51,7 @@ Both sides of `&&` and `||` must be `bool`.
 
 `=` assigns a new value to a variable, array element, or struct field:
 
-```minlang
+```kotlin
 x = 10;
 arr[0] = 99;
 point.x = 3;
@@ -61,7 +61,7 @@ point.x = 3;
 
 Prefix `-` negates a numeric value:
 
-```minlang
+```kotlin
 let neg = -x;
 ```
 

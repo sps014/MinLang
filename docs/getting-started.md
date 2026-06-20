@@ -18,7 +18,7 @@ The binary ends up at `target/release/min_lang`. You can run it directly from th
 
 Create a file called `hello.ml`:
 
-```minlang
+```kotlin
 fun main(): void {
     print("Hello, world!\n");
 }
@@ -48,7 +48,7 @@ This writes a `hello.wat` file next to your source.
 
 ## A slightly bigger example
 
-```minlang
+```kotlin
 fun factorial(n: int): int {
     if (n <= 1) {
         return 1;

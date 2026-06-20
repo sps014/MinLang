@@ -4,7 +4,7 @@ Structs are user-defined types that group related data together.
 
 ## Defining a struct
 
-```minlang
+```kotlin
 struct Point {
     x: int;
     y: int;
@@ -15,7 +15,7 @@ Fields are declared as `name: type;` pairs. There are no default values; every f
 
 ## Creating an instance
 
-```minlang
+```kotlin
 let p = Point { x: 3, y: 4 };
 ```
 
@@ -25,7 +25,7 @@ Fields can be provided in any order.
 
 Use `.`:
 
-```minlang
+```kotlin
 print(p.x);      // 3
 p.x = 10;
 print(p.x);      // 10
@@ -35,7 +35,7 @@ print(p.x);      // 10
 
 Define methods inside the struct body using `fun`. Methods automatically receive a `this` parameter that refers to the current instance:
 
-```minlang
+```kotlin
 struct Counter {
     count: int;
 
@@ -62,7 +62,7 @@ Methods are called with `instance.method(args)`. The `this` parameter is implici
 
 Append `?` to a struct type to allow `null`:
 
-```minlang
+```kotlin
 struct Node {
     value: int;
     next: Node?;
@@ -76,7 +76,7 @@ head = Node { value: 1, next: null };
 
 A struct can hold a nullable reference to itself (non-nullable self-references would have infinite size):
 
-```minlang
+```kotlin
 struct Node {
     value: int;
     next: Node?;
@@ -91,7 +91,7 @@ struct Node {
 
 Mark a struct `export` to make it visible to the WebAssembly host:
 
-```minlang
+```kotlin
 export struct Vec2 {
     x: float;
     y: float;

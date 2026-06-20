@@ -6,7 +6,7 @@ Generics let you write code that works for any type without duplicating it. MinL
 
 Add `<T>` after the function name:
 
-```minlang
+```kotlin
 fun first<T>(arr: T[]): T {
     return arr[0];
 }
@@ -24,7 +24,7 @@ The type argument can often be inferred from the call site, though explicit `<Ty
 
 Multiple type parameters:
 
-```minlang
+```kotlin
 fun swap<A, B>(a: A, b: B): A {
     return a;
 }
@@ -34,7 +34,7 @@ fun swap<A, B>(a: A, b: B): A {
 
 Structs can be generic too:
 
-```minlang
+```kotlin
 struct Pair<A, B> {
     first: A;
     second: B;
@@ -53,7 +53,7 @@ fun main(): void {
 
 Methods on generic structs automatically have access to the struct's type parameters:
 
-```minlang
+```kotlin
 struct Box<T> {
     value: T;
 
@@ -77,7 +77,7 @@ fun main(): void {
 
 Use `is` to branch on the concrete type at compile time. The compiler eliminates dead branches entirely:
 
-```minlang
+```kotlin
 fun describe<T>(v: T): void {
     if (v is int) {
         print("it's an int: ");

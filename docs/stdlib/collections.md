@@ -12,7 +12,7 @@ A growable sequence of values of type `T`, backed by a doubling array. Random ac
 
 ### Creating a list
 
-```minlang
+```kotlin
 let nums = List<int>();
 let words = List<string>();
 ```
@@ -23,7 +23,7 @@ let words = List<string>();
 
 Appends a value to the end. Grows the backing buffer if needed.
 
-```minlang
+```kotlin
 nums.push(10);
 nums.push(20);
 nums.push(30);
@@ -33,7 +33,7 @@ nums.push(30);
 
 Number of elements currently in the list.
 
-```minlang
+```kotlin
 print(nums.size());   // 3
 ```
 
@@ -41,7 +41,7 @@ print(nums.size());   // 3
 
 Returns the element at `index`. No bounds checking — going out of range is undefined behaviour.
 
-```minlang
+```kotlin
 print(nums.get(0));   // 10
 ```
 
@@ -49,7 +49,7 @@ print(nums.get(0));   // 10
 
 Overwrites the element at `index`.
 
-```minlang
+```kotlin
 nums.set(1, 99);
 print(nums.get(1));   // 99
 ```
@@ -58,7 +58,7 @@ print(nums.get(1));   // 99
 
 Removes and returns the last element. Does not check if the list is empty.
 
-```minlang
+```kotlin
 let last = nums.pop();
 ```
 
@@ -66,7 +66,7 @@ let last = nums.pop();
 
 Returns `true` if the value is present. Uses value equality (string contents, not pointers).
 
-```minlang
+```kotlin
 print(nums.contains(99));    // true
 print(nums.contains(1000));  // false
 ```
@@ -75,7 +75,7 @@ print(nums.contains(1000));  // false
 
 Returns the index of the first matching element, or `-1` if not found.
 
-```minlang
+```kotlin
 let i = nums.index_of(99);   // 1 (or -1 if absent)
 ```
 
@@ -83,7 +83,7 @@ let i = nums.index_of(99);   // 1 (or -1 if absent)
 
 Resets the element count to zero. Does not resize the backing buffer.
 
-```minlang
+```kotlin
 nums.clear();
 print(nums.size());   // 0
 ```
@@ -92,13 +92,13 @@ print(nums.size());   // 0
 
 Removes the element at `index` by shifting everything after it left. O(n) in the worst case.
 
-```minlang
+```kotlin
 nums.remove_at(0);   // removes the first element
 ```
 
 ### Example
 
-```minlang
+```kotlin
 fun main(): void {
     let xs = List<int>();
     let i = 0;
@@ -124,7 +124,7 @@ An open-addressing hash map with linear probing. Average O(1) for put, get, cont
 
 ### Creating a map
 
-```minlang
+```kotlin
 let scores = Map<string, int>();
 let cache  = Map<int, string>();
 ```
@@ -135,7 +135,7 @@ let cache  = Map<int, string>();
 
 Inserts or updates the value for `key`.
 
-```minlang
+```kotlin
 scores.put("alice", 95);
 scores.put("bob", 80);
 scores.put("alice", 100);   // overwrites 95
@@ -145,7 +145,7 @@ scores.put("alice", 100);   // overwrites 95
 
 Returns the value for `key`. If the key is absent, returns the zero value of `V` (`0` for `int`, `null` for references).
 
-```minlang
+```kotlin
 print(scores.get("alice"));   // 100
 print(scores.get("nobody"));  // 0
 ```
@@ -154,7 +154,7 @@ print(scores.get("nobody"));  // 0
 
 Returns the value for `key`, or `fallback` if the key is absent.
 
-```minlang
+```kotlin
 let v = scores.get_or("nobody", -1);   // -1
 ```
 
@@ -162,7 +162,7 @@ let v = scores.get_or("nobody", -1);   // -1
 
 Returns `true` if the key is present.
 
-```minlang
+```kotlin
 print(scores.contains("bob"));     // true
 print(scores.contains("nobody"));  // false
 ```
@@ -171,7 +171,7 @@ print(scores.contains("nobody"));  // false
 
 Removes the key and returns `true` if it existed, `false` otherwise.
 
-```minlang
+```kotlin
 let removed = scores.remove("bob");   // true
 ```
 
@@ -179,13 +179,13 @@ let removed = scores.remove("bob");   // true
 
 Number of key-value pairs currently in the map.
 
-```minlang
+```kotlin
 print(scores.size());   // 1 (only alice after removing bob)
 ```
 
 ### Example
 
-```minlang
+```kotlin
 fun main(): void {
     let freq = Map<string, int>();
     let words = ["the", "cat", "sat", "on", "the", "mat"];

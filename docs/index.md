@@ -2,7 +2,7 @@
 
 MinLang is a statically typed language that compiles to WebAssembly. It has a simple, readable syntax and manages memory automatically — no garbage collector, no manual frees.
 
-```minlang
+```kotlin
 fun greet(name: string): string {
     return "Hello, " + name;
 }

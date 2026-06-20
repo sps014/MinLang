@@ -4,7 +4,7 @@
 
 Use `let` to declare a local variable. The type is inferred from the right-hand side:
 
-```minlang
+```kotlin
 let x = 42;          // int
 let name = "Alice";  // string
 let ratio = 3.14;    // float
@@ -13,7 +13,7 @@ let done = false;    // bool
 
 You can also write the type explicitly. This is required when the initializer alone is ambiguous:
 
-```minlang
+```kotlin
 let score: double = 99.5d;
 let items: int[] = [1, 2, 3];
 ```
@@ -22,7 +22,7 @@ let items: int[] = [1, 2, 3];
 
 Variables are mutable by default. Assign a new value with `=`:
 
-```minlang
+```kotlin
 let count = 0;
 count = count + 1;
 ```
@@ -31,7 +31,7 @@ count = count + 1;
 
 Variables live until the end of the block they are declared in. When a reference-typed variable (string, array, struct) goes out of scope, its reference count is decremented automatically.
 
-```minlang
+```kotlin
 fun main(): void {
     let a = 10;
     {
@@ -55,7 +55,7 @@ The compiler infers the type from the initializer expression. A few things to wa
 
 If inference gives you the wrong type, add an explicit annotation or a suffix:
 
-```minlang
+```kotlin
 let pi: double = 3.14159;   // explicit annotation
 let pi2 = 3.14159d;         // suffix
 ```

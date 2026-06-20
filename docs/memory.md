@@ -23,7 +23,7 @@ Every heap-allocated object has a reference count in its header. The compiler in
 
 You don't write any of this yourself.
 
-```minlang
+```kotlin
 fun make_list(): int[] {
     let arr = [1, 2, 3];   // allocated, ref_count = 1
     return arr;            // retained before locals released, count stays 1
