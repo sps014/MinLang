@@ -49,7 +49,7 @@ impl<'a> WasmGenerator<'a> {
             struct_table: &semantic_info.struct_table,
             combined_symbol_lookup: HashMap::new(),
             strings: HashMap::new(),
-            next_string_offset: 0,
+            next_string_offset: 4, // Start at 4 so 0 can be used as null pointer
             loop_counter: 0,
             loop_stack: Vec::new(),
         }

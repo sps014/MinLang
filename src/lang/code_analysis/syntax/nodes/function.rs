@@ -6,12 +6,12 @@ use super::types::Type;
 #[derive(Debug, Clone)]
 pub struct ParameterNode {
     pub name: SyntaxToken,
-    pub type_: SyntaxToken,
+    pub type_: Type,
 }
 
 impl ParameterNode {
     /// Creates a new parameter node
-    pub fn new(name: SyntaxToken, type_: SyntaxToken) -> ParameterNode {
+    pub fn new(name: SyntaxToken, type_: Type) -> ParameterNode {
         ParameterNode { name, type_ }
     }
 }

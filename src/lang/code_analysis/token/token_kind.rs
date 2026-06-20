@@ -13,7 +13,7 @@ pub enum TokenKind
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*")]
     IdentifierToken,
     
-    #[regex(r"[0-9]+(\.[0-9]+)?")]
+    #[regex(r"[0-9]+(\.[0-9]+)?([dDfF])?")]
     NumberToken,
     
     #[regex(r#""([^"\\]*(\\.[^"\\]*)*)""#)]
@@ -67,6 +67,8 @@ pub enum TokenKind
     CommaToken,
     #[token(".")]
     DotToken,
+    #[token("?")]
+    QuestionMarkToken,
     
     #[token("(")]
     OpenParenthesisToken,
@@ -105,9 +107,12 @@ pub enum TokenKind
     ExportToken,
     #[token("struct")]
     StructToken,
+    #[token("null")]
+    NullToken,
     
     #[token("int")]
     #[token("float")]
+    #[token("double")]
     #[token("string")]
     #[token("bool")]
     #[token("void")]

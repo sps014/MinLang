@@ -4,11 +4,13 @@ MinLang is a statically typed, compiled programming language that targets WebAss
 
 ## Features
 
-- **Static Typing**: Supports `int`, `float`, `string`, `bool`, and `void` types.
+- **Static Typing**: Supports `int`, `float`, `double`, `string`, `bool`, and `void` types.
+- **Nullable Types**: Reference types can be nullable using the `?` suffix (e.g., `Node?`) and assigned `null`.
 - **Type Casting**: C-style explicit type casting (e.g., `(float)10`, `(int)3.14`).
-- **Structs**: User-defined composite data types with field access and assignment.
-- **Arrays**: Native support for arrays (`int[]`, `float[]`, `string[]`, `Struct[]`).
-- **Memory Management**: Automatic Reference Counting (ARC) backed by a fast Freelist allocator in WebAssembly.
+- **Structs**: User-defined composite data types with field access and assignment. Supports C-style memory alignment.
+- **Export Control**: Functions and structs can be marked with `export` to expose them to the host environment. The compiler ensures exported functions do not expose private structs.
+- **Arrays**: Native support for arrays (`int[]`, `float[]`, `double[]`, `string[]`, `Struct[]`).
+- **Memory Management**: Automatic Reference Counting (ARC) backed by a fast Freelist allocator in WebAssembly. Memory is automatically retained on assignment/return and released when variables go out of scope.
 - **Control Flow**: `if`/`else if`/`else`, `while` loops, and `for` loops with `break` and `continue` support.
 - **Functions**: First-class functions with parameters and return types.
 - **WebAssembly Target**: Compiles directly to WebAssembly Text format (`.wat`) and executes via `wasmtime`.
@@ -88,29 +90,41 @@ fun main(): void {
 }
 ```
 
-### Structs & Memory Management
+### Structs, Nullable Types & Memory Management
 
 ```minlang
-struct Point {
-    x: int;
-    y: int;
+struct Node {
+    value: int;
+    next: Node?;
 }
 
-struct Rect {
-    p1: Point;
-    p2: Point;
+fun create_list(n: int): Node? {
+    if n <= 0 {
+        return null;
+    }
+    let head = Node { value: n, next: null };
+    let curr: Node? = head;
+    let i = n - 1;
+    while i > 0 {
+        curr.next = Node { value: i, next: null };
+        curr = curr.next;
+        i = i - 1;
+    }
+    return head;
 }
 
 fun main(): void {
-    let p1 = Point { x: 10, y: 20 };
-    let p2 = Point { x: 30, y: 40 };
+    let list = create_list(3);
     
-    let r = Rect { p1: p1, p2: p2 };
-    
-    print_int(r.p1.x); // 10
+    let curr = list;
+    while curr != null {
+        print_int(curr.value);
+        curr = curr.next;
+    }
     
     // Memory is allocated via a fast Freelist allocator
-    // and managed via Automatic Reference Counting (ARC)
+    // and managed via Automatic Reference Counting (ARC).
+    // When `list` goes out of scope, the entire linked list is automatically freed.
 }
 ```
 

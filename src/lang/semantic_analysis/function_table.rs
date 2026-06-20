@@ -73,7 +73,7 @@ impl FunctionTableInfo {
         for i in func.parameters.iter()
         {
             let j=i.clone();
-            parameters.push(j.type_.text);
+            parameters.push(j.type_.get_type());
         }
         FunctionTableInfo::new(name.text, return_type, parameters)
     }

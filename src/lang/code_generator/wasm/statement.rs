@@ -79,13 +79,21 @@ impl<'a> WasmGenerator<'a> {
         let inner_type_str = array_type_str[..array_type_str.len() - 2].to_string();
         let wasm_type = WasmGenerator::get_wasm_type_from(inner_type_str.clone())?;
         
-        // Calculate the memory address: ptr + 4 + (index * 4)
+        let element_size = match inner_type_str.as_str() {
+            "bool" => 1,
+            "double" => 8,
+            _ => 4,
+        };
+        
+        // Calculate the memory address: ptr + 4 + (index * element_size)
         self.build_expression(arr, &array_type_str, function, writer)?;
         writer.write_line("i32.const 4");
         writer.write_line("i32.add");
         self.build_expression(index, &"int".to_string(), function, writer)?;
-        writer.write_line("i32.const 4");
-        writer.write_line("i32.mul");
+        if element_size != 1 {
+            writer.write_line(&format!("i32.const {}", element_size));
+            writer.write_line("i32.mul");
+        }
         writer.write_line("i32.add");
         writer.write_line("local.set $scratch_addr");
         
@@ -107,7 +115,11 @@ impl<'a> WasmGenerator<'a> {
             self.build_expression(expression, &inner_type_str, function, writer)?;
         }
         
-        if wasm_type == "f32" {
+        if inner_type_str == "bool" {
+            writer.write_line("i32.store8");
+        } else if wasm_type == "f64" {
+            writer.write_line("f64.store");
+        } else if wasm_type == "f32" {
             writer.write_line("f32.store");
         } else {
             writer.write_line("i32.store");
@@ -119,7 +131,12 @@ impl<'a> WasmGenerator<'a> {
     /// Builds a member assignment
     pub fn build_member_assignment(&mut self, obj: &ExpressionNode<'a>, member: &SyntaxToken, expression: &ExpressionNode<'a>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let obj_type_str = self.infer_expression_type(obj, function)?;
-        let struct_info = self.struct_table.get_struct(&obj_type_str).unwrap().clone();
+        let base_obj_type_str = if obj_type_str.ends_with("?") {
+            obj_type_str[..obj_type_str.len() - 1].to_string()
+        } else {
+            obj_type_str.clone()
+        };
+        let struct_info = self.struct_table.get_struct(&base_obj_type_str).unwrap().clone();
         let field_info = struct_info.fields.get(&member.text).unwrap();
         let offset = field_info.offset;
         let field_type_str = field_info.type_.get_type();
@@ -151,7 +168,11 @@ impl<'a> WasmGenerator<'a> {
             self.build_expression(expression, &field_type_str, function, writer)?;
         }
         
-        if wasm_type == "f32" {
+        if field_type_str == "bool" {
+            writer.write_line("i32.store8");
+        } else if wasm_type == "f64" {
+            writer.write_line("f64.store");
+        } else if wasm_type == "f32" {
             writer.write_line("f32.store");
         } else {
             writer.write_line("i32.store");
@@ -168,13 +189,46 @@ impl<'a> WasmGenerator<'a> {
             
             // If returning a reference type, we need to retain it so it survives the scope exit
             let ret_type_str = return_type.get_type();
-            if ret_type_str == "string" || ret_type_str.ends_with("[]") || self.struct_table.get_struct(&ret_type_str).is_some() {
-                // The value is on the stack. We need to duplicate it, call retain, and leave the original on the stack.
-                // WASM doesn't have `dup`, so we use a temporary local or just call retain if we can.
-                // Wait, we can't easily `dup` in WebAssembly without a local.
-                // Let's use a scratch local or just evaluate it to a local first.
-                // Since this is a bit complex, let's just add a comment for now and implement it properly later.
-                // TODO: Implement ARC retain on return
+            let base_ret_type_str = if ret_type_str.ends_with("?") {
+                ret_type_str[..ret_type_str.len() - 1].to_string()
+            } else {
+                ret_type_str.clone()
+            };
+            
+            if self.is_reference_type(&base_ret_type_str) {
+                // Store in scratch_ptr, retain it, then we will release locals, then put it back on stack
+                writer.write_line("local.set $scratch_ptr");
+                writer.write_line("local.get $scratch_ptr");
+                writer.write_line("call $retain");
+            } else if return_type.get_type() == "double" {
+                writer.write_line("local.set $scratch_double");
+            } else {
+                writer.write_line("local.set $scratch_ptr"); // using scratch_ptr for i32/f32 return values temporarily
+            }
+        }
+        
+        // Release all local reference variables in the current function scope
+        let locals = self.combined_symbol_lookup.get(&function.name.text).unwrap().clone();
+        for (name, type_) in locals.iter() {
+            let type_str = type_.get_type();
+            let base_type_str = if type_str.ends_with("?") {
+                type_str[..type_str.len() - 1].to_string()
+            } else {
+                type_str.clone()
+            };
+            
+            if self.is_reference_type(&base_type_str) {
+                writer.write_line(&format!("local.get ${}", name));
+                writer.write_line(&format!("call $release_{}", base_type_str.replace("[]", "_array")));
+            }
+        }
+
+        if let Some(_) = expression {
+            let return_type = function.return_type.as_ref().unwrap();
+            if return_type.get_type() == "double" {
+                writer.write_line("local.get $scratch_double");
+            } else {
+                writer.write_line("local.get $scratch_ptr");
             }
         }
         

@@ -224,6 +224,153 @@ impl<'a> WasmGenerator<'a> {
         // Generate type-specific release functions
         self.build_type_specific_releases(writer)?;
 
+        // $strlen: Calculates the length of a null-terminated string
+        writer.write_line("(func $strlen (param $ptr i32) (result i32)");
+        writer.indent();
+        writer.write_line("(local $len i32)");
+        writer.write_line("i32.const 0");
+        writer.write_line("local.set $len");
+        writer.write_line("(block $end");
+        writer.indent();
+        writer.write_line("(loop $start");
+        writer.indent();
+        writer.write_line("local.get $ptr");
+        writer.write_line("local.get $len");
+        writer.write_line("i32.add");
+        writer.write_line("i32.load8_u");
+        writer.write_line("i32.eqz");
+        writer.write_line("br_if $end");
+        writer.write_line("local.get $len");
+        writer.write_line("i32.const 1");
+        writer.write_line("i32.add");
+        writer.write_line("local.set $len");
+        writer.write_line("br $start");
+        writer.unindent();
+        writer.write_line(")");
+        writer.unindent();
+        writer.write_line(")");
+        writer.write_line("local.get $len");
+        writer.unindent();
+        writer.write_line(")");
+        writer.write_line("");
+
+        // $concat_strings: Concatenates two strings and returns a new allocated string
+        writer.write_line("(func $concat_strings (param $str1 i32) (param $str2 i32) (result i32)");
+        writer.indent();
+        writer.write_line("(local $len1 i32)");
+        writer.write_line("(local $len2 i32)");
+        writer.write_line("(local $new_ptr i32)");
+        writer.write_line("(local $i i32)");
+        
+        // len1 = strlen(str1)
+        writer.write_line("local.get $str1");
+        writer.write_line("call $strlen");
+        writer.write_line("local.set $len1");
+        
+        // len2 = strlen(str2)
+        writer.write_line("local.get $str2");
+        writer.write_line("call $strlen");
+        writer.write_line("local.set $len2");
+        
+        // new_ptr = malloc(len1 + len2 + 1)
+        writer.write_line("local.get $len1");
+        writer.write_line("local.get $len2");
+        writer.write_line("i32.add");
+        writer.write_line("i32.const 1");
+        writer.write_line("i32.add");
+        writer.write_line("call $malloc");
+        writer.write_line("local.set $new_ptr");
+        
+        // Copy str1
+        writer.write_line("i32.const 0");
+        writer.write_line("local.set $i");
+        writer.write_line("(block $end1");
+        writer.indent();
+        writer.write_line("(loop $start1");
+        writer.indent();
+        writer.write_line("local.get $i");
+        writer.write_line("local.get $len1");
+        writer.write_line("i32.eq");
+        writer.write_line("br_if $end1");
+        
+        writer.write_line("local.get $new_ptr");
+        writer.write_line("local.get $i");
+        writer.write_line("i32.add");
+        
+        writer.write_line("local.get $str1");
+        writer.write_line("local.get $i");
+        writer.write_line("i32.add");
+        writer.write_line("i32.load8_u");
+        
+        writer.write_line("i32.store8");
+        
+        writer.write_line("local.get $i");
+        writer.write_line("i32.const 1");
+        writer.write_line("i32.add");
+        writer.write_line("local.set $i");
+        writer.write_line("br $start1");
+        writer.unindent();
+        writer.write_line(")");
+        writer.unindent();
+        writer.write_line(")");
+        
+        // Copy str2
+        writer.write_line("i32.const 0");
+        writer.write_line("local.set $i");
+        writer.write_line("(block $end2");
+        writer.indent();
+        writer.write_line("(loop $start2");
+        writer.indent();
+        writer.write_line("local.get $i");
+        writer.write_line("local.get $len2");
+        writer.write_line("i32.eq");
+        writer.write_line("br_if $end2");
+        
+        writer.write_line("local.get $new_ptr");
+        writer.write_line("local.get $len1");
+        writer.write_line("i32.add");
+        writer.write_line("local.get $i");
+        writer.write_line("i32.add");
+        
+        writer.write_line("local.get $str2");
+        writer.write_line("local.get $i");
+        writer.write_line("i32.add");
+        writer.write_line("i32.load8_u");
+        
+        writer.write_line("i32.store8");
+        
+        writer.write_line("local.get $i");
+        writer.write_line("i32.const 1");
+        writer.write_line("i32.add");
+        writer.write_line("local.set $i");
+        writer.write_line("br $start2");
+        writer.unindent();
+        writer.write_line(")");
+        writer.unindent();
+        writer.write_line(")");
+        
+        // Null terminator
+        writer.write_line("local.get $new_ptr");
+        writer.write_line("local.get $len1");
+        writer.write_line("local.get $len2");
+        writer.write_line("i32.add");
+        writer.write_line("i32.add");
+        writer.write_line("i32.const 0");
+        writer.write_line("i32.store8");
+        
+        writer.write_line("local.get $new_ptr");
+        writer.unindent();
+        writer.write_line(")");
+        writer.write_line("");
+
+        // $debug_get_free_list_head: Returns the current free list head
+        writer.write_line("(func $debug_get_free_list_head (result i32)");
+        writer.indent();
+        writer.write_line("global.get $free_list_head");
+        writer.unindent();
+        writer.write_line(")");
+        writer.write_line("");
+
         Ok(())
     }
 
@@ -240,6 +387,7 @@ impl<'a> WasmGenerator<'a> {
         // For now, we can just generate release functions for basic array types
         self.build_release_func("int[]", None, writer)?;
         self.build_release_func("float[]", None, writer)?;
+        self.build_release_func("double[]", None, writer)?;
         self.build_release_func("bool[]", None, writer)?;
         self.build_release_func("string[]", None, writer)?;
         

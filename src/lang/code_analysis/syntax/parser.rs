@@ -102,10 +102,10 @@ impl<'a, 'b> Parser<'a, 'b>
         
         while self.current_token().kind!=TokenKind::EndOfFileToken
         {
-            if self.current_token().kind == TokenKind::StructToken {
+            if self.current_token().kind == TokenKind::StructToken || (self.current_token().kind == TokenKind::ExportToken && self.peek_token(1).kind == TokenKind::StructToken) {
                 let struct_decl = self.parse_struct_declaration()?;
                 structs.push(struct_decl);
-            } else if self.current_token().kind == TokenKind::FunToken || self.current_token().kind == TokenKind::ExportToken {
+            } else if self.current_token().kind == TokenKind::FunToken || (self.current_token().kind == TokenKind::ExportToken && self.peek_token(1).kind == TokenKind::FunToken) {
                 let function=self.parse_function()?;
                 functions.push(function);
             } else {
@@ -122,6 +122,12 @@ impl<'a, 'b> Parser<'a, 'b>
     
     /// Parses a struct declaration
     fn parse_struct_declaration(&mut self) -> Result<crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode, Error> {
+        let mut is_exported = false;
+        if self.current_token().kind == TokenKind::ExportToken {
+            self.match_token(TokenKind::ExportToken);
+            is_exported = true;
+        }
+        
         self.match_token(TokenKind::StructToken);
         let struct_name = self.match_token(TokenKind::IdentifierToken);
         self.match_token(TokenKind::CurlyOpenBracketToken);
@@ -143,6 +149,11 @@ impl<'a, 'b> Parser<'a, 'b>
                 field_type_token.text.push_str("[]");
             }
             
+            if self.current_token().kind == TokenKind::QuestionMarkToken {
+                self.match_token(TokenKind::QuestionMarkToken);
+                field_type_token.text.push_str("?");
+            }
+            
             self.match_token(TokenKind::SemicolonToken);
             fields.push(crate::lang::code_analysis::syntax::nodes::struct_node::StructFieldNode {
                 name: field_name,
@@ -151,7 +162,7 @@ impl<'a, 'b> Parser<'a, 'b>
         }
         
         self.match_token(TokenKind::CurlyCloseBracketToken);
-        Ok(crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode::new(struct_name, fields))
+        Ok(crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode::new(struct_name, fields, is_exported))
     }
     
     /// Parses an import statement
@@ -175,6 +186,12 @@ impl<'a, 'b> Parser<'a, 'b>
             self.match_token(TokenKind::OpenBracketToken);
             self.match_token(TokenKind::CloseBracketToken);
             parsed_type = Type::Array(Box::new(parsed_type));
+        }
+        
+        // Check for nullable suffix `?`
+        if self.current_token().kind == TokenKind::QuestionMarkToken {
+            self.match_token(TokenKind::QuestionMarkToken);
+            parsed_type = Type::Nullable(Box::new(parsed_type));
         }
         
         Ok(parsed_type)
@@ -218,23 +235,8 @@ impl<'a, 'b> Parser<'a, 'b>
             //eat the colon
             self.match_token(TokenKind::ColonToken);
             
-            // Note: We keep the parameter type as a SyntaxToken in ParameterNode for now
-            // to avoid changing too much AST structure. We'll parse the actual type during semantic analysis.
-            // But we should consume the `[]` if it's an array type.
-            let mut param_type_token = if self.current_token().kind == TokenKind::DataTypeToken {
-                self.match_token(TokenKind::DataTypeToken)
-            } else {
-                self.match_token(TokenKind::IdentifierToken)
-            };
-            
-            // Check for array suffix `[]`
-            while self.current_token().kind == TokenKind::OpenBracketToken {
-                self.match_token(TokenKind::OpenBracketToken);
-                self.match_token(TokenKind::CloseBracketToken);
-                param_type_token.text.push_str("[]");
-            }
-            
-            params.push(ParameterNode::new(param,param_type_token));
+            let param_type = self.parse_type()?;
+            params.push(ParameterNode::new(param, param_type));
             //if we have comma and it is not trailing comma
             if self.current_token().kind==TokenKind::CommaToken
             {
@@ -446,6 +448,10 @@ impl<'a, 'b> Parser<'a, 'b>
         {
             return Ok(ExpressionNode::Literal(Type::Boolean(self.match_token(TokenKind::BooleanToken))));
         }
+        else if self.current_token().kind==TokenKind::NullToken {
+            let null_token = self.match_token(TokenKind::NullToken);
+            return Ok(ExpressionNode::Literal(Type::Nullable(Box::new(Type::Void)))); // Using Nullable(Void) to represent null literal
+        }
         else if self.current_token().kind==TokenKind::BooleanToken {
             return Ok(ExpressionNode::Literal(Type::Boolean(self.match_token(TokenKind::BooleanToken))));
         }
@@ -505,8 +511,16 @@ impl<'a, 'b> Parser<'a, 'b>
         }
         else if self.current_token().kind==TokenKind::NumberToken
         {
-            if self.current_token().text.contains('.')
-            {
+            let text = self.current_token().text.clone();
+            if text.ends_with('d') || text.ends_with('D') {
+                let mut token = self.next_token();
+                token.text = token.text[..token.text.len() - 1].to_string();
+                return Ok(ExpressionNode::Literal(Type::Double(token)));
+            } else if text.ends_with('f') || text.ends_with('F') {
+                let mut token = self.next_token();
+                token.text = token.text[..token.text.len() - 1].to_string();
+                return Ok(ExpressionNode::Literal(Type::Float(token)));
+            } else if text.contains('.') {
                 return Ok(ExpressionNode::Literal(Type::Float(self.next_token())));
             }
             else {
@@ -611,10 +625,7 @@ impl<'a, 'b> Parser<'a, 'b>
 
         let mut increment: Option<&'a StatementNode<'a>> = None;
         if self.current_token().kind != TokenKind::CurlyOpenBracketToken {
-            // It parses a statement but without a semicolon.
-            // But parse_statement expects a semicolon.
-            // Let's just parse an expression and assignment manually for now, or use parse_statement and handle semicolon.
-            // Actually, in MinLang, the increment part doesn't have a semicolon.
+            // Parse the increment assignment expression (without semicolon)
             let expr = self.parse_primary_expression()?;
             self.match_token(TokenKind::EqualToken);
             let value = self.parse_expression(0)?;

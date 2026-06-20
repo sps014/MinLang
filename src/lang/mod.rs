@@ -4,3 +4,4 @@ pub mod code_generator;
 pub mod stdlib;
 pub mod diagnostics;
 pub mod compiler;
+pub mod execution;

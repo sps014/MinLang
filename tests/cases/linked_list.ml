@@ -1,10 +1,10 @@
 struct Node {
     value: int;
-    next: Node;
+    next: Node?;
 }
 
 fun create_node(val: int): Node {
-    let n = Node { value: val, next: (Node)0 };
+    let n = Node { value: val, next: null };
     return n;
 }
 
@@ -13,8 +13,8 @@ fun main(): void {
     head.next = create_node(20);
     head.next.next = create_node(30);
     
-    let curr = head;
-    while curr != (Node)0 {
+    let curr: Node? = head;
+    while curr != null {
         print_int(curr.value);
         curr = curr.next;
     }

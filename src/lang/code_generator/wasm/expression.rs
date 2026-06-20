@@ -64,7 +64,11 @@ impl<'a> WasmGenerator<'a> {
             
             self.build_expression(expr, &field_info.type_.get_type(), function, writer)?;
             
-            if wasm_type == "f32" {
+            if field_info.type_.get_type() == "bool" {
+                writer.write_line("i32.store8");
+            } else if wasm_type == "f64" {
+                writer.write_line("f64.store");
+            } else if wasm_type == "f32" {
                 writer.write_line("f32.store");
             } else {
                 writer.write_line("i32.store");
@@ -79,7 +83,12 @@ impl<'a> WasmGenerator<'a> {
     /// Builds a member access
     pub fn build_member_access(&mut self, obj: &ExpressionNode<'a>, member: &SyntaxToken, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let obj_type_str = self.infer_expression_type(obj, function)?;
-        let struct_info = self.struct_table.get_struct(&obj_type_str).unwrap().clone();
+        let base_obj_type_str = if obj_type_str.ends_with("?") {
+            obj_type_str[..obj_type_str.len() - 1].to_string()
+        } else {
+            obj_type_str.clone()
+        };
+        let struct_info = self.struct_table.get_struct(&base_obj_type_str).unwrap().clone();
         let field_info = struct_info.fields.get(&member.text).unwrap();
         let offset = field_info.offset;
         let wasm_type = WasmGenerator::get_wasm_type_from(field_info.type_.get_type())?;
@@ -91,7 +100,11 @@ impl<'a> WasmGenerator<'a> {
             writer.write_line("i32.add"); // ptr + offset
         }
         
-        if wasm_type == "f32" {
+        if field_info.type_.get_type() == "bool" {
+            writer.write_line("i32.load8_u");
+        } else if wasm_type == "f64" {
+            writer.write_line("f64.load");
+        } else if wasm_type == "f32" {
             writer.write_line("f32.load");
         } else {
             writer.write_line("i32.load");
@@ -105,11 +118,13 @@ impl<'a> WasmGenerator<'a> {
         let type_ = match literal {
             Type::Integer(i) => format!("i32.const {}", i.text),
             Type::Float(f) => format!("f32.const {}", f.text),
+            Type::Double(d) => format!("f64.const {}", d.text),
             Type::Boolean(f) => format!("i32.const {}", if f.text == "true" { 1 } else { 0 }),
             Type::String(s) => {
                 let offset = self.strings.get(&s.text).unwrap();
                 format!("i32.const {}", offset)
             },
+            Type::Nullable(_) => "i32.const 0".to_string(),
             _ => return Err(Error::new(ErrorKind::Other, format!("unknown literal {:?}", literal)))
         };
         writer.write_line(&type_);
@@ -140,6 +155,17 @@ impl<'a> WasmGenerator<'a> {
             match opr.kind {
                 TokenKind::SlashToken => writer.write_line(&format!("{}.div", symbol)),
                 TokenKind::ModulusToken => writer.write_line(&format!("{}.rem", symbol)),
+                TokenKind::GreaterThanToken => writer.write_line(&format!("{}.gt", symbol)),
+                TokenKind::SmallerThanToken => writer.write_line(&format!("{}.lt", symbol)),
+                TokenKind::GreaterThanEqualToken => writer.write_line(&format!("{}.ge", symbol)),
+                TokenKind::SmallerThanEqualToken => writer.write_line(&format!("{}.le", symbol)),
+                TokenKind::PlusToken | TokenKind::MinusToken | TokenKind::StarToken | TokenKind::EqualEqualToken | TokenKind::NotEqualToken => {},
+                _ => return Err(Error::new(ErrorKind::Other, format!("unknown operator {}", opr.text)))
+            };
+        } else if symbol == "f64" {
+            match opr.kind {
+                TokenKind::SlashToken => writer.write_line(&format!("{}.div", symbol)),
+                TokenKind::ModulusToken => return Err(Error::new(ErrorKind::Other, "modulus not supported for double")),
                 TokenKind::GreaterThanToken => writer.write_line(&format!("{}.gt", symbol)),
                 TokenKind::SmallerThanToken => writer.write_line(&format!("{}.lt", symbol)),
                 TokenKind::GreaterThanEqualToken => writer.write_line(&format!("{}.ge", symbol)),
@@ -212,7 +238,6 @@ impl<'a> WasmGenerator<'a> {
     /// Builds an array literal
     pub fn build_array_literal(&mut self, elements: &Vec<ExpressionNode<'a>>, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let len = elements.len();
-        let total_size = 4 + (len * 4); // 4 bytes for length + 4 bytes per element
         
         let inner_type_str = if left_side.ends_with("[]") {
             left_side[..left_side.len() - 2].to_string()
@@ -220,6 +245,13 @@ impl<'a> WasmGenerator<'a> {
             "int".to_string() // Fallback, shouldn't happen if semantic analysis is correct
         };
         let wasm_type = WasmGenerator::get_wasm_type_from(inner_type_str.clone())?;
+        
+        let element_size = match inner_type_str.as_str() {
+            "bool" => 1,
+            "double" => 8,
+            _ => 4,
+        };
+        let total_size = 4 + (len * element_size); // 4 bytes for length + element_size per element
 
         // 1. Allocate memory using $malloc
         writer.write_line(&format!("i32.const {}", total_size));
@@ -242,14 +274,18 @@ impl<'a> WasmGenerator<'a> {
         
         // 3. Evaluate and store each element
         for (i, expr) in elements.iter().enumerate() {
-            let offset = 4 + (i * 4);
+            let offset = 4 + (i * element_size);
             writer.write_line("local.get $scratch_ptr"); // ptr
             writer.write_line(&format!("i32.const {}", offset));
             writer.write_line("i32.add"); // ptr + offset
             
             self.build_expression(expr, &inner_type_str, function, writer)?;
             
-            if wasm_type == "f32" {
+            if inner_type_str == "bool" {
+                writer.write_line("i32.store8");
+            } else if wasm_type == "f64" {
+                writer.write_line("f64.store");
+            } else if wasm_type == "f32" {
                 writer.write_line("f32.store");
             } else {
                 writer.write_line("i32.store");
@@ -266,20 +302,32 @@ impl<'a> WasmGenerator<'a> {
         // Here left_side is the expected type of the expression, which is the inner type of the array
         let wasm_type = WasmGenerator::get_wasm_type_from(left_side.clone())?;
         
-        // Calculate the memory address: ptr + 4 + (index * 4)
+        let element_size = match left_side.as_str() {
+            "bool" => 1,
+            "double" => 8,
+            _ => 4,
+        };
+        
+        // Calculate the memory address: ptr + 4 + (index * element_size)
         // Note: We pass a dummy type "int[]" to build_expression for the array ptr because we just need an i32 back
         self.build_expression(array_expr, &"int[]".to_string(), function, writer)?; // ptr
         writer.write_line("i32.const 4");
         writer.write_line("i32.add"); // ptr + 4
         
         self.build_expression(index_expr, &"int".to_string(), function, writer)?; // index
-        writer.write_line("i32.const 4");
-        writer.write_line("i32.mul"); // index * 4
+        if element_size != 1 {
+            writer.write_line(&format!("i32.const {}", element_size));
+            writer.write_line("i32.mul"); // index * element_size
+        }
         
-        writer.write_line("i32.add"); // ptr + 4 + (index * 4)
+        writer.write_line("i32.add"); // ptr + 4 + (index * element_size)
         
         // Load the value
-        if wasm_type == "f32" {
+        if left_side == "bool" {
+            writer.write_line("i32.load8_u");
+        } else if wasm_type == "f64" {
+            writer.write_line("f64.load");
+        } else if wasm_type == "f32" {
             writer.write_line("f32.load");
         } else {
             writer.write_line("i32.load");

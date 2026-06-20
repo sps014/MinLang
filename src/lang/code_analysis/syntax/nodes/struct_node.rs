@@ -10,10 +10,11 @@ pub struct StructFieldNode {
 pub struct StructDeclarationNode {
     pub name: SyntaxToken,
     pub fields: Vec<StructFieldNode>,
+    pub is_exported: bool,
 }
 
 impl StructDeclarationNode {
-    pub fn new(name: SyntaxToken, fields: Vec<StructFieldNode>) -> Self {
-        Self { name, fields }
+    pub fn new(name: SyntaxToken, fields: Vec<StructFieldNode>, is_exported: bool) -> Self {
+        Self { name, fields, is_exported }
     }
 }

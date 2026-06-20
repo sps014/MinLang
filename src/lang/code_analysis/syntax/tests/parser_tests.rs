@@ -6,7 +6,7 @@ fn parse_code<'a>(code: &str, arena: &'a bumpalo::Bump) -> (ProgramNode<'a>, Dia
     let mut diagnostics = DiagnosticBag::new(None);
     let lexer = Lexer::new(code.to_string());
     let mut parser = Parser::new(lexer, arena, &mut diagnostics);
-    let tree = parser.parse().unwrap_or_else(|_| crate::lang::code_analysis::syntax::syntax_tree::SyntaxTree::new(ProgramNode::new(vec![], vec![])));
+    let tree = parser.parse().unwrap_or_else(|_| crate::lang::code_analysis::syntax::syntax_tree::SyntaxTree::new(ProgramNode::new(vec![], vec![], vec![])));
     (tree.get_root().clone(), diagnostics)
 }
 
@@ -52,8 +52,12 @@ fn test_parse_array_declaration_and_assignment() {
     }
     
     // Check index assignment
-    if let StatementNode::IndexAssignment(id, index, value) = &func.body[1] {
-        assert_eq!(id.text, "arr");
+    if let StatementNode::IndexAssignment(arr_expr, index, value) = &func.body[1] {
+        if let ExpressionNode::Identifier(id) = *arr_expr {
+            assert_eq!(id.text, "arr");
+        } else {
+            panic!("Expected identifier in index assignment");
+        }
         assert!(matches!(**index, ExpressionNode::Literal(Type::Integer(_))));
         assert!(matches!(value, ExpressionNode::Literal(Type::Integer(_))));
     } else {

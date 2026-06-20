@@ -56,6 +56,33 @@ impl<'a> Anaylzer<'a> {
         
         // Pass 1: Register all functions in the function table
         for function in node.functions.iter() {
+            if function.is_exported {
+                // Check if any parameter or return type is a struct, and if so, check if it's exported
+                let mut types_to_check = vec![];
+                if let Some(ret_type) = &function.return_type {
+                    types_to_check.push(ret_type);
+                }
+                for param in &function.parameters {
+                    types_to_check.push(&param.type_);
+                }
+                
+                for type_to_check in types_to_check {
+                    let base_type_str = if type_to_check.get_type().ends_with("?") {
+                        type_to_check.get_type()[..type_to_check.get_type().len() - 1].to_string()
+                    } else if type_to_check.get_type().ends_with("[]") {
+                        type_to_check.get_type()[..type_to_check.get_type().len() - 2].to_string()
+                    } else {
+                        type_to_check.get_type()
+                    };
+                    
+                    if let Some(struct_info) = self.struct_table.get_struct(&base_type_str) {
+                        if !struct_info.is_exported {
+                            diagnostics.report_error(format!("Exported function '{}' exposes unexported struct '{}'", function.name.text, base_type_str), Some(function.name.position.clone()));
+                        }
+                    }
+                }
+            }
+            
             if let Err(e) = self.function_table.add_function(function.name.text.clone(),FunctionTableInfo::from(function)) {
                 diagnostics.report_error(e.to_string(), Some(function.name.position.clone()));
             }
@@ -81,14 +108,7 @@ impl<'a> Anaylzer<'a> {
     fn add_function_param_table(&mut self,function:&FunctionNode<'a>, diagnostics: &mut DiagnosticBag) -> Result<SymbolTable, ()> {
         let mut param_table=SymbolTable::new(None);
         for param in function.parameters.iter() {
-            let type_ = match Type::from_token(param.type_.clone()) {
-                Ok(t) => t,
-                Err(e) => {
-                    diagnostics.report_error(e.to_string(), Some(param.type_.position.clone()));
-                    Type::Void
-                }
-            };
-            if let Err(e) = param_table.add_symbol(param.name.text.clone(), type_) {
+            if let Err(e) = param_table.add_symbol(param.name.text.clone(), param.type_.clone()) {
                 diagnostics.report_error(e.to_string(), Some(param.name.position.clone()));
             }
         }
@@ -230,11 +250,14 @@ impl<'a> Anaylzer<'a> {
         //return right type
         let right_type=self.analyze_expression(right,parent_function,symbol_table, diagnostics)?;
         
-        if let Some(t) = type_annotation {
+        let var_type = if let Some(t) = type_annotation {
             self.compare_data_type(t, &right_type, &left.position, diagnostics)?;
-        }
+            t.clone()
+        } else {
+            right_type.clone()
+        };
         
-        if let Err(e) = (*symbol_table).as_ref().borrow_mut().add_symbol(left.text.clone(),right_type.clone()) {
+        if let Err(e) = (*symbol_table).as_ref().borrow_mut().add_symbol(left.text.clone(), var_type) {
             diagnostics.report_error(e.to_string(), Some(left.position.clone()));
         }
         Ok(())
@@ -280,6 +303,14 @@ impl<'a> Anaylzer<'a> {
         
         let struct_name = match obj_type {
             Type::Struct(token) => token.text,
+            Type::Nullable(ref inner) => {
+                if let Type::Struct(token) = &**inner {
+                    token.text.clone()
+                } else {
+                    diagnostics.report_error(format!("Cannot access member of non-struct type {}", obj_type.get_type()), Some(member.position.clone()));
+                    return Ok(());
+                }
+            },
             _ => {
                 diagnostics.report_error(format!("Cannot access member of non-struct type {}", obj_type.get_type()), Some(member.position.clone()));
                 return Ok(());
@@ -418,6 +449,14 @@ impl<'a> Anaylzer<'a> {
                 
                 let struct_name = match obj_type {
                     Type::Struct(token) => token.text,
+                    Type::Nullable(ref inner) => {
+                        if let Type::Struct(token) = &**inner {
+                            token.text.clone()
+                        } else {
+                            diagnostics.report_error(format!("Cannot access member of non-struct type {}", obj_type.get_type()), Some(member.position.clone()));
+                            return Ok(Type::Void);
+                        }
+                    },
                     _ => {
                         diagnostics.report_error(format!("Cannot access member of non-struct type {}", obj_type.get_type()), Some(member.position.clone()));
                         return Ok(Type::Void);
@@ -450,11 +489,15 @@ impl<'a> Anaylzer<'a> {
                 
                 // Allow int <-> float casts
                 if (target_type_str == "int" && expr_type_str == "float") ||
-                   (target_type_str == "float" && expr_type_str == "int") {
+                   (target_type_str == "float" && expr_type_str == "int") ||
+                   (target_type_str == "double" && expr_type_str == "int") ||
+                   (target_type_str == "int" && expr_type_str == "double") ||
+                   (target_type_str == "float" && expr_type_str == "double") ||
+                   (target_type_str == "double" && expr_type_str == "float") {
                     Ok(target_type.clone())
                 } else if target_type_str == expr_type_str {
                     Ok(target_type.clone())
-                } else if expr_type_str == "int" && (self.struct_table.get_struct(&target_type_str).is_some() || target_type_str.ends_with("[]")) {
+                } else if expr_type_str == "int" && (self.struct_table.get_struct(&target_type_str).is_some() || target_type_str.ends_with("[]") || target_type_str.ends_with("?")) {
                     // Allow casting int to pointer types (for null pointers)
                     Ok(target_type.clone())
                 } else {
@@ -489,13 +532,52 @@ impl<'a> Anaylzer<'a> {
         }
     }
     fn compare_data_type(&mut self, left:&Type, right:&Type, position:&TextSpan, diagnostics: &mut DiagnosticBag) ->Result<(),()> {
-        if left.get_type()==right.get_type()
-        {
+        if left.get_type() == right.get_type() {
             return Ok(())
         }
+        
+        // Handle nullable types
+        if let Type::Nullable(inner) = left {
+            if let Type::Nullable(inner_right) = right {
+                if inner.get_type() == inner_right.get_type() {
+                    return Ok(());
+                }
+            } else if inner.get_type() == right.get_type() {
+                // Allow assigning non-nullable to nullable
+                return Ok(());
+            } 
+            
+            // If right is Nullable(Void) i.e. `null` literal
+            if right.get_type() == "void?" {
+                return Ok(());
+            }
+        } else if let Type::Nullable(inner_right) = right {
+            // Allow assigning non-nullable to nullable (wait, this is if left is NOT nullable, but right IS nullable? We shouldn't allow that unless right is null literal being assigned to nullable? No, left is not nullable. We shouldn't allow right to be nullable unless it's a cast or something. But wait, if right is `null` literal, and left is nullable, it's handled above.)
+            // Wait, what if left is `Node?` and right is `void?`? Handled above.
+            // What if left is `Node` and right is `void?`? Error.
+            // What if left is `Node` and right is `Node?`? Error.
+        }
+        
+        // Allow comparing nullable with null literal
+        if (left.get_type().ends_with("?") || self.is_reference_type(&left.get_type())) && right.get_type() == "void?" {
+            return Ok(());
+        }
+        if (right.get_type().ends_with("?") || self.is_reference_type(&right.get_type())) && left.get_type() == "void?" {
+            return Ok(());
+        }
+        
         diagnostics.report_error(format!("cannot convert from {} to {} at {}",
                        left.get_type(),right.get_type(),position.get_point_str()), Some(position.clone()));
         Ok(())
+    }
+
+    pub fn is_reference_type(&self, type_name: &str) -> bool {
+        let base_name = if type_name.ends_with("?") {
+            &type_name[..type_name.len() - 1]
+        } else {
+            type_name
+        };
+        base_name == "string" || base_name.ends_with("[]") || self.struct_table.get_struct(base_name).is_some()
     }
     fn analyze_identifier(&mut self,id:&SyntaxToken,symbol_table:&Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag)->Result<Type,()> {
         let r= match (*symbol_table).as_ref().borrow_mut().get_symbol(id.clone()) {
@@ -545,11 +627,7 @@ impl<'a> Anaylzer<'a> {
             (Some(expression),&Some(ref return_type))=>
             {
                 let r=self.analyze_expression(expression,parent_function,symbol_table, diagnostics)?;
-                if r.get_type()==return_type.get_type() {
-                    return Ok(())
-                }
-                diagnostics.report_error(format!("cannot convert return to {} from {}",
-                                              r.get_type(),return_type.get_type()), Some(parent_function.name.position.clone()));
+                self.compare_data_type(return_type, &r, &parent_function.name.position, diagnostics)?;
             },
             (None,&Some(_))=> {
                 diagnostics.report_error(format!("return type mismatch at  {}",parent_function.name.position.get_point_str()), Some(parent_function.name.position.clone()));

@@ -18,6 +18,7 @@ impl StdlibFunction {
         match type_str {
             "int" => Type::Integer(token),
             "float" => Type::Float(token),
+            "double" => Type::Double(token),
             "string" => Type::String(token),
             "bool" => Type::Boolean(token),
             _ => Type::Void,
@@ -45,6 +46,11 @@ impl StdlibFunction {
             StdlibFunction {
                 name: "print_float".to_string(),
                 parameters: vec!["float".to_string()],
+                return_type: None,
+            },
+            StdlibFunction {
+                name: "print_double".to_string(),
+                parameters: vec!["double".to_string()],
                 return_type: None,
             },
             
@@ -79,6 +85,11 @@ impl StdlibFunction {
             StdlibFunction {
                 name: "strlen".to_string(),
                 parameters: vec!["string".to_string()],
+                return_type: Some(Self::create_type("int")),
+            },
+            StdlibFunction {
+                name: "debug_get_free_list_head".to_string(),
+                parameters: vec![],
                 return_type: Some(Self::create_type("int")),
             },
         ]

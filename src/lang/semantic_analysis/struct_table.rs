@@ -13,6 +13,7 @@ pub struct StructInfo {
     pub name: String,
     pub fields: HashMap<String, StructFieldInfo>,
     pub size: usize,
+    pub is_exported: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -47,18 +48,44 @@ impl StructTable {
                 Err(_) => return Err(format!("Invalid type for field '{}'", field_name)),
             };
 
-            // All types (int, float, bool, pointers to arrays/structs/strings) are 4 bytes in WASM
+            let (size, alignment) = match field_type.get_type().as_str() {
+                "bool" => (1, 1),
+                "double" => (8, 8),
+                _ => (4, 4), // int, float, and pointers (arrays, structs, strings)
+            };
+
+            // Align current_offset
+            let remainder = current_offset % alignment;
+            if remainder != 0 {
+                current_offset += alignment - remainder;
+            }
+
             fields.insert(field_name, StructFieldInfo {
                 type_: field_type,
                 offset: current_offset,
             });
-            current_offset += 4;
+            current_offset += size;
+        }
+
+        // Align total size to the largest alignment (usually 8 if double is present, else 4)
+        let max_alignment = fields.values().map(|f| {
+            match f.type_.get_type().as_str() {
+                "double" => 8,
+                "bool" => 1,
+                _ => 4,
+            }
+        }).max().unwrap_or(4);
+
+        let remainder = current_offset % max_alignment;
+        if remainder != 0 {
+            current_offset += max_alignment - remainder;
         }
 
         self.structs.insert(name.clone(), StructInfo {
             name,
             fields,
             size: current_offset,
+            is_exported: struct_decl.is_exported,
         });
 
         Ok(())

@@ -17,11 +17,9 @@ impl<'a> WasmGenerator<'a> {
         writer.write_line("(module");
         writer.indent();
         
-        writer.write_line("(import \"env\" \"concat_strings\" (func $concat_strings (param i32 i32) (result i32)))");
-        
         // Import stdlib functions
         for std_func in crate::lang::stdlib::StdlibFunction::get_all() {
-            if std_func.name == "concat" { continue; } // handled by concat_strings
+            if std_func.name == "concat" || std_func.name == "strlen" || std_func.name == "debug_get_free_list_head" { continue; } // handled internally
             
             let mut params_str = String::new();
             for p in &std_func.parameters {
@@ -71,6 +69,7 @@ impl<'a> WasmGenerator<'a> {
         
         writer.write(" (local $scratch_ptr i32)");
         writer.write(" (local $scratch_addr i32)");
+        writer.write(" (local $scratch_double f64)");
         writer.write_line("");
         writer.indent();
         
@@ -96,7 +95,7 @@ impl<'a> WasmGenerator<'a> {
     /// Builds a single function parameter
     pub fn build_parameter(&self, parameter: &ParameterNode, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         writer.write("( ");
-        writer.write(&format!("param ${} {}", parameter.name.text, WasmGenerator::get_wasm_type_from(parameter.type_.text.clone())?));
+        writer.write(&format!("param ${} {}", parameter.name.text, WasmGenerator::get_wasm_type_from(parameter.type_.get_type())?));
         writer.write(") ");
         Ok(())
     }

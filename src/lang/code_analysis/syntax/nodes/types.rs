@@ -6,10 +6,12 @@ use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 pub enum Type {
     Integer(SyntaxToken),
     Float(SyntaxToken),
+    Double(SyntaxToken),
     String(SyntaxToken),
     Boolean(SyntaxToken),
     Array(Box<Type>),
     Struct(SyntaxToken),
+    Nullable(Box<Type>),
     Void,
 }
 
@@ -19,11 +21,13 @@ impl Type {
         match self {
             Type::Integer(_) => "int".to_string(),
             Type::Float(_) => "float".to_string(),
+            Type::Double(_) => "double".to_string(),
             Type::String(_) => "string".to_string(),
             Type::Void => "void".to_string(),
             Type::Boolean(_) => "bool".to_string(),
             Type::Array(inner) => format!("{}[]", inner.get_type()),
             Type::Struct(token) => token.text.clone(),
+            Type::Nullable(inner) => format!("{}?", inner.get_type()),
         }
     }
 
@@ -32,11 +36,13 @@ impl Type {
         match self {
             Type::Integer(token) => token.position.get_point_str(),
             Type::Float(token) => token.position.get_point_str(),
+            Type::Double(token) => token.position.get_point_str(),
             Type::String(token) => token.position.get_point_str(),
             Type::Void => "".to_string(),
             Type::Boolean(token) => token.position.get_point_str(),
             Type::Array(inner) => inner.get_line_str(),
             Type::Struct(token) => token.position.get_point_str(),
+            Type::Nullable(inner) => inner.get_line_str(),
         }
     }
 
@@ -45,10 +51,27 @@ impl Type {
         let r = match token.text.as_str() {
             "int" => Type::Integer(token),
             "float" => Type::Float(token),
+            "double" => Type::Double(token),
             "string" => Type::String(token),
             "void" => Type::Void,
             "bool" => Type::Boolean(token),
             _ => {
+                if token.text.ends_with("?") {
+                    let base_type_str = &token.text[0..token.text.len() - 1];
+                    let mut base_token = token.clone();
+                    base_token.text = base_type_str.to_string();
+                    let base_type = Type::from_token(base_token)?;
+                    
+                    // Restrict nullable to reference types
+                    match &base_type {
+                        Type::String(_) | Type::Array(_) | Type::Struct(_) | Type::Void => {
+                            return Ok(Type::Nullable(Box::new(base_type)));
+                        },
+                        _ => {
+                            return Err(Error::new(ErrorKind::Other, format!("Type '{}' cannot be nullable. Only reference types (string, arrays, structs) can be nullable.", base_type.get_type())));
+                        }
+                    }
+                }
                 // Handle array types like "int[]" or "Point[]"
                 if token.text.ends_with("[]") {
                     let base_type_str = &token.text[0..token.text.len() - 2];

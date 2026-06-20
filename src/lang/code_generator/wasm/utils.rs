@@ -20,6 +20,7 @@ impl<'a> WasmGenerator<'a> {
         let r = match base_type {
             "int" => "i32".to_string(),
             "float" => "f32".to_string(),
+            "double" => "f64".to_string(),
             "bool" => "i32".to_string(),
             "string" => "i32".to_string(),
             "void" => "".to_string(),
