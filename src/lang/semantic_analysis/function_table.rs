@@ -39,6 +39,7 @@ impl FunctionTable {
 #[derive(Debug,Clone)]
 pub  struct FunctionTableInfo
 {
+    #[allow(dead_code)]
     pub name: String,
     pub return_type: Option<Type>,
     pub parameters: Vec<String>,

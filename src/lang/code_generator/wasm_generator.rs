@@ -1,4 +1,3 @@
-use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
@@ -19,7 +18,9 @@ pub struct WasmGenerator<'a>
     symbol_map:&'a HashMap<String,Rc<RefCell<SymbolTable>>>,
     function_table:&'a FunctionTable,
     //key 1: function name, key 2: parameter name
-    combined_symbol_lookup:HashMap<String,HashMap<String,Type>>
+    combined_symbol_lookup:HashMap<String,HashMap<String,Type>>,
+    strings: HashMap<String, usize>,
+    next_string_offset: usize,
 }
 impl<'a> WasmGenerator<'a>
 {
@@ -28,19 +29,111 @@ impl<'a> WasmGenerator<'a>
         Self
         {
             syntax_tree,symbol_map:&semantic_info.hash_map, function_table:&semantic_info.function_table,
-            combined_symbol_lookup:HashMap::new()
+            combined_symbol_lookup:HashMap::new(),
+            strings: HashMap::new(),
+            next_string_offset: 0,
         }
     }
     pub fn build(&mut self)->Result<IndentedTextWriter,Error>
     {
+        self.collect_strings_from_program(&self.syntax_tree.get_root());
         let mut indented=IndentedTextWriter::new();
-        self.build_module(&self.syntax_tree.clone().get_root(),&mut indented)?;
+        self.build_module(&self.syntax_tree.get_root(),&mut indented)?;
         Ok(indented)
+    }
+    fn collect_strings_from_program(&mut self, program: &ProgramNode) {
+        for func in &program.functions {
+            self.collect_strings_from_body(&func.body);
+        }
+    }
+    fn collect_strings_from_body(&mut self, body: &Vec<StatementNode>) {
+        for stmt in body {
+            match stmt {
+                StatementNode::Declaration(_, expr) | StatementNode::Assignment(_, expr) => {
+                    self.collect_strings_from_expr(expr);
+                }
+                StatementNode::IfElse(cond, if_body, else_ifs, else_body) => {
+                    self.collect_strings_from_expr(cond);
+                    self.collect_strings_from_body(if_body);
+                    for (elif_cond, elif_body) in else_ifs {
+                        self.collect_strings_from_expr(elif_cond);
+                        self.collect_strings_from_body(elif_body);
+                    }
+                    if let Some(eb) = else_body {
+                        self.collect_strings_from_body(eb);
+                    }
+                }
+                StatementNode::While(cond, body) => {
+                    self.collect_strings_from_expr(cond);
+                    self.collect_strings_from_body(body);
+                }
+                StatementNode::For(init, cond, inc, body) => {
+                    if let Some(init_stmt) = init {
+                        self.collect_strings_from_body(&vec![*init_stmt.clone()]);
+                    }
+                    if let Some(cond_expr) = cond {
+                        self.collect_strings_from_expr(cond_expr);
+                    }
+                    if let Some(inc_stmt) = inc {
+                        self.collect_strings_from_body(&vec![*inc_stmt.clone()]);
+                    }
+                    self.collect_strings_from_body(body);
+                }
+                StatementNode::Return(Some(expr)) => {
+                    self.collect_strings_from_expr(expr);
+                }
+                StatementNode::FunctionInvocation(_, params) => {
+                    for param in params {
+                        self.collect_strings_from_expr(param);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    fn collect_strings_from_expr(&mut self, expr: &ExpressionNode) {
+        match expr {
+            ExpressionNode::Literal(Type::String(token)) => {
+                let s = token.text.clone();
+                if !self.strings.contains_key(&s) {
+                    self.strings.insert(s.clone(), self.next_string_offset);
+                    self.next_string_offset += s.len() + 1; // +1 for null terminator or length
+                }
+            }
+            ExpressionNode::Binary(left, _, right) => {
+                self.collect_strings_from_expr(left);
+                self.collect_strings_from_expr(right);
+            }
+            ExpressionNode::Unary(_, right) => {
+                self.collect_strings_from_expr(right);
+            }
+            ExpressionNode::Parenthesized(inner) => {
+                self.collect_strings_from_expr(inner);
+            }
+            ExpressionNode::FunctionCall(_, params) => {
+                for param in params {
+                    self.collect_strings_from_expr(param);
+                }
+            }
+            _ => {}
+        }
     }
     fn build_module(&mut self,program:&ProgramNode,writer:&mut IndentedTextWriter)->Result<(),Error>
     {
         writer.write_line("(module");
         writer.indent();
+        writer.write_line("(import \"env\" \"concat_strings\" (func $concat_strings (param i32 i32) (result i32)))");
+        writer.write_line("(memory 1)");
+        for (s, offset) in &self.strings {
+            // Remove quotes from string literal for data segment, assuming it's "something"
+            let unquoted = if s.starts_with('"') && s.ends_with('"') {
+                &s[1..s.len()-1]
+            } else {
+                s.as_str()
+            };
+            writer.write_line(&format!("(data (i32.const {}) \"{}\\00\")", offset, unquoted));
+        }
+        
         for i in program.functions.iter()
         {
             self.build_function(i,writer)?;
@@ -83,7 +176,7 @@ impl<'a> WasmGenerator<'a>
                        function:&FunctionNode,
                        writer:&mut IndentedTextWriter)->Result<(),Error>
     {
-        match statement.borrow()
+        match statement
         {
             StatementNode::Declaration(left,expression)=>
             self.build_declaration(left,function,expression,writer)?,
@@ -93,6 +186,8 @@ impl<'a> WasmGenerator<'a>
             self.build_return(r,function,writer)?,
             StatementNode::While(c,b)=>
             self.build_while(c,b,function,writer)?,
+            StatementNode::For(init,cond,inc,body)=>
+            self.build_for(init,cond,inc,body,function,writer)?,
             StatementNode::Break=>
             self.build_break(writer)?,
             StatementNode::Continue=>
@@ -202,6 +297,38 @@ impl<'a> WasmGenerator<'a>
         writer.write_line(")");
         Ok(())
     }
+    fn build_for(&self,init:&Option<Box<StatementNode>>,condition:&Option<ExpressionNode>,
+                 increment:&Option<Box<StatementNode>>,body:&Vec<StatementNode>,
+                 function:&FunctionNode,writer:&mut IndentedTextWriter)->Result<(),Error>
+    {
+        if let Some(init_stmt) = init {
+            self.build_statement(init_stmt, function, writer)?;
+        }
+        writer.write_line("(block");
+        writer.indent();
+        writer.write_line("(loop");
+        writer.indent();
+        
+        if let Some(cond_expr) = condition {
+            self.build_expression(cond_expr, &"int".to_string(), function, writer)?;
+            writer.write_line(format!("i32.const 0").as_str());
+            writer.write_line(format!("i32.eq").as_str());
+            writer.write_line("br_if 1");
+        }
+        
+        self.build_body(body, function, writer)?;
+        
+        if let Some(inc_stmt) = increment {
+            self.build_statement(inc_stmt, function, writer)?;
+        }
+        
+        writer.write_line("br 0");
+        writer.unindent();
+        writer.write_line(")");
+        writer.unindent();
+        writer.write_line(")");
+        Ok(())
+    }
     fn build_return(&self,expression:&Option<ExpressionNode>,
                     function:&FunctionNode,
                     writer:&mut IndentedTextWriter)->Result<(),Error>
@@ -237,7 +364,7 @@ impl<'a> WasmGenerator<'a>
                         left_side:&String,function:&FunctionNode,
                         writer:&mut IndentedTextWriter)->Result<(),Error>
     {
-        match expression.borrow()
+        match expression
         {
             ExpressionNode::Identifier(identifier)=>
             self.build_identifier(identifier,writer)?,
@@ -260,6 +387,10 @@ impl<'a> WasmGenerator<'a>
           Type::Integer(i)=>format!("i32.const {}",i.text),
           Type::Float(f)=>format!("f32.const {}",f.text),
           Type::Boolean(f)=>format!("i32.const {}",if f.text=="true"{1}else{0}),
+          Type::String(s)=> {
+              let offset = self.strings.get(&s.text).unwrap();
+              format!("i32.const {}", offset)
+          },
             _=>return Err(Error::new(ErrorKind::Other,format!("unknown literal {:?}",literal)))
         };
         writer.write_line(type_.as_str());
@@ -277,6 +408,11 @@ impl<'a> WasmGenerator<'a>
         self.build_expression(left_exp,left,function,writer)?;
         self.build_expression(right_expr,left,function,writer)?;
 
+        if left == "string" && opr.kind == TokenKind::PlusToken {
+            writer.write_line("call $concat_strings");
+            return Ok(());
+        }
+
         let symbol=WasmGenerator::get_wasm_type_from(
             left.clone()
         )?;
@@ -289,6 +425,8 @@ impl<'a> WasmGenerator<'a>
                 writer.write_line(format!("{}.mul", symbol).as_str()),
             TokenKind::EqualEqualToken =>
                 writer.write_line(format!("{}.eq", symbol).as_str()),
+            TokenKind::NotEqualToken =>
+                writer.write_line(format!("{}.ne", symbol).as_str()),
             _=>{}
         };
         if symbol=="f32"
@@ -306,10 +444,8 @@ impl<'a> WasmGenerator<'a>
                     writer.write_line(format!("{}.ge",symbol).as_str()),
                 TokenKind::SmallerThanEqualToken=>
                     writer.write_line(format!("{}.le",symbol).as_str()),
-                TokenKind::PlusToken=>{},
-                TokenKind::MinusToken=>{},
-                TokenKind::StarToken=>{},
-                TokenKind::EqualEqualToken=>{},
+                TokenKind::PlusToken | TokenKind::MinusToken | TokenKind::StarToken |
+                TokenKind::EqualEqualToken | TokenKind::NotEqualToken => {},
                 _=>return Err(Error::new(ErrorKind::Other,format!("unknown operator {}",opr.text)))
             };
         }
@@ -328,10 +464,12 @@ impl<'a> WasmGenerator<'a>
                     writer.write_line(format!("{}.ge_s",symbol).as_str()),
                 TokenKind::SmallerThanEqualToken=>
                     writer.write_line(format!("{}.le_s",symbol).as_str()),
-                TokenKind::PlusToken=>{},
-                TokenKind::MinusToken=>{},
-                TokenKind::StarToken=>{},
-                TokenKind::EqualEqualToken=>{},
+                TokenKind::AmpersandAmpersandToken | TokenKind::BitWiseAmpersandToken =>
+                    writer.write_line(format!("{}.and",symbol).as_str()),
+                TokenKind::PipePipeToken | TokenKind::BitWisePipeToken =>
+                    writer.write_line(format!("{}.or",symbol).as_str()),
+                TokenKind::PlusToken | TokenKind::MinusToken | TokenKind::StarToken |
+                TokenKind::EqualEqualToken | TokenKind::NotEqualToken => {},
                 _=>return Err(Error::new(ErrorKind::Other,format!("unknown operator {}",opr.text)))
             };
         }
@@ -406,7 +544,7 @@ impl<'a> WasmGenerator<'a>
             writer.write(" (local ");
             writer.write(format!("${} {}",
                                  name,
-                                 WasmGenerator::get_wasm_type_from(_type.borrow().get_type())?)
+                                 WasmGenerator::get_wasm_type_from(_type.get_type())?)
                 .as_str());
             writer.write(") ");
         }
@@ -454,6 +592,7 @@ impl<'a> WasmGenerator<'a>
             "int"=>"i32".to_string(),
             "float"=>"f32".to_string(),
             "bool"=>"i32".to_string(),
+            "string"=>"i32".to_string(),
             _=>return Err(Error::new(ErrorKind::Other,format!("unsupported type {}",typename)))
         };
         Ok(r)

@@ -31,28 +31,29 @@ impl<'a> Lexer<'a> {
     {
         let mut map = vec![];
 
-        map.push((TokenKind::FunToken,r"fun"));
-        map.push((TokenKind::IfToken,r"if"));
-        map.push((TokenKind::ElseToken,r"else"));
-        map.push((TokenKind::WhileToken,r"while"));
-        map.push((TokenKind::ForToken,r"for"));
+        map.push((TokenKind::FunToken,r"fun\b"));
+        map.push((TokenKind::IfToken,r"if\b"));
+        map.push((TokenKind::ElseToken,r"else\b"));
+        map.push((TokenKind::WhileToken,r"while\b"));
+        map.push((TokenKind::ForToken,r"for\b"));
 
-        map.push((TokenKind::BooleanToken,r"true"));
-        map.push((TokenKind::BooleanToken,r"false"));
+        map.push((TokenKind::BooleanToken,r"true\b"));
+        map.push((TokenKind::BooleanToken,r"false\b"));
 
-        map.push((TokenKind::DataTypeToken,r"int"));
-        map.push((TokenKind::DataTypeToken,r"float"));
-        map.push((TokenKind::DataTypeToken,r"void"));
+        map.push((TokenKind::DataTypeToken,r"int\b"));
+        map.push((TokenKind::DataTypeToken,r"float\b"));
+        map.push((TokenKind::DataTypeToken,r"void\b"));
+        map.push((TokenKind::DataTypeToken,r"string\b"));
+        map.push((TokenKind::DataTypeToken,r"bool\b"));
         map.push((TokenKind::StringToken,r#""([^"\\]*(\\.[^"\\]*)*)""#));
-        map.push((TokenKind::LetToken,r"let"));
-        map.push((TokenKind::ReturnToken,r"return"));
-        map.push((TokenKind::BreakToken,r"break"));
-        map.push((TokenKind::ContinueToken,r"continue"));
+        map.push((TokenKind::LetToken,r"let\b"));
+        map.push((TokenKind::ReturnToken,r"return\b"));
+        map.push((TokenKind::BreakToken,r"break\b"));
+        map.push((TokenKind::ContinueToken,r"continue\b"));
 
         map.push((TokenKind::LineCommentToken,"/s*/[^\n]*[\n]?"));
         map.push((TokenKind::BlockCommentToken,r"/\*[^*]*\*+(?:[^/*][^*]*\*+)*/"));
 
-        map.push((TokenKind::IfToken,r"fun"));
         map.push((TokenKind::NumberToken,r"[0-9]+(\.[0-9]+)?"));
 
         map.push((TokenKind::EqualEqualToken,r"=="));
@@ -141,7 +142,7 @@ impl<'a> Lexer<'a> {
 
         for (key,value) in self.type_regex_map.iter()
         {
-            let c=Lexer::do_match(&value.clone(),key.clone(),&mut self.current,&current_str,self.line_text.borrow());
+            let c=Lexer::do_match(value,key.clone(),&mut self.current,&current_str,self.line_text.borrow());
             if c.is_some()
             {
                 return c.unwrap();

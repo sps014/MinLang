@@ -174,6 +174,9 @@ impl<'a> Parser<'a>
         } else if cur.kind == TokenKind::WhileToken
         {
             return Ok(self.parse_while()?);
+        } else if cur.kind == TokenKind::ForToken
+        {
+            return Ok(self.parse_for()?);
         } else if cur.kind==TokenKind::BreakToken
         {
             return Ok(self.parse_break()?);
@@ -372,6 +375,38 @@ impl<'a> Parser<'a>
         }
 
         Ok(StatementNode::IfElse(condition,then_branch,else_ifs,None))
+    }
+
+    fn parse_for(&mut self)->Result<StatementNode,Error>
+    {
+        self.match_token(TokenKind::ForToken)?;
+        let mut init = None;
+        if self.current_token().kind != TokenKind::SemicolonToken {
+            if self.current_token().kind == TokenKind::LetToken {
+                init = Some(Box::new(self.parse_declaration()?));
+            } else {
+                init = Some(Box::new(self.parse_assignment()?));
+            }
+        } else {
+            self.match_token(TokenKind::SemicolonToken)?;
+        }
+
+        let mut condition = None;
+        if self.current_token().kind != TokenKind::SemicolonToken {
+            condition = Some(self.parse_expression(0)?);
+        }
+        self.match_token(TokenKind::SemicolonToken)?;
+
+        let mut increment = None;
+        if self.current_token().kind != TokenKind::CurlyOpenBracketToken {
+            let identifier=self.match_token(TokenKind::IdentifierToken)?;
+            self.match_token(TokenKind::EqualToken)?;
+            let expression=self.parse_expression(0)?;
+            increment = Some(Box::new(StatementNode::Assignment(identifier,expression)));
+        }
+
+        let body=self.parse_block()?;
+        Ok(StatementNode::For(init,condition,increment,body))
     }
 
     fn parse_while(&mut self)->Result<StatementNode,Error>

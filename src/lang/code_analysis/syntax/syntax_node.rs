@@ -52,6 +52,7 @@ pub enum StatementNode
     /// If condition, then body, else if co
     IfElse(ExpressionNode, Vec<StatementNode>,Vec<(ExpressionNode,Vec<StatementNode>)>, Option<Vec<StatementNode>>),
     While(ExpressionNode, Vec<StatementNode>),
+    For(Option<Box<StatementNode>>, Option<ExpressionNode>, Option<Box<StatementNode>>, Vec<StatementNode>),
     Break,
     Continue,
 }

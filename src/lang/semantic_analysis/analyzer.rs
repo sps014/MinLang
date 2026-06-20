@@ -18,7 +18,7 @@ pub struct SemanticInfo<'a>
 }
 
 impl<'a> SemanticInfo<'a> {
-    pub fn new(hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>, function_table: &FunctionTable) -> SemanticInfo
+    pub fn new(hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>, function_table: &FunctionTable) -> SemanticInfo<'_>
     {
         SemanticInfo {
             hash_map,
@@ -34,13 +34,13 @@ pub struct Anaylzer<'a> {
 }
 impl<'a> Anaylzer<'a> {
     pub fn new(tree: &'a SyntaxTree) -> Self {
-        Self { syntax_tree:tree.clone(), function_table: FunctionTable::new() }
+        Self { syntax_tree:tree, function_table: FunctionTable::new() }
     }
-    pub fn analyze(&mut self) -> Result<SemanticInfo, Error> {
+    pub fn analyze(&mut self) -> Result<SemanticInfo<'_>, Error> {
         let pgm= self.syntax_tree.get_root();
         self.analyze_pgm(pgm.clone())
     }
-    fn analyze_pgm(&mut self,node:ProgramNode) -> Result<SemanticInfo, Error> {
+    fn analyze_pgm(&mut self,node:ProgramNode) -> Result<SemanticInfo<'_>, Error> {
         let mut symbol_table_map=HashMap::new();
         for function in node.functions.iter() {
          let r=self.analyze_function(function)?;
@@ -102,6 +102,8 @@ impl<'a> Anaylzer<'a> {
                 self.analyze_return(expression,parent_function,&symbol_table)?,
             StatementNode::While(condition,body) =>
                 self.analyze_while(condition,body,parent_function,&symbol_table)?,
+            StatementNode::For(init,condition,increment,body) =>
+                self.analyze_for(init,condition,increment,body,parent_function,&symbol_table)?,
             StatementNode::Break=>
                 self.analyze_break(parent_function,has_parent_while)?,
             StatementNode::Continue=>
@@ -153,8 +155,33 @@ impl<'a> Anaylzer<'a> {
     fn analyze_while(&self,condition:&ExpressionNode,body:&Vec<StatementNode>,
                      parent_function:&FunctionNode,symbol_table:&Rc<RefCell<SymbolTable>>)->Result<(),Error>
     {
-        self.analyze_expression(condition,parent_function,symbol_table)?;
+        let cond_type = self.analyze_expression(condition,parent_function,symbol_table)?;
+        if cond_type.get_type() != "bool" {
+            return Err(Error::new(ErrorKind::Other, format!("while condition must be bool, got {}", cond_type.get_type())));
+        }
         self.analyze_body(body,parent_function,Some(symbol_table),true)?;
+        Ok(())
+    }
+    fn analyze_for(&self,init:&Option<Box<StatementNode>>,condition:&Option<ExpressionNode>,
+                   increment:&Option<Box<StatementNode>>,body:&Vec<StatementNode>,
+                   parent_function:&FunctionNode,symbol_table:&Rc<RefCell<SymbolTable>>)->Result<(),Error>
+    {
+        let for_scope = Rc::new(RefCell::new(SymbolTable::new(Some(symbol_table.clone()))));
+        (*symbol_table).borrow_mut().add_child(for_scope.clone());
+
+        if let Some(init_stmt) = init {
+            self.analyze_statement(init_stmt, parent_function, &for_scope, false)?;
+        }
+        if let Some(cond_expr) = condition {
+            let cond_type = self.analyze_expression(cond_expr, parent_function, &for_scope)?;
+            if cond_type.get_type() != "bool" {
+                return Err(Error::new(ErrorKind::Other, format!("for condition must be bool, got {}", cond_type.get_type())));
+            }
+        }
+        if let Some(inc_stmt) = increment {
+            self.analyze_statement(inc_stmt, parent_function, &for_scope, false)?;
+        }
+        self.analyze_body(body, parent_function, Some(&for_scope), true)?;
         Ok(())
     }
     ///return type is returned currently int and float supported
@@ -178,8 +205,24 @@ impl<'a> Anaylzer<'a> {
         {
             ExpressionNode::Literal(number) =>
                 Ok(number.clone()),
-            ExpressionNode::Unary(_,right)=>
-                Ok(self.analyze_expression(right,parent_function,symbol_table)?),
+            ExpressionNode::Unary(opr,right)=> {
+                let right_type = self.analyze_expression(right,parent_function,symbol_table)?;
+                match opr.kind {
+                    TokenKind::BangToken => {
+                        if right_type.get_type() != "bool" {
+                            return Err(Error::new(ErrorKind::Other, format!("! operator requires bool, got {}", right_type.get_type())));
+                        }
+                        Ok(Type::Boolean(opr.clone()))
+                    },
+                    TokenKind::PlusToken | TokenKind::MinusToken => {
+                        if right_type.get_type() != "int" && right_type.get_type() != "float" {
+                            return Err(Error::new(ErrorKind::Other, format!("unary +/- requires int or float, got {}", right_type.get_type())));
+                        }
+                        Ok(right_type)
+                    },
+                    _ => Err(Error::new(ErrorKind::Other, format!("unknown unary operator {}", opr.text)))
+                }
+            },
             ExpressionNode::Binary(left,opr,right)=>
                 Ok(self.analyze_binary_expression(left,opr,right,parent_function,symbol_table)?),
             ExpressionNode::Identifier(id)=>
@@ -202,7 +245,16 @@ impl<'a> Anaylzer<'a> {
               return Err(Error::new(ErrorKind::Other,format!("Cannot perform operation {} on string",opr.text))),
             (_,_)=>{}
         };
-        return Ok(left_value);
+        
+        match opr.kind {
+            TokenKind::EqualEqualToken | TokenKind::NotEqualToken |
+            TokenKind::GreaterThanToken | TokenKind::GreaterThanEqualToken |
+            TokenKind::SmallerThanToken | TokenKind::SmallerThanEqualToken |
+            TokenKind::AmpersandAmpersandToken | TokenKind::PipePipeToken => {
+                return Ok(Type::Boolean(opr.clone()));
+            },
+            _ => return Ok(left_value)
+        }
     }
     fn compare_data_type(&self, left:&Type, right:&Type, position:&TextSpan) ->Result<(),Error> {
         if left.get_type()==right.get_type()
@@ -225,14 +277,20 @@ impl<'a> Anaylzer<'a> {
     Result<(),Error>
     {
         //if condition
-        self.analyze_expression(condition,parent_function,symbol_table)?;
+        let cond_type = self.analyze_expression(condition,parent_function,symbol_table)?;
+        if cond_type.get_type() != "bool" {
+            return Err(Error::new(ErrorKind::Other, format!("if condition must be bool, got {}", cond_type.get_type())));
+        }
         //if body
         self.analyze_body(if_body,parent_function,Some(symbol_table),has_parent_while)?;
 
         //else if block
         for i in else_if.iter()
         {
-            self.analyze_expression(&i.0,parent_function,symbol_table)?;
+            let elif_cond_type = self.analyze_expression(&i.0,parent_function,symbol_table)?;
+            if elif_cond_type.get_type() != "bool" {
+                return Err(Error::new(ErrorKind::Other, format!("else if condition must be bool, got {}", elif_cond_type.get_type())));
+            }
             self.analyze_body(&i.1,parent_function,Some(symbol_table),has_parent_while)?;
         }
         match else_body
