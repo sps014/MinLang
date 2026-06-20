@@ -1,6 +1,7 @@
 fun print_greeting(name: string): void {
     let greeting = "Hello, " + name;
-    println(greeting);
+    print(greeting);
+    print("\n");
 }
 
 fun main(): void {
@@ -8,7 +9,8 @@ fun main(): void {
     let b = "world";
     let c = a + b;
     
-    println(c);
+    print(c);
+    print("\n");
     
     print_greeting("Alice");
     print_greeting("Bob");

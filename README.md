@@ -11,11 +11,11 @@ MinLang is a statically typed, compiled programming language that targets WebAss
 - **Export Control**: Functions and structs can be marked with `export` to expose them to the host environment. The compiler ensures exported functions do not expose private structs.
 - **Arrays**: Native support for arrays (`int[]`, `float[]`, `double[]`, `string[]`, `Struct[]`).
 - **Memory Management**: Automatic Reference Counting (ARC) backed by a fast Freelist allocator in WebAssembly. Memory is automatically retained on assignment/return and released when variables go out of scope.
-- **Control Flow**: `if`/`else if`/`else`, `while` loops, and `for` loops with `break` and `continue` support.
+- **Control Flow**: `if`/`else if`/`else`, `while` loops, and `for` loops with `break` and `continue` support. Parentheses are required around conditions (e.g., `if (x > 0) { ... }`).
 - **Functions**: First-class functions with parameters and return types.
 - **WebAssembly Target**: Compiles directly to WebAssembly Text format (`.wat`) and executes via `wasmtime`.
-- **Standard Library**: Built-in functions like `print`, `println`, `print_int`, `print_float`, `sin`, `cos`, `abs`, and `sqrt`.
-- **Diagnostic System**: Comprehensive error reporting with line/column tracking for syntax and semantic errors.
+- **Standard Library**: Built-in functions like `print`, `print_int`, `print_float`, `print_double`, `sin`, `cos`, `abs`, and `sqrt`.
+- **Diagnostic System**: Comprehensive error reporting with line/column tracking and Rust-style squiggly lines for syntax and semantic errors.
 
 ## Architecture
 
@@ -69,7 +69,7 @@ cargo run -- compile path/to/your/file.ml
 
 ```minlang
 fun main(): void {
-    println("Hello, World!");
+    print("Hello, World!\n");
 }
 ```
 
@@ -77,7 +77,7 @@ fun main(): void {
 
 ```minlang
 fun fib(n: int): int {
-    if n <= 1 {
+    if (n <= 1) {
         return n;
     }
     return fib(n - 1) + fib(n - 2);
@@ -99,13 +99,13 @@ struct Node {
 }
 
 fun create_list(n: int): Node? {
-    if n <= 0 {
+    if (n <= 0) {
         return null;
     }
     let head = Node { value: n, next: null };
     let curr: Node? = head;
     let i = n - 1;
-    while i > 0 {
+    while (i > 0) {
         curr.next = Node { value: i, next: null };
         curr = curr.next;
         i = i - 1;
@@ -117,7 +117,7 @@ fun main(): void {
     let list = create_list(3);
     
     let curr = list;
-    while curr != null {
+    while (curr != null) {
         print_int(curr.value);
         curr = curr.next;
     }
@@ -135,7 +135,7 @@ fun main(): void {
     let arr: int[] = [10, 20, 30, 40, 50];
     let sum = 0;
     
-    for let i = 0; i < 5; i = i + 1 {
+    for (let i = 0; i < 5; i = i + 1) {
         sum = sum + arr[i];
     }
     

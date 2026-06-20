@@ -1,6 +1,6 @@
 fun loop_test(): int {
     let a = 0;
-    for let i=0; i<10; i=i+1 {
+    for (let i=0; i<10; i=i+1 ) {
         a = a + i;
     }
     return a;
@@ -15,5 +15,6 @@ fun string_test(): string {
 
 fun main(): void {
     print_int(loop_test());
-    println(string_test());
+    print(string_test());
+    print("\n");
 }

@@ -532,6 +532,16 @@ impl<'a, 'b> Parser<'a, 'b>
             return Ok(ExpressionNode::Literal(Type::String(self.next_token())));
         }
 
+        let cur = self.current_token();
+        if cur.kind != TokenKind::IdentifierToken {
+            self.diagnostics.report_error(
+                format!("Expected expression but found {:?}", cur.kind),
+                Some(cur.position.clone())
+            );
+            self.next_token(); // skip the unexpected token to avoid infinite loop
+            return Ok(ExpressionNode::Identifier(SyntaxToken::new(TokenKind::IdentifierToken, cur.position.clone(), "".to_string())));
+        }
+
         let identifier=self.match_token(TokenKind::IdentifierToken);
         Ok(ExpressionNode::Identifier(identifier))
     }
@@ -577,7 +587,9 @@ impl<'a, 'b> Parser<'a, 'b>
     {
         //eat the if keyword
         self.match_token(TokenKind::IfToken);
+        self.match_token(TokenKind::OpenParenthesisToken);
         let condition=self.parse_expression(0)?;
+        self.match_token(TokenKind::CloseParenthesisToken);
         let then_branch=self.parse_block()?;
         let mut else_ifs=vec![];
         while self.current_token().kind==TokenKind::ElseToken
@@ -588,7 +600,9 @@ impl<'a, 'b> Parser<'a, 'b>
             {
                 //eat the if keyword
                 self.match_token(TokenKind::IfToken);
+                self.match_token(TokenKind::OpenParenthesisToken);
                 let condition=self.parse_expression(0)?;
+                self.match_token(TokenKind::CloseParenthesisToken);
                 let then_branch=self.parse_block()?;
                 else_ifs.push((condition,then_branch));
             }
@@ -606,6 +620,7 @@ impl<'a, 'b> Parser<'a, 'b>
     fn parse_for(&mut self)->Result<StatementNode<'a>,Error>
     {
         self.match_token(TokenKind::ForToken);
+        self.match_token(TokenKind::OpenParenthesisToken);
         let mut init: Option<&'a StatementNode<'a>> = None;
         if self.current_token().kind != TokenKind::SemicolonToken {
             if self.current_token().kind == TokenKind::LetToken {
@@ -624,7 +639,7 @@ impl<'a, 'b> Parser<'a, 'b>
         self.match_token(TokenKind::SemicolonToken);
 
         let mut increment: Option<&'a StatementNode<'a>> = None;
-        if self.current_token().kind != TokenKind::CurlyOpenBracketToken {
+        if self.current_token().kind != TokenKind::CloseParenthesisToken {
             // Parse the increment assignment expression (without semicolon)
             let expr = self.parse_primary_expression()?;
             self.match_token(TokenKind::EqualToken);
@@ -644,6 +659,7 @@ impl<'a, 'b> Parser<'a, 'b>
             };
             increment = Some(self.arena.alloc(stmt));
         }
+        self.match_token(TokenKind::CloseParenthesisToken);
 
         let body=self.parse_block()?;
         Ok(StatementNode::For(init,condition,increment,body))
@@ -654,7 +670,9 @@ impl<'a, 'b> Parser<'a, 'b>
     {
         //eat the while keyword
         self.match_token(TokenKind::WhileToken);
+        self.match_token(TokenKind::OpenParenthesisToken);
         let condition=self.parse_expression(0)?;
+        self.match_token(TokenKind::CloseParenthesisToken);
         let body=self.parse_block()?;
         Ok(StatementNode::While(condition,body))
     }

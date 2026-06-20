@@ -34,11 +34,6 @@ impl StdlibFunction {
                 return_type: None, // void
             },
             StdlibFunction {
-                name: "println".to_string(),
-                parameters: vec!["string".to_string()],
-                return_type: None,
-            },
-            StdlibFunction {
                 name: "print_int".to_string(),
                 parameters: vec!["int".to_string()],
                 return_type: None,

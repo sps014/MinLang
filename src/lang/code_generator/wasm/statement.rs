@@ -40,6 +40,11 @@ impl<'a> WasmGenerator<'a> {
             writer.write_line("local.set $scratch_ptr");
             writer.write_line("local.get $scratch_ptr");
             writer.write_line("call $retain");
+            
+            // Release old value (in case this declaration is inside a loop and the local is reused)
+            writer.write_line(&format!("local.get ${}", left.text));
+            writer.write_line(&format!("call $release_{}", type_str.replace("[]", "_array").replace("?", "")));
+            
             writer.write_line("local.get $scratch_ptr");
         }
         
@@ -63,7 +68,7 @@ impl<'a> WasmGenerator<'a> {
             
             // Release old value
             writer.write_line(&format!("local.get ${}", left.text));
-            writer.write_line(&format!("call $release_{}", type_str.replace("[]", "_array")));
+            writer.write_line(&format!("call $release_{}", type_str.replace("[]", "_array").replace("?", "")));
             
             // Store new value
             writer.write_line("local.get $scratch_ptr");

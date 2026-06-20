@@ -67,7 +67,7 @@ impl<'a> WasmGenerator<'a> {
                 let s = token.text.clone();
                 if !self.strings.contains_key(&s) {
                     self.strings.insert(s.clone(), self.next_string_offset);
-                    self.next_string_offset += s.len() + 1; // +1 for null terminator or length
+                    self.next_string_offset += s.len() + 1 + 8; // +1 for null terminator, +8 for block header
                 }
             }
             ExpressionNode::Binary(left, _, right) => {

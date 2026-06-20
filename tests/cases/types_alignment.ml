@@ -8,7 +8,7 @@ struct Mixed {
 fun main(): void {
     let m = Mixed { b1: true, i1: 42, d1: 3.14159d, b2: false };
     
-    if m.b1 {
+    if (m.b1 ) {
         print_int(m.i1);
     }
     

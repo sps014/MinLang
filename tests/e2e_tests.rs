@@ -20,12 +20,6 @@ impl TestEnv {
     fn print(&self, s: &str) {
         self.output.lock().unwrap().push_str(s);
     }
-
-    fn println(&self, s: &str) {
-        let mut out = self.output.lock().unwrap();
-        out.push_str(s);
-        out.push('\n');
-    }
 }
 
 fn read_string_from_memory(memory: &Memory, store: impl AsContext, ptr: i32) -> String {
@@ -82,17 +76,20 @@ fn run_test_case(ml_file: &Path) {
     
     let env_clone = env.clone();
     linker.func_wrap("env", "print_int", move |v: i32| {
-        env_clone.println(&v.to_string());
+        env_clone.print(&v.to_string());
+        env_clone.print("\n");
     }).unwrap();
 
     let env_clone = env.clone();
     linker.func_wrap("env", "print_float", move |v: f32| {
-        env_clone.println(&v.to_string());
+        env_clone.print(&v.to_string());
+        env_clone.print("\n");
     }).unwrap();
 
     let env_clone = env.clone();
     linker.func_wrap("env", "print_double", move |v: f64| {
-        env_clone.println(&v.to_string());
+        env_clone.print(&v.to_string());
+        env_clone.print("\n");
     }).unwrap();
 
     let env_clone = env.clone();
@@ -100,13 +97,6 @@ fn run_test_case(ml_file: &Path) {
         let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
         let s = read_string_from_memory(&memory, &caller, ptr);
         env_clone.print(&s);
-    }).unwrap();
-
-    let env_clone = env.clone();
-    linker.func_wrap("env", "println", move |mut caller: Caller<'_, ()>, ptr: i32| {
-        let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
-        let s = read_string_from_memory(&memory, &caller, ptr);
-        env_clone.println(&s);
     }).unwrap();
 
     linker.func_wrap("env", "concat_strings", |_: i32, _: i32| -> i32 {

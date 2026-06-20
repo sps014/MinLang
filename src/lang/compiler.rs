@@ -28,21 +28,39 @@ impl Compiler {
         Self { target }
     }
 
+    fn print_diagnostics(&self, diagnostics: &DiagnosticBag, file_contents: &std::collections::HashMap<String, String>) {
+        for diag in &diagnostics.diagnostics {
+            error!("{}", diag.to_string());
+            if let (Some(path), Some(span)) = (&diag.file_path, &diag.span) {
+                if let Some(content) = file_contents.get(path) {
+                    let lines: Vec<&str> = content.lines().collect();
+                    if span.line_no > 0 && span.line_no <= lines.len() {
+                        let line_text = lines[span.line_no - 1];
+                        error!("  | {}", line_text);
+                        let padding = " ".repeat(span.col_no.saturating_sub(1));
+                        let squiggly_len = if span.end > span.start { span.end - span.start } else { 1 };
+                        let squiggly = "^".repeat(squiggly_len);
+                        error!("  | {}{}", padding, squiggly);
+                    }
+                }
+            }
+        }
+    }
+
     pub fn compile(&self, main_file_path: &String, out_path: &String) -> Result<(), Error> {
         info!("starting parsing and multi-file resolution");
         let mut visited_files = HashSet::new();
         let mut all_functions = vec![];
         let mut all_structs = vec![];
+        let mut file_contents = std::collections::HashMap::new();
         
         let arena = Bump::new();
         let mut diagnostics = DiagnosticBag::new(None);
         
-        self.parse_file_recursive(main_file_path, &mut visited_files, &mut all_functions, &mut all_structs, &arena, &mut diagnostics)?;
+        self.parse_file_recursive(main_file_path, &mut visited_files, &mut all_functions, &mut all_structs, &arena, &mut diagnostics, &mut file_contents)?;
         
         if diagnostics.has_errors() {
-            for diag in &diagnostics.diagnostics {
-                error!("{}", diag.to_string());
-            }
+            self.print_diagnostics(&diagnostics, &file_contents);
             return Err(Error::new(ErrorKind::Other, "Syntax errors found during parsing"));
         }
 
@@ -56,17 +74,13 @@ impl Compiler {
         let symbol_info = match analyzer.analyze(&mut diagnostics) {
             Ok(info) => info,
             Err(_) => {
-                for diag in &diagnostics.diagnostics {
-                    error!("{}", diag.to_string());
-                }
+                self.print_diagnostics(&diagnostics, &file_contents);
                 return Err(Error::new(ErrorKind::Other, "Semantic errors found"));
             }
         };
 
         if diagnostics.has_errors() {
-            for diag in &diagnostics.diagnostics {
-                error!("{}", diag.to_string());
-            }
+            self.print_diagnostics(&diagnostics, &file_contents);
             return Err(Error::new(ErrorKind::Other, "Semantic errors found"));
         }
 
@@ -93,6 +107,7 @@ impl Compiler {
         all_structs: &mut Vec<crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode>,
         arena: &'a Bump,
         diagnostics: &mut DiagnosticBag,
+        file_contents: &mut std::collections::HashMap<String, String>,
     ) -> Result<(), Error> {
         let path = Path::new(file_path).canonicalize()?;
         let path_str = path.to_str().unwrap().to_string();
@@ -105,6 +120,8 @@ impl Compiler {
         let mut file = File::open(&path)?;
         let mut text = String::new();
         file.read_to_string(&mut text)?;
+        
+        file_contents.insert(path_str.clone(), text.clone());
         
         let mut file_diagnostics = DiagnosticBag::new(Some(path_str.clone()));
         
@@ -137,7 +154,7 @@ impl Compiler {
                 continue;
             }
             
-            self.parse_file_recursive(&import_path_str, visited, all_functions, all_structs, arena, diagnostics)?;
+            self.parse_file_recursive(&import_path_str, visited, all_functions, all_structs, arena, diagnostics, file_contents)?;
         }
         
         all_functions.extend(program.functions.clone());

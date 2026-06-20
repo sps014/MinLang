@@ -12,6 +12,8 @@ fun main(): void {
     print_float(arr2[1]);
     
     let arr3: string[] = ["hello", "world"];
-    println(arr3[0]);
-    println(arr3[1]);
+    print(arr3[0]);
+    print("\n");
+    print(arr3[1]);
+    print("\n");
 }

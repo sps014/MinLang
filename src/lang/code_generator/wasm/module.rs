@@ -45,6 +45,9 @@ impl<'a> WasmGenerator<'a> {
             } else {
                 s.as_str()
             };
+            // Write block header: size = 0, ref_count = 1
+            // size is at offset - 8, ref_count is at offset - 4
+            writer.write_line(&format!("(data (i32.const {}) \"\\00\\00\\00\\00\\01\\00\\00\\00\")", offset - 8));
             writer.write_line(&format!("(data (i32.const {}) \"{}\\00\")", offset, unquoted));
         }
         
@@ -74,6 +77,22 @@ impl<'a> WasmGenerator<'a> {
         writer.indent();
         
         self.build_body(function.body, function, writer)?;
+        
+        // Release all local reference variables in case the function falls through without a return
+        let locals = self.combined_symbol_lookup.get(&function.name.text).unwrap().clone();
+        for (name, type_) in locals.iter() {
+            let type_str = type_.get_type();
+            let base_type_str = if type_str.ends_with("?") {
+                type_str[..type_str.len() - 1].to_string()
+            } else {
+                type_str.clone()
+            };
+            
+            if self.is_reference_type(&base_type_str) {
+                writer.write_line(&format!("local.get ${}", name));
+                writer.write_line(&format!("call $release_{}", base_type_str.replace("[]", "_array")));
+            }
+        }
         
         writer.unindent();
 

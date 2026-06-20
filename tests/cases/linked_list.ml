@@ -14,7 +14,7 @@ fun main(): void {
     head.next.next = create_node(30);
     
     let curr: Node? = head;
-    while curr != null {
+    while (curr != null ) {
         print_int(curr.value);
         curr = curr.next;
     }

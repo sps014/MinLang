@@ -1,6 +1,6 @@
 fun sum_array(arr: int[], len: int): int {
     let sum = 0;
-    for let i = 0; i < len; i = i + 1 {
+    for (let i = 0; i < len; i = i + 1 ) {
         sum = sum + arr[i];
     }
     return sum;
@@ -30,6 +30,8 @@ fun main(): void {
     print_float(arr2[2]);
     
     let arr3: string[] = ["hello", "world", "minlang"];
-    println(arr3[0]);
-    println(arr3[2]);
+    print(arr3[0]);
+    print("\n");
+    print(arr3[2]);
+    print("\n");
 }

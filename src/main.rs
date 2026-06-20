@@ -4,32 +4,45 @@
 mod lang;
 
 use std::path::Path;
-use tracing::{info, error};
+use tracing::{info, error, Level};
+use tracing_subscriber::FmtSubscriber;
 use min_lang::lang::compiler::{Compiler, Target};
 use min_lang::lang::execution::wasm_runner::execute_wasm;
 
 fn main()
 {
-    tracing_subscriber::fmt::init();
-
     let args: Vec<String> = std::env::args().collect();
+    
+    let mut verbose = false;
+    let mut run_after_compile = false;
+    let mut file_name = None;
+    
+    for arg in args.iter().skip(1) {
+        if arg == "-v" || arg == "--verbose" {
+            verbose = true;
+        } else if arg == "run" {
+            run_after_compile = true;
+        } else if !arg.starts_with("-") {
+            file_name = Some(arg);
+        }
+    }
+
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(if verbose { Level::INFO } else { Level::WARN })
+        .finish();
+    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+
+    if file_name.is_none() {
+        error!("Expected a source file (*.ml) as argument");
+        error!("Usage: {} [-v|--verbose] [run] <file>", args[0]);
+        error!(r"Example: {} run src/sample/test_arrays.ml", args[0]);
+        return;
+    }
+    
+    let file_name = file_name.unwrap();
 
     info!("MinLang Compiler Tools");
     info!("========================");
-
-    let mut run_after_compile = false;
-    let file_name = if args.len() == 3 && args[1] == "run" {
-        run_after_compile = true;
-        &args[2]
-    } else if args.len() == 2 {
-        &args[1]
-    } else {
-        error!("Expected a source file (*.ml) as argument");
-        error!("Usage: {} [run] <file>", args[0]);
-        error!(r"Example: {} run src/sample/test_arrays.ml", args[0]);
-        return;
-    };
-
     info!("Compiling file: {}", file_name);
 
     let compiler = Compiler::new(Target::Wasm);

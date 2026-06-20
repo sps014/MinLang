@@ -4,13 +4,13 @@ struct Node {
 }
 
 fun create_list(n: int): Node? {
-    if n <= 0 {
+    if (n <= 0 ) {
         return null;
     }
     let head = Node { value: n, next: null };
     let curr: Node? = head;
     let i = n - 1;
-    while i > 0 {
+    while (i > 0 ) {
         curr.next = Node { value: i, next: null };
         curr = curr.next;
         i = i - 1;
@@ -19,6 +19,7 @@ fun create_list(n: int): Node? {
 }
 
 fun main(): void {
-    let list = create_list(10);
+    // Allocate a large linked list to test allocator and ARC performance
+    let list = create_list(10000);
     print("Memory was allocated and freed successfully!\n");
 }
