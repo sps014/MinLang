@@ -68,10 +68,12 @@ impl<'a> WasmGenerator<'a> {
             self.current_generic_bindings.clear();
             self.current_mangled_name = None;
         }
-        for method in self.struct_methods {
+        for (method, bindings) in self.struct_methods {
+            self.current_generic_bindings = bindings.iter().cloned().collect();
             self.current_mangled_name = Some(method.name.text.clone());
             self.build_function(method, writer)?;
             self.current_mangled_name = None;
+            self.current_generic_bindings.clear();
         }
 
         self.build_export(program, writer)?;
@@ -94,6 +96,8 @@ impl<'a> WasmGenerator<'a> {
         writer.write(" (local $scratch_ptr i32)");
         writer.write(" (local $scratch_addr i32)");
         writer.write(" (local $scratch_double f64)");
+        writer.write(" (local $scratch_len i32)");
+        writer.write(" (local $scratch_arr i32)");
         writer.write_line("");
         writer.indent();
 

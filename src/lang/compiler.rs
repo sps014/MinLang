@@ -58,7 +58,12 @@ impl Compiler {
         let mut diagnostics = DiagnosticBag::new(None);
         
         self.parse_file_recursive(main_file_path, &mut visited_files, &mut all_functions, &mut all_structs, &arena, &mut diagnostics, &mut file_contents)?;
-        
+
+        // The standard collections (List<T>, Map<K, V>) are embedded in the compiler and merged
+        // into every program as a prelude. They are generic templates, so they emit no code unless
+        // the program actually instantiates them.
+        self.merge_prelude(&arena, &mut all_functions, &mut all_structs, &mut diagnostics, &mut file_contents)?;
+
         if diagnostics.has_errors() {
             self.print_diagnostics(&diagnostics, &file_contents);
             return Err(Error::new(ErrorKind::Other, "Syntax errors found during parsing"));
@@ -96,6 +101,51 @@ impl Compiler {
         info!("finished code generation");
         fs::write(out_path, text)?;
         info!("created file: {}", out_path);
+        Ok(())
+    }
+
+    /// Parses the embedded standard-collections prelude and merges its declarations into the
+    /// program. Uses the same arena as the user's files so all AST nodes share a lifetime.
+    fn merge_prelude<'a>(
+        &self,
+        arena: &'a Bump,
+        all_functions: &mut Vec<crate::lang::code_analysis::syntax::nodes::FunctionNode<'a>>,
+        all_structs: &mut Vec<crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode<'a>>,
+        diagnostics: &mut DiagnosticBag,
+        file_contents: &mut std::collections::HashMap<String, String>,
+    ) -> Result<(), Error> {
+        const PRELUDE_SRC: &str = include_str!("stdlib/collections.ml");
+        let prelude_name = "<std>/collections.ml".to_string();
+        file_contents.insert(prelude_name.clone(), PRELUDE_SRC.to_string());
+
+        let mut prelude_diagnostics = DiagnosticBag::new(Some(prelude_name.clone()));
+        let lexer = Lexer::new(PRELUDE_SRC.to_string());
+        let mut parser = Parser::new(lexer, arena, &mut prelude_diagnostics);
+        let ast = match parser.parse() {
+            Ok(ast) => ast,
+            Err(e) => {
+                diagnostics.extend(&prelude_diagnostics);
+                return Err(e);
+            }
+        };
+        diagnostics.extend(&prelude_diagnostics);
+
+        let program = ast.get_root();
+        let file_tag: std::rc::Rc<str> = std::rc::Rc::from(prelude_name.as_str());
+        for function in program.functions.iter().cloned() {
+            let mut function = function;
+            function.file_path = Some(file_tag.clone());
+            all_functions.push(function);
+        }
+        for struct_decl in program.structs.iter().cloned() {
+            let mut struct_decl = struct_decl;
+            struct_decl.file_path = Some(file_tag.clone());
+            for method in struct_decl.methods.iter_mut() {
+                method.file_path = Some(file_tag.clone());
+            }
+            all_structs.push(struct_decl);
+        }
+
         Ok(())
     }
 

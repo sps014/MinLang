@@ -89,11 +89,11 @@ pub struct SemanticInfo<'a>
     pub function_table: &'a FunctionTable,
     pub struct_table: &'a StructTable,
     pub instantiated_generics: HashMap<String, (GenericBindings, &'a FunctionNode<'a>)>,
-    pub struct_methods: Vec<&'a FunctionNode<'a>>,
+    pub struct_methods: Vec<(&'a FunctionNode<'a>, GenericBindings)>,
 }
 
 impl<'a> SemanticInfo<'a> {
-    pub fn new(hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>, function_table: &'a FunctionTable, struct_table: &'a StructTable, instantiated_generics: HashMap<String, (GenericBindings, &'a FunctionNode<'a>)>, struct_methods: Vec<&'a FunctionNode<'a>>) -> SemanticInfo<'a>
+    pub fn new(hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>, function_table: &'a FunctionTable, struct_table: &'a StructTable, instantiated_generics: HashMap<String, (GenericBindings, &'a FunctionNode<'a>)>, struct_methods: Vec<(&'a FunctionNode<'a>, GenericBindings)>) -> SemanticInfo<'a>
     {
         SemanticInfo {
             hash_map,
@@ -114,11 +114,15 @@ pub struct Analyzer<'a> {
     generic_functions: HashMap<String, &'a FunctionNode<'a>>,
     instantiated_generics: HashMap<String, (GenericBindings, &'a FunctionNode<'a>)>,
     generic_structs: HashMap<String, &'a crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode<'a>>,
-    struct_methods: Vec<&'a FunctionNode<'a>>,
+    struct_methods: Vec<(&'a FunctionNode<'a>, GenericBindings)>,
+    /// The generic substitution bindings active while analyzing a monomorphized function or
+    /// struct-method body. Empty outside of any generic instantiation. Used to resolve generic
+    /// type parameters that appear inside a body (e.g. the `T` in `array_new<T>(...)`).
+    current_generic_bindings: GenericBindings,
 }
 impl<'a> Analyzer<'a> {
     pub fn new(tree: &'a SyntaxTree<'a>, arena: &'a Bump) -> Self {
-        Self { syntax_tree:tree, function_table: FunctionTable::new(), struct_table: StructTable::new(), arena, generic_functions: HashMap::new(), instantiated_generics: HashMap::new(), generic_structs: HashMap::new(), struct_methods: Vec::new() }
+        Self { syntax_tree:tree, function_table: FunctionTable::new(), struct_table: StructTable::new(), arena, generic_functions: HashMap::new(), instantiated_generics: HashMap::new(), generic_structs: HashMap::new(), struct_methods: Vec::new(), current_generic_bindings: Vec::new() }
     }
     pub fn analyze(&mut self, diagnostics: &mut DiagnosticBag) -> Result<SemanticInfo<'_>, ()> {
         let pgm= self.syntax_tree.get_root();
@@ -249,9 +253,14 @@ impl<'a> Analyzer<'a> {
         let generics_to_analyze: Vec<(String, &'a FunctionNode<'a>)> = self.instantiated_generics.iter()
             .map(|(mangled, (_bindings, template))| (mangled.clone(), *template))
             .collect();
+        let bindings_by_name: HashMap<String, GenericBindings> = self.instantiated_generics.iter()
+            .map(|(mangled, (bindings, _))| (mangled.clone(), bindings.clone()))
+            .collect();
         for (mangled_name, template) in generics_to_analyze {
             diagnostics.file_path = file_path_string(&template.file_path);
+            self.current_generic_bindings = bindings_by_name.get(&mangled_name).cloned().unwrap_or_default();
             let table = self.analyze_function(template, diagnostics)?;
+            self.current_generic_bindings = Vec::new();
             symbol_table_map.insert(mangled_name, table);
         }
         Ok(())
@@ -260,9 +269,11 @@ impl<'a> Analyzer<'a> {
     /// Pass 4: analyze the body of every (de-sugared) struct method.
     fn analyze_struct_method_bodies(&mut self, symbol_table_map: &mut HashMap<String, Rc<RefCell<SymbolTable>>>, diagnostics: &mut DiagnosticBag) -> Result<(), ()> {
         let methods_to_analyze = self.struct_methods.clone();
-        for method in methods_to_analyze {
+        for (method, bindings) in methods_to_analyze {
             diagnostics.file_path = file_path_string(&method.file_path);
+            self.current_generic_bindings = bindings;
             let table = self.analyze_function(method, diagnostics)?;
+            self.current_generic_bindings = Vec::new();
             symbol_table_map.insert(method.name.text.clone(), table);
         }
         Ok(())
@@ -329,7 +340,7 @@ impl<'a> Analyzer<'a> {
             new_method.parameters.insert(0, Self::make_this_param(struct_type_str));
 
             let method_ref = self.arena.alloc(new_method);
-            self.struct_methods.push(method_ref);
+            self.struct_methods.push((method_ref, bindings.to_vec()));
 
             if let Err(e) = self.function_table.add_function(mangled_name.clone(), FunctionTableInfo::from(method_ref)) {
                 diagnostics.report_error(e.to_string(), Some(method.name.position.clone()));
@@ -445,6 +456,12 @@ impl<'a> Analyzer<'a> {
                 Some(concrete) => Self::concrete_type_from_str(&concrete),
                 None => ty.clone(),
             },
+            // A generic struct applied to type arguments (e.g. `List<T>`): substitute inside the
+            // arguments so a generic function/method returning `List<T>` resolves to `List<int>`.
+            Type::Struct(token, Some(args)) => Type::Struct(
+                token.clone(),
+                Some(args.iter().map(|a| Self::monomorphize_type(a, bindings)).collect()),
+            ),
             Type::Array(inner) => Type::Array(Box::new(Self::monomorphize_type(inner, bindings))),
             Type::Nullable(inner) => Type::Nullable(Box::new(Self::monomorphize_type(inner, bindings))),
             _ => ty.clone(),
@@ -551,6 +568,44 @@ impl<'a> Analyzer<'a> {
             });
         }
 
+        // `array_new<T>(n)`: allocates a fresh, zero-initialized array of `n` elements of type `T`.
+        // The element type is read from the explicit type argument (resolved through the active
+        // monomorphization bindings so `array_new<T>` inside a `List<int>` method yields `int[]`).
+        if name.text == "array_new" {
+            let element = match generic_args.as_ref().and_then(|g| g.first()) {
+                Some(t) => Self::monomorphize_type(t, &self.current_generic_bindings),
+                None => {
+                    diagnostics.report_error("'array_new' requires a type argument, e.g. array_new<int>(n)".to_string(), Some(name.position.clone()));
+                    Type::Void
+                }
+            };
+            if params.len() != 1 {
+                diagnostics.report_error(format!("'array_new' expects exactly 1 argument (length), got {}", params.len()), Some(name.position.clone()));
+            }
+            for param in params.iter() {
+                let pt = self.analyze_expression(param, parent_function, symbol_table, diagnostics)?;
+                if pt.get_type() != "int" {
+                    diagnostics.report_error(format!("'array_new' length must be int, got {}", pt.get_type()), param.position());
+                }
+            }
+            return Ok(Type::Array(Box::new(element)));
+        }
+
+        // `len(a)`: the number of slots in an array (its stored length, i.e. capacity).
+        if name.text == "len" {
+            if params.len() != 1 {
+                diagnostics.report_error(format!("'len' expects exactly 1 argument, got {}", params.len()), Some(name.position.clone()));
+            }
+            let mut arg_type = Type::Void;
+            for param in params.iter() {
+                arg_type = self.analyze_expression(param, parent_function, symbol_table, diagnostics)?;
+            }
+            if !arg_type.get_type().ends_with("[]") {
+                diagnostics.report_error(format!("'len' expects an array, got {}", arg_type.get_type()), Some(name.position.clone()));
+            }
+            return Ok(Type::Integer(synthetic_token(TokenKind::DataTypeToken, "int")));
+        }
+
         let mut function_name=name.text.clone();
         let mut params_types=vec![];
         for param in params.iter() {
@@ -565,7 +620,14 @@ impl<'a> Analyzer<'a> {
             let mangled_name = mangle_bindings(&function_name, &bindings);
 
             if self.function_table.get_function(&mangled_name).is_err() {
-                self.instantiated_generics.insert(mangled_name.clone(), (bindings.clone(), template));
+                // Store a clone with its signature monomorphized (params + return type made
+                // concrete), mirroring how struct methods are specialized. The body is shared and
+                // resolved against the bindings during analysis/codegen, so the declared return
+                // type (e.g. `List<T>` -> `List_int`) stays consistent with what the body builds.
+                let mut specialized = template.clone();
+                Self::substitute_generic_signature(&mut specialized, &bindings);
+                let specialized_ref: &'a FunctionNode<'a> = self.arena.alloc(specialized);
+                self.instantiated_generics.insert(mangled_name.clone(), (bindings.clone(), specialized_ref));
 
                 let info = FunctionTableInfo {
                     name: mangled_name.clone(),
@@ -875,7 +937,13 @@ impl<'a> Analyzer<'a> {
             ExpressionNode::Parenthesized(expr)=>
                 Ok(self.analyze_expression(expr,parent_function,symbol_table, diagnostics)?),
             ExpressionNode::StructInstantiation(name, generic_args, fields) => {
-                let generic_args_slice = generic_args.as_deref().unwrap_or(&[]);
+                // Resolve generic type arguments through the active monomorphization bindings so a
+                // `List<T>{...}` written inside a generic function/method body instantiates the
+                // concrete `List<int>` rather than a stray `List<T>`.
+                let resolved_args: Vec<Type> = generic_args.as_deref().unwrap_or(&[]).iter()
+                    .map(|a| Self::monomorphize_type(a, &self.current_generic_bindings))
+                    .collect();
+                let generic_args_slice = resolved_args.as_slice();
                 let struct_name = mangle_generic(&name.text, generic_args_slice);
 
                 // Monomorphize generic struct if needed

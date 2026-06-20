@@ -43,7 +43,7 @@ pub struct WasmGenerator<'a> {
     pub current_generic_bindings: HashMap<String, String>,
     pub current_mangled_name: Option<String>,
     pub instantiated_generics: &'a HashMap<String, (crate::lang::semantic_analysis::analyzer::GenericBindings, &'a crate::lang::code_analysis::syntax::nodes::FunctionNode<'a>)>,
-    pub struct_methods: &'a Vec<&'a crate::lang::code_analysis::syntax::nodes::FunctionNode<'a>>,
+    pub struct_methods: &'a Vec<(&'a crate::lang::code_analysis::syntax::nodes::FunctionNode<'a>, crate::lang::semantic_analysis::analyzer::GenericBindings)>,
 }
 
 impl<'a> CodeGenerator<'a> for WasmGenerator<'a> {

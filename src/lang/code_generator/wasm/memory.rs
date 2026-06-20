@@ -298,6 +298,65 @@ const RUNTIME_STRINGS: &str = r#"(func $strlen (param $ptr i32) (result i32)
 (func $debug_get_free_list_head (result i32)
     global.get $free_list_head
 )
+
+(func $string_eq (param $a i32) (param $b i32) (result i32)
+    (local $ca i32)
+    (local $cb i32)
+    ;; identical pointers (covers the both-null case) are trivially equal
+    local.get $a
+    local.get $b
+    i32.eq
+    if
+        i32.const 1
+        return
+    end
+    ;; a null pointer can only equal another null pointer (handled above)
+    local.get $a
+    i32.eqz
+    if
+        i32.const 0
+        return
+    end
+    local.get $b
+    i32.eqz
+    if
+        i32.const 0
+        return
+    end
+    (block $done
+        (loop $cmp
+            local.get $a
+            i32.load8_u
+            local.set $ca
+            local.get $b
+            i32.load8_u
+            local.set $cb
+            local.get $ca
+            local.get $cb
+            i32.ne
+            if
+                i32.const 0
+                return
+            end
+            local.get $ca
+            i32.eqz
+            if
+                i32.const 1
+                return
+            end
+            local.get $a
+            i32.const 1
+            i32.add
+            local.set $a
+            local.get $b
+            i32.const 1
+            i32.add
+            local.set $b
+            br $cmp
+        )
+    )
+    i32.const 0
+)
 "#;
 
 impl<'a> WasmGenerator<'a> {
@@ -351,6 +410,7 @@ impl<'a> WasmGenerator<'a> {
         if type_name.ends_with("[]") {
             writer.write_line("(local $len i32)");
             writer.write_line("(local $i i32)");
+            writer.write_line("(local $elem i32)");
         }
         
         // If ptr is 0, do nothing
@@ -422,7 +482,7 @@ impl<'a> WasmGenerator<'a> {
                 writer.write_line("i32.ge_s");
                 writer.write_line("br_if $loop_end");
                 
-                // Call release on element
+                // Load the element pointer (slots past `count` are null in a grown buffer).
                 writer.write_line("local.get $ptr");
                 writer.write_line("i32.const 4");
                 writer.write_line("i32.add"); // skip length
@@ -431,7 +491,20 @@ impl<'a> WasmGenerator<'a> {
                 writer.write_line("i32.mul");
                 writer.write_line("i32.add");
                 writer.write_line("i32.load"); // load element pointer
+                writer.write_line("local.set $elem");
+
+                // Only release non-null elements.
+                writer.write_line("local.get $elem");
+                writer.write_line("(if");
+                writer.indent();
+                writer.write_line("(then");
+                writer.indent();
+                writer.write_line("local.get $elem");
                 writer.write_line(&format!("call $release_{}", release_func));
+                writer.unindent();
+                writer.write_line(")");
+                writer.unindent();
+                writer.write_line(")");
                 
                 writer.write_line("local.get $i");
                 writer.write_line("i32.const 1");

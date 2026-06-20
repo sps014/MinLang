@@ -230,6 +230,14 @@ impl<'a> WasmGenerator<'a> {
                     "to_string" => return Ok("string".to_string()),
                     "hash_code" => return Ok("int".to_string()),
                     "print" => return Ok("void".to_string()),
+                    "len" => return Ok("int".to_string()),
+                    "array_new" => {
+                        let element = generic_args.as_ref()
+                            .and_then(|g| g.first())
+                            .map(|t| self.resolve_type(&t.get_type()))
+                            .unwrap_or_else(|| "int".to_string());
+                        return Ok(format!("{}[]", element));
+                    },
                     _ => {}
                 }
                 let resolved_name = self.resolve_call_name(&name.text, generic_args, args, function);
@@ -268,7 +276,14 @@ impl<'a> WasmGenerator<'a> {
             ExpressionNode::Cast(target_type, _) => Ok(target_type.get_type()),
             ExpressionNode::StructInstantiation(name, generic_args, _) => {
                 let struct_name = match generic_args {
-                    Some(args) => mangle_generic(&name.text, args),
+                    Some(args) => {
+                        let mut mangled = name.text.clone();
+                        for arg in args {
+                            mangled.push('_');
+                            mangled.push_str(&self.resolve_type(&arg.get_type()));
+                        }
+                        mangled
+                    },
                     None => name.text.clone(),
                 };
                 Ok(struct_name)

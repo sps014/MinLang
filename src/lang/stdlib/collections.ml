@@ -1,0 +1,285 @@
+// MinLang standard collections, auto-imported into every program.
+//
+// Both types are generic structs backed by reference-counted arrays and grow on demand. They
+// are monomorphized per concrete element type, so `List<int>` / `Map<string, int>` compile to
+// dedicated, allocation-free-dispatch WASM (no boxing, no virtual calls).
+//
+// Construction helpers:
+//   let xs = new_list<int>();
+//   let m  = new_map<string, int>();
+
+// ---------------------------------------------------------------------------
+// List<T> - a dynamic array.
+// ---------------------------------------------------------------------------
+struct List<T> {
+    items: T[];
+    count: int;
+
+    // Number of elements currently stored.
+    fun size(): int {
+        return this.count;
+    }
+
+    // Doubles the backing buffer, copying existing elements across.
+    fun grow(): void {
+        let old_cap = len(this.items);
+        let new_cap = old_cap * 2;
+        if (new_cap < 4) {
+            new_cap = 4;
+        }
+        let bigger = array_new<T>(new_cap);
+        let i = 0;
+        while (i < this.count) {
+            bigger[i] = this.items[i];
+            i = i + 1;
+        }
+        this.items = bigger;
+    }
+
+    // Appends a value to the end, growing if necessary.
+    fun push(value: T): void {
+        if (this.count == len(this.items)) {
+            this.grow();
+        }
+        this.items[this.count] = value;
+        this.count = this.count + 1;
+    }
+
+    // Returns the element at `index` (no bounds checking).
+    fun get(index: int): T {
+        return this.items[index];
+    }
+
+    // Overwrites the element at `index`.
+    fun set(index: int, value: T): void {
+        this.items[index] = value;
+    }
+
+    // Removes and returns the last element.
+    fun pop(): T {
+        let last = this.items[this.count - 1];
+        this.count = this.count - 1;
+        return last;
+    }
+
+    // True if `value` is present (uses value equality, including string contents).
+    fun contains(value: T): bool {
+        let i = 0;
+        let found = false;
+        while (i < this.count) {
+            if (this.items[i] == value) {
+                found = true;
+            }
+            i = i + 1;
+        }
+        return found;
+    }
+
+    // Index of the first matching element, or -1.
+    fun index_of(value: T): int {
+        let i = 0;
+        let result = -1;
+        while (i < this.count) {
+            if (result < 0) {
+                if (this.items[i] == value) {
+                    result = i;
+                }
+            }
+            i = i + 1;
+        }
+        return result;
+    }
+
+    // Logically empties the list.
+    fun clear(): void {
+        this.count = 0;
+    }
+
+    // Removes the element at `index`, shifting later elements left.
+    fun remove_at(index: int): void {
+        let i = index;
+        while (i < this.count - 1) {
+            this.items[i] = this.items[i + 1];
+            i = i + 1;
+        }
+        this.count = this.count - 1;
+    }
+}
+
+fun new_list<T>(): List<T> {
+    return List<T> { items: array_new<T>(8), count: 0 };
+}
+
+// ---------------------------------------------------------------------------
+// Map<K, V> - an open-addressing hash map (linear probing with tombstones).
+// `states`: 0 = empty, 1 = occupied, 2 = tombstone.
+// `defaults`: a one-slot, never-written buffer whose [0] is the zero value of V,
+// returned by `get` on a miss.
+// ---------------------------------------------------------------------------
+struct Map<K, V> {
+    keys: K[];
+    values: V[];
+    states: int[];
+    defaults: V[];
+    count: int;
+    used: int;
+    cap: int;
+
+    // Number of key/value pairs currently stored.
+    fun size(): int {
+        return this.count;
+    }
+
+    // Initial probe index for a key, normalized into [0, cap).
+    fun home(key: K): int {
+        let h = hash_code(key);
+        let idx = h % this.cap;
+        if (idx < 0) {
+            idx = idx + this.cap;
+        }
+        return idx;
+    }
+
+    // Index of an occupied slot holding `key`, or -1.
+    fun find(key: K): int {
+        let idx = this.home(key);
+        let result = -1;
+        let searching = true;
+        while (searching == true) {
+            let s = this.states[idx];
+            if (s == 0) {
+                searching = false;
+            } else {
+                if (s == 1) {
+                    if (this.keys[idx] == key) {
+                        result = idx;
+                        searching = false;
+                    }
+                }
+                if (searching == true) {
+                    idx = idx + 1;
+                    if (idx == this.cap) {
+                        idx = 0;
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    // Grows and rehashes when the table gets too full (load factor ~0.75).
+    fun rehash(): void {
+        let old_keys = this.keys;
+        let old_values = this.values;
+        let old_states = this.states;
+        let old_cap = this.cap;
+        let new_cap = old_cap * 2;
+        if (new_cap < 8) {
+            new_cap = 8;
+        }
+        this.keys = array_new<K>(new_cap);
+        this.values = array_new<V>(new_cap);
+        this.states = array_new<int>(new_cap);
+        this.cap = new_cap;
+        this.count = 0;
+        this.used = 0;
+        let i = 0;
+        while (i < old_cap) {
+            if (old_states[i] == 1) {
+                this.put(old_keys[i], old_values[i]);
+            }
+            i = i + 1;
+        }
+    }
+
+    // Inserts or updates the value for `key`.
+    fun put(key: K, value: V): void {
+        if ((this.used + 1) * 4 >= this.cap * 3) {
+            this.rehash();
+        }
+        let idx = this.home(key);
+        let first_tomb = -1;
+        let placed = false;
+        while (placed == false) {
+            let s = this.states[idx];
+            if (s == 0) {
+                let target = idx;
+                if (first_tomb >= 0) {
+                    target = first_tomb;
+                }
+                this.keys[target] = key;
+                this.values[target] = value;
+                this.states[target] = 1;
+                this.count = this.count + 1;
+                if (first_tomb < 0) {
+                    this.used = this.used + 1;
+                }
+                placed = true;
+            } else {
+                if (s == 2) {
+                    if (first_tomb < 0) {
+                        first_tomb = idx;
+                    }
+                } else {
+                    if (this.keys[idx] == key) {
+                        this.values[idx] = value;
+                        placed = true;
+                    }
+                }
+                if (placed == false) {
+                    idx = idx + 1;
+                    if (idx == this.cap) {
+                        idx = 0;
+                    }
+                }
+            }
+        }
+    }
+
+    // True if `key` has an associated value.
+    fun contains(key: K): bool {
+        return this.find(key) >= 0;
+    }
+
+    // Value for `key`, or the zero value of V if absent.
+    fun get(key: K): V {
+        let i = this.find(key);
+        if (i >= 0) {
+            return this.values[i];
+        }
+        return this.defaults[0];
+    }
+
+    // Value for `key`, or `fallback` if absent.
+    fun get_or(key: K, fallback: V): V {
+        let i = this.find(key);
+        if (i >= 0) {
+            return this.values[i];
+        }
+        return fallback;
+    }
+
+    // Removes `key` if present, returning true if a value was removed.
+    fun remove(key: K): bool {
+        let i = this.find(key);
+        if (i >= 0) {
+            this.states[i] = 2;
+            this.values[i] = this.defaults[0];
+            this.count = this.count - 1;
+            return true;
+        }
+        return false;
+    }
+}
+
+fun new_map<K, V>(): Map<K, V> {
+    return Map<K, V> {
+        keys: array_new<K>(8),
+        values: array_new<V>(8),
+        states: array_new<int>(8),
+        defaults: array_new<V>(1),
+        count: 0,
+        used: 0,
+        cap: 8
+    };
+}

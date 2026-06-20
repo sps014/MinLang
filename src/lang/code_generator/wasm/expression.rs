@@ -1,6 +1,6 @@
 use std::io::{Error, ErrorKind};
 use crate::lang::code_analysis::syntax::nodes::{ExpressionNode, FunctionNode, Type};
-use crate::lang::code_analysis::syntax::nodes::types::{mangle_generic, strip_nullable};
+use crate::lang::code_analysis::syntax::nodes::types::strip_nullable;
 use crate::lang::code_analysis::text::indented_text_writer::IndentedTextWriter;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 use crate::lang::code_analysis::token::token_kind::TokenKind;
@@ -36,6 +36,8 @@ impl<'a> WasmGenerator<'a> {
                     "print" if args.len() == 1 => self.build_print(&args[0], function, writer)?,
                     "to_string" if args.len() == 1 => self.build_to_string(&args[0], function, writer)?,
                     "hash_code" if args.len() == 1 => self.build_hash_code(&args[0], function, writer)?,
+                    "array_new" if args.len() == 1 => self.build_array_new(generic_args, &args[0], function, writer)?,
+                    "len" if args.len() == 1 => self.build_len(&args[0], function, writer)?,
                     _ => {
                         let function_name = self.resolve_call_name(&n.text, generic_args, args, function);
                         self.build_function_invocation(&function_name, args, function, writer)?
@@ -97,10 +99,73 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
+    /// Allocates a fresh, zero-initialized array of `n` elements (the runtime backing buffer for
+    /// `List`/`Map` growth). Layout matches array literals: a `TAG_ARRAY` heap block whose first
+    /// word is the element count, followed by the (zeroed) element slots.
+    pub fn build_array_new(&mut self, generic_args: &Option<Vec<Type>>, len_expr: &ExpressionNode<'a>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        let element_type = generic_args.as_ref()
+            .and_then(|g| g.first())
+            .map(|t| self.resolve_type(&t.get_type()))
+            .unwrap_or_else(|| "int".to_string());
+        let element_size = WasmGenerator::element_size_of(&element_type);
+
+        // Evaluate the requested length first and stash it. We use dedicated scratch locals
+        // ($scratch_len / $scratch_arr) so this never clobbers $scratch_ptr / $scratch_addr, which
+        // the enclosing struct instantiation or member/index assignment relies on staying live.
+        self.build_expression(len_expr, &"int".to_string(), function, writer)?;
+        writer.write_line("local.set $scratch_len");
+
+        // total_size = 4 (length word) + len * element_size
+        writer.write_line("i32.const 4");
+        writer.write_line("local.get $scratch_len");
+        writer.write_line(&format!("i32.const {}", element_size));
+        writer.write_line("i32.mul");
+        writer.write_line("i32.add");
+        writer.write_line(&format!("i32.const {}", super::object::TAG_ARRAY));
+        writer.write_line("call $malloc");
+        writer.write_line("local.set $scratch_arr");
+
+        // Store the element count at offset 0.
+        writer.write_line("local.get $scratch_arr");
+        writer.write_line("local.get $scratch_len");
+        writer.write_line("i32.store");
+
+        // Zero the element region so unused/leftover slots are null (recycled freelist blocks are
+        // not zeroed by the allocator; reference-typed releases rely on null slots).
+        writer.write_line("local.get $scratch_arr");
+        writer.write_line("i32.const 4");
+        writer.write_line("i32.add");
+        writer.write_line("i32.const 0");
+        writer.write_line("local.get $scratch_len");
+        writer.write_line(&format!("i32.const {}", element_size));
+        writer.write_line("i32.mul");
+        writer.write_line("memory.fill");
+
+        // Leave the data pointer on the stack.
+        writer.write_line("local.get $scratch_arr");
+        Ok(())
+    }
+
+    /// Builds `len(a)`: the stored slot count of an array (the first word of the buffer).
+    pub fn build_len(&mut self, array_expr: &ExpressionNode<'a>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        self.build_expression(array_expr, &"int[]".to_string(), function, writer)?;
+        writer.write_line("i32.load");
+        Ok(())
+    }
+
     /// Builds a struct instantiation
     pub fn build_struct_instantiation(&mut self, name: &SyntaxToken, generic_args: &Option<Vec<Type>>, fields: &Vec<(SyntaxToken, ExpressionNode<'a>)>, _left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let struct_name = match generic_args {
-            Some(args) => mangle_generic(&name.text, args),
+            // Resolve each type argument through the active monomorphization bindings so a
+            // `List<T>{...}` inside a generic body targets the concrete `List_int` layout.
+            Some(args) => {
+                let mut mangled = name.text.clone();
+                for arg in args {
+                    mangled.push('_');
+                    mangled.push_str(&self.resolve_type(&arg.get_type()));
+                }
+                mangled
+            },
             None => name.text.clone(),
         };
         let struct_info = self.struct_table.get_struct(&struct_name).unwrap().clone();
@@ -178,6 +243,19 @@ impl<'a> WasmGenerator<'a> {
         if left == "string" && opr.kind == TokenKind::PlusToken {
             writer.write_line("call $concat_strings");
             return Ok(());
+        }
+
+        // String equality compares contents, not pointers. Detect via the operand type (the
+        // expression's own `left_side` is `bool`/`int` for a comparison, so it cannot be used).
+        if matches!(opr.kind, TokenKind::EqualEqualToken | TokenKind::NotEqualToken) {
+            let operand_type = self.infer_expression_type(left_exp, function).unwrap_or_else(|_| left.clone());
+            if strip_nullable(&operand_type) == "string" {
+                writer.write_line("call $string_eq");
+                if opr.kind == TokenKind::NotEqualToken {
+                    writer.write_line("i32.eqz");
+                }
+                return Ok(());
+            }
         }
 
         let symbol = WasmGenerator::get_wasm_type_from(left.clone())?;
