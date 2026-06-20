@@ -1,0 +1,70 @@
+use std::collections::HashMap;
+use crate::lang::code_analysis::syntax::nodes::Type;
+use crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode;
+
+#[derive(Debug, Clone)]
+pub struct StructFieldInfo {
+    pub type_: Type,
+    pub offset: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructInfo {
+    pub name: String,
+    pub fields: HashMap<String, StructFieldInfo>,
+    pub size: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructTable {
+    pub structs: HashMap<String, StructInfo>,
+}
+
+impl StructTable {
+    pub fn new() -> Self {
+        Self {
+            structs: HashMap::new(),
+        }
+    }
+
+    pub fn add_struct(&mut self, struct_decl: &StructDeclarationNode) -> Result<(), String> {
+        let name = struct_decl.name.text.clone();
+        if self.structs.contains_key(&name) {
+            return Err(format!("Struct '{}' is already defined", name));
+        }
+
+        let mut fields = HashMap::new();
+        let mut current_offset = 0;
+
+        for field in &struct_decl.fields {
+            let field_name = field.name.text.clone();
+            if fields.contains_key(&field_name) {
+                return Err(format!("Field '{}' is already defined in struct '{}'", field_name, name));
+            }
+
+            let field_type = match Type::from_token(field.type_token.clone()) {
+                Ok(t) => t,
+                Err(_) => return Err(format!("Invalid type for field '{}'", field_name)),
+            };
+
+            // All types (int, float, bool, pointers to arrays/structs/strings) are 4 bytes in WASM
+            fields.insert(field_name, StructFieldInfo {
+                type_: field_type,
+                offset: current_offset,
+            });
+            current_offset += 4;
+        }
+
+        self.structs.insert(name.clone(), StructInfo {
+            name,
+            fields,
+            size: current_offset,
+        });
+
+        Ok(())
+    }
+
+    pub fn get_struct(&self, name: &str) -> Option<&StructInfo> {
+        self.structs.get(name)
+    }
+}

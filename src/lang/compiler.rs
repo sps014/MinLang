@@ -32,11 +32,12 @@ impl Compiler {
         info!("starting parsing and multi-file resolution");
         let mut visited_files = HashSet::new();
         let mut all_functions = vec![];
+        let mut all_structs = vec![];
         
         let arena = Bump::new();
         let mut diagnostics = DiagnosticBag::new(None);
         
-        self.parse_file_recursive(main_file_path, &mut visited_files, &mut all_functions, &arena, &mut diagnostics)?;
+        self.parse_file_recursive(main_file_path, &mut visited_files, &mut all_functions, &mut all_structs, &arena, &mut diagnostics)?;
         
         if diagnostics.has_errors() {
             for diag in &diagnostics.diagnostics {
@@ -45,7 +46,7 @@ impl Compiler {
             return Err(Error::new(ErrorKind::Other, "Syntax errors found during parsing"));
         }
 
-        let combined_program = ProgramNode::new(vec![], all_functions);
+        let combined_program = ProgramNode::new(vec![], all_structs, all_functions);
         let ast = SyntaxTree::new(combined_program);
         
         info!("finished parsing");
@@ -89,6 +90,7 @@ impl Compiler {
         file_path: &String,
         visited: &mut HashSet<String>,
         all_functions: &mut Vec<crate::lang::code_analysis::syntax::nodes::FunctionNode<'a>>,
+        all_structs: &mut Vec<crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode>,
         arena: &'a Bump,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<(), Error> {
@@ -135,10 +137,11 @@ impl Compiler {
                 continue;
             }
             
-            self.parse_file_recursive(&import_path_str, visited, all_functions, arena, diagnostics)?;
+            self.parse_file_recursive(&import_path_str, visited, all_functions, all_structs, arena, diagnostics)?;
         }
         
         all_functions.extend(program.functions.clone());
+        all_structs.extend(program.structs.clone());
         
         Ok(())
     }

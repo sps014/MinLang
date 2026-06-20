@@ -37,9 +37,8 @@ impl<'a> WasmGenerator<'a> {
                 std_func.name, std_func.name, params_str.trim(), result_str));
         }
 
-        // Global heap pointer for bump allocator
-        writer.write_line("(global $heap_ptr (mut i32) (i32.const 1024))"); // Start heap at 1024 to leave room for static strings
-
+        // Memory management functions
+        self.build_memory_management(writer)?;
 
         writer.write_line("(memory 1)");
         for (s, offset) in &self.strings {
@@ -70,21 +69,12 @@ impl<'a> WasmGenerator<'a> {
         self.build_return_type(function, writer)?;
         self.build_local_variable(function, writer)?;
         
-        // Add hidden local variable to save the heap pointer for scope-based bump allocation
-        writer.write(" (local $saved_heap_ptr i32)");
+        writer.write(" (local $scratch_ptr i32)");
+        writer.write(" (local $scratch_addr i32)");
         writer.write_line("");
-
         writer.indent();
         
-        // Save the current heap pointer at the start of the function
-        writer.write_line("global.get $heap_ptr");
-        writer.write_line("local.set $saved_heap_ptr");
-        
         self.build_body(function.body, function, writer)?;
-        
-        // Restore the heap pointer at the end of the function (if it doesn't return early)
-        writer.write_line("local.get $saved_heap_ptr");
-        writer.write_line("global.set $heap_ptr");
         
         writer.unindent();
 

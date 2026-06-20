@@ -57,8 +57,6 @@ fn execute_wasm(wat_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     linker.func_wrap("env", "abs", |v: f32| -> f32 { v.abs() })?;
     linker.func_wrap("env", "sqrt", |v: f32| -> f32 { v.sqrt() })?;
     linker.func_wrap("env", "strlen", |_: i32| -> i32 { 0 })?;
-    linker.func_wrap("env", "malloc", |_: i32| -> i32 { 0 })?;
-    linker.func_wrap("env", "free", |_: i32| {})?;
 
     let instance = linker.instantiate(&mut store, &module)?;
     

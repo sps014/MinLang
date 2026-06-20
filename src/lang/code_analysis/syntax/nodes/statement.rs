@@ -6,7 +6,8 @@ use super::types::Type;
 #[derive(Debug, Clone)]
 pub enum StatementNode<'a> {
     Assignment(SyntaxToken, ExpressionNode<'a>),
-    IndexAssignment(SyntaxToken, &'a ExpressionNode<'a>, ExpressionNode<'a>),
+    IndexAssignment(&'a ExpressionNode<'a>, &'a ExpressionNode<'a>, ExpressionNode<'a>),
+    MemberAssignment(&'a ExpressionNode<'a>, SyntaxToken, ExpressionNode<'a>),
     Declaration(SyntaxToken, Option<Type>, ExpressionNode<'a>),
     FunctionInvocation(SyntaxToken, Vec<ExpressionNode<'a>>),
     Return(Option<ExpressionNode<'a>>),

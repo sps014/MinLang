@@ -81,18 +81,6 @@ impl StdlibFunction {
                 parameters: vec!["string".to_string()],
                 return_type: Some(Self::create_type("int")),
             },
-            
-            // Memory
-            StdlibFunction {
-                name: "malloc".to_string(),
-                parameters: vec!["int".to_string()],
-                return_type: Some(Self::create_type("int")), // pointer
-            },
-            StdlibFunction {
-                name: "free".to_string(),
-                parameters: vec!["int".to_string()],
-                return_type: None,
-            },
         ]
     }
 }

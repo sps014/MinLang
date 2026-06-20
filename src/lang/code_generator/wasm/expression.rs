@@ -17,7 +17,86 @@ impl<'a> WasmGenerator<'a> {
             ExpressionNode::Literal(literal) => self.build_literal(literal, writer)?,
             ExpressionNode::FunctionCall(n, args) => self.build_function_invocation(&n.text.clone(), args, function, writer)?,
             ExpressionNode::Parenthesized(e) => self.build_expression(e, left_side, function, writer)?,
+            ExpressionNode::Cast(target_type, expr) => self.build_cast(target_type, expr, left_side, function, writer)?,
+            ExpressionNode::StructInstantiation(name, fields) => self.build_struct_instantiation(name, fields, left_side, function, writer)?,
+            ExpressionNode::MemberAccess(obj, member) => self.build_member_access(obj, member, left_side, function, writer)?,
         }
+        Ok(())
+    }
+
+    /// Builds a type cast expression
+    pub fn build_cast(&mut self, target_type: &Type, expr: &ExpressionNode<'a>, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        let target_str = target_type.get_type();
+        let source_str = self.infer_expression_type(expr, function)?;
+        
+        self.build_expression(expr, &source_str, function, writer)?;
+        
+        if target_str == "float" && source_str == "int" {
+            writer.write_line("f32.convert_i32_s");
+        } else if target_str == "int" && source_str == "float" {
+            writer.write_line("i32.trunc_f32_s");
+        }
+        // If they are the same type, or unsupported cast, do nothing (analyzer already validated it)
+        
+        Ok(())
+    }
+
+    /// Builds a struct instantiation
+    pub fn build_struct_instantiation(&mut self, name: &SyntaxToken, fields: &Vec<(SyntaxToken, ExpressionNode<'a>)>, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        let struct_info = self.struct_table.get_struct(&name.text).unwrap().clone();
+        
+        // 1. Allocate memory using $malloc
+        writer.write_line(&format!("i32.const {}", struct_info.size));
+        writer.write_line("call $malloc");
+        writer.write_line("local.set $scratch_ptr");
+        
+        // 2. Evaluate and store each field
+        for (field_name, expr) in fields.iter() {
+            let field_info = struct_info.fields.get(&field_name.text).unwrap();
+            let offset = field_info.offset;
+            let wasm_type = WasmGenerator::get_wasm_type_from(field_info.type_.get_type())?;
+            
+            writer.write_line("local.get $scratch_ptr"); // ptr
+            if offset > 0 {
+                writer.write_line(&format!("i32.const {}", offset));
+                writer.write_line("i32.add"); // ptr + offset
+            }
+            
+            self.build_expression(expr, &field_info.type_.get_type(), function, writer)?;
+            
+            if wasm_type == "f32" {
+                writer.write_line("f32.store");
+            } else {
+                writer.write_line("i32.store");
+            }
+        }
+        
+        // 3. Leave the pointer on the stack
+        writer.write_line("local.get $scratch_ptr");
+        Ok(())
+    }
+
+    /// Builds a member access
+    pub fn build_member_access(&mut self, obj: &ExpressionNode<'a>, member: &SyntaxToken, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        let obj_type_str = self.infer_expression_type(obj, function)?;
+        let struct_info = self.struct_table.get_struct(&obj_type_str).unwrap().clone();
+        let field_info = struct_info.fields.get(&member.text).unwrap();
+        let offset = field_info.offset;
+        let wasm_type = WasmGenerator::get_wasm_type_from(field_info.type_.get_type())?;
+        
+        self.build_expression(obj, &obj_type_str, function, writer)?; // ptr
+        
+        if offset > 0 {
+            writer.write_line(&format!("i32.const {}", offset));
+            writer.write_line("i32.add"); // ptr + offset
+        }
+        
+        if wasm_type == "f32" {
+            writer.write_line("f32.load");
+        } else {
+            writer.write_line("i32.load");
+        }
+        
         Ok(())
     }
 
@@ -142,18 +221,29 @@ impl<'a> WasmGenerator<'a> {
         };
         let wasm_type = WasmGenerator::get_wasm_type_from(inner_type_str.clone())?;
 
-        // 1. Get current heap ptr (this will be our array ptr)
-        writer.write_line("global.get $heap_ptr");
+        // 1. Allocate memory using $malloc
+        writer.write_line(&format!("i32.const {}", total_size));
+        writer.write_line("call $malloc");
+        
+        // We need to store the allocated pointer in a local variable temporarily,
+        // but we don't have a scratch local easily available.
+        // Wait, we can just use the stack.
+        // Stack: [ptr]
         
         // 2. Store the length at ptr + 0
-        writer.write_line("global.get $heap_ptr"); // ptr for store
+        // We need the ptr again, but WASM doesn't have `dup`.
+        // Let's use a hidden local for scratch space in every function, or just add one.
+        // Since we refactored `build_function`, let's add `(local $scratch_ptr i32)` to every function.
+        writer.write_line("local.set $scratch_ptr");
+        
+        writer.write_line("local.get $scratch_ptr"); // ptr for store
         writer.write_line(&format!("i32.const {}", len));
         writer.write_line("i32.store");
         
         // 3. Evaluate and store each element
         for (i, expr) in elements.iter().enumerate() {
             let offset = 4 + (i * 4);
-            writer.write_line("global.get $heap_ptr"); // ptr
+            writer.write_line("local.get $scratch_ptr"); // ptr
             writer.write_line(&format!("i32.const {}", offset));
             writer.write_line("i32.add"); // ptr + offset
             
@@ -166,13 +256,8 @@ impl<'a> WasmGenerator<'a> {
             }
         }
         
-        // 4. Bump the heap pointer
-        writer.write_line("global.get $heap_ptr");
-        writer.write_line(&format!("i32.const {}", total_size));
-        writer.write_line("i32.add");
-        writer.write_line("global.set $heap_ptr");
-        
-        // The original ptr is still on the stack from step 1, which is exactly what we want to return
+        // 4. Leave the pointer on the stack
+        writer.write_line("local.get $scratch_ptr");
         Ok(())
     }
 

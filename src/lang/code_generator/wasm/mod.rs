@@ -15,6 +15,7 @@ pub mod module;
 pub mod statement;
 pub mod strings;
 pub mod utils;
+pub mod memory;
 
 /// Generates WebAssembly (WAT) code from the given syntax tree and semantic info.
 #[allow(dead_code)]
@@ -22,6 +23,7 @@ pub struct WasmGenerator<'a> {
     pub syntax_tree: &'a SyntaxTree<'a>,
     pub symbol_map: &'a HashMap<String, Rc<RefCell<SymbolTable>>>,
     pub function_table: &'a FunctionTable,
+    pub struct_table: &'a crate::lang::semantic_analysis::struct_table::StructTable,
     // key 1: function name, key 2: parameter name
     pub combined_symbol_lookup: HashMap<String, HashMap<String, Type>>,
     pub strings: HashMap<String, usize>,
@@ -44,6 +46,7 @@ impl<'a> WasmGenerator<'a> {
             syntax_tree,
             symbol_map: &semantic_info.hash_map,
             function_table: &semantic_info.function_table,
+            struct_table: &semantic_info.struct_table,
             combined_symbol_lookup: HashMap::new(),
             strings: HashMap::new(),
             next_string_offset: 0,

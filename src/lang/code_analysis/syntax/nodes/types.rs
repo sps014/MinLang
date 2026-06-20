@@ -9,6 +9,7 @@ pub enum Type {
     String(SyntaxToken),
     Boolean(SyntaxToken),
     Array(Box<Type>),
+    Struct(SyntaxToken),
     Void,
 }
 
@@ -22,6 +23,7 @@ impl Type {
             Type::Void => "void".to_string(),
             Type::Boolean(_) => "bool".to_string(),
             Type::Array(inner) => format!("{}[]", inner.get_type()),
+            Type::Struct(token) => token.text.clone(),
         }
     }
 
@@ -34,6 +36,7 @@ impl Type {
             Type::Void => "".to_string(),
             Type::Boolean(token) => token.position.get_point_str(),
             Type::Array(inner) => inner.get_line_str(),
+            Type::Struct(token) => token.position.get_point_str(),
         }
     }
 
@@ -46,7 +49,7 @@ impl Type {
             "void" => Type::Void,
             "bool" => Type::Boolean(token),
             _ => {
-                // Handle array types like "int[]"
+                // Handle array types like "int[]" or "Point[]"
                 if token.text.ends_with("[]") {
                     let base_type_str = &token.text[0..token.text.len() - 2];
                     let mut base_token = token.clone();
@@ -54,7 +57,8 @@ impl Type {
                     let base_type = Type::from_token(base_token)?;
                     return Ok(Type::Array(Box::new(base_type)));
                 }
-                return Err(Error::new(ErrorKind::Other, format!("TypeLiteral::from_token: Unexpected token kind '{}'", token.text)));
+                // If it's not a built-in type or array, assume it's a struct type
+                return Ok(Type::Struct(token));
             }
         };
         Ok(r)

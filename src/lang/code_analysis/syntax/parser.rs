@@ -94,6 +94,7 @@ impl<'a, 'b> Parser<'a, 'b>
     {
         let mut imports=vec![];
         let mut functions=vec![];
+        let mut structs=vec![];
         
         while self.current_token().kind == TokenKind::ImportToken {
             imports.push(self.parse_import()?);
@@ -101,19 +102,56 @@ impl<'a, 'b> Parser<'a, 'b>
         
         while self.current_token().kind!=TokenKind::EndOfFileToken
         {
-            if self.current_token().kind == TokenKind::FunToken || self.current_token().kind == TokenKind::ExportToken {
+            if self.current_token().kind == TokenKind::StructToken {
+                let struct_decl = self.parse_struct_declaration()?;
+                structs.push(struct_decl);
+            } else if self.current_token().kind == TokenKind::FunToken || self.current_token().kind == TokenKind::ExportToken {
                 let function=self.parse_function()?;
                 functions.push(function);
             } else {
                 let cur = self.current_token();
                 self.diagnostics.report_error(
-                    format!("Expected function declaration but found {:?}", cur.kind),
+                    format!("Expected function or struct declaration but found {:?}", cur.kind),
                     Some(cur.position.clone())
                 );
                 self.next_token();
             }
         }
-        Ok(ProgramNode::new(imports, functions))
+        Ok(ProgramNode::new(imports, structs, functions))
+    }
+    
+    /// Parses a struct declaration
+    fn parse_struct_declaration(&mut self) -> Result<crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode, Error> {
+        self.match_token(TokenKind::StructToken);
+        let struct_name = self.match_token(TokenKind::IdentifierToken);
+        self.match_token(TokenKind::CurlyOpenBracketToken);
+        
+        let mut fields = Vec::new();
+        while self.current_token().kind != TokenKind::CurlyCloseBracketToken && self.current_token().kind != TokenKind::EndOfFileToken {
+            let field_name = self.match_token(TokenKind::IdentifierToken);
+            self.match_token(TokenKind::ColonToken);
+            
+            let mut field_type_token = if self.current_token().kind == TokenKind::DataTypeToken {
+                self.match_token(TokenKind::DataTypeToken)
+            } else {
+                self.match_token(TokenKind::IdentifierToken)
+            };
+            
+            while self.current_token().kind == TokenKind::OpenBracketToken {
+                self.match_token(TokenKind::OpenBracketToken);
+                self.match_token(TokenKind::CloseBracketToken);
+                field_type_token.text.push_str("[]");
+            }
+            
+            self.match_token(TokenKind::SemicolonToken);
+            fields.push(crate::lang::code_analysis::syntax::nodes::struct_node::StructFieldNode {
+                name: field_name,
+                type_token: field_type_token,
+            });
+        }
+        
+        self.match_token(TokenKind::CurlyCloseBracketToken);
+        Ok(crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode::new(struct_name, fields))
     }
     
     /// Parses an import statement
@@ -125,7 +163,11 @@ impl<'a, 'b> Parser<'a, 'b>
     }
     /// Parses a Type from the token stream, including array types
     fn parse_type(&mut self) -> Result<Type, Error> {
-        let type_token = self.match_token(TokenKind::DataTypeToken);
+        let type_token = if self.current_token().kind == TokenKind::DataTypeToken {
+            self.match_token(TokenKind::DataTypeToken)
+        } else {
+            self.match_token(TokenKind::IdentifierToken)
+        };
         let mut parsed_type = Type::from_token(type_token)?;
         
         // Check for array suffix `[]`
@@ -179,7 +221,11 @@ impl<'a, 'b> Parser<'a, 'b>
             // Note: We keep the parameter type as a SyntaxToken in ParameterNode for now
             // to avoid changing too much AST structure. We'll parse the actual type during semantic analysis.
             // But we should consume the `[]` if it's an array type.
-            let mut param_type_token = self.match_token(TokenKind::DataTypeToken);
+            let mut param_type_token = if self.current_token().kind == TokenKind::DataTypeToken {
+                self.match_token(TokenKind::DataTypeToken)
+            } else {
+                self.match_token(TokenKind::IdentifierToken)
+            };
             
             // Check for array suffix `[]`
             while self.current_token().kind == TokenKind::OpenBracketToken {
@@ -235,31 +281,44 @@ impl<'a, 'b> Parser<'a, 'b>
             TokenKind::BreakToken => Ok(self.parse_break()?),
             TokenKind::ContinueToken => Ok(self.parse_continue()?),
             TokenKind::IdentifierToken => {
-                if self.peek_token(1).kind == TokenKind::EqualToken {
-                    Ok(self.parse_assignment()?)
-                } else if self.peek_token(1).kind == TokenKind::OpenBracketToken {
-                    Ok(self.parse_index_assignment()?)
-                } else if self.peek_token(1).kind == TokenKind::OpenParenthesisToken {
-                    let r = self.parse_invocation_expression()?;
-                    //eat the semicolon
+                // Parse an expression first
+                let expr = self.parse_primary_expression()?;
+                
+                if self.current_token().kind == TokenKind::EqualToken {
+                    self.match_token(TokenKind::EqualToken);
+                    let value = self.parse_expression(0)?;
                     self.match_token(TokenKind::SemicolonToken);
-                    match r {
+                    
+                    match expr {
+                        ExpressionNode::Identifier(id) => Ok(StatementNode::Assignment(id, value)),
+                        ExpressionNode::IndexAccess(arr, idx) => Ok(StatementNode::IndexAssignment(arr, idx, value)),
+                        ExpressionNode::MemberAccess(obj, member) => Ok(StatementNode::MemberAssignment(obj, member, value)),
+                        _ => {
+                            self.diagnostics.report_error(
+                                format!("Invalid assignment target"),
+                                Some(cur.position.clone())
+                            );
+                            Ok(StatementNode::Break)
+                        }
+                    }
+                } else if self.current_token().kind == TokenKind::SemicolonToken {
+                    self.match_token(TokenKind::SemicolonToken);
+                    match expr {
                         ExpressionNode::FunctionCall(name, params) => {
                             Ok(StatementNode::FunctionInvocation(name, params))
                         },
                         _ => {
                             self.diagnostics.report_error(
-                                format!("Expected function call but found {:?}", r),
+                                format!("Expected function call but found expression"),
                                 Some(cur.position.clone())
                             );
-                            // Recover by returning a dummy statement
                             Ok(StatementNode::Break) 
                         }
                     }
                 } else {
                     self.diagnostics.report_error(
-                        format!("Unexpected identifier {:?} at {}", cur.text, cur.position.get_point_str()),
-                        Some(cur.position.clone())
+                        format!("Unexpected token {:?} after expression", self.current_token().kind),
+                        Some(self.current_token().position.clone())
                     );
                     self.next_token(); // skip the token
                     Ok(StatementNode::Break) // dummy
@@ -298,36 +357,6 @@ impl<'a, 'b> Parser<'a, 'b>
         Ok(StatementNode::Declaration(identifier, type_annotation, expression))
     }
 
-    /// Parses a variable assignment (e.g., `x = 5;`)
-    fn parse_assignment(&mut self)->Result<StatementNode<'a>,Error>
-    {
-        //eat the identifier
-        let identifier=self.match_token(TokenKind::IdentifierToken);
-        //eat the equal sign
-        self.match_token(TokenKind::EqualToken);
-        let expression=self.parse_expression(0)?;
-        //eat the semicolon
-        self.match_token(TokenKind::SemicolonToken);
-        Ok(StatementNode::Assignment(identifier,expression))
-    }
-
-    /// Parses an array index assignment (e.g., `arr[0] = 5;`)
-    fn parse_index_assignment(&mut self)->Result<StatementNode<'a>,Error>
-    {
-        let identifier = self.match_token(TokenKind::IdentifierToken);
-        self.match_token(TokenKind::OpenBracketToken);
-        let index_expr = self.parse_expression(0)?;
-        self.match_token(TokenKind::CloseBracketToken);
-        self.match_token(TokenKind::EqualToken);
-        let value_expr = self.parse_expression(0)?;
-        self.match_token(TokenKind::SemicolonToken);
-        
-        Ok(StatementNode::IndexAssignment(
-            identifier,
-            self.arena.alloc(index_expr),
-            value_expr
-        ))
-    }
     /// Parses an expression with operator precedence
     fn parse_expression(&mut self,parent_precedence:i32)->Result<ExpressionNode<'a>,Error>
     {
@@ -357,9 +386,42 @@ impl<'a, 'b> Parser<'a, 'b>
     /// Parses a primary expression (literal, identifier, parenthesized expression, or function call)
     fn parse_primary_expression(&mut self)->Result<ExpressionNode<'a>,Error>
     {
-        //parse parenthesized expressions
+        //parse parenthesized expressions or cast
         if self.current_token().kind==TokenKind::OpenParenthesisToken
         {
+            let is_cast = if self.peek_token(1).kind == TokenKind::DataTypeToken {
+                true
+            } else if self.peek_token(1).kind == TokenKind::IdentifierToken {
+                // Could be `(Node)0` or `(x) + 1`
+                // Let's check token after `)`
+                let mut i = 2;
+                while self.peek_token(i).kind == TokenKind::OpenBracketToken {
+                    i += 2; // skip `[` and `]`
+                }
+                if self.peek_token(i).kind == TokenKind::CloseParenthesisToken {
+                    let next_kind = self.peek_token(i + 1).kind;
+                    // If the token after `)` is an expression starter, it's a cast
+                    match next_kind {
+                        TokenKind::NumberToken | TokenKind::StringToken | TokenKind::BooleanToken |
+                        TokenKind::IdentifierToken | TokenKind::OpenParenthesisToken | TokenKind::OpenBracketToken |
+                        TokenKind::MinusToken | TokenKind::BangToken => true,
+                        _ => false
+                    }
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if is_cast {
+                self.match_token(TokenKind::OpenParenthesisToken);
+                let cast_type = self.parse_type()?;
+                self.match_token(TokenKind::CloseParenthesisToken);
+                let expression = self.parse_primary_expression()?;
+                return Ok(ExpressionNode::Cast(cast_type, self.arena.alloc(expression)));
+            }
+            
             //eat the open parenthesis
             self.match_token(TokenKind::OpenParenthesisToken);
             let expression=self.parse_expression(0)?;
@@ -394,19 +456,48 @@ impl<'a, 'b> Parser<'a, 'b>
             {
                 return Ok(self.parse_invocation_expression()?);
             }
+            else if self.peek_token(1).kind==TokenKind::CurlyOpenBracketToken
+            {
+                // Struct instantiation: Point { x: 10, y: 20 }
+                let struct_name = self.match_token(TokenKind::IdentifierToken);
+                self.match_token(TokenKind::CurlyOpenBracketToken);
+                let mut fields = Vec::new();
+                while self.current_token().kind != TokenKind::CurlyCloseBracketToken && self.current_token().kind != TokenKind::EndOfFileToken {
+                    let field_name = self.match_token(TokenKind::IdentifierToken);
+                    self.match_token(TokenKind::ColonToken);
+                    let field_value = self.parse_expression(0)?;
+                    fields.push((field_name, field_value));
+                    if self.current_token().kind == TokenKind::CommaToken {
+                        self.match_token(TokenKind::CommaToken);
+                    }
+                }
+                self.match_token(TokenKind::CurlyCloseBracketToken);
+                return Ok(ExpressionNode::StructInstantiation(struct_name, fields));
+            }
             else
             {
                 let mut expr = ExpressionNode::Identifier(self.next_token());
                 
-                // Check for index access
-                while self.current_token().kind == TokenKind::OpenBracketToken {
-                    self.match_token(TokenKind::OpenBracketToken);
-                    let index = self.parse_expression(0)?;
-                    self.match_token(TokenKind::CloseBracketToken);
-                    expr = ExpressionNode::IndexAccess(
-                        self.arena.alloc(expr),
-                        self.arena.alloc(index)
-                    );
+                // Check for index access or member access
+                loop {
+                    if self.current_token().kind == TokenKind::OpenBracketToken {
+                        self.match_token(TokenKind::OpenBracketToken);
+                        let index = self.parse_expression(0)?;
+                        self.match_token(TokenKind::CloseBracketToken);
+                        expr = ExpressionNode::IndexAccess(
+                            self.arena.alloc(expr),
+                            self.arena.alloc(index)
+                        );
+                    } else if self.current_token().kind == TokenKind::DotToken {
+                        self.match_token(TokenKind::DotToken);
+                        let member = self.match_token(TokenKind::IdentifierToken);
+                        expr = ExpressionNode::MemberAccess(
+                            self.arena.alloc(expr),
+                            member
+                        );
+                    } else {
+                        break;
+                    }
                 }
                 
                 return Ok(expr);
@@ -506,7 +597,7 @@ impl<'a, 'b> Parser<'a, 'b>
             if self.current_token().kind == TokenKind::LetToken {
                 init = Some(self.arena.alloc(self.parse_declaration()?));
             } else {
-                init = Some(self.arena.alloc(self.parse_assignment()?));
+                init = Some(self.arena.alloc(self.parse_statement()?));
             }
         } else {
             self.match_token(TokenKind::SemicolonToken);
@@ -520,10 +611,27 @@ impl<'a, 'b> Parser<'a, 'b>
 
         let mut increment: Option<&'a StatementNode<'a>> = None;
         if self.current_token().kind != TokenKind::CurlyOpenBracketToken {
-            let identifier=self.match_token(TokenKind::IdentifierToken);
+            // It parses a statement but without a semicolon.
+            // But parse_statement expects a semicolon.
+            // Let's just parse an expression and assignment manually for now, or use parse_statement and handle semicolon.
+            // Actually, in MinLang, the increment part doesn't have a semicolon.
+            let expr = self.parse_primary_expression()?;
             self.match_token(TokenKind::EqualToken);
-            let expression=self.parse_expression(0)?;
-            increment = Some(self.arena.alloc(StatementNode::Assignment(identifier,expression)));
+            let value = self.parse_expression(0)?;
+            
+            let stmt = match expr {
+                ExpressionNode::Identifier(id) => StatementNode::Assignment(id, value),
+                ExpressionNode::IndexAccess(arr, idx) => StatementNode::IndexAssignment(arr, idx, value),
+                ExpressionNode::MemberAccess(obj, member) => StatementNode::MemberAssignment(obj, member, value),
+                _ => {
+                    self.diagnostics.report_error(
+                        format!("Invalid assignment target in for loop increment"),
+                        Some(self.current_token().position.clone())
+                    );
+                    StatementNode::Break
+                }
+            };
+            increment = Some(self.arena.alloc(stmt));
         }
 
         let body=self.parse_block()?;

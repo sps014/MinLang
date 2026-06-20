@@ -5,7 +5,10 @@ MinLang is a statically typed, compiled programming language that targets WebAss
 ## Features
 
 - **Static Typing**: Supports `int`, `float`, `string`, `bool`, and `void` types.
-- **Arrays**: Native support for arrays (`int[]`, `float[]`, `string[]`) with scope-based bump allocation.
+- **Type Casting**: C-style explicit type casting (e.g., `(float)10`, `(int)3.14`).
+- **Structs**: User-defined composite data types with field access and assignment.
+- **Arrays**: Native support for arrays (`int[]`, `float[]`, `string[]`, `Struct[]`).
+- **Memory Management**: Automatic Reference Counting (ARC) backed by a fast Freelist allocator in WebAssembly.
 - **Control Flow**: `if`/`else if`/`else`, `while` loops, and `for` loops with `break` and `continue` support.
 - **Functions**: First-class functions with parameters and return types.
 - **WebAssembly Target**: Compiles directly to WebAssembly Text format (`.wat`) and executes via `wasmtime`.
@@ -82,6 +85,32 @@ fun main(): void {
     let result = fib(10);
     print("Fibonacci of 10 is: ");
     print_int(result);
+}
+```
+
+### Structs & Memory Management
+
+```minlang
+struct Point {
+    x: int;
+    y: int;
+}
+
+struct Rect {
+    p1: Point;
+    p2: Point;
+}
+
+fun main(): void {
+    let p1 = Point { x: 10, y: 20 };
+    let p2 = Point { x: 30, y: 40 };
+    
+    let r = Rect { p1: p1, p2: p2 };
+    
+    print_int(r.p1.x); // 10
+    
+    // Memory is allocated via a fast Freelist allocator
+    // and managed via Automatic Reference Counting (ARC)
 }
 ```
 

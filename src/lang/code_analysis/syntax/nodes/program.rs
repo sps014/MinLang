@@ -1,5 +1,6 @@
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 use super::function::FunctionNode;
+use super::struct_node::StructDeclarationNode;
 
 /// Represents an import declaration in the AST
 #[derive(Debug, Clone)]
@@ -18,12 +19,13 @@ impl ImportNode {
 #[derive(Debug, Clone)]
 pub struct ProgramNode<'a> {
     pub imports: Vec<ImportNode>,
+    pub structs: Vec<StructDeclarationNode>,
     pub functions: Vec<FunctionNode<'a>>,
 }
 
 impl<'a> ProgramNode<'a> {
     /// Creates a new program node
-    pub fn new(imports: Vec<ImportNode>, functions: Vec<FunctionNode<'a>>) -> ProgramNode<'a> {
-        ProgramNode { imports, functions }
+    pub fn new(imports: Vec<ImportNode>, structs: Vec<StructDeclarationNode>, functions: Vec<FunctionNode<'a>>) -> ProgramNode<'a> {
+        ProgramNode { imports, structs, functions }
     }
 }

@@ -103,6 +103,8 @@ pub enum TokenKind
     ImportToken,
     #[token("export")]
     ExportToken,
+    #[token("struct")]
+    StructToken,
     
     #[token("int")]
     #[token("float")]

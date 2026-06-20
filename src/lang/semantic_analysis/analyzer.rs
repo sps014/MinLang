@@ -9,20 +9,23 @@ use crate::lang::code_analysis::token::token_kind::TokenKind;
 use crate::lang::semantic_analysis::function_control_flow::FunctionControlGraph;
 use crate::lang::semantic_analysis::function_table::{FunctionTable, FunctionTableInfo};
 use crate::lang::semantic_analysis::symbol_table::SymbolTable;
+use crate::lang::semantic_analysis::struct_table::StructTable;
 use crate::lang::diagnostics::DiagnosticBag;
 
 pub struct SemanticInfo<'a>
 {
     pub hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>,
     pub function_table: &'a FunctionTable,
+    pub struct_table: &'a StructTable,
 }
 
 impl<'a> SemanticInfo<'a> {
-    pub fn new(hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>, function_table: &FunctionTable) -> SemanticInfo<'_>
+    pub fn new(hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>, function_table: &'a FunctionTable, struct_table: &'a StructTable) -> SemanticInfo<'a>
     {
         SemanticInfo {
             hash_map,
             function_table,
+            struct_table,
         }
     }
 }
@@ -31,10 +34,11 @@ impl<'a> SemanticInfo<'a> {
 pub struct Anaylzer<'a> {
     syntax_tree:&'a SyntaxTree<'a>,
     function_table:FunctionTable,
+    struct_table:StructTable,
 }
 impl<'a> Anaylzer<'a> {
     pub fn new(tree: &'a SyntaxTree<'a>) -> Self {
-        Self { syntax_tree:tree, function_table: FunctionTable::new() }
+        Self { syntax_tree:tree, function_table: FunctionTable::new(), struct_table: StructTable::new() }
     }
     pub fn analyze(&mut self, diagnostics: &mut DiagnosticBag) -> Result<SemanticInfo<'_>, ()> {
         let pgm= self.syntax_tree.get_root();
@@ -42,6 +46,13 @@ impl<'a> Anaylzer<'a> {
     }
     fn analyze_pgm(&mut self,node:&ProgramNode<'a>, diagnostics: &mut DiagnosticBag) -> Result<SemanticInfo<'_>, ()> {
         let mut symbol_table_map=HashMap::new();
+        
+        // Pass 0: Register all structs
+        for struct_decl in node.structs.iter() {
+            if let Err(e) = self.struct_table.add_struct(struct_decl) {
+                diagnostics.report_error(e, Some(struct_decl.name.position.clone()));
+            }
+        }
         
         // Pass 1: Register all functions in the function table
         for function in node.functions.iter() {
@@ -55,7 +66,7 @@ impl<'a> Anaylzer<'a> {
             let r=self.analyze_function(function, diagnostics)?;
             symbol_table_map.insert(function.name.text.clone(),r);
         }
-        Ok(SemanticInfo::new(symbol_table_map,&self.function_table))
+        Ok(SemanticInfo::new(symbol_table_map,&self.function_table, &self.struct_table))
     }
     fn analyze_function(&mut self,function:&FunctionNode<'a>, diagnostics: &mut DiagnosticBag) -> Result<Rc<RefCell<SymbolTable>>, ()> {
         let param_table=Rc::new(RefCell::new(self.add_function_param_table(function, diagnostics)?));
@@ -114,6 +125,8 @@ impl<'a> Anaylzer<'a> {
                 self.analyze_assignment(left,right,parent_function,&symbol_table, diagnostics)?,
             StatementNode::IndexAssignment(left, index, right) =>
                 self.analyze_index_assignment(left, index, right, parent_function, &symbol_table, diagnostics)?,
+            StatementNode::MemberAssignment(obj, member, right) =>
+                self.analyze_member_assignment(obj, member, right, parent_function, &symbol_table, diagnostics)?,
             StatementNode::IfElse(condition,if_body,
                                   else_if,else_body)=>
                 self.analyze_if_else(condition,if_body,
@@ -240,30 +253,59 @@ impl<'a> Anaylzer<'a> {
         Ok(())
     }
     
-    fn analyze_index_assignment(&mut self, left: &SyntaxToken, index: &ExpressionNode<'a>, right: &ExpressionNode<'a>, parent_function: &FunctionNode<'a>, symbol_table: &Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag) -> Result<(), ()> {
-        let array_type = match (*symbol_table).as_ref().borrow().get_symbol(left.clone()) {
-            Ok(sym) => sym,
-            Err(e) => {
-                diagnostics.report_error(e.to_string(), Some(left.position.clone()));
-                return Ok(());
-            }
-        };
+    fn analyze_index_assignment(&mut self, arr: &ExpressionNode<'a>, index: &ExpressionNode<'a>, right: &ExpressionNode<'a>, parent_function: &FunctionNode<'a>, symbol_table: &Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag) -> Result<(), ()> {
+        let array_type = self.analyze_expression(arr, parent_function, symbol_table, diagnostics)?;
 
         let inner_type = match array_type {
             Type::Array(inner) => *inner,
             _ => {
-                diagnostics.report_error(format!("Cannot index into non-array type {}", array_type.get_type()), Some(left.position.clone()));
+                diagnostics.report_error(format!("Cannot index into non-array type {}", array_type.get_type()), None);
                 return Ok(());
             }
         };
 
         let index_type = self.analyze_expression(index, parent_function, symbol_table, diagnostics)?;
         if index_type.get_type() != "int" {
-            diagnostics.report_error(format!("Array index must be of type int, got {}", index_type.get_type()), Some(left.position.clone()));
+            diagnostics.report_error(format!("Array index must be of type int, got {}", index_type.get_type()), None);
         }
 
         let right_type = self.analyze_expression(right, parent_function, symbol_table, diagnostics)?;
-        self.compare_data_type(&inner_type, &right_type, &left.position, diagnostics)?;
+        self.compare_data_type(&inner_type, &right_type, &SyntaxToken::new(TokenKind::BadToken, crate::lang::code_analysis::text::text_span::TextSpan::new((0,0), &std::rc::Rc::new(crate::lang::code_analysis::text::line_text::LineText::new("".to_string()))), "".to_string()).position, diagnostics)?;
+        
+        Ok(())
+    }
+
+    fn analyze_member_assignment(&mut self, obj: &ExpressionNode<'a>, member: &SyntaxToken, right: &ExpressionNode<'a>, parent_function: &FunctionNode<'a>, symbol_table: &Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag) -> Result<(), ()> {
+        let obj_type = self.analyze_expression(obj, parent_function, symbol_table, diagnostics)?;
+        
+        let struct_name = match obj_type {
+            Type::Struct(token) => token.text,
+            _ => {
+                diagnostics.report_error(format!("Cannot access member of non-struct type {}", obj_type.get_type()), Some(member.position.clone()));
+                return Ok(());
+            }
+        };
+
+        let field_type = {
+            let struct_info = match self.struct_table.get_struct(&struct_name) {
+                Some(info) => info,
+                None => {
+                    diagnostics.report_error(format!("Struct '{}' not found", struct_name), Some(member.position.clone()));
+                    return Ok(());
+                }
+            };
+
+            match struct_info.fields.get(&member.text) {
+                Some(info) => info.type_.clone(),
+                None => {
+                    diagnostics.report_error(format!("Field '{}' not found in struct '{}'", member.text, struct_name), Some(member.position.clone()));
+                    return Ok(());
+                }
+            }
+        };
+
+        let right_type = self.analyze_expression(right, parent_function, symbol_table, diagnostics)?;
+        self.compare_data_type(&field_type, &right_type, &member.position, diagnostics)?;
         
         Ok(())
     }
@@ -335,6 +377,91 @@ impl<'a> Anaylzer<'a> {
                 Ok(self.analyze_function_call(name,params,parent_function,symbol_table, diagnostics)?),
             ExpressionNode::Parenthesized(expr)=>
                 Ok(self.analyze_expression(expr,parent_function,symbol_table, diagnostics)?),
+            ExpressionNode::StructInstantiation(name, fields) => {
+                let struct_name = name.text.clone();
+                let struct_info = match self.struct_table.get_struct(&struct_name) {
+                    Some(info) => info.clone(),
+                    None => {
+                        diagnostics.report_error(format!("Struct '{}' not found", struct_name), Some(name.position.clone()));
+                        return Ok(Type::Void);
+                    }
+                };
+
+                // Check that all fields are provided and types match
+                let mut provided_fields = std::collections::HashSet::new();
+                for (field_name, field_expr) in fields {
+                    provided_fields.insert(field_name.text.clone());
+                    
+                    let field_info = match struct_info.fields.get(&field_name.text) {
+                        Some(info) => info,
+                        None => {
+                            diagnostics.report_error(format!("Field '{}' not found in struct '{}'", field_name.text, struct_name), Some(field_name.position.clone()));
+                            continue;
+                        }
+                    };
+
+                    let expr_type = self.analyze_expression(field_expr, parent_function, symbol_table, diagnostics)?;
+                    self.compare_data_type(&field_info.type_, &expr_type, &field_name.position, diagnostics)?;
+                }
+
+                // Check for missing fields
+                for expected_field in struct_info.fields.keys() {
+                    if !provided_fields.contains(expected_field) {
+                        diagnostics.report_error(format!("Missing field '{}' in struct instantiation of '{}'", expected_field, struct_name), Some(name.position.clone()));
+                    }
+                }
+
+                Ok(Type::Struct(name.clone()))
+            },
+            ExpressionNode::MemberAccess(obj, member) => {
+                let obj_type = self.analyze_expression(obj, parent_function, symbol_table, diagnostics)?;
+                
+                let struct_name = match obj_type {
+                    Type::Struct(token) => token.text,
+                    _ => {
+                        diagnostics.report_error(format!("Cannot access member of non-struct type {}", obj_type.get_type()), Some(member.position.clone()));
+                        return Ok(Type::Void);
+                    }
+                };
+
+                let struct_info = match self.struct_table.get_struct(&struct_name) {
+                    Some(info) => info,
+                    None => {
+                        diagnostics.report_error(format!("Struct '{}' not found", struct_name), Some(member.position.clone()));
+                        return Ok(Type::Void);
+                    }
+                };
+
+                let field_info = match struct_info.fields.get(&member.text) {
+                    Some(info) => info,
+                    None => {
+                        diagnostics.report_error(format!("Field '{}' not found in struct '{}'", member.text, struct_name), Some(member.position.clone()));
+                        return Ok(Type::Void);
+                    }
+                };
+
+                Ok(field_info.type_.clone())
+            },
+            ExpressionNode::Cast(target_type, expr) => {
+                let expr_type = self.analyze_expression(expr, parent_function, symbol_table, diagnostics)?;
+                
+                let target_type_str = target_type.get_type();
+                let expr_type_str = expr_type.get_type();
+                
+                // Allow int <-> float casts
+                if (target_type_str == "int" && expr_type_str == "float") ||
+                   (target_type_str == "float" && expr_type_str == "int") {
+                    Ok(target_type.clone())
+                } else if target_type_str == expr_type_str {
+                    Ok(target_type.clone())
+                } else if expr_type_str == "int" && (self.struct_table.get_struct(&target_type_str).is_some() || target_type_str.ends_with("[]")) {
+                    // Allow casting int to pointer types (for null pointers)
+                    Ok(target_type.clone())
+                } else {
+                    diagnostics.report_error(format!("Cannot cast from {} to {}", expr_type_str, target_type_str), None);
+                    Ok(target_type.clone())
+                }
+            },
         };
     }
     fn analyze_binary_expression(&mut self,left:&ExpressionNode<'a>,opr:&SyntaxToken,right:&ExpressionNode<'a>,parent_function:&FunctionNode<'a>,

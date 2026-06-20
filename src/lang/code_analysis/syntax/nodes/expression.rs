@@ -12,4 +12,7 @@ pub enum ExpressionNode<'a> {
     Parenthesized(&'a ExpressionNode<'a>),
     FunctionCall(SyntaxToken, Vec<ExpressionNode<'a>>),
     IndexAccess(&'a ExpressionNode<'a>, &'a ExpressionNode<'a>),
+    Cast(Type, &'a ExpressionNode<'a>),
+    StructInstantiation(SyntaxToken, Vec<(SyntaxToken, ExpressionNode<'a>)>),
+    MemberAccess(&'a ExpressionNode<'a>, SyntaxToken),
 }
