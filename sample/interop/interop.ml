@@ -1,0 +1,26 @@
+// JS interop demo. The `extern` functions are implemented in JavaScript.
+//
+// Compile with:  cargo run -- sample/interop/interop.ml
+// This produces interop.wat, interop.wasm and interop.abi.json next to this file.
+//
+// Most externs need no glue at all: the runtime auto-binds them to matching JS globals.
+
+// Auto-binds to the global `alert` (env module -> bare global).
+extern fun alert(msg: string): void;
+
+// Auto-binds to `console.log` via the @js(module, name) mapping.
+@js("console", "log")
+extern fun log(msg: string): void;
+
+// No matching global, so the page/runner supplies this one explicitly.
+@js("math", "square")
+extern fun square(n: int): int;
+
+fun main(): void {
+    log("MinLang booted in the browser");
+
+    let result = square(7);
+    log("square(7) = " + to_string(result));
+
+    alert("Hello from MinLang! square(7) = " + to_string(result));
+}

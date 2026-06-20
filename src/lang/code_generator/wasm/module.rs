@@ -36,6 +36,35 @@ impl<'a> WasmGenerator<'a> {
                 std_func.name, std_func.name, params_str.trim(), result_str));
         }
 
+        // User-declared `extern fun` declarations become WASM imports. The import module/field
+        // default to `"env"`/<function name> but can be remapped with `@js("mod", "name")`.
+        for func in program.functions.iter() {
+            if !func.is_extern { continue; }
+
+            let mut params_str = String::new();
+            for p in &func.parameters {
+                let resolved = self.resolve_type(&p.type_.get_type());
+                params_str.push_str(&format!("{} ", WasmGenerator::get_wasm_type_from(resolved)?));
+            }
+
+            let result_str = match &func.return_type {
+                Some(t) => {
+                    let resolved = self.resolve_type(&t.get_type());
+                    if resolved == "void" {
+                        String::new()
+                    } else {
+                        format!(" (result {})", WasmGenerator::get_wasm_type_from(resolved)?)
+                    }
+                }
+                None => String::new(),
+            };
+
+            let module = func.import_module.as_deref().unwrap_or("env");
+            let field = func.import_name.as_deref().unwrap_or(&func.name.text);
+            writer.write_line(&format!("(import \"{}\" \"{}\" (func ${} (param {}){}))",
+                module, field, func.name.text, params_str.trim(), result_str));
+        }
+
         // Memory management functions
         self.build_memory_management(writer)?;
 
@@ -57,6 +86,10 @@ impl<'a> WasmGenerator<'a> {
         
         for i in program.functions.iter() {
             if i.generic_parameters.is_some() {
+                continue;
+            }
+            // Extern functions are imports, not definitions.
+            if i.is_extern {
                 continue;
             }
             self.build_function(i, writer)?;
@@ -119,7 +152,14 @@ impl<'a> WasmGenerator<'a> {
     /// Builds the export declarations for the module
     pub fn build_export(&self, program: &ProgramNode, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         writer.write_line("(export \"memory\" (memory 0))");
+        // Export the allocator so the JS interop runtime can build heap values (e.g. strings)
+        // to pass back into MinLang from extern function implementations.
+        writer.write_line("(export \"malloc\" (func $malloc))");
+        writer.write_line("(export \"free\" (func $free))");
         for i in program.functions.iter() {
+            if i.is_extern {
+                continue;
+            }
             if i.is_exported || i.name.text == "main" {
                 writer.write_line(&format!("(export \"{}\" (func ${}))", i.name.text, i.name.text));
             }

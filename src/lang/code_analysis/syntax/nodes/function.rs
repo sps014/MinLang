@@ -29,6 +29,13 @@ pub struct FunctionNode<'a> {
     /// True when the declaration carried the `@override` attribute. Used to mark object-protocol
     /// method overrides (`to_string`, `hash_code`) on structs.
     pub is_override: bool,
+    /// True for `extern fun` declarations: the function has no body and is lowered to a WASM
+    /// import instead of a defined function. Used for JS interop.
+    pub is_extern: bool,
+    /// WASM import module for an `extern` function. Defaults to `"env"` when unspecified.
+    pub import_module: Option<String>,
+    /// WASM import field name for an `extern` function. Defaults to the function name.
+    pub import_name: Option<String>,
     /// Source file this declaration came from; set during multi-file merge so semantic
     /// diagnostics can report the correct file. `None` for synthesized nodes.
     pub file_path: Option<Rc<str>>,
@@ -52,6 +59,9 @@ impl<'a> FunctionNode<'a> {
             body,
             is_exported,
             is_override: false,
+            is_extern: false,
+            import_module: None,
+            import_name: None,
             file_path: None,
         }
     }

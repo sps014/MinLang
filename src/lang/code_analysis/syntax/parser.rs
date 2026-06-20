@@ -105,7 +105,7 @@ impl<'a, 'b> Parser<'a, 'b>
             if self.current_token().kind == TokenKind::StructToken || (self.current_token().kind == TokenKind::ExportToken && self.peek_token(1).kind == TokenKind::StructToken) {
                 let struct_decl = self.parse_struct_declaration()?;
                 structs.push(struct_decl);
-            } else if self.current_token().kind == TokenKind::FunToken || self.current_token().kind == TokenKind::AtToken || (self.current_token().kind == TokenKind::ExportToken && self.peek_token(1).kind == TokenKind::FunToken) {
+            } else if self.current_token().kind == TokenKind::FunToken || self.current_token().kind == TokenKind::AtToken || self.current_token().kind == TokenKind::ExternToken || (self.current_token().kind == TokenKind::ExportToken && self.peek_token(1).kind == TokenKind::FunToken) {
                 let function=self.parse_function()?;
                 functions.push(function);
             } else {
@@ -236,13 +236,21 @@ impl<'a, 'b> Parser<'a, 'b>
     /// Parses a function declaration
     fn parse_function(&mut self)->Result<FunctionNode<'a>,Error>
     {
-        // Optional attributes (currently only `@override`) precede `export`/`fun`.
+        // Optional attributes precede `export`/`extern`/`fun`:
+        //   `@override`           - object-protocol method override
+        //   `@js("mod", "name")`  - remap an `extern` import's module/field name
         let mut is_override = false;
+        let mut import_module: Option<String> = None;
+        let mut import_name: Option<String> = None;
         while self.current_token().kind == TokenKind::AtToken {
             self.match_token(TokenKind::AtToken);
             let attr = self.match_token(TokenKind::IdentifierToken);
             if attr.text == "override" {
                 is_override = true;
+            } else if attr.text == "js" {
+                let (module, name) = self.parse_js_attribute_args();
+                import_module = module;
+                import_name = name;
             } else {
                 self.diagnostics.report_error(
                     format!("Unknown attribute '@{}'", attr.text),
@@ -256,7 +264,19 @@ impl<'a, 'b> Parser<'a, 'b>
             self.match_token(TokenKind::ExportToken);
             is_exported = true;
         }
-        
+
+        let mut is_extern = false;
+        if self.current_token().kind == TokenKind::ExternToken {
+            self.match_token(TokenKind::ExternToken);
+            is_extern = true;
+            if is_exported {
+                self.diagnostics.report_error(
+                    "A function cannot be both 'export' and 'extern'".to_string(),
+                    Some(self.current_token().position.clone())
+                );
+            }
+        }
+
         //eat the fun keyword
         self.match_token(TokenKind::FunToken);
         let function_name=self.match_token(TokenKind::IdentifierToken);
@@ -283,10 +303,49 @@ impl<'a, 'b> Parser<'a, 'b>
             self.match_token(TokenKind::ColonToken);
             return_type=Some(self.parse_type()?);
         }
+
+        if is_extern {
+            // Extern functions are lowered to WASM imports: no body, terminated by `;`.
+            if generic_parameters.is_some() {
+                self.diagnostics.report_error(
+                    "Extern functions cannot be generic".to_string(),
+                    Some(function_name.position.clone())
+                );
+            }
+            self.match_token(TokenKind::SemicolonToken);
+            let empty: &'a [StatementNode<'a>] = self.arena.alloc_slice_fill_iter(std::iter::empty());
+            let mut node = FunctionNode::new(function_name.clone(), generic_parameters, return_type, params, empty, false);
+            node.is_extern = true;
+            node.import_module = import_module.or_else(|| Some("env".to_string()));
+            node.import_name = import_name.or_else(|| Some(function_name.text.clone()));
+            return Ok(node);
+        }
+
         let block=self.parse_block()?;
         let mut node = FunctionNode::new(function_name,generic_parameters,return_type,params,block,is_exported);
         node.is_override = is_override;
         Ok(node)
+    }
+
+    /// Parses the arguments of a `@js(...)` attribute: `("module")` or `("module", "name")`.
+    /// Returns `(module, name)`, each `None` if absent. String literals are unquoted.
+    fn parse_js_attribute_args(&mut self) -> (Option<String>, Option<String>) {
+        let mut module = None;
+        let mut name = None;
+        if self.current_token().kind == TokenKind::OpenParenthesisToken {
+            self.match_token(TokenKind::OpenParenthesisToken);
+            if self.current_token().kind == TokenKind::StringToken {
+                module = Some(self.match_token(TokenKind::StringToken).text.trim_matches('"').to_string());
+                if self.current_token().kind == TokenKind::CommaToken {
+                    self.match_token(TokenKind::CommaToken);
+                    if self.current_token().kind == TokenKind::StringToken {
+                        name = Some(self.match_token(TokenKind::StringToken).text.trim_matches('"').to_string());
+                    }
+                }
+            }
+            self.match_token(TokenKind::CloseParenthesisToken);
+        }
+        (module, name)
     }
     /// Parses formal parameters for a function declaration
     fn parse_formal_parameters(&mut self)->Result<Vec<ParameterNode>,Error>

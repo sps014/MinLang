@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MinLang JS Interop Demo</title>
+    <style>
+      body {
+        font-family: "Inter", system-ui, sans-serif;
+        background: #0e0e12;
+        color: #e7e7ea;
+        max-width: 720px;
+        margin: 3rem auto;
+        padding: 0 1.25rem;
+      }
+      h1 { font-weight: 700; }
+      #log {
+        background: #17171d;
+        border: 1px solid #2a2a33;
+        border-radius: 10px;
+        padding: 1rem 1.25rem;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 0.9rem;
+        white-space: pre-wrap;
+        min-height: 4rem;
+      }
+      .muted { color: #8a8a96; }
+    </style>
+  </head>
+  <body>
+    <h1>MinLang &rarr; JS Interop</h1>
+    <p class="muted">
+      A MinLang program compiled to WebAssembly, calling JavaScript via <code>extern fun</code>.
+      Serve this folder over HTTP (e.g. <code>npx serve</code>) and open the page.
+    </p>
+    <div id="log"></div>
+
+    <script type="module">
+      import { run } from "../../runtime/minlang.js";
+
+      const logEl = document.getElementById("log");
+      const append = (line) => {
+        logEl.textContent += line + "\n";
+      };
+
+      // `alert` and `console.log` auto-bind to JS globals - no glue needed.
+      // We only supply `square` (custom logic) and mirror console output onto the page.
+      const origLog = console.log.bind(console);
+      console.log = (...a) => {
+        append(a.join(" "));
+        origLog(...a);
+      };
+
+      await run("interop.wasm", {
+        imports: { square: (n) => n * n },
+      });
+    </script>
+  </body>
+</html>

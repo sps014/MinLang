@@ -84,6 +84,48 @@ fn test_parse_binary_expression_precedence() {
 }
 
 #[test]
+fn test_parse_extern_function() {
+    let code = "extern fun alert(msg: string): void;";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    assert_eq!(program.functions.len(), 1);
+
+    let func = &program.functions[0];
+    assert_eq!(func.name.text, "alert");
+    assert!(func.is_extern);
+    assert_eq!(func.body.len(), 0);
+    assert_eq!(func.parameters.len(), 1);
+    // Defaults: import module "env", import name = function name.
+    assert_eq!(func.import_module.as_deref(), Some("env"));
+    assert_eq!(func.import_name.as_deref(), Some("alert"));
+}
+
+#[test]
+fn test_parse_extern_with_js_attribute() {
+    let code = "@js(\"dom\", \"setText\") extern fun set_text(v: string): int;";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    let func = &program.functions[0];
+    assert!(func.is_extern);
+    assert_eq!(func.import_module.as_deref(), Some("dom"));
+    assert_eq!(func.import_name.as_deref(), Some("setText"));
+}
+
+#[test]
+fn test_parse_extern_rejects_body() {
+    let code = "extern fun bad(): void { return; }";
+    let arena = bumpalo::Bump::new();
+    let (_, diagnostics) = parse_code(code, &arena);
+
+    // A body where a `;` is expected must produce a diagnostic.
+    assert_eq!(diagnostics.has_errors(), true);
+}
+
+#[test]
 fn test_parse_error_recovery() {
     let code = "fun test(): void { let x = ; let y = 5; }";
     let arena = bumpalo::Bump::new();

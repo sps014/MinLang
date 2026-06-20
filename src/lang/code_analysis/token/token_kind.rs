@@ -105,6 +105,8 @@ pub enum TokenKind
     ImportToken,
     #[token("export")]
     ExportToken,
+    #[token("extern")]
+    ExternToken,
     #[token("struct")]
     StructToken,
     #[token("null")]

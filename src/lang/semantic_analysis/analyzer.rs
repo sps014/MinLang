@@ -241,6 +241,10 @@ impl<'a> Analyzer<'a> {
             if function.generic_parameters.is_some() {
                 continue;
             }
+            // Extern functions have no body; their signature is enough for call-site checks.
+            if function.is_extern {
+                continue;
+            }
             diagnostics.file_path = file_path_string(&function.file_path);
             let table = self.analyze_function(function, diagnostics)?;
             symbol_table_map.insert(function.name.text.clone(), table);

@@ -67,6 +67,7 @@ nav:
     - Structs: language/structs.md
     - Generics: language/generics.md
     - The object Type: language/objects.md
+    - JS Interop: language/interop.md
   - Standard Library:
     - Builtins: stdlib/builtins.md
     - Collections: stdlib/collections.md
