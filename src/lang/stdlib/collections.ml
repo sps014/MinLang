@@ -106,7 +106,7 @@ struct List<T> {
     }
 }
 
-fun new_list<T>(): List<T> {
+fun List<T>(): List<T> {
     return List<T> { items: array_new<T>(8), count: 0 };
 }
 
@@ -272,7 +272,7 @@ struct Map<K, V> {
     }
 }
 
-fun new_map<K, V>(): Map<K, V> {
+fun Map<K, V>(): Map<K, V> {
     return Map<K, V> {
         keys: array_new<K>(8),
         values: array_new<V>(8),

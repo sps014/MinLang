@@ -1,0 +1,73 @@
+site_name: MinLang
+site_url: https://sps014.github.io/MinLang/
+repo_url: https://github.com/sps014/MinLang
+repo_name: sps014/MinLang
+
+theme:
+  name: material
+  font:
+    text: Inter
+    code: JetBrains Mono
+  palette:
+    scheme: slate
+    primary: black
+    accent: deep-purple
+  features:
+    - content.action.edit
+    - content.action.view
+    - content.code.annotate
+    - content.code.copy
+    - content.code.select
+    - content.tabs.link
+    - content.tooltips
+    - navigation.footer
+    - navigation.indexes
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.path
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - navigation.expand
+    - toc.follow
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      dedent_subsections: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Language:
+    - Variables: language/variables.md
+    - Types: language/types.md
+    - Operators: language/operators.md
+    - Control Flow: language/control-flow.md
+    - Functions: language/functions.md
+    - Arrays: language/arrays.md
+    - Structs: language/structs.md
+    - Generics: language/generics.md
+    - The object Type: language/objects.md
+  - Standard Library:
+    - Builtins: stdlib/builtins.md
+    - Collections: stdlib/collections.md
+  - Memory Model: memory.md
