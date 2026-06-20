@@ -1,6 +1,6 @@
 use std::io::{Error, ErrorKind};
 use crate::lang::code_analysis::syntax::nodes::{ExpressionNode, FunctionNode, Type};
-use crate::lang::code_analysis::syntax::nodes::types::strip_nullable;
+use crate::lang::code_analysis::syntax::nodes::types::{mangle_generic, strip_nullable};
 use crate::lang::code_analysis::text::indented_text_writer::IndentedTextWriter;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 use crate::lang::code_analysis::token::token_kind::TokenKind;
@@ -56,12 +56,10 @@ impl<'a> WasmGenerator<'a> {
 
     /// Builds a struct instantiation
     pub fn build_struct_instantiation(&mut self, name: &SyntaxToken, generic_args: &Option<Vec<Type>>, fields: &Vec<(SyntaxToken, ExpressionNode<'a>)>, _left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
-        let mut struct_name = name.text.clone();
-        if let Some(args) = generic_args {
-            if !args.is_empty() {
-                struct_name = format!("{}_{}", struct_name, args[0].get_type());
-            }
-        }
+        let struct_name = match generic_args {
+            Some(args) => mangle_generic(&name.text, args),
+            None => name.text.clone(),
+        };
         let struct_info = self.struct_table.get_struct(&struct_name).unwrap().clone();
         
         // 1. Allocate memory using $malloc

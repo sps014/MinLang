@@ -5,7 +5,7 @@ use std::rc::Rc;
 use crate::lang::code_analysis::syntax::nodes::{ExpressionNode, FunctionNode, Type, ProgramNode, StatementNode};
 use crate::lang::code_analysis::syntax::nodes::struct_node::{StructDeclarationNode, StructFieldNode};
 use crate::lang::code_analysis::syntax::nodes::function::ParameterNode;
-use crate::lang::code_analysis::syntax::nodes::types::{strip_array, strip_nullable};
+use crate::lang::code_analysis::syntax::nodes::types::{mangle_generic, strip_array, strip_nullable};
 use crate::lang::code_analysis::syntax::syntax_tree::SyntaxTree;
 use crate::lang::code_analysis::text::line_text::LineText;
 use crate::lang::code_analysis::text::text_span::TextSpan;
@@ -16,6 +16,12 @@ use crate::lang::semantic_analysis::function_table::{FunctionTable, FunctionTabl
 use crate::lang::semantic_analysis::symbol_table::SymbolTable;
 use crate::lang::semantic_analysis::struct_table::StructTable;
 use crate::lang::diagnostics::DiagnosticBag;
+
+/// Converts an AST node's `Rc<str>` source-file tag into the `String` form stored on the
+/// diagnostic bag (used to attribute each semantic error to its originating file).
+fn file_path_string(file_path: &Option<Rc<str>>) -> Option<String> {
+    file_path.as_ref().map(|p| p.to_string())
+}
 
 /// An empty source span, used for diagnostics on synthesized nodes that have no real
 /// position in the user's source (e.g. array element type mismatches).
@@ -29,33 +35,65 @@ fn synthetic_token(kind: TokenKind, text: &str) -> SyntaxToken {
     SyntaxToken::new(kind, empty_span(), text.to_string())
 }
 
-/// Rewrites a field/parameter type token that refers to a generic parameter
-/// (e.g. `T`, `T[]`, `T?`) into its concrete form, preserving the array/nullable suffix.
-fn substitute_generic_token(token: &SyntaxToken, generic_param: &str, concrete: &str) -> SyntaxToken {
+/// Builds the generic substitution bindings (parameter name -> concrete type name) by
+/// zipping declared generic parameters with the supplied concrete arguments. Extra
+/// parameters or arguments beyond the common length are ignored (arity is validated
+/// separately so a clear diagnostic is produced).
+fn generic_bindings(params: &[SyntaxToken], args: &[Type]) -> Vec<(String, String)> {
+    params.iter()
+        .zip(args.iter())
+        .map(|(param, arg)| (param.text.clone(), arg.get_type()))
+        .collect()
+}
+
+/// Looks up the concrete type bound to a generic parameter name, if any.
+fn lookup_binding(bindings: &[(String, String)], name: &str) -> Option<String> {
+    bindings.iter().find(|(param, _)| param == name).map(|(_, concrete)| concrete.clone())
+}
+
+/// Builds a mangled function name by appending each concrete type from the bindings in order,
+/// e.g. base `swap` with bindings `[(T,int),(V,string)]` becomes `swap_int_string`.
+fn mangle_bindings(base: &str, bindings: &[(String, String)]) -> String {
+    let mut name = base.to_string();
+    for (_, concrete) in bindings {
+        name.push('_');
+        name.push_str(concrete);
+    }
+    name
+}
+
+/// Rewrites a field type token that refers to a generic parameter (e.g. `T`, `T[]`, `T?`)
+/// into its concrete form, preserving the array/nullable suffix. Tokens that do not name a
+/// generic parameter are returned unchanged.
+fn substitute_generic_token(token: &SyntaxToken, bindings: &[(String, String)]) -> SyntaxToken {
     let mut result = token.clone();
-    result.text = if token.text == generic_param {
-        concrete.to_string()
-    } else if token.text == format!("{}[]", generic_param) {
-        format!("{}[]", concrete)
-    } else if token.text == format!("{}?", generic_param) {
-        format!("{}?", concrete)
+    let (base, suffix) = if let Some(base) = token.text.strip_suffix("[]") {
+        (base, "[]")
+    } else if let Some(base) = token.text.strip_suffix('?') {
+        (base, "?")
     } else {
-        return result;
+        (token.text.as_str(), "")
     };
+    if let Some(concrete) = lookup_binding(bindings, base) {
+        result.text = format!("{}{}", concrete, suffix);
+    }
     result
 }
+
+/// Maps each generic parameter name to the concrete type bound to it for one monomorphization.
+pub type GenericBindings = Vec<(String, String)>;
 
 pub struct SemanticInfo<'a>
 {
     pub hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>,
     pub function_table: &'a FunctionTable,
     pub struct_table: &'a StructTable,
-    pub instantiated_generics: HashMap<String, (String, &'a FunctionNode<'a>)>,
+    pub instantiated_generics: HashMap<String, (GenericBindings, &'a FunctionNode<'a>)>,
     pub struct_methods: Vec<&'a FunctionNode<'a>>,
 }
 
 impl<'a> SemanticInfo<'a> {
-    pub fn new(hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>, function_table: &'a FunctionTable, struct_table: &'a StructTable, instantiated_generics: HashMap<String, (String, &'a FunctionNode<'a>)>, struct_methods: Vec<&'a FunctionNode<'a>>) -> SemanticInfo<'a>
+    pub fn new(hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>, function_table: &'a FunctionTable, struct_table: &'a StructTable, instantiated_generics: HashMap<String, (GenericBindings, &'a FunctionNode<'a>)>, struct_methods: Vec<&'a FunctionNode<'a>>) -> SemanticInfo<'a>
     {
         SemanticInfo {
             hash_map,
@@ -74,7 +112,7 @@ pub struct Analyzer<'a> {
     struct_table:StructTable,
     arena: &'a Bump,
     generic_functions: HashMap<String, &'a FunctionNode<'a>>,
-    instantiated_generics: HashMap<String, (String, &'a FunctionNode<'a>)>,
+    instantiated_generics: HashMap<String, (GenericBindings, &'a FunctionNode<'a>)>,
     generic_structs: HashMap<String, &'a crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode<'a>>,
     struct_methods: Vec<&'a FunctionNode<'a>>,
 }
@@ -101,14 +139,22 @@ impl<'a> Analyzer<'a> {
         }
     }
 
-    /// If `ty` is a struct (or nullable struct), returns its mangled type name
-    /// (e.g. `Node`, `Box_int`). Returns `None` for any non-struct type.
-    fn resolve_struct_name(ty: &Type) -> Option<String> {
+    /// If `ty` is a struct (or nullable struct), returns its base name and the list of
+    /// concrete generic type arguments (empty for non-generic structs). Returns `None`
+    /// for any non-struct type. Does NOT recurse into arrays (a method/member access on an
+    /// array is invalid and must surface as an error).
+    fn resolve_struct_parts(ty: &Type) -> Option<(String, Vec<Type>)> {
         match ty {
-            Type::Struct(_, _) => Some(ty.get_type()),
-            Type::Nullable(inner) if matches!(**inner, Type::Struct(_, _)) => Some(inner.get_type()),
+            Type::Struct(token, args) => Some((token.text.clone(), args.clone().unwrap_or_default())),
+            Type::Nullable(inner) => Self::resolve_struct_parts(inner),
             _ => None,
         }
+    }
+
+    /// If `ty` is a struct (or nullable struct), returns its mangled type name
+    /// (e.g. `Node`, `Box_int`, `Pair_int_string`). Returns `None` for any non-struct type.
+    fn resolve_struct_name(ty: &Type) -> Option<String> {
+        Self::resolve_struct_parts(ty).map(|(base, args)| mangle_generic(&base, &args))
     }
 
     /// Splits a mangled generic struct name (e.g. `Box_int`) into its base name and
@@ -139,6 +185,7 @@ impl<'a> Analyzer<'a> {
     /// Pass 0: register every (non-generic) struct and its methods; stash generic templates.
     fn register_structs(&mut self, node: &'a ProgramNode<'a>, diagnostics: &mut DiagnosticBag) {
         for struct_decl in node.structs.iter() {
+            diagnostics.file_path = file_path_string(&struct_decl.file_path);
             if struct_decl.generic_parameters.is_some() {
                 self.generic_structs.insert(struct_decl.name.text.clone(), struct_decl);
                 continue;
@@ -146,13 +193,14 @@ impl<'a> Analyzer<'a> {
             if let Err(e) = self.struct_table.add_struct(struct_decl) {
                 diagnostics.report_error(e, Some(struct_decl.name.position.clone()));
             }
-            self.register_struct_methods(struct_decl, &struct_decl.name.text, None, diagnostics);
+            self.register_struct_methods(struct_decl, &struct_decl.name.text, &[], diagnostics);
         }
     }
 
     /// Pass 1: register every (non-generic) function signature; stash generic templates.
     fn register_functions(&mut self, node: &'a ProgramNode<'a>, diagnostics: &mut DiagnosticBag) {
         for function in node.functions.iter() {
+            diagnostics.file_path = file_path_string(&function.file_path);
             if function.generic_parameters.is_some() {
                 self.generic_functions.insert(function.name.text.clone(), function);
                 continue;
@@ -189,6 +237,7 @@ impl<'a> Analyzer<'a> {
             if function.generic_parameters.is_some() {
                 continue;
             }
+            diagnostics.file_path = file_path_string(&function.file_path);
             let table = self.analyze_function(function, diagnostics)?;
             symbol_table_map.insert(function.name.text.clone(), table);
         }
@@ -198,9 +247,10 @@ impl<'a> Analyzer<'a> {
     /// Pass 3: analyze each monomorphized generic instance so concrete-type errors surface.
     fn analyze_instantiated_generics(&mut self, symbol_table_map: &mut HashMap<String, Rc<RefCell<SymbolTable>>>, diagnostics: &mut DiagnosticBag) -> Result<(), ()> {
         let generics_to_analyze: Vec<(String, &'a FunctionNode<'a>)> = self.instantiated_generics.iter()
-            .map(|(mangled, (_concrete, template))| (mangled.clone(), *template))
+            .map(|(mangled, (_bindings, template))| (mangled.clone(), *template))
             .collect();
         for (mangled_name, template) in generics_to_analyze {
+            diagnostics.file_path = file_path_string(&template.file_path);
             let table = self.analyze_function(template, diagnostics)?;
             symbol_table_map.insert(mangled_name, table);
         }
@@ -211,34 +261,41 @@ impl<'a> Analyzer<'a> {
     fn analyze_struct_method_bodies(&mut self, symbol_table_map: &mut HashMap<String, Rc<RefCell<SymbolTable>>>, diagnostics: &mut DiagnosticBag) -> Result<(), ()> {
         let methods_to_analyze = self.struct_methods.clone();
         for method in methods_to_analyze {
+            diagnostics.file_path = file_path_string(&method.file_path);
             let table = self.analyze_function(method, diagnostics)?;
             symbol_table_map.insert(method.name.text.clone(), table);
         }
         Ok(())
     }
-    fn ensure_struct_instantiated(&mut self, mangled_name: &str, position: &TextSpan, diagnostics: &mut DiagnosticBag) {
-        if self.struct_table.get_struct(mangled_name).is_some() {
+    fn ensure_struct_instantiated(&mut self, base_name: &str, args: &[Type], position: &TextSpan, diagnostics: &mut DiagnosticBag) {
+        let mangled_name = mangle_generic(base_name, args);
+        if self.struct_table.get_struct(&mangled_name).is_some() {
             return;
         }
 
-        let Some((base_name, concrete_type_str)) = self.demangle_generic_struct(mangled_name) else {
-            return;
-        };
-        let template = match self.generic_structs.get(base_name.as_str()) {
+        let template = match self.generic_structs.get(base_name) {
             Some(template) => *template,
             None => return,
         };
 
-        let gen_param_name = &template.generic_parameters.as_ref().unwrap()[0].text;
+        let params = template.generic_parameters.as_deref().unwrap_or(&[]);
+        if args.len() != params.len() {
+            diagnostics.report_error(
+                format!("Generic struct '{}' expects {} type argument(s), but {} were provided", base_name, params.len(), args.len()),
+                Some(position.clone()),
+            );
+        }
+        let bindings = generic_bindings(params, args);
+
         let new_fields = template.fields.iter()
             .map(|field| StructFieldNode {
                 name: field.name.clone(),
-                type_token: substitute_generic_token(&field.type_token, gen_param_name, &concrete_type_str),
+                type_token: substitute_generic_token(&field.type_token, &bindings),
             })
             .collect();
 
         let mut new_name_token = template.name.clone();
-        new_name_token.text = mangled_name.to_string();
+        new_name_token.text = mangled_name.clone();
         let new_decl = StructDeclarationNode::new(
             new_name_token,
             None,
@@ -251,18 +308,18 @@ impl<'a> Analyzer<'a> {
             diagnostics.report_error(e, Some(position.clone()));
         }
 
-        self.register_struct_methods(&new_decl, mangled_name, Some(&concrete_type_str), diagnostics);
+        self.register_struct_methods(&new_decl, &mangled_name, &bindings, diagnostics);
     }
 
-    fn register_struct_methods(&mut self, struct_decl: &StructDeclarationNode<'a>, struct_type_str: &str, concrete_type_str: Option<&str>, diagnostics: &mut DiagnosticBag) {
+    fn register_struct_methods(&mut self, struct_decl: &StructDeclarationNode<'a>, struct_type_str: &str, bindings: &[(String, String)], diagnostics: &mut DiagnosticBag) {
         for method in &struct_decl.methods {
             let mangled_name = format!("{}_{}", struct_type_str, method.name.text);
 
             let mut new_method = method.clone();
             new_method.name = synthetic_token(TokenKind::IdentifierToken, &mangled_name);
 
-            if let Some(concrete_str) = concrete_type_str {
-                Self::substitute_generic_signature(&mut new_method, concrete_str);
+            if !bindings.is_empty() {
+                Self::substitute_generic_signature(&mut new_method, bindings);
             }
 
             new_method.parameters.insert(0, Self::make_this_param(struct_type_str));
@@ -276,29 +333,70 @@ impl<'a> Analyzer<'a> {
         }
     }
 
-    /// Replaces any generic parameter `T` appearing in a method's parameter or return
-    /// types with the concrete type chosen during monomorphization.
-    fn substitute_generic_signature(method: &mut FunctionNode<'a>, concrete_str: &str) {
-        let is_generic_t = |t: &Type| matches!(t, Type::Struct(_, _)) && t.get_type() == "T";
+    /// Substitutes every generic parameter appearing in a method's parameter or return types
+    /// with its concrete type, according to the monomorphization bindings.
+    fn substitute_generic_signature(method: &mut FunctionNode<'a>, bindings: &[(String, String)]) {
         for param in &mut method.parameters {
-            if is_generic_t(&param.type_) {
-                param.type_ = Self::concrete_type_from_str(concrete_str);
-            }
+            param.type_ = Self::monomorphize_type(&param.type_, bindings);
         }
         if let Some(ret) = &method.return_type {
-            if is_generic_t(ret) {
-                method.return_type = Some(Self::concrete_type_from_str(concrete_str));
-            }
+            method.return_type = Some(Self::monomorphize_type(ret, bindings));
         }
     }
 
-    /// Returns `ty` unchanged unless it is the generic parameter `T`, in which case it is
-    /// replaced with the concrete type chosen during monomorphization.
-    fn monomorphize_type(ty: &Type, concrete_str: &str) -> Type {
-        if matches!(ty, Type::Struct(_, _)) && ty.get_type() == "T" {
-            Self::concrete_type_from_str(concrete_str)
-        } else {
-            ty.clone()
+    /// Determines the concrete type bound to each generic parameter of `template` for one call.
+    /// Uses explicit type arguments when given (arity-checked); otherwise infers each parameter
+    /// from the actual argument passed to the first formal parameter that is exactly that
+    /// parameter. Parameters that cannot be inferred produce a diagnostic.
+    fn infer_generic_bindings(&self, template: &FunctionNode<'a>, generic_args: &Option<Vec<Type>>, params_types: &[String], position: &TextSpan, diagnostics: &mut DiagnosticBag) -> Vec<(String, String)> {
+        let gen_params = template.generic_parameters.as_deref().unwrap_or(&[]);
+
+        if let Some(generics) = generic_args {
+            if !generics.is_empty() {
+                if generics.len() != gen_params.len() {
+                    diagnostics.report_error(
+                        format!("Generic function '{}' expects {} type argument(s), but {} were provided", template.name.text, gen_params.len(), generics.len()),
+                        Some(position.clone()),
+                    );
+                }
+                return gen_params.iter()
+                    .zip(generics.iter())
+                    .map(|(param, arg)| (param.text.clone(), arg.get_type()))
+                    .collect();
+            }
+        }
+
+        gen_params.iter().map(|param| {
+            let concrete = template.parameters.iter().enumerate().find_map(|(i, formal)| {
+                match &formal.type_ {
+                    Type::Struct(token, None) if token.text == param.text => params_types.get(i).cloned(),
+                    _ => None,
+                }
+            });
+            match concrete {
+                Some(concrete) => (param.text.clone(), concrete),
+                None => {
+                    diagnostics.report_error(
+                        format!("Cannot infer generic parameter '{}' of function '{}'; specify type arguments explicitly", param.text, template.name.text),
+                        Some(position.clone()),
+                    );
+                    (param.text.clone(), "void".to_string())
+                }
+            }
+        }).collect()
+    }
+
+    /// Returns `ty` with any generic parameter substituted for its concrete type per the
+    /// monomorphization bindings, recursing through array and nullable wrappers (`T`, `T[]`, `T?`).
+    fn monomorphize_type(ty: &Type, bindings: &[(String, String)]) -> Type {
+        match ty {
+            Type::Struct(token, None) => match lookup_binding(bindings, &token.text) {
+                Some(concrete) => Self::concrete_type_from_str(&concrete),
+                None => ty.clone(),
+            },
+            Type::Array(inner) => Type::Array(Box::new(Self::monomorphize_type(inner, bindings))),
+            Type::Nullable(inner) => Type::Nullable(Box::new(Self::monomorphize_type(inner, bindings))),
+            _ => ty.clone(),
         }
     }
 
@@ -390,35 +488,23 @@ impl<'a> Analyzer<'a> {
             params_types.push(self.analyze_expression(param,parent_function,symbol_table, diagnostics)?.get_type());
         }
 
-        // Monomorphization logic
+        // Monomorphization: bind every generic parameter to a concrete type, then register
+        // (once) a specialized signature under the mangled name.
         if self.generic_functions.contains_key(&function_name) {
-            let concrete_type_str = if let Some(generics) = generic_args {
-                if !generics.is_empty() {
-                    generics[0].get_type()
-                } else {
-                    "void".to_string()
-                }
-            } else if !params_types.is_empty() {
-                params_types[0].clone()
-            } else {
-                "void".to_string()
-            };
+            let template = *self.generic_functions.get(&function_name).unwrap();
+            let bindings = self.infer_generic_bindings(template, generic_args, &params_types, &name.position, diagnostics);
+            let mangled_name = mangle_bindings(&function_name, &bindings);
 
-            let mangled_name = format!("{}_{}", function_name, concrete_type_str);
-            
-            // If we haven't instantiated this concrete function yet, do it now
             if self.function_table.get_function(&mangled_name).is_err() {
-                let template = *self.generic_functions.get(&function_name).unwrap();
-
-                self.instantiated_generics.insert(mangled_name.clone(), (concrete_type_str.clone(), template));
+                self.instantiated_generics.insert(mangled_name.clone(), (bindings.clone(), template));
 
                 let info = FunctionTableInfo {
                     name: mangled_name.clone(),
                     parameters: template.parameters.iter()
-                        .map(|p| Self::monomorphize_type(&p.type_, &concrete_type_str).get_type())
+                        .map(|p| Self::monomorphize_type(&p.type_, &bindings).get_type())
                         .collect(),
                     return_type: template.return_type.as_ref()
-                        .map(|ret| Self::monomorphize_type(ret, &concrete_type_str)),
+                        .map(|ret| Self::monomorphize_type(ret, &bindings)),
                 };
 
                 let _ = self.function_table.add_function(mangled_name.clone(), info);
@@ -453,15 +539,16 @@ impl<'a> Analyzer<'a> {
     fn analyze_method_call(&mut self, obj: &ExpressionNode<'a>, method: &SyntaxToken, _generic_args: &Option<Vec<Type>>, params: &Vec<ExpressionNode<'a>>, parent_function: &FunctionNode<'a>, symbol_table: &Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag) -> Result<Type, ()> {
         let obj_type = self.analyze_expression(obj, parent_function, symbol_table, diagnostics)?;
 
-        let struct_name = match Self::resolve_struct_name(&obj_type) {
-            Some(name) => name,
+        let (base_name, generic_args) = match Self::resolve_struct_parts(&obj_type) {
+            Some(parts) => parts,
             None => {
                 diagnostics.report_error(format!("Cannot call method on non-struct type {}", obj_type.get_type()), Some(method.position.clone()));
                 return Ok(Type::Void);
             }
         };
 
-        self.ensure_struct_instantiated(&struct_name, &method.position, diagnostics);
+        self.ensure_struct_instantiated(&base_name, &generic_args, &method.position, diagnostics);
+        let struct_name = mangle_generic(&base_name, &generic_args);
         
         let mangled_name = format!("{}_{}", struct_name, method.text);
         
@@ -520,7 +607,7 @@ impl<'a> Analyzer<'a> {
     {
         let cond_type = self.analyze_expression(condition,parent_function,symbol_table, diagnostics)?;
         if cond_type.get_type() != "bool" {
-            diagnostics.report_error(format!("while condition must be bool, got {}", cond_type.get_type()), None);
+            diagnostics.report_error(format!("while condition must be bool, got {}", cond_type.get_type()), condition.position());
         }
         self.analyze_body(body,parent_function,Some(symbol_table),true, diagnostics)?;
         Ok(())
@@ -538,7 +625,7 @@ impl<'a> Analyzer<'a> {
         if let Some(cond_expr) = condition {
             let cond_type = self.analyze_expression(cond_expr, parent_function, &for_scope, diagnostics)?;
             if cond_type.get_type() != "bool" {
-                diagnostics.report_error(format!("for condition must be bool, got {}", cond_type.get_type()), None);
+                diagnostics.report_error(format!("for condition must be bool, got {}", cond_type.get_type()), cond_expr.position());
             }
         }
         if let Some(inc_stmt) = increment {
@@ -585,14 +672,14 @@ impl<'a> Analyzer<'a> {
         let inner_type = match array_type {
             Type::Array(inner) => *inner,
             _ => {
-                diagnostics.report_error(format!("Cannot index into non-array type {}", array_type.get_type()), None);
+                diagnostics.report_error(format!("Cannot index into non-array type {}", array_type.get_type()), arr.position());
                 return Ok(());
             }
         };
 
         let index_type = self.analyze_expression(index, parent_function, symbol_table, diagnostics)?;
         if index_type.get_type() != "int" {
-            diagnostics.report_error(format!("Array index must be of type int, got {}", index_type.get_type()), None);
+            diagnostics.report_error(format!("Array index must be of type int, got {}", index_type.get_type()), index.position());
         }
 
         let right_type = self.analyze_expression(right, parent_function, symbol_table, diagnostics)?;
@@ -604,15 +691,16 @@ impl<'a> Analyzer<'a> {
     fn analyze_member_assignment(&mut self, obj: &ExpressionNode<'a>, member: &SyntaxToken, right: &ExpressionNode<'a>, parent_function: &FunctionNode<'a>, symbol_table: &Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag) -> Result<(), ()> {
         let obj_type = self.analyze_expression(obj, parent_function, symbol_table, diagnostics)?;
 
-        let struct_name = match Self::resolve_struct_name(&obj_type) {
-            Some(name) => name,
+        let (base_name, generic_args) = match Self::resolve_struct_parts(&obj_type) {
+            Some(parts) => parts,
             None => {
                 diagnostics.report_error(format!("Cannot access member of non-struct type {}", obj_type.get_type()), Some(member.position.clone()));
                 return Ok(());
             }
         };
 
-        self.ensure_struct_instantiated(&struct_name, &member.position, diagnostics);
+        self.ensure_struct_instantiated(&base_name, &generic_args, &member.position, diagnostics);
+        let struct_name = mangle_generic(&base_name, &generic_args);
 
         let field_type = {
             let struct_info = match self.struct_table.get_struct(&struct_name) {
@@ -663,14 +751,14 @@ impl<'a> Analyzer<'a> {
                 let inner_type = match array_type {
                     Type::Array(inner) => *inner,
                     _ => {
-                        diagnostics.report_error(format!("Cannot index into non-array type {}", array_type.get_type()), None);
+                        diagnostics.report_error(format!("Cannot index into non-array type {}", array_type.get_type()), array_expr.position());
                         Type::Void
                     }
                 };
                 
                 let index_type = self.analyze_expression(index_expr, parent_function, symbol_table, diagnostics)?;
                 if index_type.get_type() != "int" {
-                    diagnostics.report_error(format!("Array index must be of type int, got {}", index_type.get_type()), None);
+                    diagnostics.report_error(format!("Array index must be of type int, got {}", index_type.get_type()), index_expr.position());
                 }
                 
                 Ok(inner_type)
@@ -710,15 +798,11 @@ impl<'a> Analyzer<'a> {
             ExpressionNode::Parenthesized(expr)=>
                 Ok(self.analyze_expression(expr,parent_function,symbol_table, diagnostics)?),
             ExpressionNode::StructInstantiation(name, generic_args, fields) => {
-                let mut struct_name = name.text.clone();
-                if let Some(args) = generic_args {
-                    if !args.is_empty() {
-                        struct_name = format!("{}_{}", struct_name, args[0].get_type());
-                    }
-                }
-                
+                let generic_args_slice = generic_args.as_deref().unwrap_or(&[]);
+                let struct_name = mangle_generic(&name.text, generic_args_slice);
+
                 // Monomorphize generic struct if needed
-                self.ensure_struct_instantiated(&struct_name, &name.position, diagnostics);
+                self.ensure_struct_instantiated(&name.text, generic_args_slice, &name.position, diagnostics);
                 
                 let struct_info = match self.struct_table.get_struct(&struct_name) {
                     Some(info) => info.clone(),
@@ -759,15 +843,16 @@ impl<'a> Analyzer<'a> {
             ExpressionNode::MemberAccess(obj, member) => {
                 let obj_type = self.analyze_expression(obj, parent_function, symbol_table, diagnostics)?;
 
-                let struct_name = match Self::resolve_struct_name(&obj_type) {
-                    Some(name) => name,
+                let (base_name, generic_args) = match Self::resolve_struct_parts(&obj_type) {
+                    Some(parts) => parts,
                     None => {
                         diagnostics.report_error(format!("Cannot access member of non-struct type {}", obj_type.get_type()), Some(member.position.clone()));
                         return Ok(Type::Void);
                     }
                 };
 
-                self.ensure_struct_instantiated(&struct_name, &member.position, diagnostics);
+                self.ensure_struct_instantiated(&base_name, &generic_args, &member.position, diagnostics);
+                let struct_name = mangle_generic(&base_name, &generic_args);
 
                 let struct_info = match self.struct_table.get_struct(&struct_name) {
                     Some(info) => info,
@@ -792,17 +877,14 @@ impl<'a> Analyzer<'a> {
                 
                 let target_type_str = target_type.get_type();
                 let expr_type_str = expr_type.get_type();
-                
-                // If target type is a struct, ensure it's instantiated
-                if target_type_str != "int" && target_type_str != "float" && target_type_str != "double" && target_type_str != "bool" && target_type_str != "string" && target_type_str != "void" {
-                    let base_type_str = if target_type_str.ends_with("[]") {
-                        &target_type_str[..target_type_str.len() - 2]
-                    } else if target_type_str.ends_with("?") {
-                        &target_type_str[..target_type_str.len() - 1]
-                    } else {
-                        &target_type_str
-                    };
-                    self.ensure_struct_instantiated(base_type_str, &empty_span(), diagnostics);
+
+                // If the target (after peeling array wrappers) is a generic struct, instantiate it.
+                let mut core_target = target_type;
+                while let Type::Array(inner) = core_target {
+                    core_target = inner;
+                }
+                if let Some((base_name, generic_args)) = Self::resolve_struct_parts(core_target) {
+                    self.ensure_struct_instantiated(&base_name, &generic_args, &empty_span(), diagnostics);
                 }
 
                 // Allow int <-> float casts
@@ -819,7 +901,7 @@ impl<'a> Analyzer<'a> {
                     // Allow casting int to pointer types (for null pointers)
                     Ok(target_type.clone())
                 } else {
-                    diagnostics.report_error(format!("Cannot cast from {} to {}", expr_type_str, target_type_str), None);
+                    diagnostics.report_error(format!("Cannot cast from {} to {}", expr_type_str, target_type_str), target_type.get_span().or_else(|| expr.position()));
                     Ok(target_type.clone())
                 }
             },
@@ -924,7 +1006,7 @@ impl<'a> Analyzer<'a> {
             //if condition
             let cond_type = self.analyze_expression(condition,parent_function,symbol_table, diagnostics)?;
             if cond_type.get_type() != "bool" {
-                diagnostics.report_error(format!("if condition must be bool, got {}", cond_type.get_type()), None);
+                diagnostics.report_error(format!("if condition must be bool, got {}", cond_type.get_type()), condition.position());
             }
             //if body
             self.analyze_body(if_body,parent_function,Some(symbol_table),has_parent_while, diagnostics)?;
@@ -951,7 +1033,7 @@ impl<'a> Analyzer<'a> {
             if !elif_constant_false {
                 let elif_cond_type = self.analyze_expression(&i.0,parent_function,symbol_table, diagnostics)?;
                 if elif_cond_type.get_type() != "bool" {
-                    diagnostics.report_error(format!("else if condition must be bool, got {}", elif_cond_type.get_type()), None);
+                    diagnostics.report_error(format!("else if condition must be bool, got {}", elif_cond_type.get_type()), i.0.position());
                 }
                 self.analyze_body(&i.1,parent_function,Some(symbol_table),has_parent_while, diagnostics)?;
             }

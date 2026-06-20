@@ -171,8 +171,22 @@ impl Compiler {
             self.parse_file_recursive(&import_path_str, visited, all_functions, all_structs, arena, diagnostics, file_contents)?;
         }
         
-        all_functions.extend(program.functions.clone());
-        all_structs.extend(program.structs.clone());
+        // Tag every declaration with its source file so semantic diagnostics (which run on the
+        // merged program) can report the correct file name.
+        let file_tag: std::rc::Rc<str> = std::rc::Rc::from(path_str.as_str());
+        for function in program.functions.iter().cloned() {
+            let mut function = function;
+            function.file_path = Some(file_tag.clone());
+            all_functions.push(function);
+        }
+        for struct_decl in program.structs.iter().cloned() {
+            let mut struct_decl = struct_decl;
+            struct_decl.file_path = Some(file_tag.clone());
+            for method in struct_decl.methods.iter_mut() {
+                method.file_path = Some(file_tag.clone());
+            }
+            all_structs.push(struct_decl);
+        }
         
         Ok(())
     }

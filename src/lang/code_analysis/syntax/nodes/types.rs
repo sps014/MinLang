@@ -6,6 +6,18 @@ pub fn strip_nullable(type_name: &str) -> &str {
     type_name.strip_suffix('?').unwrap_or(type_name)
 }
 
+/// Builds the monomorphized name for a generic instantiation by appending every concrete
+/// type argument, e.g. base `Pair` with `[int, string]` becomes `Pair_int_string`. With no
+/// arguments the base name is returned unchanged.
+pub fn mangle_generic(base: &str, args: &[Type]) -> String {
+    let mut name = base.to_string();
+    for arg in args {
+        name.push('_');
+        name.push_str(&arg.get_type());
+    }
+    name
+}
+
 /// Returns the given type name with a single trailing array (`[]`) suffix removed.
 pub fn strip_array(type_name: &str) -> &str {
     type_name.strip_suffix("[]").unwrap_or(type_name)
@@ -51,14 +63,10 @@ impl Type {
             Type::Boolean(_) => "bool".to_string(),
             Type::Array(inner) => format!("{}[]", inner.get_type()),
             Type::Struct(token, generic_args) => {
-                let mut name = token.text.clone();
-                if let Some(args) = generic_args {
-                    if !args.is_empty() {
-                        name.push_str("_");
-                        name.push_str(&args[0].get_type());
-                    }
+                match generic_args {
+                    Some(args) => mangle_generic(&token.text, args),
+                    None => token.text.clone(),
                 }
-                name
             },
             Type::Generic(name) => name.clone(),
             Type::Nullable(inner) => format!("{}?", inner.get_type()),
@@ -78,6 +86,22 @@ impl Type {
     /// Returns the type name with any trailing nullable (`?`) suffix removed.
     pub fn base_name(&self) -> String {
         strip_nullable(&self.get_type()).to_string()
+    }
+
+    /// Returns the source span of the token backing this type, if any.
+    /// Composite types (arrays, nullables) defer to their inner type; `Void`/`Generic`
+    /// have no backing token and return `None`.
+    pub fn get_span(&self) -> Option<crate::lang::code_analysis::text::text_span::TextSpan> {
+        match self {
+            Type::Integer(token)
+            | Type::Float(token)
+            | Type::Double(token)
+            | Type::String(token)
+            | Type::Boolean(token)
+            | Type::Struct(token, _) => Some(token.position.clone()),
+            Type::Array(inner) | Type::Nullable(inner) => inner.get_span(),
+            Type::Void | Type::Generic(_) => None,
+        }
     }
 
     /// Returns the line and column string of the type token

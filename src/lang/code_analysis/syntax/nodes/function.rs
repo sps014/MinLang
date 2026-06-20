@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
 use super::statement::StatementNode;
 use super::types::Type;
@@ -25,6 +26,9 @@ pub struct FunctionNode<'a> {
     pub parameters: Vec<ParameterNode>,
     pub body: &'a [StatementNode<'a>],
     pub is_exported: bool,
+    /// Source file this declaration came from; set during multi-file merge so semantic
+    /// diagnostics can report the correct file. `None` for synthesized nodes.
+    pub file_path: Option<Rc<str>>,
 }
 
 impl<'a> FunctionNode<'a> {
@@ -44,6 +48,7 @@ impl<'a> FunctionNode<'a> {
             parameters,
             body,
             is_exported,
+            file_path: None,
         }
     }
 }

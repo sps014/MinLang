@@ -57,11 +57,11 @@ impl<'a> WasmGenerator<'a> {
             }
             self.build_function(i, writer)?;
         }
-        for (mangled_name, (concrete_type, template)) in self.instantiated_generics {
-            self.current_generic_type = Some(concrete_type.clone());
+        for (mangled_name, (bindings, template)) in self.instantiated_generics {
+            self.current_generic_bindings = bindings.iter().cloned().collect();
             self.current_mangled_name = Some(mangled_name.clone());
             self.build_function(template, writer)?;
-            self.current_generic_type = None;
+            self.current_generic_bindings.clear();
             self.current_mangled_name = None;
         }
         for method in self.struct_methods {

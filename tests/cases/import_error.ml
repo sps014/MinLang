@@ -1,0 +1,7 @@
+// Regression test: a semantic error in an imported file must be reported with the
+// imported file's name and line number (multi-file diagnostics).
+import "helpers/broken"
+
+fun main() {
+    print_int(broken_helper());
+}

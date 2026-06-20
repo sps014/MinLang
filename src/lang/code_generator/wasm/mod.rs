@@ -30,9 +30,11 @@ pub struct WasmGenerator<'a> {
     pub next_string_offset: usize,
     pub loop_counter: usize,
     pub loop_stack: Vec<usize>,
-    pub current_generic_type: Option<String>,
+    /// Active generic parameter -> concrete type bindings while emitting a monomorphized
+    /// generic function body (empty when not inside one).
+    pub current_generic_bindings: HashMap<String, String>,
     pub current_mangled_name: Option<String>,
-    pub instantiated_generics: &'a HashMap<String, (String, &'a crate::lang::code_analysis::syntax::nodes::FunctionNode<'a>)>,
+    pub instantiated_generics: &'a HashMap<String, (crate::lang::semantic_analysis::analyzer::GenericBindings, &'a crate::lang::code_analysis::syntax::nodes::FunctionNode<'a>)>,
     pub struct_methods: &'a Vec<&'a crate::lang::code_analysis::syntax::nodes::FunctionNode<'a>>,
 }
 
@@ -56,7 +58,7 @@ impl<'a> WasmGenerator<'a> {
             next_string_offset: 12, // Start at 12 so 0 can be used as null pointer, and 4-11 for the first string's header
             loop_counter: 0,
             loop_stack: Vec::new(),
-            current_generic_type: None,
+            current_generic_bindings: HashMap::new(),
             current_mangled_name: None,
             instantiated_generics: &semantic_info.instantiated_generics,
             struct_methods: &semantic_info.struct_methods,

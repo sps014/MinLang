@@ -3,7 +3,7 @@ use std::io::Error;
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::lang::code_analysis::syntax::nodes::{FunctionNode, Type};
-use crate::lang::code_analysis::syntax::nodes::types::{release_func_suffix, strip_nullable};
+use crate::lang::code_analysis::syntax::nodes::types::{mangle_generic, release_func_suffix, strip_nullable};
 use crate::lang::code_analysis::text::indented_text_writer::IndentedTextWriter;
 use crate::lang::semantic_analysis::symbol_table::SymbolTable;
 use super::WasmGenerator;
@@ -14,8 +14,8 @@ impl<'a> WasmGenerator<'a> {
     /// first argument and falls back to the plain name when no monomorphized variant exists.
     pub fn resolve_call_name(&self, name: &str, generic_args: &Option<Vec<Type>>, args: &[crate::lang::code_analysis::syntax::nodes::ExpressionNode<'a>], function: &FunctionNode<'a>) -> String {
         if let Some(generics) = generic_args {
-            if let Some(first) = generics.first() {
-                return format!("{}_{}", name, first.get_type());
+            if !generics.is_empty() {
+                return mangle_generic(name, generics);
             }
         }
         if self.function_table.get_function(&name.to_string()).is_err() {
@@ -134,14 +134,21 @@ impl<'a> WasmGenerator<'a> {
         Ok(r)
     }
 
-    /// Helper to resolve generic types to concrete types during generation
+    /// Resolves a possibly-generic type name to its concrete form during code generation,
+    /// using the active monomorphization bindings. Handles `T`, `T[]`, and `T?` by stripping
+    /// and re-applying the suffix around the bound base type.
     pub fn resolve_type(&self, type_str: &str) -> String {
-        if type_str == "T" {
-            if let Some(concrete) = &self.current_generic_type {
-                return concrete.clone();
-            }
+        let (base, suffix) = if let Some(base) = type_str.strip_suffix("[]") {
+            (base, "[]")
+        } else if let Some(base) = type_str.strip_suffix('?') {
+            (base, "?")
+        } else {
+            (type_str, "")
+        };
+        match self.current_generic_bindings.get(base) {
+            Some(concrete) => format!("{}{}", concrete, suffix),
+            None => type_str.to_string(),
         }
-        type_str.to_string()
     }
 
     /// Reads the type of a variable from the symbol table
@@ -218,8 +225,9 @@ impl<'a> WasmGenerator<'a> {
                     Ok("void".to_string())
                 }
             },
-            ExpressionNode::FunctionCall(name, _, _) => {
-                if let Ok(func) = self.function_table.get_function(&name.text) {
+            ExpressionNode::FunctionCall(name, generic_args, args) => {
+                let resolved_name = self.resolve_call_name(&name.text, generic_args, args, function);
+                if let Ok(func) = self.function_table.get_function(&resolved_name) {
                     if let Some(ret_type) = &func.return_type {
                         Ok(ret_type.get_type())
                     } else {
@@ -253,12 +261,10 @@ impl<'a> WasmGenerator<'a> {
             ExpressionNode::Parenthesized(expr) => self.infer_expression_type(expr, function),
             ExpressionNode::Cast(target_type, _) => Ok(target_type.get_type()),
             ExpressionNode::StructInstantiation(name, generic_args, _) => {
-                let mut struct_name = name.text.clone();
-                if let Some(args) = generic_args {
-                    if !args.is_empty() {
-                        struct_name = format!("{}_{}", struct_name, args[0].get_type());
-                    }
-                }
+                let struct_name = match generic_args {
+                    Some(args) => mangle_generic(&name.text, args),
+                    None => name.text.clone(),
+                };
                 Ok(struct_name)
             },
             ExpressionNode::MemberAccess(obj, member) => {
