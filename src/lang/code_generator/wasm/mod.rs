@@ -16,6 +16,11 @@ pub mod statement;
 pub mod strings;
 pub mod utils;
 pub mod memory;
+pub mod object;
+
+/// Byte size of the universal heap-block header: `[size:i32][tag:i32][ref_count:i32]`.
+/// Allocated pointers point at `data` (block_start + HEAP_HEADER_SIZE).
+pub const HEAP_HEADER_SIZE: usize = 12;
 
 /// Generates WebAssembly (WAT) code from the given syntax tree and semantic info.
 #[allow(dead_code)]
@@ -27,6 +32,9 @@ pub struct WasmGenerator<'a> {
     // key 1: function name, key 2: parameter name
     pub combined_symbol_lookup: HashMap<String, HashMap<String, Type>>,
     pub strings: HashMap<String, usize>,
+    /// Runtime-only string literals (e.g. "true", "null", struct labels) interned by the object
+    /// protocol; maps raw (already unquoted) content -> data-segment offset.
+    pub runtime_strings: HashMap<String, usize>,
     pub next_string_offset: usize,
     pub loop_counter: usize,
     pub loop_stack: Vec<usize>,
@@ -55,7 +63,9 @@ impl<'a> WasmGenerator<'a> {
             struct_table: &semantic_info.struct_table,
             combined_symbol_lookup: HashMap::new(),
             strings: HashMap::new(),
-            next_string_offset: 12, // Start at 12 so 0 can be used as null pointer, and 4-11 for the first string's header
+            runtime_strings: HashMap::new(),
+            // Start past the null word (0..4) and the first block's 12-byte header (4..16).
+            next_string_offset: 4 + HEAP_HEADER_SIZE,
             loop_counter: 0,
             loop_stack: Vec::new(),
             current_generic_bindings: HashMap::new(),

@@ -26,6 +26,9 @@ pub struct FunctionNode<'a> {
     pub parameters: Vec<ParameterNode>,
     pub body: &'a [StatementNode<'a>],
     pub is_exported: bool,
+    /// True when the declaration carried the `@override` attribute. Used to mark object-protocol
+    /// method overrides (`to_string`, `hash_code`) on structs.
+    pub is_override: bool,
     /// Source file this declaration came from; set during multi-file merge so semantic
     /// diagnostics can report the correct file. `None` for synthesized nodes.
     pub file_path: Option<Rc<str>>,
@@ -48,6 +51,7 @@ impl<'a> FunctionNode<'a> {
             parameters,
             body,
             is_exported,
+            is_override: false,
             file_path: None,
         }
     }

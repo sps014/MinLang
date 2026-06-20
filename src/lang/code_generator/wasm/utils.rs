@@ -226,6 +226,12 @@ impl<'a> WasmGenerator<'a> {
                 }
             },
             ExpressionNode::FunctionCall(name, generic_args, args) => {
+                match name.text.as_str() {
+                    "to_string" => return Ok("string".to_string()),
+                    "hash_code" => return Ok("int".to_string()),
+                    "print" => return Ok("void".to_string()),
+                    _ => {}
+                }
                 let resolved_name = self.resolve_call_name(&name.text, generic_args, args, function);
                 if let Ok(func) = self.function_table.get_function(&resolved_name) {
                     if let Some(ret_type) = &func.return_type {

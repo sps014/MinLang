@@ -105,7 +105,7 @@ impl<'a, 'b> Parser<'a, 'b>
             if self.current_token().kind == TokenKind::StructToken || (self.current_token().kind == TokenKind::ExportToken && self.peek_token(1).kind == TokenKind::StructToken) {
                 let struct_decl = self.parse_struct_declaration()?;
                 structs.push(struct_decl);
-            } else if self.current_token().kind == TokenKind::FunToken || (self.current_token().kind == TokenKind::ExportToken && self.peek_token(1).kind == TokenKind::FunToken) {
+            } else if self.current_token().kind == TokenKind::FunToken || self.current_token().kind == TokenKind::AtToken || (self.current_token().kind == TokenKind::ExportToken && self.peek_token(1).kind == TokenKind::FunToken) {
                 let function=self.parse_function()?;
                 functions.push(function);
             } else {
@@ -150,7 +150,7 @@ impl<'a, 'b> Parser<'a, 'b>
         let mut fields = Vec::new();
         let mut methods = Vec::new();
         while self.current_token().kind != TokenKind::CurlyCloseBracketToken && self.current_token().kind != TokenKind::EndOfFileToken {
-            if self.current_token().kind == TokenKind::FunToken || self.current_token().kind == TokenKind::ExportToken {
+            if self.current_token().kind == TokenKind::FunToken || self.current_token().kind == TokenKind::ExportToken || self.current_token().kind == TokenKind::AtToken {
                 methods.push(self.parse_function()?);
             } else {
                 let field_name = self.match_token(TokenKind::IdentifierToken);
@@ -236,6 +236,21 @@ impl<'a, 'b> Parser<'a, 'b>
     /// Parses a function declaration
     fn parse_function(&mut self)->Result<FunctionNode<'a>,Error>
     {
+        // Optional attributes (currently only `@override`) precede `export`/`fun`.
+        let mut is_override = false;
+        while self.current_token().kind == TokenKind::AtToken {
+            self.match_token(TokenKind::AtToken);
+            let attr = self.match_token(TokenKind::IdentifierToken);
+            if attr.text == "override" {
+                is_override = true;
+            } else {
+                self.diagnostics.report_error(
+                    format!("Unknown attribute '@{}'", attr.text),
+                    Some(attr.position.clone())
+                );
+            }
+        }
+
         let mut is_exported = false;
         if self.current_token().kind == TokenKind::ExportToken {
             self.match_token(TokenKind::ExportToken);
@@ -269,7 +284,9 @@ impl<'a, 'b> Parser<'a, 'b>
             return_type=Some(self.parse_type()?);
         }
         let block=self.parse_block()?;
-        Ok(FunctionNode::new(function_name,generic_parameters,return_type,params,block,is_exported))
+        let mut node = FunctionNode::new(function_name,generic_parameters,return_type,params,block,is_exported);
+        node.is_override = is_override;
+        Ok(node)
     }
     /// Parses formal parameters for a function declaration
     fn parse_formal_parameters(&mut self)->Result<Vec<ParameterNode>,Error>

@@ -111,13 +111,17 @@ pub enum TokenKind
     NullToken,
     #[token("is")]
     IsToken,
-    
+
+    #[token("@")]
+    AtToken,
+
     #[token("int")]
     #[token("float")]
     #[token("double")]
     #[token("string")]
     #[token("bool")]
     #[token("void")]
+    #[token("object")]
     DataTypeToken,
 
     #[regex(r"//[^\n]*", allow_greedy = true)]

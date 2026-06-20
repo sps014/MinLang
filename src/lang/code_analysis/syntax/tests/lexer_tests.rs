@@ -83,13 +83,13 @@ fn test_lex_literals() {
 
 #[test]
 fn test_lex_bad_token() {
-    let mut lexer = Lexer::new("let @ = 5;".to_string());
+    let mut lexer = Lexer::new("let # = 5;".to_string());
     let mut diagnostics = DiagnosticBag::new(None);
     let tokens = lexer.lex_all(&mut diagnostics);
     
     assert_eq!(diagnostics.has_errors(), true);
     assert_eq!(diagnostics.diagnostics.len(), 1);
-    assert_eq!(diagnostics.diagnostics[0].message, "unexpected token '@'");
+    assert_eq!(diagnostics.diagnostics[0].message, "unexpected token '#'");
     
     // The bad token should be skipped
     let kinds: Vec<TokenKind> = tokens.iter().map(|t| t.kind).collect();

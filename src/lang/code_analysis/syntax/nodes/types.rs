@@ -33,7 +33,7 @@ pub fn release_func_suffix(type_name: &str) -> String {
 /// (strings, arrays, and structs). `known_struct` decides whether a bare name is a struct.
 pub fn is_reference_type_name(type_name: &str, known_struct: impl Fn(&str) -> bool) -> bool {
     let base = strip_nullable(type_name);
-    base == "string" || base.ends_with("[]") || known_struct(base)
+    base == "string" || base == "object" || base.ends_with("[]") || known_struct(base)
 }
 
 /// Represents a data type in the language
@@ -44,6 +44,10 @@ pub enum Type {
     Double(SyntaxToken),
     String(SyntaxToken),
     Boolean(SyntaxToken),
+    /// The universal top type. At runtime an `object` is an `i32` pointer to a tagged heap
+    /// block: primitives are boxed, reference types are stored directly (their block carries
+    /// the tag in its header).
+    Object(SyntaxToken),
     Array(Box<Type>),
     Struct(SyntaxToken, Option<Vec<Type>>),
     Generic(String),
@@ -59,6 +63,7 @@ impl Type {
             Type::Float(_) => "float".to_string(),
             Type::Double(_) => "double".to_string(),
             Type::String(_) => "string".to_string(),
+            Type::Object(_) => "object".to_string(),
             Type::Void => "void".to_string(),
             Type::Boolean(_) => "bool".to_string(),
             Type::Array(inner) => format!("{}[]", inner.get_type()),
@@ -98,6 +103,7 @@ impl Type {
             | Type::Double(token)
             | Type::String(token)
             | Type::Boolean(token)
+            | Type::Object(token)
             | Type::Struct(token, _) => Some(token.position.clone()),
             Type::Array(inner) | Type::Nullable(inner) => inner.get_span(),
             Type::Void | Type::Generic(_) => None,
@@ -111,6 +117,7 @@ impl Type {
             Type::Float(token) => token.position.get_point_str(),
             Type::Double(token) => token.position.get_point_str(),
             Type::String(token) => token.position.get_point_str(),
+            Type::Object(token) => token.position.get_point_str(),
             Type::Void => "".to_string(),
             Type::Boolean(token) => token.position.get_point_str(),
             Type::Array(inner) => inner.get_line_str(),
@@ -127,6 +134,7 @@ impl Type {
             "float" => Type::Float(token),
             "double" => Type::Double(token),
             "string" => Type::String(token),
+            "object" => Type::Object(token),
             "void" => Type::Void,
             "bool" => Type::Boolean(token),
             _ => {
@@ -138,7 +146,7 @@ impl Type {
                     
                     // Restrict nullable to reference types
                     match &base_type {
-                        Type::String(_) | Type::Array(_) | Type::Struct(_, _) | Type::Void => {
+                        Type::String(_) | Type::Object(_) | Type::Array(_) | Type::Struct(_, _) | Type::Void => {
                             return Ok(Type::Nullable(Box::new(base_type)));
                         },
                         _ => {

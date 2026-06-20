@@ -7,8 +7,23 @@ use crate::lang::code_analysis::token::token_kind::TokenKind;
 use super::WasmGenerator;
 
 impl<'a> WasmGenerator<'a> {
-    /// Builds an expression
+    /// Builds an expression, applying implicit boxing when a primitive value flows into an
+    /// `object`-typed context (the `left_side`). All other cases defer to `build_expression_inner`.
     pub fn build_expression(&mut self, expression: &ExpressionNode<'a>, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        if left_side == "object" {
+            let real = self.infer_expression_type(expression, function).unwrap_or_else(|_| "object".to_string());
+            let base = strip_nullable(&real).to_string();
+            if WasmGenerator::is_primitive_name(&base) {
+                self.build_expression_inner(expression, &real, function, writer)?;
+                writer.write_line(&format!("call $box_{}", base));
+                return Ok(());
+            }
+        }
+        self.build_expression_inner(expression, left_side, function, writer)
+    }
+
+    /// Builds an expression (no implicit object boxing).
+    pub fn build_expression_inner(&mut self, expression: &ExpressionNode<'a>, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         match expression {
             ExpressionNode::Identifier(identifier) => self.build_identifier(identifier, writer)?,
             ExpressionNode::ArrayLiteral(elements) => self.build_array_literal(elements, left_side, function, writer)?,
@@ -17,8 +32,15 @@ impl<'a> WasmGenerator<'a> {
             ExpressionNode::Binary(left, opr, right) => self.build_binary(left, opr, right, left_side, function, writer)?,
             ExpressionNode::Literal(literal) => self.build_literal(literal, writer)?,
             ExpressionNode::FunctionCall(n, generic_args, args) => {
-                let function_name = self.resolve_call_name(&n.text, generic_args, args, function);
-                self.build_function_invocation(&function_name, args, function, writer)?
+                match n.text.as_str() {
+                    "print" if args.len() == 1 => self.build_print(&args[0], function, writer)?,
+                    "to_string" if args.len() == 1 => self.build_to_string(&args[0], function, writer)?,
+                    "hash_code" if args.len() == 1 => self.build_hash_code(&args[0], function, writer)?,
+                    _ => {
+                        let function_name = self.resolve_call_name(&n.text, generic_args, args, function);
+                        self.build_function_invocation(&function_name, args, function, writer)?
+                    }
+                }
             },
             ExpressionNode::Parenthesized(e) => self.build_expression(e, left_side, function, writer)?,
             ExpressionNode::Cast(target_type, expr) => self.build_cast(target_type, expr, left_side, function, writer)?,
@@ -26,7 +48,13 @@ impl<'a> WasmGenerator<'a> {
             ExpressionNode::MemberAccess(obj, member) => self.build_member_access(obj, member, left_side, function, writer)?,
             ExpressionNode::IsExpression(left, right_type) => {
                 let left_type = self.infer_expression_type(left, function)?;
-                if left_type == right_type.get_type() {
+                if strip_nullable(&left_type) == "object" {
+                    // Runtime tag check: the dynamic type of the object is compared to the target.
+                    self.build_expression(left, &"object".to_string(), function, writer)?;
+                    writer.write_line("call $object_tag");
+                    writer.write_line(&format!("i32.const {}", self.type_tag(&right_type.get_type())));
+                    writer.write_line("i32.eq");
+                } else if left_type == right_type.get_type() {
                     writer.write_line("i32.const 1");
                 } else {
                     writer.write_line("i32.const 0");
@@ -41,16 +69,31 @@ impl<'a> WasmGenerator<'a> {
     pub fn build_cast(&mut self, target_type: &Type, expr: &ExpressionNode<'a>, _left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let target_str = target_type.get_type();
         let source_str = self.infer_expression_type(expr, function)?;
-        
-        self.build_expression(expr, &source_str, function, writer)?;
-        
+        let target_base = strip_nullable(&target_str).to_string();
+        let source_base = strip_nullable(&source_str).to_string();
+
+        // Unboxing: (int)someObject
+        if source_base == "object" && WasmGenerator::is_primitive_name(&target_base) {
+            self.build_expression_inner(expr, &source_str, function, writer)?;
+            writer.write_line(&format!("call $unbox_{}", target_base));
+            return Ok(());
+        }
+        // Boxing: (object)somePrimitive
+        if target_base == "object" && WasmGenerator::is_primitive_name(&source_base) {
+            self.build_expression_inner(expr, &source_str, function, writer)?;
+            writer.write_line(&format!("call $box_{}", source_base));
+            return Ok(());
+        }
+
+        self.build_expression_inner(expr, &source_str, function, writer)?;
+
         if target_str == "float" && source_str == "int" {
             writer.write_line("f32.convert_i32_s");
         } else if target_str == "int" && source_str == "float" {
             writer.write_line("i32.trunc_f32_s");
         }
-        // If they are the same type, or unsupported cast, do nothing (analyzer already validated it)
-        
+        // For object<->reference and same-type casts the pointer is already correct.
+
         Ok(())
     }
 
@@ -62,8 +105,9 @@ impl<'a> WasmGenerator<'a> {
         };
         let struct_info = self.struct_table.get_struct(&struct_name).unwrap().clone();
         
-        // 1. Allocate memory using $malloc
+        // 1. Allocate memory using $malloc, tagging the block with this struct's runtime tag.
         writer.write_line(&format!("i32.const {}", struct_info.size));
+        writer.write_line(&format!("i32.const {}", self.type_tag(&struct_name)));
         writer.write_line("call $malloc");
         writer.write_line("local.set $scratch_ptr");
         
@@ -266,8 +310,9 @@ impl<'a> WasmGenerator<'a> {
         let element_size = WasmGenerator::element_size_of(&inner_type_str);
         let total_size = 4 + (len * element_size); // 4 bytes for length + element_size per element
 
-        // 1. Allocate the backing buffer and keep its pointer in $scratch_ptr.
+        // 1. Allocate the backing buffer (tagged as an array) and keep its pointer in $scratch_ptr.
         writer.write_line(&format!("i32.const {}", total_size));
+        writer.write_line(&format!("i32.const {}", super::object::TAG_ARRAY));
         writer.write_line("call $malloc");
         writer.write_line("local.set $scratch_ptr");
 

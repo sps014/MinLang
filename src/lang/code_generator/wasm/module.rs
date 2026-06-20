@@ -7,6 +7,7 @@ impl<'a> WasmGenerator<'a> {
     /// Builds the entire WebAssembly module
     pub fn build(&mut self) -> Result<IndentedTextWriter, Error> {
         self.collect_strings_from_program(self.syntax_tree.get_root());
+        self.register_object_runtime_strings();
         let mut indented = IndentedTextWriter::new();
         self.build_module(self.syntax_tree.get_root(), &mut indented)?;
         Ok(indented)
@@ -38,6 +39,9 @@ impl<'a> WasmGenerator<'a> {
         // Memory management functions
         self.build_memory_management(writer)?;
 
+        // Object protocol: boxing/unboxing, to_string/hash_code dispatchers, defaults.
+        self.build_object_runtime(writer)?;
+
         writer.write_line("(memory 10)");
         for (s, offset) in &self.strings {
             let unquoted = if s.starts_with('"') && s.ends_with('"') {
@@ -45,10 +49,10 @@ impl<'a> WasmGenerator<'a> {
             } else {
                 s.as_str()
             };
-            // Write block header: size = 0, ref_count = 1
-            // size is at offset - 8, ref_count is at offset - 4
-            writer.write_line(&format!("(data (i32.const {}) \"\\00\\00\\00\\00\\01\\00\\00\\00\")", offset - 8));
-            writer.write_line(&format!("(data (i32.const {}) \"{}\\00\")", offset, unquoted));
+            self.write_string_data(*offset, unquoted, writer);
+        }
+        for (content, offset) in &self.runtime_strings {
+            self.write_string_data(*offset, content, writer);
         }
         
         for i in program.functions.iter() {
@@ -117,6 +121,18 @@ impl<'a> WasmGenerator<'a> {
             }
         }
         Ok(())
+    }
+
+    /// Emits the data segments for one heap-resident string: the 12-byte block header
+    /// (`size = 0`, `tag = string`, `ref_count = 1`) followed by the null-terminated bytes.
+    fn write_string_data(&self, offset: usize, content: &str, writer: &mut IndentedTextWriter) {
+        let header_offset = offset - super::HEAP_HEADER_SIZE;
+        // size=0, tag=5 (string), ref_count=1, all little-endian i32.
+        writer.write_line(&format!(
+            "(data (i32.const {}) \"\\00\\00\\00\\00\\05\\00\\00\\00\\01\\00\\00\\00\")",
+            header_offset
+        ));
+        writer.write_line(&format!("(data (i32.const {}) \"{}\\00\")", offset, content));
     }
 
     /// Builds a single function parameter

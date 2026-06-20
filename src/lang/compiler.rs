@@ -122,13 +122,10 @@ impl Compiler {
         let mut file = File::open(&path)?;
         let mut text = String::new();
         file.read_to_string(&mut text)?;
-        
-        // Inject generic `print` function if this is the main file
-        if visited.len() == 1 {
-            let print_impl = "\nfun print<T>(data: T) {\n    if (data is int) {\n        print_int(data);\n    } else if (data is float) {\n        print_float(data);\n    } else if (data is double) {\n        print_double(data);\n    } else if (data is string) {\n        print_string(data);\n    }\n}\n";
-            text.push_str(print_impl);
-        }
-        
+
+        // `print` (along with `to_string`/`hash_code`) is now a compiler builtin resolved during
+        // code generation via the object protocol, so no source injection is needed.
+
         file_contents.insert(path_str.clone(), text.clone());
         
         let mut file_diagnostics = DiagnosticBag::new(Some(path_str.clone()));

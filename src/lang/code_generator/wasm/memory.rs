@@ -5,18 +5,16 @@ use super::WasmGenerator;
 /// The fixed WebAssembly runtime emitted into every module: memory globals plus the
 /// `$malloc`/`$free`/`$retain` allocator built on a freelist + bump pointer.
 ///
-/// Block layout while allocated: `[size: i32][ref_count: i32][data...]`; while free:
-/// `[size: i32][next_free_ptr: i32]`. Returned pointers refer to `data` (block_start + 8).
-const RUNTIME_ALLOCATOR: &str = r#"(global $heap_ptr (mut i32) (i32.const 1024))
-(global $free_list_head (mut i32) (i32.const 0))
-
-(func $malloc (param $size i32) (result i32)
+/// Block layout while allocated: `[size: i32][tag: i32][ref_count: i32][data...]`; while free:
+/// `[size: i32][next_free_ptr: i32]`. Returned pointers refer to `data` (block_start + 12), so
+/// `ref_count` lives at `ptr - 4`, `tag` at `ptr - 8`, and `size` at `ptr - 12`.
+const RUNTIME_ALLOCATOR: &str = r#"(func $malloc (param $size i32) (param $tag i32) (result i32)
     (local $curr i32)
     (local $prev i32)
     (local $next i32)
     (local $block_size i32)
     (local $new_ptr i32)
-    ;; round size up to a multiple of 4, then reserve 8 bytes for the header
+    ;; round size up to a multiple of 4, then reserve 12 bytes for the header
     local.get $size
     i32.const 3
     i32.add
@@ -24,7 +22,7 @@ const RUNTIME_ALLOCATOR: &str = r#"(global $heap_ptr (mut i32) (i32.const 1024))
     i32.and
     local.set $size
     local.get $size
-    i32.const 8
+    i32.const 12
     i32.add
     local.set $size
     ;; scan the freelist for a large-enough block
@@ -66,14 +64,21 @@ const RUNTIME_ALLOCATOR: &str = r#"(global $heap_ptr (mut i32) (i32.const 1024))
                             i32.store
                         )
                     )
-                    ;; ref_count = 1, return data pointer
+                    ;; tag at block+4
                     local.get $curr
                     i32.const 4
                     i32.add
-                    i32.const 1
+                    local.get $tag
                     i32.store
+                    ;; ref_count = 1 at block+8
                     local.get $curr
                     i32.const 8
+                    i32.add
+                    i32.const 1
+                    i32.store
+                    ;; return data pointer (block + 12)
+                    local.get $curr
+                    i32.const 12
                     i32.add
                     return
                 )
@@ -101,10 +106,15 @@ const RUNTIME_ALLOCATOR: &str = r#"(global $heap_ptr (mut i32) (i32.const 1024))
     local.get $new_ptr
     i32.const 4
     i32.add
-    i32.const 1
+    local.get $tag
     i32.store
     local.get $new_ptr
     i32.const 8
+    i32.add
+    i32.const 1
+    i32.store
+    local.get $new_ptr
+    i32.const 12
     i32.add
 )
 
@@ -114,7 +124,7 @@ const RUNTIME_ALLOCATOR: &str = r#"(global $heap_ptr (mut i32) (i32.const 1024))
     i32.eqz
     br_if 0
     local.get $ptr
-    i32.const 8
+    i32.const 12
     i32.sub
     local.set $block_start
     local.get $block_start
@@ -141,6 +151,46 @@ const RUNTIME_ALLOCATOR: &str = r#"(global $heap_ptr (mut i32) (i32.const 1024))
     i32.const 1
     i32.add
     i32.store
+)
+
+(func $object_tag (param $ptr i32) (result i32)
+    local.get $ptr
+    i32.eqz
+    (if (result i32)
+        (then i32.const 0)
+        (else
+            local.get $ptr
+            i32.const 8
+            i32.sub
+            i32.load
+        )
+    )
+)
+
+(func $release_generic (param $ptr i32)
+    (local $ref_count_ptr i32)
+    (local $new_count i32)
+    local.get $ptr
+    i32.eqz
+    br_if 0
+    local.get $ptr
+    i32.const 4
+    i32.sub
+    local.set $ref_count_ptr
+    local.get $ref_count_ptr
+    i32.load
+    i32.const 1
+    i32.sub
+    local.set $new_count
+    local.get $ref_count_ptr
+    local.get $new_count
+    i32.store
+    local.get $new_count
+    i32.eqz
+    (if (then
+        local.get $ptr
+        call $free
+    ))
 )
 "#;
 
@@ -184,6 +234,7 @@ const RUNTIME_STRINGS: &str = r#"(func $strlen (param $ptr i32) (result i32)
     i32.add
     i32.const 1
     i32.add
+    i32.const 5
     call $malloc
     local.set $new_ptr
     i32.const 0
@@ -253,6 +304,12 @@ impl<'a> WasmGenerator<'a> {
     /// Builds the memory management runtime: the fixed allocator/string helpers (emitted from
     /// templates) plus the per-type `$release_*` functions generated from the struct table.
     pub fn build_memory_management(&self, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        // Place the heap above all string/runtime-string data (8-byte aligned), never below the
+        // historical 1024-byte base so small programs are byte-for-byte unchanged.
+        let heap_base = std::cmp::max(1024, (self.next_string_offset + 7) & !7);
+        writer.write_line(&format!("(global $heap_ptr (mut i32) (i32.const {}))", heap_base));
+        writer.write_line("(global $free_list_head (mut i32) (i32.const 0))");
+        writer.write_line("");
         writer.write_block(RUNTIME_ALLOCATOR);
         self.build_type_specific_releases(writer)?;
         writer.write_block(RUNTIME_STRINGS);

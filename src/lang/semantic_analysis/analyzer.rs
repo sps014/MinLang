@@ -313,6 +313,10 @@ impl<'a> Analyzer<'a> {
 
     fn register_struct_methods(&mut self, struct_decl: &StructDeclarationNode<'a>, struct_type_str: &str, bindings: &[(String, String)], diagnostics: &mut DiagnosticBag) {
         for method in &struct_decl.methods {
+            // Validate object-protocol overrides once (on the non-monomorphized declaration).
+            if bindings.is_empty() {
+                self.validate_protocol_override(method, diagnostics);
+            }
             let mangled_name = format!("{}_{}", struct_type_str, method.name.text);
 
             let mut new_method = method.clone();
@@ -329,6 +333,53 @@ impl<'a> Analyzer<'a> {
 
             if let Err(e) = self.function_table.add_function(mangled_name.clone(), FunctionTableInfo::from(method_ref)) {
                 diagnostics.report_error(e.to_string(), Some(method.name.position.clone()));
+            }
+        }
+    }
+
+    /// Validates an `@override` object-protocol method: `@override` may only mark `to_string`
+    /// / `hash_code`, those must be exported with the exact protocol signature, and a method
+    /// that shadows a protocol name must carry `@override`.
+    fn validate_protocol_override(&self, method: &FunctionNode<'a>, diagnostics: &mut DiagnosticBag) {
+        let name = method.name.text.as_str();
+        let is_protocol = name == "to_string" || name == "hash_code";
+
+        if method.is_override && !is_protocol {
+            diagnostics.report_error(
+                format!("'@override' can only be applied to object-protocol methods (to_string, hash_code), not '{}'", name),
+                Some(method.name.position.clone()),
+            );
+            return;
+        }
+
+        if is_protocol && !method.is_override {
+            diagnostics.report_error(
+                format!("method '{}' overrides an object-protocol method; mark it with '@override'", name),
+                Some(method.name.position.clone()),
+            );
+            return;
+        }
+
+        if method.is_override && is_protocol {
+            if !method.is_exported {
+                diagnostics.report_error(
+                    format!("overridden object-protocol method '{}' must be declared 'export'", name),
+                    Some(method.name.position.clone()),
+                );
+            }
+            if !method.parameters.is_empty() {
+                diagnostics.report_error(
+                    format!("overridden object-protocol method '{}' must not declare parameters", name),
+                    Some(method.name.position.clone()),
+                );
+            }
+            let return_type = method.return_type.as_ref().map(|t| t.get_type());
+            let expected = if name == "to_string" { "string" } else { "int" };
+            if return_type.as_deref() != Some(expected) {
+                diagnostics.report_error(
+                    format!("overridden '{}' must return '{}'", name, expected),
+                    Some(method.name.position.clone()),
+                );
             }
         }
     }
@@ -482,6 +533,24 @@ impl<'a> Analyzer<'a> {
     fn analyze_function_call(&mut self,name:&SyntaxToken,generic_args: &Option<Vec<Type>>,params:&Vec<ExpressionNode<'a>>,
                                    parent_function:&FunctionNode<'a>,
                                    symbol_table:&Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag)->Result<Type,()> {
+        // Object-protocol builtins: accept exactly one argument of any type.
+        if matches!(name.text.as_str(), "print" | "to_string" | "hash_code") {
+            if params.len() != 1 {
+                diagnostics.report_error(
+                    format!("'{}' expects exactly 1 argument, got {}", name.text, params.len()),
+                    Some(name.position.clone()),
+                );
+            }
+            for param in params.iter() {
+                self.analyze_expression(param, parent_function, symbol_table, diagnostics)?;
+            }
+            return Ok(match name.text.as_str() {
+                "to_string" => Type::String(synthetic_token(TokenKind::DataTypeToken, "string")),
+                "hash_code" => Type::Integer(synthetic_token(TokenKind::DataTypeToken, "int")),
+                _ => Type::Void,
+            });
+        }
+
         let mut function_name=name.text.clone();
         let mut params_types=vec![];
         for param in params.iter() {
@@ -527,6 +596,10 @@ impl<'a> Analyzer<'a> {
         }
 
         for i in 0..params_types.len() {
+            // A parameter declared `object` accepts any argument type (boxing happens in codegen).
+            if store_sig.parameters.get(i).map(|s| s == "object").unwrap_or(false) {
+                continue;
+            }
             if store_sig.parameters.get(i)!=params_types.get(i) {
                 diagnostics.report_error(format!("Function {} has param {} of type {:?} but param {} of type {:?} is given",
                                                                function_name,i,store_sig.parameters.get(i),i,params_types[i]), Some(name.position.clone()));
@@ -575,6 +648,10 @@ impl<'a> Analyzer<'a> {
         for (i, param) in params.iter().enumerate() {
             let param_type = self.analyze_expression(param, parent_function, symbol_table, diagnostics)?;
             let expected_type_str = &expected_params[i];
+
+            if expected_type_str == "object" {
+                continue;
+            }
 
             if expected_type_str == "int" && param_type.get_type() == "float" || expected_type_str == "float" && param_type.get_type() == "int" || expected_type_str == "double" && param_type.get_type() == "int" || expected_type_str == "int" && param_type.get_type() == "double" || expected_type_str == "float" && param_type.get_type() == "double" || expected_type_str == "double" && param_type.get_type() == "float" {
                 continue;
@@ -897,6 +974,10 @@ impl<'a> Analyzer<'a> {
                     Ok(target_type.clone())
                 } else if target_type_str == expr_type_str {
                     Ok(target_type.clone())
+                } else if target_type_str == "object" || expr_type_str == "object" {
+                    // Boxing (`T as object`) and unboxing (`object as T`) are always permitted;
+                    // an unbox to the wrong primitive traps at runtime.
+                    Ok(target_type.clone())
                 } else if expr_type_str == "int" && (self.struct_table.get_struct(&target_type_str).is_some() || target_type_str.ends_with("[]") || target_type_str.ends_with("?")) {
                     // Allow casting int to pointer types (for null pointers)
                     Ok(target_type.clone())
@@ -916,6 +997,8 @@ impl<'a> Analyzer<'a> {
         self.compare_data_type(&left_value,&right_value,&opr.position, diagnostics)?;
         match (&left_value,&opr.kind) {
           (Type::String(_),TokenKind::PlusToken)=> {}
+          // Reference (identity) equality is allowed on strings and objects.
+          (Type::String(_),TokenKind::EqualEqualToken)|(Type::String(_),TokenKind::NotEqualToken)=> {}
           (Type::String(_),_)=> {
               diagnostics.report_error(format!("Cannot perform operation {} on string",opr.text), Some(opr.position.clone()));
           }
@@ -935,6 +1018,12 @@ impl<'a> Analyzer<'a> {
     fn compare_data_type(&mut self, left:&Type, right:&Type, position:&TextSpan, diagnostics: &mut DiagnosticBag) ->Result<(),()> {
         if left.get_type() == right.get_type() {
             return Ok(())
+        }
+
+        // Any value may be assigned (boxed) into an `object` target; the reverse requires a
+        // cast and is rejected here.
+        if left.get_type() == "object" {
+            return Ok(());
         }
         
         // A nullable `T?` accepts another `T?`, a plain `T`, or the `null` literal (`void?`).
@@ -995,10 +1084,13 @@ impl<'a> Analyzer<'a> {
         
         if let ExpressionNode::IsExpression(left, right_type) = condition {
             let left_t = self.analyze_expression(left, parent_function, symbol_table, diagnostics)?;
-            if left_t.get_type() == right_type.get_type() {
-                is_constant_true = true;
-            } else {
-                is_constant_false = true;
+            // `is` on an `object` is a runtime check; only non-object operands fold to a constant.
+            if left_t.get_type() != "object" {
+                if left_t.get_type() == right_type.get_type() {
+                    is_constant_true = true;
+                } else {
+                    is_constant_false = true;
+                }
             }
         }
         
@@ -1023,10 +1115,12 @@ impl<'a> Analyzer<'a> {
             let mut elif_constant_false = false;
             if let ExpressionNode::IsExpression(left, right_type) = &i.0 {
                 let left_t = self.analyze_expression(left, parent_function, symbol_table, diagnostics)?;
-                if left_t.get_type() == right_type.get_type() {
-                    elif_constant_true = true;
-                } else {
-                    elif_constant_false = true;
+                if left_t.get_type() != "object" {
+                    if left_t.get_type() == right_type.get_type() {
+                        elif_constant_true = true;
+                    } else {
+                        elif_constant_false = true;
+                    }
                 }
             }
 

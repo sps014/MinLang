@@ -28,8 +28,21 @@ impl<'a> WasmGenerator<'a> {
             StatementNode::Continue => self.build_continue(writer)?,
             StatementNode::IfElse(c, b, else_if, else_b) => self.build_if_else(c, b, else_if, else_b, function, writer)?,
             StatementNode::FunctionInvocation(n, generic_args, p) => {
-                let function_name = self.resolve_call_name(&n.text, generic_args, p, function);
-                self.build_function_invocation(&function_name, p, function, writer)?
+                match n.text.as_str() {
+                    "print" if p.len() == 1 => self.build_print(&p[0], function, writer)?,
+                    "to_string" if p.len() == 1 => {
+                        self.build_to_string(&p[0], function, writer)?;
+                        writer.write_line("drop");
+                    }
+                    "hash_code" if p.len() == 1 => {
+                        self.build_hash_code(&p[0], function, writer)?;
+                        writer.write_line("drop");
+                    }
+                    _ => {
+                        let function_name = self.resolve_call_name(&n.text, generic_args, p, function);
+                        self.build_function_invocation(&function_name, p, function, writer)?
+                    }
+                }
             },
             StatementNode::MethodInvocation(obj, method, generic_args, params) => {
                 // Called purely for side effects: discard any returned value so the WASM stack
@@ -316,10 +329,13 @@ impl<'a> WasmGenerator<'a> {
             let mut is_constant_false = false;
             if let Some(ExpressionNode::IsExpression(left, right_type)) = cur.0 {
                 let left_type = self.infer_expression_type(left, function)?;
-                if left_type == right_type.get_type() {
-                    is_constant_true = true;
-                } else {
-                    is_constant_false = true;
+                // `is` on an `object` is a runtime tag check, not a compile-time constant.
+                if strip_nullable(&left_type) != "object" {
+                    if left_type == right_type.get_type() {
+                        is_constant_true = true;
+                    } else {
+                        is_constant_false = true;
+                    }
                 }
             }
 
