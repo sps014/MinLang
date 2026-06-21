@@ -1,7 +1,7 @@
 site_name: Dream
-site_url: https://sps014.github.io/MinLang/
-repo_url: https://github.com/sps014/MinLang
-repo_name: sps014/MinLang
+site_url: https://sps014.github.io/Dream/
+repo_url: https://github.com/sps014/Dream
+repo_name: sps014/Dream
 
 theme:
   name: material
