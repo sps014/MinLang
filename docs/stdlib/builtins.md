@@ -1,6 +1,6 @@
 # Built-in Functions
 
-These are available in every MinLang program without any import.
+These are available in every Dream program without any import.
 
 ## print
 

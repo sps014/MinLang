@@ -1,4 +1,4 @@
-// MinLang standard Map<K, V>, auto-imported into every program.
+// Dream standard Map<K, V>, auto-imported into every program.
 //
 // An open-addressing hash map (linear probing with tombstones), monomorphized per concrete
 // key/value type so `Map<string, int>` compiles to dedicated WASM.

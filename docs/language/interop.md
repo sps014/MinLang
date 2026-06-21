@@ -1,6 +1,6 @@
 # JS Interop
 
-MinLang compiles to WebAssembly, so it runs anywhere WASM does — including the browser and Node. The `extern` keyword lets a MinLang program call out to JavaScript with almost no boilerplate, PyScript-style.
+Dream compiles to WebAssembly, so it runs anywhere WASM does — including the browser and Node. The `extern` keyword lets a Dream program call out to JavaScript with almost no boilerplate, PyScript-style.
 
 ## Declaring an extern function
 
@@ -10,7 +10,7 @@ An `extern fun` has a signature but no body. It is lowered to a WebAssembly *imp
 extern fun alert(msg: string): void;
 
 fun main(): void {
-    alert("Hello from MinLang!");
+    alert("Hello from Dream!");
 }
 ```
 
@@ -35,16 +35,16 @@ extern fun log(msg: string): void;
 
 ## Running it from JavaScript
 
-Compiling a `.ml` file automatically produces three artifacts next to it:
+Compiling a `.dream` file automatically produces three artifacts next to it:
 
 - `*.wat` — the human-readable WebAssembly text.
 - `*.wasm` — the binary module browsers and Node load.
 - `*.abi.json` — an auto-generated description of the extern imports and exports. You never write or edit this; the runtime reads it to marshal values for you.
 
-The `runtime/minlang.js` ES module loads the `.wasm`, wires the built-in `print`/math functions, and runs `main`. The `run` helper derives the sibling `.abi.json` automatically, so a whole page can be one call:
+The `runtime/dream.js` ES module loads the `.wasm`, wires the built-in `print`/math functions, and runs `main`. The `run` helper derives the sibling `.abi.json` automatically, so a whole page can be one call:
 
 ```javascript
-import { run } from "./runtime/minlang.js";
+import { run } from "./runtime/dream.js";
 
 await run("hello.wasm");   // loads hello.abi.json, binds externs, calls main
 ```
@@ -61,7 +61,7 @@ So built-in browser/Node APIs work with zero boilerplate. You only pass `imports
 ```javascript
 await run("hello.wasm", {
   imports: {
-    square: (n) => n * n,   // keyed by the MinLang function name
+    square: (n) => n * n,   // keyed by the Dream function name
   },
 });
 ```
@@ -72,9 +72,9 @@ When you need full control, use `load(source, options)` instead of `run`; it ret
 
 ## Value marshaling
 
-With the ABI loaded, arguments and return values are converted between MinLang's heap layout and JavaScript:
+With the ABI loaded, arguments and return values are converted between Dream's heap layout and JavaScript:
 
-| MinLang type | JavaScript value (as argument) | As return value |
+| Dream type | JavaScript value (as argument) | As return value |
 |--------------|-------------------------------|-----------------|
 | `int`, `float`, `double` | `number` | `number` |
 | `bool` | `boolean` | `boolean` |
@@ -94,13 +94,13 @@ mod.readStruct(ptr, [         // struct by field schema (declaration order)
 ]);
 ```
 
-To hand a string back to MinLang from a JS implementation, the runtime calls the exported `malloc` for you (or you can call `mod.writeString(str)` directly).
+To hand a string back to Dream from a JS implementation, the runtime calls the exported `malloc` for you (or you can call `mod.writeString(str)` directly).
 
 ## References and callbacks (planned)
 
-Reference types cross the boundary as opaque `i32` pointers and are read with the helpers above; there is no general "JavaScript object into MinLang" path yet, since MinLang's only dynamic type is `object` (a boxed primitive or struct).
+Reference types cross the boundary as opaque `i32` pointers and are read with the helpers above; there is no general "JavaScript object into Dream" path yet, since Dream's only dynamic type is `object` (a boxed primitive or struct).
 
 Passing a function as an argument is also not supported yet:
 
-- A MinLang function handed to JavaScript so JS can call it back requires an exported WebAssembly `funcref` table and `call_indirect`. The runtime reserves `mod.callback(handle)` for this and throws until the feature lands.
-- A JavaScript function passed into a MinLang `extern` parameter cannot be expressed today, because MinLang has no function/closure type.
+- A Dream function handed to JavaScript so JS can call it back requires an exported WebAssembly `funcref` table and `call_indirect`. The runtime reserves `mod.callback(handle)` for this and throws until the feature lands.
+- A JavaScript function passed into a Dream `extern` parameter cannot be expressed today, because Dream has no function/closure type.

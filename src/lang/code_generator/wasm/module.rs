@@ -188,7 +188,7 @@ impl<'a> WasmGenerator<'a> {
     pub fn build_export(&self, program: &ProgramNode, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         writer.write_line("(export \"memory\" (memory 0))");
         // Export the allocator so the JS interop runtime can build heap values (e.g. strings)
-        // to pass back into MinLang from extern function implementations.
+        // to pass back into Dream from extern function implementations.
         writer.write_line("(export \"malloc\" (func $malloc))");
         writer.write_line("(export \"free\" (func $free))");
         for i in program.functions.iter() {

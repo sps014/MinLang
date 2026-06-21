@@ -4,8 +4,8 @@ mod lang;
 use std::path::Path;
 use tracing::{info, error, Level};
 use tracing_subscriber::FmtSubscriber;
-use min_lang::lang::compiler::{Compiler, Target};
-use min_lang::lang::execution::wasm_runner::execute_wasm;
+use dream::lang::compiler::{Compiler, Target};
+use dream::lang::execution::wasm_runner::execute_wasm;
 
 fn main()
 {
@@ -33,15 +33,15 @@ fn main()
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
     if file_name.is_none() {
-        error!("Expected a source file (*.ml) as argument");
+        error!("Expected a source file (*.dream) as argument");
         error!("Usage: {} [-v|--verbose] [run] <file>", args[0]);
-        error!(r"Example: {} run src/sample/test_arrays.ml", args[0]);
+        error!(r"Example: {} run src/sample/test_arrays.dream", args[0]);
         return;
     }
     
     let file_name = file_name.unwrap();
 
-    info!("MinLang Compiler Tools");
+    info!("Dream Compiler Tools");
     info!("========================");
     info!("Compiling file: {}", file_name);
 

@@ -29,7 +29,7 @@ fun main(): void {
     println(arr2[0]);
     println(arr2[2]);
     
-    let arr3: string[] = ["hello", "world", "minlang"];
+    let arr3: string[] = ["hello", "world", "dream"];
     print(arr3[0]);
     print("\n");
     print(arr3[2]);

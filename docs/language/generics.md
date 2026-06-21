@@ -1,6 +1,6 @@
 # Generics
 
-Generics let you write code that works for any type without duplicating it. MinLang resolves generics at compile time — the compiler produces a separate, fully optimized copy of your code for each concrete type you use.
+Generics let you write code that works for any type without duplicating it. Dream resolves generics at compile time — the compiler produces a separate, fully optimized copy of your code for each concrete type you use.
 
 ## Generic functions
 

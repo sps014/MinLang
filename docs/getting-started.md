@@ -8,15 +8,15 @@ You need [Rust](https://rustup.rs) installed. That's it.
 
 ```bash
 git clone https://github.com/sps014/MinLang
-cd MinLang
+cd Dream
 cargo build --release
 ```
 
-The binary ends up at `target/release/min_lang`. You can run it directly from that path, or just use `cargo run --` as shown throughout this guide.
+The binary ends up at `target/release/dream`. You can run it directly from that path, or just use `cargo run --` as shown throughout this guide.
 
 ## Your first program
 
-Create a file called `hello.ml`:
+Create a file called `hello.dream`:
 
 ```kotlin
 fun main() {
@@ -27,7 +27,7 @@ fun main() {
 Run it:
 
 ```bash
-cargo run -- run hello.ml
+cargo run -- run hello.dream
 ```
 
 Output:
@@ -41,7 +41,7 @@ That's it. The `run` subcommand compiles your file and executes it immediately u
 If you want to inspect the generated WebAssembly, drop the `run` subcommand:
 
 ```bash
-cargo run -- hello.ml
+cargo run -- hello.dream
 ```
 
 This writes a `hello.wat` file next to your source.

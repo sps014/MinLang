@@ -1,27 +1,27 @@
 # Imports
 
-A MinLang program can be split across multiple `.ml` files. Use `import` at the top of a file to pull in the declarations (functions, structs, enums) from another file.
+A Dream program can be split across multiple `.dream` files. Use `import` at the top of a file to pull in the declarations (functions, structs, enums) from another file.
 
 ## Importing a file
 
 ```kotlin
-import "math_lib.ml"
+import "math_lib.dream"
 ```
 
 - The path is relative to the file that contains the `import`.
-- The `.ml` extension is optional: `import "math_lib"` and `import "math_lib.ml"` are equivalent.
+- The `.dream` extension is optional: `import "math_lib"` and `import "math_lib.dream"` are equivalent.
 - Imported declarations become directly usable — no namespace prefix.
 
 ```kotlin
-// math_lib.ml
+// math_lib.dream
 pub fun add_numbers(a: int, b: int): int {
     return a + b;
 }
 ```
 
 ```kotlin
-// main.ml
-import "math_lib.ml"
+// main.dream
+import "math_lib.dream"
 
 fun main() {
     println(add_numbers(10, 20));   // 30
@@ -47,4 +47,4 @@ pub fun origin(): Point {
 
 ## Importing from JavaScript
 
-Pulling in functions from the JavaScript host (rather than another `.ml` file) uses `extern fun` and is covered in [JS Interop](interop.md).
+Pulling in functions from the JavaScript host (rather than another `.dream` file) uses `extern fun` and is covered in [JS Interop](interop.md).

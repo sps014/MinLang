@@ -1,11 +1,11 @@
-// MinLang JS interop runtime.
+// Dream JS interop runtime.
 //
-// Loads a MinLang-compiled `.wasm` module, wires the default `env` builtins, and lets you bind
+// Loads a Dream-compiled `.wasm` module, wires the default `env` builtins, and lets you bind
 // JavaScript implementations to `extern fun` declarations with automatic value marshaling for
 // strings, arrays, `List<T>`, and structs. Works as an ES module in both the browser and Node.
 //
 // Usage (browser):
-//   import { load } from "./minlang.js";
+//   import { load } from "./dream.js";
 //   const mod = await load("interop.wasm", {
 //     abi: "interop.abi.json",            // optional; enables auto-marshaling of imports
 //     imports: { alert: (msg) => window.alert(msg) },
@@ -13,7 +13,7 @@
 //   mod.run();                            // calls exported `main`
 //
 // Usage (Node >= 18):
-//   import { load } from "./minlang.js";
+//   import { load } from "./dream.js";
 //   const mod = await load("interop.wasm", { imports: { alert: console.log } });
 //   mod.run();
 
@@ -32,7 +32,7 @@ export const TAGS = {
 // Allocated pointers point at `data` (block_start + HEAP_HEADER_SIZE).
 export const HEAP_HEADER_SIZE = 12;
 
-/** Byte size of a single element of the given MinLang type (see utils.rs `element_size_of`). */
+/** Byte size of a single element of the given Dream type (see utils.rs `element_size_of`). */
 function elementSize(typeName) {
   if (typeName === "bool") return 1;
   if (typeName === "double") return 8;
@@ -49,10 +49,10 @@ function stripSuffix(typeName) {
 const isPrimitive = (t) => t === "int" || t === "float" || t === "double" || t === "bool";
 
 /**
- * A loaded MinLang module instance. Exposes the raw WASM exports plus helpers that understand
- * MinLang's heap layout so you can read/write strings, arrays, lists, and structs.
+ * A loaded Dream module instance. Exposes the raw WASM exports plus helpers that understand
+ * Dream's heap layout so you can read/write strings, arrays, lists, and structs.
  */
-export class MinLangInstance {
+export class DreamInstance {
   constructor(instance) {
     this.instance = instance;
     this.exports = instance.exports;
@@ -80,7 +80,7 @@ export class MinLangInstance {
     return this.view.getFloat64(ptr, true);
   }
 
-  /** Reads a null-terminated UTF-8 string at `ptr` (a MinLang string data pointer). */
+  /** Reads a null-terminated UTF-8 string at `ptr` (a Dream string data pointer). */
   readString(ptr) {
     if (!ptr) return "";
     const bytes = this.bytes;
@@ -90,8 +90,8 @@ export class MinLangInstance {
   }
 
   /**
-   * Allocates a MinLang string block for `str` and returns its data pointer, so JS-implemented
-   * extern functions can return strings back into MinLang. Requires the module to export `malloc`.
+   * Allocates a Dream string block for `str` and returns its data pointer, so JS-implemented
+   * extern functions can return strings back into Dream. Requires the module to export `malloc`.
    */
   writeString(str) {
     if (typeof this.exports.malloc !== "function") {
@@ -126,7 +126,7 @@ export class MinLangInstance {
   }
 
   /**
-   * Reads a MinLang array at data pointer `ptr` into a JS array. Layout: [count:i32] followed by
+   * Reads a Dream array at data pointer `ptr` into a JS array. Layout: [count:i32] followed by
    * `count` elements of `elemType`.
    */
   readArray(ptr, elemType = "int") {
@@ -171,13 +171,13 @@ export class MinLangInstance {
   }
 
   /**
-   * Reserved for JS -> MinLang callbacks (phase 2). Passing a MinLang function to JS so JS can
+   * Reserved for JS -> Dream callbacks (phase 2). Passing a Dream function to JS so JS can
    * invoke it requires a WASM funcref table + `call_indirect` and an exported indirect function
    * table, which the compiler does not yet emit. Calling this today throws.
    */
   callback(_handle) {
     throw new Error(
-      "MinLang -> JS callbacks are not yet supported (phase 2: requires an exported funcref table)"
+      "Dream -> JS callbacks are not yet supported (phase 2: requires an exported funcref table)"
     );
   }
 
@@ -232,7 +232,7 @@ function resolveGlobal(module, field) {
   return typeof fn === "function" ? fn.bind(owner) : undefined;
 }
 
-/** Default `env` builtins every MinLang module imports (mirrors src/.../wasm_runner.rs). */
+/** Default `env` builtins every Dream module imports (mirrors src/.../wasm_runner.rs). */
 function defaultEnv(getInstance, options) {
   const writeOut = options.stdout || ((s) => (typeof process !== "undefined" ? process.stdout.write(s) : console.log(s)));
   const writeLine = options.stdout
@@ -275,14 +275,14 @@ async function loadAbi(abi) {
 }
 
 /**
- * Loads and instantiates a MinLang module.
+ * Loads and instantiates a Dream module.
  *
  * @param {string|ArrayBuffer|Uint8Array} source - URL/path to `.wasm`, or raw bytes.
  * @param {object} [options]
  * @param {object} [options.imports] - JS implementations keyed by extern function name.
  * @param {string|object} [options.abi] - URL/path to (or parsed) `.abi.json` for auto-marshaling.
  * @param {function} [options.stdout] - Custom output sink for print builtins.
- * @returns {Promise<MinLangInstance>}
+ * @returns {Promise<DreamInstance>}
  */
 export async function load(source, options = {}) {
   const wasmBytes = await fetchBytes(source);
@@ -302,7 +302,7 @@ export async function load(source, options = {}) {
   const sigByName = new Map();
   if (abi) for (const e of abi.externs) sigByName.set(e.name, e);
 
-  // 1. User-supplied implementations win, keyed by extern (MinLang function) name.
+  // 1. User-supplied implementations win, keyed by extern (Dream function) name.
   for (const name of Object.keys(userImports)) {
     const sig = sigByName.get(name);
     const module = sig ? sig.module : "env";
@@ -327,7 +327,7 @@ export async function load(source, options = {}) {
   }
 
   const { instance: wasmInstance } = await WebAssembly.instantiate(wasmBytes, importObject);
-  instance = new MinLangInstance(wasmInstance);
+  instance = new DreamInstance(wasmInstance);
   return instance;
 }
 
@@ -335,10 +335,10 @@ export async function load(source, options = {}) {
  * load a module and immediately invoke its `main`. The `.abi.json` path is
  * derived from the `.wasm` URL unless `options.abi` is given, so a whole page can be just:
  *
- *   import { run } from "./minlang.js";
+ *   import { run } from "./dream.js";
  *   await run("app.wasm", { imports: { ... } });
  *
- * @returns {Promise<MinLangInstance>} the loaded instance (after `main` has run).
+ * @returns {Promise<DreamInstance>} the loaded instance (after `main` has run).
  */
 export async function run(source, options = {}) {
   const abi =
@@ -348,4 +348,4 @@ export async function run(source, options = {}) {
   return mod;
 }
 
-export default { load, run, MinLangInstance, TAGS, HEAP_HEADER_SIZE };
+export default { load, run, DreamInstance, TAGS, HEAP_HEADER_SIZE };

@@ -258,7 +258,7 @@ impl<'a> WasmGenerator<'a> {
             }
         }
     }
-    /// Gets the WebAssembly type string from a MinLang type name
+    /// Gets the WebAssembly type string from a Dream type name
     pub fn get_wasm_type_from(typename: String) -> Result<String, Error> {
         let base_type = if typename.ends_with("[]") {
             // Arrays are represented as pointers (i32)

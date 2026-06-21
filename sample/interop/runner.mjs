@@ -1,11 +1,11 @@
-// Node runner for the MinLang interop sample.
+// Node runner for the Dream interop sample.
 //
 //   node sample/interop/runner.mjs            # defaults to interop.wasm beside this file
 //   node sample/interop/runner.mjs other.wasm
 //
 // `alert` and `console.log` auto-bind to Node globals, so we only supply `square`.
 
-import { run } from "../../runtime/minlang.js";
+import { run } from "../../runtime/dream.js";
 import { fileURLToPath } from "node:url";
 
 // The browser has a global `alert`; Node does not, so provide one for auto-bind to find.

@@ -1,4 +1,4 @@
-# MinLang
+# Dream
 
 A statically typed language that compiles to WebAssembly. Simple syntax, automatic memory management, generics, and a built-in collections library — all in a compiler written in Rust.
 
@@ -8,14 +8,14 @@ A statically typed language that compiles to WebAssembly. Simple syntax, automat
 
 ```bash
 git clone https://github.com/sps014/MinLang
-cd MinLang
+cd Dream
 cargo build --release
 ```
 
 ## Run a program
 
 ```bash
-cargo run -- run path/to/your/file.ml
+cargo run -- run path/to/your/file.dream
 ```
 
 ## Test

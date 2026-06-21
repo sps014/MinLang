@@ -145,8 +145,8 @@ impl Compiler {
     ) -> Result<(), Error> {
         // Each standard-collection type lives in its own prelude file.
         const PRELUDE_FILES: [(&str, &str); 2] = [
-            ("<std>/list.ml", include_str!("stdlib/list.ml")),
-            ("<std>/map.ml", include_str!("stdlib/map.ml")),
+            ("<std>/list.dream", include_str!("stdlib/list.dream")),
+            ("<std>/map.dream", include_str!("stdlib/map.dream")),
         ];
 
         for (prelude_name, prelude_src) in PRELUDE_FILES {

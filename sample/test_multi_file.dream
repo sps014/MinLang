@@ -1,4 +1,4 @@
-import "math_lib.ml"
+import "math_lib.dream"
 
 pub fun main() {
     let result = add_numbers(10, 20);

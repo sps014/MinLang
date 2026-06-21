@@ -1,4 +1,4 @@
-// MinLang standard List<T>, auto-imported into every program.
+// Dream standard List<T>, auto-imported into every program.
 //
 // A dynamic array backed by a reference-counted buffer that grows on demand. It is
 // monomorphized per concrete element type, so `List<int>` compiles to dedicated,

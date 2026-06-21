@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>MinLang JS Interop Demo</title>
+    <title>Dream JS Interop Demo</title>
     <style>
       body {
         font-family: "Inter", system-ui, sans-serif;
@@ -28,15 +28,15 @@
     </style>
   </head>
   <body>
-    <h1>MinLang &rarr; JS Interop</h1>
+    <h1>Dream &rarr; JS Interop</h1>
     <p class="muted">
-      A MinLang program compiled to WebAssembly, calling JavaScript via <code>extern fun</code>.
+      A Dream program compiled to WebAssembly, calling JavaScript via <code>extern fun</code>.
       Serve this folder over HTTP (e.g. <code>npx serve</code>) and open the page.
     </p>
     <div id="log"></div>
 
     <script type="module">
-      import { run } from "../../runtime/minlang.js";
+      import { run } from "../../runtime/dream.js";
 
       const logEl = document.getElementById("log");
       const append = (line) => {

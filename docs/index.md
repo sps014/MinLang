@@ -1,6 +1,6 @@
-# MinLang
+# Dream
 
-MinLang is a statically typed language that compiles to WebAssembly. It has a simple, readable syntax and manages memory automatically — no garbage collector, no manual frees.
+Dream is a statically typed language that compiles to WebAssembly. It has a simple, readable syntax and manages memory automatically — no garbage collector, no manual frees.
 
 ```kotlin
 fun greet(name: string): string {
@@ -22,6 +22,6 @@ fun main() {
 
 ## Start here
 
-New to MinLang? Follow the [Getting Started](getting-started.md) guide to install the compiler, write your first program, and run it.
+New to Dream? Follow the [Getting Started](getting-started.md) guide to install the compiler, write your first program, and run it.
 
 If you already know the basics, the [Language](language/variables.md) section covers everything in detail.

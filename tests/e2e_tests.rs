@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use wasmtime::*;
-use min_lang::lang::compiler::{Compiler, Target};
+use dream::lang::compiler::{Compiler, Target};
 use pretty_assertions::assert_eq;
 
 #[derive(Clone)]
@@ -154,7 +154,7 @@ fn run_all_e2e_cases() {
         let entry = entry.unwrap();
         let path = entry.path();
         
-        if path.extension().and_then(|s| s.to_str()) == Some("ml") {
+        if path.extension().and_then(|s| s.to_str()) == Some("dream") {
             println!("Running E2E test: {:?}", path);
             run_test_case(&path);
             ran_any = true;
@@ -162,6 +162,6 @@ fn run_all_e2e_cases() {
     }
     
     if !ran_any {
-        println!("No .ml files found in tests/cases/");
+        println!("No .dream files found in tests/cases/");
     }
 }

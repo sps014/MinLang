@@ -366,6 +366,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "dream"
+version = "0.1.0"
+dependencies = [
+ "bumpalo",
+ "logos",
+ "pretty_assertions",
+ "regex",
+ "tracing",
+ "tracing-subscriber",
+ "wasmtime",
+ "wat",
+]
+
+[[package]]
 name = "either"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -768,20 +782,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ad38eb12aea514a0466ea40a80fd8cc83637065948eb4a426e4aa46261175227"
 dependencies = [
  "rustix",
-]
-
-[[package]]
-name = "min_lang"
-version = "0.1.0"
-dependencies = [
- "bumpalo",
- "logos",
- "pretty_assertions",
- "regex",
- "tracing",
- "tracing-subscriber",
- "wasmtime",
- "wat",
 ]
 
 [[package]]

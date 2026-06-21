@@ -116,7 +116,7 @@ Exported functions cannot expose structs that are not themselves exported.
 
 ## Entry point
 
-The runtime calls `main` to start the program. Every runnable MinLang program needs one. The return type can be omitted:
+The runtime calls `main` to start the program. Every runnable Dream program needs one. The return type can be omitted:
 
 ```kotlin
 fun main() {

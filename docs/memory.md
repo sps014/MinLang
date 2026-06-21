@@ -1,6 +1,6 @@
 # Memory Model
 
-MinLang manages heap memory for you using **Automatic Reference Counting (ARC)** backed by a fast **freelist allocator** running inside WebAssembly.
+Dream manages heap memory for you using **Automatic Reference Counting (ARC)** backed by a fast **freelist allocator** running inside WebAssembly.
 
 You don't call `free` and you don't have a garbage collector. Memory is reclaimed the moment the last reference to an object drops.
 
