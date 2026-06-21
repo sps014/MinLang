@@ -132,8 +132,8 @@ pub enum TokenKind
     FunToken,
     #[token("import")]
     ImportToken,
-    #[token("export")]
-    ExportToken,
+    #[token("pub")]
+    PubToken,
     #[token("extern")]
     ExternToken,
     #[token("struct")]

@@ -14,7 +14,7 @@ import "math_lib.ml"
 
 ```kotlin
 // math_lib.ml
-export fun add_numbers(a: int, b: int): int {
+pub fun add_numbers(a: int, b: int): int {
     return a + b;
 }
 ```
@@ -32,15 +32,15 @@ Imports are resolved recursively (an imported file may import others), and each 
 
 ## Export visibility
 
-Mark a declaration `export` to make it part of a file's public surface and to expose it to the host environment. An exported function cannot expose a struct that is not itself exported.
+Mark a declaration `pub` to make it part of a file's public surface and to expose it to the host environment. An exported function cannot expose a struct that is not itself exported.
 
 ```kotlin
-export struct Point {
+pub struct Point {
     x: int;
     y: int;
 }
 
-export fun origin(): Point {
+pub fun origin(): Point {
     return Point { x: 0, y: 0 };
 }
 ```

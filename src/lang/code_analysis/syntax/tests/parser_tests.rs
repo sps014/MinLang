@@ -235,3 +235,30 @@ fn test_parse_struct_comma_fields_recovers_without_hanging() {
     let (_, diagnostics) = parse_code(code, &arena);
     assert_eq!(diagnostics.has_errors(), true);
 }
+
+#[test]
+fn test_parse_struct_constructor_and_destructor() {
+    // `pub init(...)` and `pub drop()` (and their bare forms) parse as struct methods named
+    // `init` / `drop` without the `fun` keyword or a return type.
+    let code = "struct Point { x: int; y: int; \
+                pub init(x: int, y: int) { this.x = x; this.y = y; } \
+                pub drop() { } \
+                fun sum(): int { return this.x + this.y; } }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    assert_eq!(program.structs.len(), 1);
+    let s = &program.structs[0];
+    assert_eq!(s.fields.len(), 2);
+
+    let init = s.methods.iter().find(|m| m.name.text == "init").expect("init method");
+    assert_eq!(init.parameters.len(), 2);
+    assert!(init.return_type.is_none());
+
+    let drop = s.methods.iter().find(|m| m.name.text == "drop").expect("drop method");
+    assert_eq!(drop.parameters.len(), 0);
+    assert!(drop.return_type.is_none());
+
+    assert!(s.methods.iter().any(|m| m.name.text == "sum"));
+}

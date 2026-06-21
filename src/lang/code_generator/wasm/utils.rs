@@ -31,6 +31,45 @@ impl<'a> WasmGenerator<'a> {
         name.to_string()
     }
 
+    /// The monomorphized struct name a constructor call `Name(...)` / `Name<T>(...)` targets,
+    /// mirroring the mangling used by struct instantiation (e.g. `Point<int>` -> `Point_int`).
+    pub fn constructor_struct_name(&self, name: &str, generic_args: &Option<Vec<Type>>) -> String {
+        match generic_args {
+            Some(args) if !args.is_empty() => {
+                let mut mangled = name.to_string();
+                for arg in args {
+                    mangled.push('_');
+                    mangled.push_str(&self.resolve_type(&arg.get_type()));
+                }
+                mangled
+            }
+            _ => name.to_string(),
+        }
+    }
+
+    /// Returns true if `expr` is a constructor call `Struct(...)` / `Struct<T>(...)`. The result
+    /// of such a call already carries the single reference the binding will own, so callers must
+    /// not retain it again (doing so would prevent the refcount from reaching 0 and its `drop`
+    /// from running).
+    pub fn is_constructor_call(&self, expr: &crate::lang::code_analysis::syntax::nodes::ExpressionNode<'a>, function: &FunctionNode<'a>) -> bool {
+        use crate::lang::code_analysis::syntax::nodes::ExpressionNode;
+        if let ExpressionNode::FunctionCall(n, generic_args, args) = expr {
+            if matches!(n.text.as_str(), "print" | "println" | "to_string" | "hash_code" | "array_new") {
+                return false;
+            }
+            if self.function_typed_local(&n.text, function).is_some() {
+                return false;
+            }
+            let function_name = self.resolve_call_name(&n.text, generic_args, args, function);
+            if self.function_table.get_function(&function_name).is_ok() {
+                return false;
+            }
+            let ctor_name = self.constructor_struct_name(&n.text, generic_args);
+            return self.struct_table.get_struct(&ctor_name).is_some();
+        }
+        false
+    }
+
     /// Returns true if the method invoked as `obj.method(...)` yields a non-void value
     /// (used to decide whether a statement-level invocation must `drop` the result).
     pub fn method_returns_value(&self, obj: &crate::lang::code_analysis::syntax::nodes::ExpressionNode<'a>, method: &crate::lang::code_analysis::token::syntax_token::SyntaxToken, function: &FunctionNode<'a>) -> Result<bool, Error> {
@@ -260,6 +299,9 @@ impl<'a> WasmGenerator<'a> {
                     } else {
                         Ok("void".to_string())
                     }
+                } else if self.struct_table.get_struct(&self.constructor_struct_name(&name.text, generic_args)).is_some() {
+                    // Constructor call yields the (monomorphized) struct type.
+                    Ok(self.constructor_struct_name(&name.text, generic_args))
                 } else {
                     // Check stdlib
                     for std_func in crate::lang::stdlib::StdlibFunction::get_all() {

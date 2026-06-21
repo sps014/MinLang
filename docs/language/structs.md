@@ -11,15 +11,52 @@ struct Point {
 }
 ```
 
-Fields are declared as `name: type;` pairs. There are no default values; every field must be provided when creating an instance.
+Fields are declared as `name: type;` pairs. A struct literal must provide every field; a constructor with a custom `pub init` may leave fields unset, in which case they start at their zero value (see [Constructors](#constructors)).
 
 ## Creating an instance
+
+There are two ways to create an instance.
+
+Using a struct literal, naming each field (fields can be provided in any order):
 
 ```kotlin
 let p = Point { x: 3, y: 4 };
 ```
 
-Fields can be provided in any order.
+Or using a constructor call, passing values positionally:
+
+```kotlin
+let p = Point(3, 4);
+```
+
+## Constructors
+
+Every struct has an **auto-generated constructor** that accepts its fields in declaration
+order. For `Point` above, that is `Point(x, y)`.
+
+To run custom logic when an instance is created, define a constructor with `pub init(...)`.
+When an `init` is present, the constructor call matches its parameters instead of the fields,
+and any field you do not assign starts at its zero value (`0`, `0.0`, `false`, or `null`):
+
+```kotlin
+struct Account {
+    owner: string;
+    balance: int;
+
+    pub init(owner: string) {
+        this.owner = owner;
+        this.balance = 100;   // default starting balance
+    }
+}
+
+fun main(): void {
+    let a = Account("Ada");
+    println(a.balance);       // 100
+}
+```
+
+An `init` declares no return type — it always produces an instance of its struct. Inside the
+body, `this` refers to the new instance.
 
 ## Accessing and mutating fields
 
@@ -58,6 +95,35 @@ fun main(): void {
 
 Methods are called with `instance.method(args)`. The `this` parameter is implicit — you do not pass it yourself.
 
+## Destructors
+
+Define `pub drop()` to run cleanup logic when an instance is destroyed. A struct is destroyed
+when its last reference goes out of scope; `drop` runs automatically just before the memory is
+released, while the fields are still valid. A destructor takes no parameters and has no return
+type:
+
+```kotlin
+struct File {
+    name: string;
+
+    pub init(name: string) {
+        this.name = name;
+    }
+
+    pub drop() {
+        print("closing ");
+        println(this.name);
+    }
+}
+
+fun use_file() {
+    let f = File("data.txt");
+    // ... work with f ...
+}                                  // f goes out of scope here -> "closing data.txt"
+```
+
+You never call `drop` yourself; the runtime invokes it as part of automatic memory management.
+
 ## Nullable structs
 
 Append `?` to a struct type to allow `null`:
@@ -89,10 +155,10 @@ struct Node {
 
 ## Exporting structs
 
-Mark a struct `export` to make it visible to the WebAssembly host:
+Mark a struct `pub` to make it visible to the WebAssembly host:
 
 ```kotlin
-export struct Vec2 {
+pub struct Vec2 {
     x: float;
     y: float;
 }
@@ -104,4 +170,4 @@ Structs can customize how they are printed and hashed by overriding `to_string` 
 
 ## Memory
 
-Each struct instance is a heap allocation. The memory is freed automatically when the last reference to it drops — no manual `free` needed. See [Memory Model](../memory.md) for a full explanation.
+Each struct instance is a heap allocation. The memory is freed automatically when the last reference to it drops — no manual `free` needed. If the struct defines a `pub drop()` destructor, it runs just before the memory is released. See [Memory Model](../memory.md) for a full explanation.

@@ -52,7 +52,7 @@ These work on any type, including `object`.
 
 ## Overriding protocol methods on structs
 
-A struct can customize `to_string` and `hash_code` by declaring them with `@override export`:
+A struct can customize `to_string` and `hash_code` by declaring them with `@override pub`:
 
 ```kotlin
 struct Color {
@@ -60,18 +60,18 @@ struct Color {
     g: int;
     b: int;
 
-    @override export fun to_string(): string {
+    @override pub fun to_string(): string {
         return "rgb(" + to_string(this.r) + ", " + to_string(this.g) + ", " + to_string(this.b) + ")";
     }
 
-    @override export fun hash_code(): int {
+    @override pub fun hash_code(): int {
         return this.r * 65536 + this.g * 256 + this.b;
     }
 }
 ```
 
 Requirements:
-- Both `@override` and `export` must be present.
+- Both `@override` and `pub` must be present.
 - `to_string` must return `string` and take no parameters.
 - `hash_code` must return `int` and take no parameters.
 

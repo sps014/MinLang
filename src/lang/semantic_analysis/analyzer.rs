@@ -407,6 +407,21 @@ impl<'a> Analyzer<'a> {
     /// that shadows a protocol name must carry `@override`.
     fn validate_protocol_override(&self, method: &FunctionNode<'a>, diagnostics: &mut DiagnosticBag) {
         let name = method.name.text.as_str();
+
+        // Constructors/destructors: `drop` takes no parameters and neither declares a return type.
+        if name == "drop" && !method.parameters.is_empty() {
+            diagnostics.report_error(
+                "destructor 'drop' must not declare parameters".to_string(),
+                Some(method.name.position.clone()),
+            );
+        }
+        if (name == "init" || name == "drop") && method.return_type.is_some() {
+            diagnostics.report_error(
+                format!("'{}' must not declare a return type", name),
+                Some(method.name.position.clone()),
+            );
+        }
+
         let is_protocol = name == "to_string" || name == "hash_code";
 
         if method.is_override && !is_protocol {
@@ -428,7 +443,7 @@ impl<'a> Analyzer<'a> {
         if method.is_override && is_protocol {
             if !method.is_exported {
                 diagnostics.report_error(
-                    format!("overridden object-protocol method '{}' must be declared 'export'", name),
+                    format!("overridden object-protocol method '{}' must be declared 'pub'", name),
                     Some(method.name.position.clone()),
                 );
             }
@@ -686,6 +701,16 @@ impl<'a> Analyzer<'a> {
             return Ok((*ret).clone());
         }
 
+        // Constructor call: `Struct(args)` / `Struct<T>(args)`. Only treated as a constructor
+        // when no free function (concrete or generic) shadows the name, so prelude factory
+        // functions such as `List<T>()` keep their behaviour.
+        if self.function_table.get_function(&function_name).is_err()
+            && !self.generic_functions.contains_key(&function_name)
+            && (self.struct_table.get_struct(&function_name).is_some()
+                || self.generic_structs.contains_key(&function_name)) {
+            return self.analyze_constructor_call(name, generic_args, &params_types, diagnostics);
+        }
+
         // Monomorphization: bind every generic parameter to a concrete type, then register
         // (once) a specialized signature under the mangled name.
         if self.generic_functions.contains_key(&function_name) {
@@ -750,6 +775,62 @@ impl<'a> Analyzer<'a> {
         //let r_type=&store_sig.return_type;
         Ok(store_sig.return_type.unwrap_or(Type::Void))
     }
+
+    /// Type-checks a constructor call `Struct(args)`. When the struct defines a custom `init`
+    /// the call is checked against `init`'s parameters; otherwise it is checked positionally
+    /// against the struct's fields in declaration order (the auto-generated constructor).
+    fn analyze_constructor_call(&mut self, name: &SyntaxToken, generic_args: &Option<Vec<Type>>, params_types: &[String], diagnostics: &mut DiagnosticBag) -> Result<Type, ()> {
+        let struct_name = match generic_args {
+            Some(args) if !args.is_empty() => {
+                self.ensure_struct_instantiated(&name.text, args, &name.position, diagnostics);
+                mangle_generic(&name.text, args)
+            }
+            _ => {
+                if self.generic_structs.contains_key(&name.text) {
+                    diagnostics.report_error(
+                        format!("Generic struct '{}' requires type arguments, e.g. {}<int>(...)", name.text, name.text),
+                        Some(name.position.clone()),
+                    );
+                }
+                name.text.clone()
+            }
+        };
+
+        let init_name = format!("{}_init", struct_name);
+        let expected: Vec<String> = if let Ok(sig) = self.function_table.get_function(&init_name) {
+            // `init` is registered as a method, so parameter 0 is the implicit `this`.
+            sig.parameters.iter().skip(1).cloned().collect()
+        } else if let Some(info) = self.struct_table.get_struct(&struct_name) {
+            let mut ordered: Vec<(&String, &crate::lang::semantic_analysis::struct_table::StructFieldInfo)> =
+                info.fields.iter().collect();
+            ordered.sort_by_key(|(_, f)| f.offset);
+            ordered.iter().map(|(_, f)| f.type_.get_type()).collect()
+        } else {
+            Vec::new()
+        };
+
+        if expected.len() != params_types.len() {
+            diagnostics.report_error(
+                format!("Constructor for '{}' expects {} argument(s), but {} were given", struct_name, expected.len(), params_types.len()),
+                Some(name.position.clone()),
+            );
+        } else {
+            for i in 0..expected.len() {
+                let e = expected[i].as_str();
+                let g = params_types[i].as_str();
+                if e == "object" || e == g || self.enum_int_compatible(e, g) {
+                    continue;
+                }
+                diagnostics.report_error(
+                    format!("Constructor for '{}' expects argument {} to be '{}', got '{}'", struct_name, i + 1, e, g),
+                    Some(name.position.clone()),
+                );
+            }
+        }
+
+        Ok(Type::Struct(synthetic_token(TokenKind::IdentifierToken, &struct_name), None))
+    }
+
     fn analyze_method_call(&mut self, obj: &ExpressionNode<'a>, method: &SyntaxToken, _generic_args: &Option<Vec<Type>>, params: &Vec<ExpressionNode<'a>>, parent_function: &FunctionNode<'a>, symbol_table: &Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag) -> Result<Type, ()> {
         // `Math.<fn>(...)`: the math namespace. `Math` is not a value, so intercept before
         // trying to analyze it as an expression.

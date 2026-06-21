@@ -56,7 +56,16 @@ impl<'a> WasmGenerator<'a> {
                             }
                         } else {
                             let function_name = self.resolve_call_name(&n.text, generic_args, p, function);
-                            self.build_function_invocation(&function_name, p, function, writer)?
+                            let ctor_name = self.constructor_struct_name(&n.text, generic_args);
+                            if self.function_table.get_function(&function_name).is_err()
+                                && self.struct_table.get_struct(&ctor_name).is_some() {
+                                // Constructed value is discarded: build it, then release the fresh
+                                // allocation (which also balances the stack).
+                                self.build_constructor(&ctor_name, p, function, writer)?;
+                                self.emit_release(&ctor_name, writer);
+                            } else {
+                                self.build_function_invocation(&function_name, p, function, writer)?
+                            }
                         }
                     }
                 }
@@ -76,12 +85,17 @@ impl<'a> WasmGenerator<'a> {
     /// Builds a variable declaration
     pub fn build_declaration(&mut self, left: &SyntaxToken, function: &FunctionNode<'a>, expression: &ExpressionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let type_str = self.table_read_type(&left.text, function);
+        // A constructor result already owns the single reference this binding takes over, so it
+        // must not be retained again (otherwise its refcount never reaches 0 and `drop` never runs).
+        let owns_ref = self.is_constructor_call(expression, function);
         self.build_expression(expression, &type_str, function, writer)?;
         
         if self.is_reference_type(&type_str) {
             writer.write_line("local.set $scratch_ptr");
-            writer.write_line("local.get $scratch_ptr");
-            writer.write_line("call $retain");
+            if !owns_ref {
+                writer.write_line("local.get $scratch_ptr");
+                writer.write_line("call $retain");
+            }
 
             // Release old value (in case this declaration is inside a loop and the local is reused).
             writer.write_line(&format!("local.get ${}", left.text));
@@ -98,14 +112,19 @@ impl<'a> WasmGenerator<'a> {
     pub fn build_assignment(&mut self, left: &SyntaxToken, expression: &ExpressionNode<'a>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let type_str = self.table_read_type(&left.text, function);
 
+        // A constructor result already owns the reference being assigned; do not retain it again.
+        let owns_ref = self.is_constructor_call(expression, function);
         self.build_expression(expression, &type_str, function, writer)?;
 
         if self.is_reference_type(&type_str) {
             writer.write_line("local.set $scratch_ptr");
 
-            // Retain the new value, then release the value previously held by this local.
-            writer.write_line("local.get $scratch_ptr");
-            writer.write_line("call $retain");
+            // Retain the new value (unless it already owns its reference), then release the value
+            // previously held by this local.
+            if !owns_ref {
+                writer.write_line("local.get $scratch_ptr");
+                writer.write_line("call $retain");
+            }
             writer.write_line(&format!("local.get ${}", left.text));
             self.emit_release(&type_str, writer);
 

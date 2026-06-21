@@ -2,15 +2,15 @@ struct InternalData {
     value: int;
 }
 
-export struct PublicData {
+pub struct PublicData {
     val: int;
 }
 
-export fun get_internal(): InternalData {
+pub fun get_internal(): InternalData {
     return InternalData { value: 1 };
 }
 
-export fun get_public(): PublicData {
+pub fun get_public(): PublicData {
     return PublicData { val: 2 };
 }
 

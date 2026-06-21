@@ -340,7 +340,7 @@ impl<'a> WasmGenerator<'a> {
     }
 
     /// Fields of a struct ordered by their byte offset (i.e. declaration order).
-    fn sorted_fields<'b>(info: &'b StructInfo) -> Vec<(String, &'b crate::lang::semantic_analysis::struct_table::StructFieldInfo)> {
+    pub(crate) fn sorted_fields<'b>(info: &'b StructInfo) -> Vec<(String, &'b crate::lang::semantic_analysis::struct_table::StructFieldInfo)> {
         let mut fields: Vec<(String, &crate::lang::semantic_analysis::struct_table::StructFieldInfo)> =
             info.fields.iter().map(|(k, v)| (k.clone(), v)).collect();
         fields.sort_by_key(|(_, f)| f.offset);

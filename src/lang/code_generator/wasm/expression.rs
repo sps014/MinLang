@@ -43,7 +43,13 @@ impl<'a> WasmGenerator<'a> {
                             self.build_indirect_call(&n.text, &params_decl, &ret, args, function, writer)?;
                         } else {
                             let function_name = self.resolve_call_name(&n.text, generic_args, args, function);
-                            self.build_function_invocation(&function_name, args, function, writer)?
+                            let ctor_name = self.constructor_struct_name(&n.text, generic_args);
+                            if self.function_table.get_function(&function_name).is_err()
+                                && self.struct_table.get_struct(&ctor_name).is_some() {
+                                self.build_constructor(&ctor_name, args, function, writer)?
+                            } else {
+                                self.build_function_invocation(&function_name, args, function, writer)?
+                            }
                         }
                     }
                 }
@@ -234,6 +240,86 @@ impl<'a> WasmGenerator<'a> {
         self.alloc_depth -= 1;
 
         // 3. Leave the pointer on the stack
+        writer.write_line(&format!("local.get {}", base));
+        Ok(())
+    }
+
+    /// Builds a constructor call `Struct(args)`. Allocates the struct then either runs the
+    /// user-defined `init` method (custom constructor) or stores the arguments positionally into
+    /// the fields in declaration order (auto-generated constructor). Leaves the new pointer on
+    /// the stack. `struct_name` is already monomorphized (e.g. `Point_int`).
+    pub fn build_constructor(&mut self, struct_name: &str, args: &Vec<ExpressionNode<'a>>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        let struct_info = self.struct_table.get_struct(struct_name)
+            .ok_or_else(|| Error::new(ErrorKind::Other, format!("unknown struct '{}' in constructor", struct_name)))?
+            .clone();
+        let init_name = format!("{}_init", struct_name);
+        let has_init = self.function_table.get_function(&init_name).is_ok();
+
+        // Allocate, tagging the block with this struct's runtime tag, into a depth-specific local.
+        let base = self.ctor_base_local();
+        writer.write_line(&format!("i32.const {}", struct_info.size));
+        writer.write_line(&format!("i32.const {}", self.type_tag(struct_name)));
+        writer.write_line("call $malloc");
+        writer.write_line(&format!("local.set {}", base));
+
+        let ordered = WasmGenerator::sorted_fields(&struct_info);
+
+        if has_init {
+            // Zero every field before running `init` (reused heap blocks are not zeroed), so an
+            // `init` that leaves some fields unset observes 0/null rather than stale data.
+            for (_, field_info) in &ordered {
+                let ft = field_info.type_.get_type();
+                writer.write_line(&format!("local.get {}", base));
+                if field_info.offset > 0 {
+                    writer.write_line(&format!("i32.const {}", field_info.offset));
+                    writer.write_line("i32.add");
+                }
+                match WasmGenerator::get_wasm_type_from(ft.clone())?.as_str() {
+                    "f64" => writer.write_line("f64.const 0"),
+                    "f32" => writer.write_line("f32.const 0"),
+                    _ => writer.write_line("i32.const 0"),
+                }
+                WasmGenerator::emit_store(&ft, writer)?;
+            }
+
+            // call $Struct_init(this, args...)
+            let param_types: Vec<String> = self.function_table.get_function(&init_name)?.parameters.clone();
+            self.alloc_depth += 1;
+            writer.write_line(&format!("local.get {}", base)); // implicit `this`
+            for (i, expr) in args.iter().enumerate() {
+                let pt = param_types.get(i + 1).cloned().unwrap_or_else(|| "int".to_string());
+                self.build_expression(expr, &pt, function, writer)?;
+            }
+            self.alloc_depth -= 1;
+            writer.write_line(&format!("call ${}", init_name));
+        } else {
+            // Auto-generated constructor: store each argument into its field positionally.
+            // Reference-typed fields are retained so the struct owns a proper reference (it
+            // releases them when freed), mirroring `this.field = value` assignment semantics.
+            self.alloc_depth += 1;
+            for (i, (_, field_info)) in ordered.iter().enumerate() {
+                let ft = field_info.type_.get_type();
+                let is_ref = self.is_reference_type(&ft);
+                writer.write_line(&format!("local.get {}", base));
+                if field_info.offset > 0 {
+                    writer.write_line(&format!("i32.const {}", field_info.offset));
+                    writer.write_line("i32.add");
+                }
+                if let Some(expr) = args.get(i) {
+                    self.build_expression(expr, &ft, function, writer)?;
+                } else {
+                    writer.write_line("i32.const 0");
+                }
+                if is_ref {
+                    writer.write_line("local.tee $scratch_ptr");
+                    writer.write_line("local.get $scratch_ptr");
+                    writer.write_line("call $retain");
+                }
+                WasmGenerator::emit_store(&ft, writer)?;
+            }
+            self.alloc_depth -= 1;
+        }
+
         writer.write_line(&format!("local.get {}", base));
         Ok(())
     }

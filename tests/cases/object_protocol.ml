@@ -1,5 +1,5 @@
 // The object protocol: compile-time generated default to_string/hash_code for a struct,
-// and @override export implementations for another struct, plus runtime dispatch through
+// and @override pub implementations for another struct, plus runtime dispatch through
 // an `object`.
 struct Point {
     x: int;
@@ -10,11 +10,11 @@ struct Named {
     id: int;
     label: string;
 
-    @override export fun to_string(): string {
+    @override pub fun to_string(): string {
         return "Named#" + to_string(this.id);
     }
 
-    @override export fun hash_code(): int {
+    @override pub fun hash_code(): int {
         return this.id;
     }
 }

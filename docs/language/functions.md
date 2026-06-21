@@ -104,10 +104,10 @@ Closures (capturing surrounding variables) are not yet supported.
 
 ## Exported functions
 
-Mark a function `export` to expose it to the WebAssembly host environment:
+Mark a function `pub` to expose it to the WebAssembly host environment:
 
 ```kotlin
-export fun compute(n: int): int {
+pub fun compute(n: int): int {
     return n * n;
 }
 ```

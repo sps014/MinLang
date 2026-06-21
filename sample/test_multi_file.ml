@@ -1,6 +1,6 @@
 import "math_lib.ml"
 
-export fun main() {
+pub fun main() {
     let result = add_numbers(10, 20);
     println(result);
     

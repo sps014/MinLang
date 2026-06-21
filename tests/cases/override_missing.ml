@@ -2,7 +2,7 @@
 struct Foo {
     x: int;
 
-    export fun to_string(): string {
+    pub fun to_string(): string {
         return "foo";
     }
 }

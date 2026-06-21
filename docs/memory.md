@@ -23,6 +23,8 @@ Every heap-allocated object has a reference count in its header. The compiler in
 
 You don't write any of this yourself.
 
+If a struct defines a `pub drop()` [destructor](language/structs.md#destructors), it is called automatically at the moment its reference count reaches zero, just before the block is freed. This is where you put cleanup logic that must run when an instance is destroyed.
+
 ```kotlin
 fun make_list(): int[] {
     let arr = [1, 2, 3];   // allocated, ref_count = 1
