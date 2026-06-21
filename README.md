@@ -2,7 +2,7 @@
 
 A statically typed language that compiles to WebAssembly. Simple syntax, automatic memory management, generics, and a built-in collections library — all in a compiler written in Rust.
 
-**[Read the docs →](https://sps014.github.io/MinLang/)**
+**[Read the docs →](https://sps014.github.io/Dream/)**
 
 ## Build
 
