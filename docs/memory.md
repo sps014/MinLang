@@ -15,13 +15,18 @@ Primitive values (`int`, `float`, `double`, `bool`) are stored directly on the W
 
 ## Reference counting
 
-Every heap-allocated object has a reference count in its header. The compiler inserts `retain` and `release` calls automatically:
+Every heap-allocated object has a reference count in its header. The compiler inserts `retain` and `release` calls automatically, distinguishing two kinds of value:
 
-- When you **assign** a reference to a local variable or struct field, the compiler retains it (increments the count) and releases whatever was there before.
-- When a variable **goes out of scope**, the compiler releases it (decrements the count). If the count reaches zero, the object is freed.
-- When a function **returns** a reference, the compiler retains it before releasing locals, so the caller receives it with count ≥ 1.
+- An **owned** value is freshly produced and already carries exactly one reference: a constructor call (`Point(1, 2)`), a struct or array literal, a string concatenation, or the result of a function/method call (a callee hands its result back with `+1`). When you bind, store, or return an owned value, it is *moved* into its new home — no extra retain.
+- A **borrowed** value names something another owner already holds: reading a variable, a field, or an array element. Binding or storing a borrowed value retains it (increments the count), since there is now an additional owner.
 
-You don't write any of this yourself.
+In both cases:
+
+- When a variable **goes out of scope**, the compiler releases it. If the count reaches zero, the object is freed (and its `drop` runs first).
+- When an owned **temporary** is used only as a call argument, it is released after the call returns, so it is reclaimed once the callee is done borrowing it.
+- Reassigning a variable releases the value it previously held.
+
+You don't write any of this yourself. The upshot is that values reach a reference count of zero and are freed deterministically the moment they are no longer reachable — including the results of factory functions and methods, not just locals.
 
 If a struct defines a `pub drop()` [destructor](language/structs.md#destructors), it is called automatically at the moment its reference count reaches zero, just before the block is freed. This is where you put cleanup logic that must run when an instance is destroyed.
 

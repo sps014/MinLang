@@ -1,0 +1,95 @@
+// Exercises deterministic reclamation (and `drop`) for owned values that are NOT direct
+// constructor calls: factory-function results, loop reassignment, method results, reference
+// fields, and owned temporaries passed as call arguments.
+
+struct Tracked {
+    id: int;
+
+    pub init(id: int) {
+        this.id = id;
+    }
+
+    pub drop() {
+        print("drop ");
+        println(this.id);
+    }
+}
+
+struct Factory {
+    base: int;
+
+    fun create(n: int): Tracked {
+        return Tracked(this.base + n);
+    }
+}
+
+struct Named {
+    name: string;
+
+    pub drop() {
+        print("bye ");
+        println(this.name);
+    }
+}
+
+fun make(id: int): Tracked {
+    return Tracked(id);
+}
+
+fun make_named(n: string): Named {
+    return Named(n);
+}
+
+fun consume(t: Tracked) {
+    print("consume ");
+    println(t.id);
+}
+
+// Factory result bound to a single local: dropped at scope exit.
+fun use_once(id: int) {
+    let a = make(id);
+    print("use ");
+    println(a.id);
+}
+
+// Reassigning a local with fresh factory results drops the previous value each time.
+fun loop_reassign() {
+    let t = make(0);
+    let i = 1;
+    while (i <= 3) {
+        t = make(i);
+        i = i + 1;
+    }
+}
+
+// A method that returns a freshly built struct; the result is owned and dropped at scope exit.
+fun method_factory() {
+    let f = Factory(10);
+    let m = f.create(5);
+    println(m.id);
+}
+
+// A factory whose struct owns a reference (string) field; freeing it must not corrupt the
+// interned literal.
+fun ref_field() {
+    let x = make_named("Zaphod");
+    println(x.name);
+}
+
+// An owned temporary passed straight into a call is reclaimed after the call returns.
+fun arg_temp() {
+    consume(make(5));
+}
+
+fun main() {
+    use_once(1);
+    println(0);
+    loop_reassign();
+    println(0);
+    method_factory();
+    println(0);
+    ref_field();
+    println(0);
+    arg_temp();
+    println(0);
+}

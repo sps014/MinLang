@@ -58,6 +58,10 @@ pub struct WasmGenerator<'a> {
     /// across sub-expression evaluation, so nested literals (`[P{...}]`, `Box<Box<int>>`) do
     /// not clobber each other's base pointer.
     pub alloc_depth: usize,
+    /// Number of `$tmp{n}` temp locals currently held live. Owned-reference call arguments are
+    /// `local.tee`'d into the next free `$tmp{n}` so they can be released after the call; the
+    /// counter advances while a slot is held and is restored once the call's temps are released.
+    pub tmp_depth: usize,
 }
 
 impl<'a> CodeGenerator<'a> for WasmGenerator<'a> {
@@ -90,12 +94,18 @@ impl<'a> WasmGenerator<'a> {
             struct_methods: &semantic_info.struct_methods,
             enums: &semantic_info.enums,
             alloc_depth: 0,
+            tmp_depth: 0,
         }
     }
 
     /// Number of `$ctor_base{n}` scratch locals declared per function. Bounds the supported
     /// nesting depth of literal heap constructors; deeper nesting falls back to the last slot.
     pub const CTOR_BASE_POOL: usize = 16;
+
+    /// Number of `$tmp{n}` locals declared per function for releasing owned-reference call
+    /// arguments after a call. Bounds the count of simultaneously-live owned argument temporaries
+    /// across nested calls; deeper nesting falls back to the last slot.
+    pub const TMP_POOL: usize = 16;
 
     /// Returns the name of the base-pointer local for the current constructor nesting depth,
     /// clamped to the declared pool so it always refers to a real local.

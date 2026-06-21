@@ -161,6 +161,11 @@ impl<'a> WasmGenerator<'a> {
         for i in 0..Self::CTOR_BASE_POOL {
             writer.write(&format!(" (local $ctor_base{} i32)", i));
         }
+        // Temp locals holding owned-reference call arguments so they can be released after the
+        // call (see `build_call_arg` / `release_call_temps`).
+        for i in 0..Self::TMP_POOL {
+            writer.write(&format!(" (local $tmp{} i32)", i));
+        }
         writer.write_line("");
         writer.indent();
 

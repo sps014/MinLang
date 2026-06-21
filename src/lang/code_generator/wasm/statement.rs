@@ -51,7 +51,12 @@ impl<'a> WasmGenerator<'a> {
                     _ => {
                         if let Some((params_decl, ret)) = self.function_typed_local(&n.text, function) {
                             self.build_indirect_call(&n.text, &params_decl, &ret, p, function, writer)?;
-                            if !matches!(ret, Type::Void) {
+                            // The callee returns an owned +1: release a reference result, drop a
+                            // plain value, ignore void.
+                            let ret_str = ret.get_type();
+                            if self.is_reference_type(strip_nullable(&ret_str)) {
+                                self.emit_release(&ret_str, writer);
+                            } else if !matches!(ret, Type::Void) {
                                 writer.write_line("drop");
                             }
                         } else {
@@ -64,18 +69,31 @@ impl<'a> WasmGenerator<'a> {
                                 self.build_constructor(&ctor_name, p, function, writer)?;
                                 self.emit_release(&ctor_name, writer);
                             } else {
-                                self.build_function_invocation(&function_name, p, function, writer)?
+                                // A discarded function result is an owned +1: release a reference,
+                                // drop a plain value, ignore void.
+                                let ret_str = self.function_table.get_function(&function_name)
+                                    .ok().and_then(|f| f.return_type).map(|t| t.get_type());
+                                self.build_function_invocation(&function_name, p, function, writer)?;
+                                match ret_str {
+                                    Some(t) if self.is_reference_type(strip_nullable(&t)) => self.emit_release(&t, writer),
+                                    Some(t) if t != "void" => writer.write_line("drop"),
+                                    _ => {}
+                                }
                             }
                         }
                     }
                 }
             },
             StatementNode::MethodInvocation(obj, method, generic_args, params) => {
-                // Called purely for side effects: discard any returned value so the WASM stack
-                // stays balanced.
+                // Called purely for side effects: reclaim/discard any returned value so the WASM
+                // stack stays balanced. A user method returns an owned +1 (release it); builtin
+                // `.name()` returns a borrowed interned string and `.len()` an int (just drop).
+                let ret = self.method_return_type(obj, method, function)?;
                 self.build_method_call(obj, method, generic_args, params, &"void".to_string(), function, writer)?;
-                if self.method_returns_value(obj, method, function)? {
-                    writer.write_line("drop");
+                match ret {
+                    Some(t) if self.is_reference_type(strip_nullable(&t)) && method.text != "name" => self.emit_release(&t, writer),
+                    Some(t) if t != "void" => writer.write_line("drop"),
+                    _ => {}
                 }
             },
         }
@@ -85,9 +103,11 @@ impl<'a> WasmGenerator<'a> {
     /// Builds a variable declaration
     pub fn build_declaration(&mut self, left: &SyntaxToken, function: &FunctionNode<'a>, expression: &ExpressionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let type_str = self.table_read_type(&left.text, function);
-        // A constructor result already owns the single reference this binding takes over, so it
-        // must not be retained again (otherwise its refcount never reaches 0 and `drop` never runs).
-        let owns_ref = self.is_constructor_call(expression, function);
+        // An owned reference (constructor/literal/call result, or a boxed primitive) already
+        // carries the single reference this binding takes over, so it must not be retained again
+        // (otherwise its refcount never reaches 0 and `drop` never runs). A borrowed value must
+        // be retained.
+        let owns_ref = self.stores_owned_ref(expression, &type_str, function)?;
         self.build_expression(expression, &type_str, function, writer)?;
         
         if self.is_reference_type(&type_str) {
@@ -112,8 +132,8 @@ impl<'a> WasmGenerator<'a> {
     pub fn build_assignment(&mut self, left: &SyntaxToken, expression: &ExpressionNode<'a>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let type_str = self.table_read_type(&left.text, function);
 
-        // A constructor result already owns the reference being assigned; do not retain it again.
-        let owns_ref = self.is_constructor_call(expression, function);
+        // An owned reference already carries the reference being assigned; do not retain it again.
+        let owns_ref = self.stores_owned_ref(expression, &type_str, function)?;
         self.build_expression(expression, &type_str, function, writer)?;
 
         if self.is_reference_type(&type_str) {
@@ -192,11 +212,16 @@ impl<'a> WasmGenerator<'a> {
     /// value and releases the value previously stored at the address.
     fn emit_store_with_refcount(&mut self, type_str: &str, expression: &ExpressionNode<'a>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         if self.is_reference_type(type_str) {
+            // An owned value already carries the reference the field/element takes over; only a
+            // borrowed value needs an extra retain.
+            let owns_ref = self.stores_owned_ref(expression, type_str, function)?;
             self.build_expression(expression, &type_str.to_string(), function, writer)?;
             writer.write_line("local.set $scratch_ptr");
 
-            writer.write_line("local.get $scratch_ptr");
-            writer.write_line("call $retain");
+            if !owns_ref {
+                writer.write_line("local.get $scratch_ptr");
+                writer.write_line("call $retain");
+            }
 
             writer.write_line("local.get $scratch_addr");
             writer.write_line("i32.load");
@@ -217,14 +242,19 @@ impl<'a> WasmGenerator<'a> {
             let return_type = function.return_type.as_ref()
                 .ok_or_else(|| Error::new(ErrorKind::Other, format!("function '{}' returns a value but has no declared return type", function.name.text)))?;
             let ret_type_str = return_type.get_type();
+            // A primitive returned as `object` is boxed (owned); otherwise consult the classifier.
+            let owns_ref = self.stores_owned_ref(expr, &ret_type_str, function)?;
             self.build_expression(expr, &ret_type_str, function, writer)?;
 
-            // Stash the return value in a scratch local so locals can be released before we
-            // hand it back; reference types are additionally retained so they survive the scope.
+            // Stash the return value in a scratch local so locals can be released before we hand
+            // it back. A borrowed value is retained so it survives the scope-exit releases; an
+            // owned value already carries the +1 the caller will take over.
             if self.is_reference_type(strip_nullable(&ret_type_str)) {
                 writer.write_line("local.set $scratch_ptr");
-                writer.write_line("local.get $scratch_ptr");
-                writer.write_line("call $retain");
+                if !owns_ref {
+                    writer.write_line("local.get $scratch_ptr");
+                    writer.write_line("call $retain");
+                }
             } else if ret_type_str == "double" {
                 writer.write_line("local.set $scratch_double");
             } else {

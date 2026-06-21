@@ -234,7 +234,15 @@ impl<'a> WasmGenerator<'a> {
                 writer.write_line("i32.add"); // ptr + offset
             }
 
+            // The struct owns its reference fields: a borrowed value is retained so it survives
+            // once the struct is freed; an owned value already carries the +1 the field takes over.
+            let retain_field = self.is_reference_type(&field_type) && !self.stores_owned_ref(expr, &field_type, function)?;
             self.build_expression(expr, &field_type, function, writer)?;
+            if retain_field {
+                writer.write_line("local.tee $scratch_ptr");
+                writer.write_line("local.get $scratch_ptr");
+                writer.write_line("call $retain");
+            }
             WasmGenerator::emit_store(&field_type, writer)?;
         }
         self.alloc_depth -= 1;
@@ -282,24 +290,31 @@ impl<'a> WasmGenerator<'a> {
                 WasmGenerator::emit_store(&ft, writer)?;
             }
 
-            // call $Struct_init(this, args...)
+            // call $Struct_init(this, args...). Owned argument temporaries are released after the
+            // call (init returns void, so nothing is on the stack to disturb).
             let param_types: Vec<String> = self.function_table.get_function(&init_name)?.parameters.clone();
-            self.alloc_depth += 1;
+            let saved_tmp = self.tmp_depth;
+            let mut owned_temps: Vec<(usize, String)> = Vec::new();
             writer.write_line(&format!("local.get {}", base)); // implicit `this`
+            self.alloc_depth += 1;
             for (i, expr) in args.iter().enumerate() {
                 let pt = param_types.get(i + 1).cloned().unwrap_or_else(|| "int".to_string());
-                self.build_expression(expr, &pt, function, writer)?;
+                self.build_call_arg(expr, &pt, function, &mut owned_temps, writer)?;
             }
             self.alloc_depth -= 1;
             writer.write_line(&format!("call ${}", init_name));
+            self.release_call_temps(&owned_temps, saved_tmp, writer);
         } else {
-            // Auto-generated constructor: store each argument into its field positionally.
-            // Reference-typed fields are retained so the struct owns a proper reference (it
-            // releases them when freed), mirroring `this.field = value` assignment semantics.
+            // Auto-generated constructor: store each argument into its field positionally. The
+            // struct owns its reference fields, so a borrowed value is retained while an owned one
+            // (constructor/literal/call result, or a boxed primitive) is taken as-is.
             self.alloc_depth += 1;
             for (i, (_, field_info)) in ordered.iter().enumerate() {
                 let ft = field_info.type_.get_type();
-                let is_ref = self.is_reference_type(&ft);
+                let retain_field = match args.get(i) {
+                    Some(expr) => self.is_reference_type(&ft) && !self.stores_owned_ref(expr, &ft, function)?,
+                    None => false,
+                };
                 writer.write_line(&format!("local.get {}", base));
                 if field_info.offset > 0 {
                     writer.write_line(&format!("i32.const {}", field_info.offset));
@@ -310,7 +325,7 @@ impl<'a> WasmGenerator<'a> {
                 } else {
                     writer.write_line("i32.const 0");
                 }
-                if is_ref {
+                if retain_field {
                     writer.write_line("local.tee $scratch_ptr");
                     writer.write_line("local.get $scratch_ptr");
                     writer.write_line("call $retain");
@@ -559,9 +574,11 @@ impl<'a> WasmGenerator<'a> {
     /// Builds an indirect call through a function-typed local variable using `call_indirect`.
     /// The variable holds an `i32` index into the module's function table.
     pub fn build_indirect_call(&mut self, var_name: &str, params_decl: &[Type], ret: &Type, args: &Vec<ExpressionNode<'a>>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        let saved_tmp = self.tmp_depth;
+        let mut owned_temps: Vec<(usize, String)> = Vec::new();
         for (i, expr) in args.iter().enumerate() {
             let pt = params_decl.get(i).map(|t| t.get_type()).unwrap_or_else(|| "int".to_string());
-            self.build_expression(expr, &pt, function, writer)?;
+            self.build_call_arg(expr, &pt, function, &mut owned_temps, writer)?;
         }
         // Push the table index held by the variable, then dispatch.
         writer.write_line(&format!("local.get ${}", var_name));
@@ -587,23 +604,24 @@ impl<'a> WasmGenerator<'a> {
         } else {
             writer.write_line(&format!("call_indirect {}", sig));
         }
+        self.release_call_temps(&owned_temps, saved_tmp, writer);
         Ok(())
     }
 
     /// Builds a function invocation
     pub fn build_function_invocation(&mut self, name: &String, parameters: &Vec<ExpressionNode<'a>>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
-        let func_info = self.function_table.get_function(name)?;
-        
+        let param_types: Vec<String> = self.function_table.get_function(name)?.parameters.clone();
+
+        let saved_tmp = self.tmp_depth;
+        let mut owned_temps: Vec<(usize, String)> = Vec::new();
         for (i, expr) in parameters.iter().enumerate() {
-            let param_type = if i < func_info.parameters.len() {
-                func_info.parameters[i].clone()
-            } else {
-                "int".to_string() // Fallback if parameter count mismatch (should be caught by semantic analysis)
-            };
-            self.build_expression(expr, &param_type, function, writer)?;
+            let param_type = param_types.get(i).cloned()
+                .unwrap_or_else(|| "int".to_string()); // Fallback if arity mismatch (caught by semantic analysis)
+            self.build_call_arg(expr, &param_type, function, &mut owned_temps, writer)?;
         }
         writer.write("call $");
         writer.write_line(name);
+        self.release_call_temps(&owned_temps, saved_tmp, writer);
         Ok(())
     }
 
@@ -652,24 +670,32 @@ impl<'a> WasmGenerator<'a> {
             }
         }
 
-        let struct_name = strip_nullable(&obj_type);
+        let struct_name = strip_nullable(&obj_type).to_string();
         let mangled_name = format!("{}_{}", struct_name, method.text);
-        let func_info = self.function_table.get_function(&mangled_name)?;
-        
-        // 1. Evaluate 'this' (the object)
+        let param_types: Vec<String> = self.function_table.get_function(&mangled_name)?.parameters.clone();
+
+        let saved_tmp = self.tmp_depth;
+        let mut owned_temps: Vec<(usize, String)> = Vec::new();
+
+        // 1. Evaluate 'this' (the object). If the receiver is itself an owned temporary (e.g. a
+        // chained call result like `makePoint().dist()`), stash it for release after the call.
+        let recv_owned = self.is_reference_type(&struct_name) && self.produces_owned_ref(obj, function);
         self.build_expression(obj, &obj_type, function, writer)?;
-        
-        // 2. Evaluate remaining parameters
-        for (i, expr) in params.iter().enumerate() {
-            let param_type = if i + 1 < func_info.parameters.len() {
-                func_info.parameters[i + 1].clone() // i+1 because 'this' is at index 0
-            } else {
-                "int".to_string() // Fallback
-            };
-            self.build_expression(expr, &param_type, function, writer)?;
+        if recv_owned {
+            let slot = self.tmp_depth.min(Self::TMP_POOL - 1);
+            self.tmp_depth += 1;
+            writer.write_line(&format!("local.tee $tmp{}", slot));
+            owned_temps.push((slot, struct_name.clone()));
         }
-        
+
+        // 2. Evaluate remaining parameters (index +1 because 'this' is at index 0).
+        for (i, expr) in params.iter().enumerate() {
+            let param_type = param_types.get(i + 1).cloned().unwrap_or_else(|| "int".to_string());
+            self.build_call_arg(expr, &param_type, function, &mut owned_temps, writer)?;
+        }
+
         writer.write_line(&format!("call ${}", mangled_name));
+        self.release_call_temps(&owned_temps, saved_tmp, writer);
         Ok(())
     }
 
@@ -708,7 +734,14 @@ impl<'a> WasmGenerator<'a> {
             writer.write_line(&format!("i32.const {}", offset));
             writer.write_line("i32.add"); // ptr + offset
 
+            // The array owns its reference elements: retain a borrowed value, take an owned one.
+            let retain_elem = self.is_reference_type(&inner_type_str) && !self.stores_owned_ref(expr, &inner_type_str, function)?;
             self.build_expression(expr, &inner_type_str, function, writer)?;
+            if retain_elem {
+                writer.write_line("local.tee $scratch_ptr");
+                writer.write_line("local.get $scratch_ptr");
+                writer.write_line("call $retain");
+            }
             WasmGenerator::emit_store(&inner_type_str, writer)?;
         }
         self.alloc_depth -= 1;
