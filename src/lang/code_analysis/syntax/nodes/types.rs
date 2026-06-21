@@ -44,6 +44,9 @@ pub enum Type {
     Double(SyntaxToken),
     String(SyntaxToken),
     Boolean(SyntaxToken),
+    /// A single character. Stored as an `i32` code point on the stack but only one byte in
+    /// memory (arrays/fields use `i32.load8_u`/`i32.store8`). A value type (not ref-counted).
+    Char(SyntaxToken),
     /// The universal top type. At runtime an `object` is an `i32` pointer to a tagged heap
     /// block: primitives are boxed, reference types are stored directly (their block carries
     /// the tag in its header).
@@ -69,6 +72,7 @@ impl Type {
             Type::Object(_) => "object".to_string(),
             Type::Void => "void".to_string(),
             Type::Boolean(_) => "bool".to_string(),
+            Type::Char(_) => "char".to_string(),
             Type::Array(inner) => format!("{}[]", inner.get_type()),
             Type::Struct(token, generic_args) => {
                 match generic_args {
@@ -110,6 +114,7 @@ impl Type {
             | Type::Double(token)
             | Type::String(token)
             | Type::Boolean(token)
+            | Type::Char(token)
             | Type::Object(token)
             | Type::Struct(token, _) => Some(token.position.clone()),
             Type::Array(inner) | Type::Nullable(inner) => inner.get_span(),
@@ -127,6 +132,7 @@ impl Type {
             Type::Object(token) => token.position.get_point_str(),
             Type::Void => "".to_string(),
             Type::Boolean(token) => token.position.get_point_str(),
+            Type::Char(token) => token.position.get_point_str(),
             Type::Array(inner) => inner.get_line_str(),
             Type::Struct(token, _) => token.position.get_point_str(),
             Type::Generic(_) => "".to_string(), // Can be improved
@@ -145,6 +151,7 @@ impl Type {
             "object" => Type::Object(token),
             "void" => Type::Void,
             "bool" => Type::Boolean(token),
+            "char" => Type::Char(token),
             _ => {
                 if token.text.ends_with("?") {
                     let base_type_str = &token.text[0..token.text.len() - 1];

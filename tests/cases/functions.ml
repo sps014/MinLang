@@ -10,7 +10,7 @@ fun add3(a: int, b: int, c: int): int {
 }
 
 fun main(): void {
-    print_int(fib(5));
-    print_int(fib(7));
-    print_int(add3(10, 20, 30));
+    println(fib(5));
+    println(fib(7));
+    println(add3(10, 20, 30));
 }

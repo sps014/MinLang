@@ -34,10 +34,10 @@ impl<'a> WasmGenerator<'a> {
             ExpressionNode::FunctionCall(n, generic_args, args) => {
                 match n.text.as_str() {
                     "print" if args.len() == 1 => self.build_print(&args[0], function, writer)?,
+                    "println" if args.len() == 1 => self.build_println(&args[0], function, writer)?,
                     "to_string" if args.len() == 1 => self.build_to_string(&args[0], function, writer)?,
                     "hash_code" if args.len() == 1 => self.build_hash_code(&args[0], function, writer)?,
                     "array_new" if args.len() == 1 => self.build_array_new(generic_args, &args[0], function, writer)?,
-                    "len" if args.len() == 1 => self.build_len(&args[0], function, writer)?,
                     _ => {
                         if let Some((params_decl, ret)) = self.function_typed_local(&n.text, function) {
                             self.build_indirect_call(&n.text, &params_decl, &ret, args, function, writer)?;
@@ -272,6 +272,8 @@ impl<'a> WasmGenerator<'a> {
             Type::Float(f) => format!("f32.const {}", f.text),
             Type::Double(d) => format!("f64.const {}", d.text),
             Type::Boolean(f) => format!("i32.const {}", if f.text == "true" { 1 } else { 0 }),
+            // A char literal's token text already holds its numeric code point.
+            Type::Char(c) => format!("i32.const {}", c.text),
             Type::String(s) => {
                 let offset = self.strings.get(&s.text)
                     .ok_or_else(|| Error::new(ErrorKind::Other, format!("string literal not interned: {}", s.text)))?;
@@ -514,7 +516,39 @@ impl<'a> WasmGenerator<'a> {
     }
 
     pub fn build_method_call(&mut self, obj: &ExpressionNode<'a>, method: &SyntaxToken, _generic_args: &Option<Vec<Type>>, params: &Vec<ExpressionNode<'a>>, _left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        // `Math.<fn>(x)`: evaluate the argument, coerce to f32, and call the host math import.
+        if let ExpressionNode::Identifier(id) = obj {
+            if id.text == "Math" {
+                if let Some(arg) = params.first() {
+                    let arg_type = self.infer_expression_type(arg, function)?;
+                    self.build_expression(arg, &arg_type, function, writer)?;
+                    match strip_nullable(&arg_type) {
+                        "int" => writer.write_line("f32.convert_i32_s"),
+                        "double" => writer.write_line("f32.demote_f64"),
+                        _ => {}
+                    }
+                }
+                writer.write_line(&format!("call ${}", method.text));
+                return Ok(());
+            }
+        }
+
         let obj_type = self.infer_expression_type(obj, function)?;
+
+        // `arr.len()` / `str.len()`: length of an array (stored count) or string (`$strlen`).
+        if method.text == "len" {
+            let base = strip_nullable(&obj_type).to_string();
+            if base.ends_with("[]") {
+                self.build_len(obj, function, writer)?;
+                return Ok(());
+            }
+            if base == "string" {
+                self.build_expression(obj, &obj_type, function, writer)?;
+                writer.write_line("call $strlen");
+                return Ok(());
+            }
+        }
+
         let struct_name = strip_nullable(&obj_type);
         let mangled_name = format!("{}_{}", struct_name, method.text);
         let func_info = self.function_table.get_function(&mangled_name)?;

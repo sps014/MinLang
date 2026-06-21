@@ -22,7 +22,7 @@ Runs the body repeatedly as long as the condition is `true`:
 ```kotlin
 let i = 0;
 while (i < 10) {
-    print(i);
+    println(i);
     i = i + 1;
 }
 ```
@@ -33,7 +33,7 @@ Three-part loop: initializer, condition, increment. All three parts are optional
 
 ```kotlin
 for (let i = 0; i < 5; i = i + 1) {
-    print(i);
+    println(i);
 }
 ```
 
@@ -46,7 +46,7 @@ Like `while`, but the body always runs at least once because the condition is ch
 ```kotlin
 let i = 0;
 do {
-    print(i);
+    println(i);
     i = i + 1;
 } while (i < 3);
 ```
@@ -58,7 +58,7 @@ Iterate the elements of an array directly with `for (let x in arr)`:
 ```kotlin
 let xs: int[] = [10, 20, 30];
 for (let value in xs) {
-    print(value);
+    println(value);
 }
 ```
 
@@ -108,7 +108,7 @@ while (true) {
     if (i >= 5) {
         break;
     }
-    print(i);
+    println(i);
     i = i + 1;
 }
 ```
@@ -120,7 +120,7 @@ for (let i = 0; i < 10; i = i + 1) {
     if (i % 2 == 0) {
         continue;   // skip even numbers
     }
-    print(i);
+    println(i);
 }
 ```
 
@@ -139,7 +139,7 @@ outer: for (let i = 0; i < 3; i = i + 1) {
         if (i == 2) {
             break outer;      // exit both loops
         }
-        print(i * 10 + j);
+        println(i * 10 + j);
     }
 }
 ```

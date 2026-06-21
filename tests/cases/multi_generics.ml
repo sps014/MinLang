@@ -6,7 +6,7 @@ struct Pair<K, V> {
     value: V;
 
     fun show() {
-        print(this.key);
+        println(this.key);
         print(this.value);
     }
 }
@@ -24,12 +24,12 @@ fun main() {
     p.show();
 
     let q = Pair<int, float> { key: 2, value: 2.5f };
-    print(q.value);
+    println(q.value);
 
     let r = Pair<int, double> { key: 3, value: 3.5d };
-    print(r.value);
+    println(r.value);
 
-    print(first<int, string>(10, "ten"));
+    println(first<int, string>(10, "ten"));
     let s = second<int, string>(10, "two\n");
     print(s);
 }

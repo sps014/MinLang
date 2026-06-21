@@ -254,6 +254,7 @@ impl<'a> Analyzer<'a> {
     fn register_functions(&mut self, node: &'a ProgramNode<'a>, diagnostics: &mut DiagnosticBag) {
         for function in node.functions.iter() {
             diagnostics.file_path = file_path_string(&function.file_path);
+            self.check_reserved_name(&function.name, "function", diagnostics);
             if function.generic_parameters.is_some() {
                 self.generic_functions.insert(function.name.text.clone(), function);
                 continue;
@@ -540,6 +541,7 @@ impl<'a> Analyzer<'a> {
     fn add_function_param_table(&mut self,function:&FunctionNode<'a>, diagnostics: &mut DiagnosticBag) -> Result<SymbolTable, ()> {
         let mut param_table=SymbolTable::new(None);
         for param in function.parameters.iter() {
+            self.check_reserved_name(&param.name, "parameter", diagnostics);
             if let Err(e) = param_table.add_symbol(param.name.text.clone(), param.type_.clone()) {
                 diagnostics.report_error(e.to_string(), Some(param.name.position.clone()));
             }
@@ -616,7 +618,7 @@ impl<'a> Analyzer<'a> {
                                    parent_function:&FunctionNode<'a>,
                                    symbol_table:&Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag)->Result<Type,()> {
         // Object-protocol builtins: accept exactly one argument of any type.
-        if matches!(name.text.as_str(), "print" | "to_string" | "hash_code") {
+        if matches!(name.text.as_str(), "print" | "println" | "to_string" | "hash_code") {
             if params.len() != 1 {
                 diagnostics.report_error(
                     format!("'{}' expects exactly 1 argument, got {}", name.text, params.len()),
@@ -654,21 +656,6 @@ impl<'a> Analyzer<'a> {
                 }
             }
             return Ok(Type::Array(Box::new(element)));
-        }
-
-        // `len(a)`: the number of slots in an array (its stored length, i.e. capacity).
-        if name.text == "len" {
-            if params.len() != 1 {
-                diagnostics.report_error(format!("'len' expects exactly 1 argument, got {}", params.len()), Some(name.position.clone()));
-            }
-            let mut arg_type = Type::Void;
-            for param in params.iter() {
-                arg_type = self.analyze_expression(param, parent_function, symbol_table, diagnostics)?;
-            }
-            if !arg_type.get_type().ends_with("[]") {
-                diagnostics.report_error(format!("'len' expects an array, got {}", arg_type.get_type()), Some(name.position.clone()));
-            }
-            return Ok(Type::Integer(synthetic_token(TokenKind::DataTypeToken, "int")));
         }
 
         let mut function_name=name.text.clone();
@@ -764,7 +751,26 @@ impl<'a> Analyzer<'a> {
         Ok(store_sig.return_type.unwrap_or(Type::Void))
     }
     fn analyze_method_call(&mut self, obj: &ExpressionNode<'a>, method: &SyntaxToken, _generic_args: &Option<Vec<Type>>, params: &Vec<ExpressionNode<'a>>, parent_function: &FunctionNode<'a>, symbol_table: &Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag) -> Result<Type, ()> {
+        // `Math.<fn>(...)`: the math namespace. `Math` is not a value, so intercept before
+        // trying to analyze it as an expression.
+        if let ExpressionNode::Identifier(id) = obj {
+            if id.text == "Math" {
+                return self.analyze_math_call(method, params, parent_function, symbol_table, diagnostics);
+            }
+        }
+
         let obj_type = self.analyze_expression(obj, parent_function, symbol_table, diagnostics)?;
+
+        // `arr.len()` / `str.len()`: built-in length method on arrays and strings.
+        if method.text == "len" {
+            let base = strip_nullable(&obj_type.get_type()).to_string();
+            if base.ends_with("[]") || base == "string" {
+                if !params.is_empty() {
+                    diagnostics.report_error(format!("'len' takes no arguments, got {}", params.len()), Some(method.position.clone()));
+                }
+                return Ok(Type::Integer(synthetic_token(TokenKind::DataTypeToken, "int")));
+            }
+        }
 
         let (base_name, generic_args) = match Self::resolve_struct_parts(&obj_type) {
             Some(parts) => parts,
@@ -817,6 +823,24 @@ impl<'a> Analyzer<'a> {
         }
 
         Ok(store_sig.return_type.unwrap_or(Type::Void))
+    }
+
+    /// `Math.sin/cos/abs/sqrt(x)`: each takes one numeric argument and yields a `float`.
+    fn analyze_math_call(&mut self, method: &SyntaxToken, params: &Vec<ExpressionNode<'a>>, parent_function: &FunctionNode<'a>, symbol_table: &Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag) -> Result<Type, ()> {
+        if !matches!(method.text.as_str(), "sin" | "cos" | "abs" | "sqrt") {
+            diagnostics.report_error(format!("Unknown math function 'Math.{}'", method.text), Some(method.position.clone()));
+            return Ok(Type::Float(synthetic_token(TokenKind::DataTypeToken, "float")));
+        }
+        if params.len() != 1 {
+            diagnostics.report_error(format!("'Math.{}' expects exactly 1 argument, got {}", method.text, params.len()), Some(method.position.clone()));
+        }
+        for param in params.iter() {
+            let pt = self.analyze_expression(param, parent_function, symbol_table, diagnostics)?;
+            if !matches!(pt.get_type().as_str(), "int" | "float" | "double") {
+                diagnostics.report_error(format!("'Math.{}' expects a numeric argument, got {}", method.text, pt.get_type()), param.position());
+            }
+        }
+        Ok(Type::Float(synthetic_token(TokenKind::DataTypeToken, "float")))
     }
 
     fn analyze_break(&mut self,label:&Option<String>,parent_function:&FunctionNode<'a>,has_parent_while:bool, diagnostics: &mut DiagnosticBag)->Result<(),()> {
@@ -966,8 +990,26 @@ impl<'a> Analyzer<'a> {
         Ok(())
     }
     ///return type is returned currently int and float supported
+    /// Reports a clear diagnostic when a reserved word (a builtin name or primitive type name) is
+    /// used where a user-chosen identifier is expected (`role` is e.g. "variable"/"function").
+    fn check_reserved_name(&self, token: &SyntaxToken, role: &str, diagnostics: &mut DiagnosticBag) {
+        // bare callable, so it is a legal ordinary identifier.
+        const RESERVED_NAMES: &[&str] = &[
+            "print", "println", "to_string", "hash_code", "array_new", "Math",
+            "int", "float", "double", "string", "bool", "char", "object", "void",
+            "true", "false", "null",
+        ];
+        if RESERVED_NAMES.contains(&token.text.as_str()) {
+            diagnostics.report_error(
+                format!("'{}' is a reserved word and cannot be used as a {} name", token.text, role),
+                Some(token.position.clone()),
+            );
+        }
+    }
+
     fn analyze_declaration(&mut self,left:&SyntaxToken, type_annotation: &Option<Type>, right:&ExpressionNode<'a>, is_const: bool, parent_function:&FunctionNode<'a>,
                            symbol_table:&Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag)->Result<(),()> {
+        self.check_reserved_name(left, "variable", diagnostics);
         // Empty array literals carry no element type, so the declaration must supply one via an
         // array-typed annotation (e.g. `let xs: int[] = [];`).
         if let ExpressionNode::ArrayLiteral(elements) = right {
@@ -1289,7 +1331,10 @@ impl<'a> Analyzer<'a> {
                    (target_type_str == "double" && expr_type_str == "int") ||
                    (target_type_str == "int" && expr_type_str == "double") ||
                    (target_type_str == "float" && expr_type_str == "double") ||
-                   (target_type_str == "double" && expr_type_str == "float") {
+                   (target_type_str == "double" && expr_type_str == "float") ||
+                   // `char` is a code point: allow lossless conversion to/from `int`.
+                   (target_type_str == "char" && expr_type_str == "int") ||
+                   (target_type_str == "int" && expr_type_str == "char") {
                     Ok(target_type.clone())
                 } else if target_type_str == expr_type_str {
                     Ok(target_type.clone())

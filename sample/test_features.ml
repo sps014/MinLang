@@ -14,7 +14,7 @@ fun string_test(): string {
 }
 
 fun main(): void {
-    print_int(loop_test());
+    println(loop_test());
     print(string_test());
     print("\n");
 }

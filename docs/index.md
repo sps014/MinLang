@@ -7,9 +7,8 @@ fun greet(name: string): string {
     return "Hello, " + name;
 }
 
-fun main(): void {
-    print(greet("world"));
-    print("\n");
+fun main() {
+    println(greet("world"));
 }
 ```
 

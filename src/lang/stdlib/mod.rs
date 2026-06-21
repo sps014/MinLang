@@ -21,13 +21,15 @@ impl StdlibFunction {
             "double" => Type::Double(token),
             "string" => Type::String(token),
             "bool" => Type::Boolean(token),
+            "char" => Type::Char(token),
             _ => Type::Void,
         }
     }
 
-    pub fn get_all() -> Vec<StdlibFunction> {
+    /// Host functions that are always imported into every module but are NOT user-callable.
+    /// The `print`/`println` builtins lower to these; users never name them directly.
+    pub fn host_imports() -> Vec<StdlibFunction> {
         vec![
-            // I/O
             StdlibFunction {
                 name: "print_string".to_string(),
                 parameters: vec!["string".to_string()],
@@ -48,8 +50,12 @@ impl StdlibFunction {
                 parameters: vec!["double".to_string()],
                 return_type: None,
             },
-            
-            // Math
+            StdlibFunction {
+                name: "print_char".to_string(),
+                parameters: vec!["char".to_string()],
+                return_type: None,
+            },
+            // Math host functions, reachable only through the `Math.*` namespace.
             StdlibFunction {
                 name: "sin".to_string(),
                 parameters: vec!["float".to_string()],
@@ -70,7 +76,13 @@ impl StdlibFunction {
                 parameters: vec!["float".to_string()],
                 return_type: Some(Self::create_type("float")),
             },
-            
+        ]
+    }
+
+    /// User-callable stdlib functions registered in the function table. `concat`/`strlen`/
+    /// `debug_get_free_list_head` are compiled inline; the math functions are real imports.
+    pub fn get_all() -> Vec<StdlibFunction> {
+        vec![
             // String
             StdlibFunction {
                 name: "concat".to_string(),

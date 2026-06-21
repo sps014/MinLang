@@ -77,19 +77,23 @@ fn run_test_case(ml_file: &Path) {
     let env_clone = env.clone();
     linker.func_wrap("env", "print_int", move |v: i32| {
         env_clone.print(&v.to_string());
-        env_clone.print("\n");
     }).unwrap();
 
     let env_clone = env.clone();
     linker.func_wrap("env", "print_float", move |v: f32| {
         env_clone.print(&v.to_string());
-        env_clone.print("\n");
     }).unwrap();
 
     let env_clone = env.clone();
     linker.func_wrap("env", "print_double", move |v: f64| {
         env_clone.print(&v.to_string());
-        env_clone.print("\n");
+    }).unwrap();
+
+    let env_clone = env.clone();
+    linker.func_wrap("env", "print_char", move |v: i32| {
+        if let Some(c) = char::from_u32(v as u32) {
+            env_clone.print(&c.to_string());
+        }
     }).unwrap();
 
     let env_clone = env.clone();

@@ -4,11 +4,11 @@ struct Greeter {
     name: string;
 
     fun greet() {
-        print_string("hello from method body\n");
+        print("hello from method body\n");
     }
 
     fun say(msg: string) {
-        print_string(msg);
+        print(msg);
     }
 }
 

@@ -15,18 +15,18 @@ fun describe(c: Color): string {
 
 fun main(): void {
     let c: Color = Color.Green;
-    print_int(c);
+    println(c);
 
-    print_string(describe(c));
-    print_string("\n");
+    print(describe(c));
+    print("\n");
 
-    print_string(describe(Color.Blue));
-    print_string("\n");
+    print(describe(Color.Blue));
+    print("\n");
 
     let s: Status = Status.Inactive;
-    print_int(s);
+    println(s);
 
     if (c == Color.Green) {
-        print_int(100);
+        println(100);
     }
 }

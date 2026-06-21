@@ -1,18 +1,18 @@
 fun side(): bool {
-    print_int(99);
+    println(99);
     return true;
 }
 
 fun main(): void {
     let f: bool = false;
     if (f && side()) {
-        print_int(1);
+        println(1);
     }
 
     let t: bool = true;
     if (t || side()) {
-        print_int(2);
+        println(2);
     }
 
-    print_int(0);
+    println(0);
 }

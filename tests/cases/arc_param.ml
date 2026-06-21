@@ -19,6 +19,6 @@ fun main() {
     let b = Box { value: 21 };
     let total = read_twice(b);
     // `b` must still be valid here after being passed through two function calls.
-    print_int(b.value);
-    print_int(total);
+    println(b.value);
+    println(total);
 }

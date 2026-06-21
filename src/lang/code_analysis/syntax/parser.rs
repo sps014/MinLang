@@ -969,12 +969,13 @@ impl<'a, 'b> Parser<'a, 'b>
         }
         else if self.current_token().kind==TokenKind::CharToken
         {
-            // A char literal `'a'` is an `int` holding the (ASCII/code point) value. Escapes like
-            // '\n', '\t', '\\', '\'' and '\0' are supported.
+            // A char literal `'a'` is a `char` whose backing token text is the (ASCII/code point)
+            // value, so codegen can emit `i32.const <value>`. Escapes like '\n', '\t', '\\', '\''
+            // and '\0' are supported.
             let tok = self.next_token();
             let value = Self::char_literal_value(&tok.text);
-            let int_token = SyntaxToken::new(TokenKind::NumberToken, tok.position.clone(), value.to_string());
-            return Ok(ExpressionNode::Literal(Type::Integer(int_token)));
+            let char_token = SyntaxToken::new(TokenKind::CharToken, tok.position.clone(), value.to_string());
+            return Ok(ExpressionNode::Literal(Type::Char(char_token)));
         }
 
         let cur = self.current_token();

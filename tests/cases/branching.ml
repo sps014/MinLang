@@ -5,26 +5,26 @@ fun main(): void {
     if (x > 5 ) {
         if (x < 15 ) {
             if (x == 10 ) {
-                print_int(1);
+                println(1);
             } else {
-                print_int(0);
+                println(0);
             }
         } else {
-            print_int(0);
+            println(0);
         }
     } else {
-        print_int(0);
+        println(0);
     }
     
     // Else if chains
     if (x < 5 ) {
-        print_int(0);
+        println(0);
     } else if (x == 10 ) {
-        print_int(2);
+        println(2);
     } else if (x > 10 ) {
-        print_int(0);
+        println(0);
     } else {
-        print_int(0);
+        println(0);
     }
     
     // While loop with break
@@ -33,7 +33,7 @@ fun main(): void {
         if (i == 3 ) {
             break;
         }
-        print_int(i);
+        println(i);
         i = i + 1;
     }
     
@@ -45,13 +45,13 @@ fun main(): void {
         if (j == 3 ) {
             continue;
         }
-        print_int(j);
+        println(j);
     }
     
     // Nested loops
     for (let a = 0; a < 2; a = a + 1 ) {
         for (let b = 0; b < 2; b = b + 1 ) {
-            print_int(a * 10 + b);
+            println(a * 10 + b);
         }
     }
 }

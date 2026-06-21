@@ -10,7 +10,19 @@ fun add(a: int, b: int): int {
 
 - `fun` keyword, then the name.
 - Parameters are `name: type` pairs separated by commas.
-- `: ReturnType` after the parameter list. Use `void` when the function returns nothing.
+- `: ReturnType` after the parameter list.
+
+The return type is optional for functions that return nothing. These two are equivalent:
+
+```kotlin
+fun greet() {
+    println("hi");
+}
+
+fun greet(): void {
+    println("hi");
+}
+```
 
 ## Calling a function
 
@@ -52,10 +64,9 @@ fun identity<T>(value: T): T {
     return value;
 }
 
-fun main(): void {
-    print(identity<int>(42));
-    print(identity<string>("hello"));
-    print("\n");
+fun main() {
+    println(identity<int>(42));
+    println(identity<string>("hello"));
 }
 ```
 
@@ -82,14 +93,14 @@ fun apply(f: fun(int): int, value: int): int {
     return f(value);
 }
 
-fun main(): void {
+fun main() {
     let g: fun(int): int = twice;
-    print_int(g(5));            // 10
-    print_int(apply(twice, 8)); // 16
+    println(g(5));            // 10
+    println(apply(twice, 8)); // 16
 }
 ```
 
-Under the hood, function values are indices into a WebAssembly function table and calls through them lower to `call_indirect`. Closures (capturing surrounding variables) are not yet supported.
+Closures (capturing surrounding variables) are not yet supported.
 
 ## Exported functions
 
@@ -105,4 +116,14 @@ Exported functions cannot expose structs that are not themselves exported.
 
 ## Entry point
 
-The runtime calls `fun main(): void` to start the program. Every runnable MinLang program needs one.
+The runtime calls `main` to start the program. Every runnable MinLang program needs one. The return type can be omitted:
+
+```kotlin
+fun main() {
+    println("hello");
+}
+```
+
+## Imports
+
+Split a program across files with `import`. See [Imports](imports.md).

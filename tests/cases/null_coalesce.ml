@@ -1,8 +1,8 @@
 fun main(): void {
     let missing: string? = null;
-    print_string(missing ?? "fallback");
-    print_string("\n");
+    print(missing ?? "fallback");
+    print("\n");
 
     let present: string? = "hello";
-    print_string(present ?? "fallback");
+    print(present ?? "fallback");
 }

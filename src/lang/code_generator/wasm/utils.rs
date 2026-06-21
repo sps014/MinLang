@@ -34,8 +34,17 @@ impl<'a> WasmGenerator<'a> {
     /// Returns true if the method invoked as `obj.method(...)` yields a non-void value
     /// (used to decide whether a statement-level invocation must `drop` the result).
     pub fn method_returns_value(&self, obj: &crate::lang::code_analysis::syntax::nodes::ExpressionNode<'a>, method: &crate::lang::code_analysis::token::syntax_token::SyntaxToken, function: &FunctionNode<'a>) -> Result<bool, Error> {
+        // `Math.<fn>(...)` always yields a float.
+        if let crate::lang::code_analysis::syntax::nodes::ExpressionNode::Identifier(id) = obj {
+            if id.text == "Math" {
+                return Ok(true);
+            }
+        }
         let obj_type = self.infer_expression_type(obj, function)?;
         let struct_name = strip_nullable(&obj_type);
+        if method.text == "len" && (struct_name.ends_with("[]") || struct_name == "string") {
+            return Ok(true);
+        }
         let mangled_name = format!("{}_{}", struct_name, method.text);
         let returns_value = self.function_table.get_function(&mangled_name)
             .ok()
@@ -49,7 +58,7 @@ impl<'a> WasmGenerator<'a> {
     /// Pointers (arrays, structs, strings) and `int`/`float` are 4 bytes.
     pub fn element_size_of(type_name: &str) -> usize {
         match type_name {
-            "bool" => 1,
+            "bool" | "char" => 1,
             "double" => 8,
             _ => 4,
         }
@@ -59,7 +68,7 @@ impl<'a> WasmGenerator<'a> {
     /// (address and value must already be pushed).
     pub fn emit_store(type_name: &str, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let instruction = match WasmGenerator::get_wasm_type_from(type_name.to_string())?.as_str() {
-            _ if type_name == "bool" => "i32.store8",
+            _ if type_name == "bool" || type_name == "char" => "i32.store8",
             "f64" => "f64.store",
             "f32" => "f32.store",
             _ => "i32.store",
@@ -72,7 +81,7 @@ impl<'a> WasmGenerator<'a> {
     /// (the address must already be on the stack).
     pub fn emit_load(type_name: &str, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let instruction = match WasmGenerator::get_wasm_type_from(type_name.to_string())?.as_str() {
-            _ if type_name == "bool" => "i32.load8_u",
+            _ if type_name == "bool" || type_name == "char" => "i32.load8_u",
             "f64" => "f64.load",
             "f32" => "f32.load",
             _ => "i32.load",
@@ -124,6 +133,7 @@ impl<'a> WasmGenerator<'a> {
             "float" => "f32".to_string(),
             "double" => "f64".to_string(),
             "bool" => "i32".to_string(),
+            "char" => "i32".to_string(),
             "string" => "i32".to_string(),
             "void" => "".to_string(),
             _ => {
@@ -229,8 +239,7 @@ impl<'a> WasmGenerator<'a> {
                 match name.text.as_str() {
                     "to_string" => return Ok("string".to_string()),
                     "hash_code" => return Ok("int".to_string()),
-                    "print" => return Ok("void".to_string()),
-                    "len" => return Ok("int".to_string()),
+                    "print" | "println" => return Ok("void".to_string()),
                     "array_new" => {
                         let element = generic_args.as_ref()
                             .and_then(|g| g.first())
@@ -305,7 +314,9 @@ impl<'a> WasmGenerator<'a> {
                     }
                 }
                 let obj_type = self.infer_expression_type(obj, function)?;
-                if let Some(struct_info) = self.struct_table.get_struct(&obj_type) {
+                // A field may be accessed through a nullable handle (`node.value` where
+                // `node: Node?`); resolve the underlying struct layout.
+                if let Some(struct_info) = self.struct_table.get_struct(strip_nullable(&obj_type)) {
                     if let Some(field_info) = struct_info.fields.get(&member.text) {
                         return Ok(field_info.type_.get_type());
                     }
@@ -315,8 +326,17 @@ impl<'a> WasmGenerator<'a> {
             ExpressionNode::IsExpression(_, _) => Ok("bool".to_string()),
             ExpressionNode::Ternary(_, then_e, _) => self.infer_expression_type(then_e, function),
             ExpressionNode::MethodCall(obj, method, _, _) => {
+                if let ExpressionNode::Identifier(id) = obj {
+                    if id.text == "Math" {
+                        return Ok("float".to_string());
+                    }
+                }
                 let obj_type = self.infer_expression_type(obj, function)?;
                 let struct_name = strip_nullable(&obj_type);
+                // `arr.len()` / `str.len()` always yield int.
+                if method.text == "len" && (struct_name.ends_with("[]") || struct_name == "string") {
+                    return Ok("int".to_string());
+                }
                 let mangled_name = format!("{}_{}", struct_name, method.text);
                 if let Ok(func_info) = self.function_table.get_function(&mangled_name) {
                     if let Some(ret) = &func_info.return_type {

@@ -1,7 +1,7 @@
 fun main(): void {
     let xs: int[] = [];
-    print_int(len(xs));
+    println(xs.len());
 
     let ys: string[] = [];
-    print_int(len(ys));
+    println(ys.len());
 }

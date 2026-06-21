@@ -8,6 +8,7 @@
 | `float`  | 32-bit floating point              | `3.14f`, `1.0`   |
 | `double` | 64-bit floating point              | `3.14d`, `1.0d`  |
 | `bool`   | Boolean (`true` or `false`)        | `true`           |
+| `char`   | A single character (code point)    | `'A'`, `'\n'`    |
 | `string` | UTF-8 text, heap allocated         | `"hello"`        |
 | `void`   | No value — only valid as a return type | —            |
 
@@ -27,7 +28,7 @@ let first = nums[0];   // 10
 nums[1] = 99;
 ```
 
-Arrays are fixed-size once created from a literal. For a growable list, use [`List<T>`](../stdlib/collections.md).
+Arrays are fixed-size once created from a literal. For a growable list, use [`List<T>`](../stdlib/list.md).
 
 ## Nullable types
 
@@ -38,18 +39,28 @@ let node: Node? = null;
 node = Node { value: 5, next: null };
 ```
 
-Primitive types (`int`, `float`, `double`, `bool`) cannot be nullable.
+Primitive types (`int`, `float`, `double`, `bool`, `char`) cannot be nullable.
 
 The null-coalescing operator `??` provides a fallback for nullable values (see [operators](operators.md)).
 
-## Char literals
+## char
 
-A character literal in single quotes is an `int` holding the character's code point. Common escapes (`'\n'`, `'\t'`, `'\r'`, `'\0'`, `'\\'`, `'\''`) are supported:
+`char` is a dedicated single-character type. A character literal is written in single quotes, and common escapes (`'\n'`, `'\t'`, `'\r'`, `'\0'`, `'\\'`, `'\''`) are supported. Each `char` occupies one byte in memory (in arrays and struct fields), making `char[]` a compact byte/character buffer:
 
 ```kotlin
-let a: int = 'A';        // 65
-let newline: int = '\n'; // 10
-let next: int = 'A' + 1; // 66
+let a: char = 'A';
+let newline: char = '\n';
+print(a);                  // prints "A"
+
+let letters: char[] = ['h', 'i'];
+print(letters[0]);         // prints "h"
+```
+
+A `char` and an `int` convert losslessly via a cast (a `char` is a code point):
+
+```kotlin
+let code: int = (int)a;       // 65
+let next: char = (char)(code + 1);  // 'B'
 ```
 
 ## Enums
@@ -61,11 +72,11 @@ enum Color { Red, Green, Blue }          // 0, 1, 2
 enum Status { Active = 10, Inactive }    // 10, 11
 ```
 
-Access a member with `Enum.Member`. Enum values are integers at runtime, so they interoperate with `int` (e.g. they can be passed to `print_int`) and work as [`switch`](control-flow.md#switch-over-enums) subjects and labels:
+Access a member with `Enum.Member`. Enum values are integers at runtime, so they interoperate with `int` and work as [`switch`](control-flow.md#switch-over-enums) subjects and labels:
 
 ```kotlin
 let c: Color = Color.Green;
-print_int(c);            // 1
+println(c);              // 1
 ```
 
 ## Type aliases
@@ -102,4 +113,4 @@ let o: object = n;       // boxing — int stored as object
 let unboxed = (int)o;    // unboxing — traps if wrong type at runtime
 ```
 
-Supported conversions: `int ↔ float`, `int ↔ double`, `float ↔ double`, any type ↔ `object`.
+Supported conversions: `int ↔ float`, `int ↔ double`, `float ↔ double`, `int ↔ char`, any type ↔ `object`.

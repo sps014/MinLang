@@ -19,8 +19,8 @@ The binary ends up at `target/release/min_lang`. You can run it directly from th
 Create a file called `hello.ml`:
 
 ```kotlin
-fun main(): void {
-    print("Hello, world!\n");
+fun main() {
+    println("Hello, world!");
 }
 ```
 
@@ -56,10 +56,10 @@ fun factorial(n: int): int {
     return n * factorial(n - 1);
 }
 
-fun main(): void {
+fun main() {
     let i = 1;
     while (i <= 10) {
-        print(factorial(i));
+        println(factorial(i));
         i = i + 1;
     }
 }
@@ -69,7 +69,8 @@ Things to notice:
 
 - `fun` declares a function. The return type comes after `:`.
 - `let` declares a local variable. The type is inferred from the initializer.
-- `print` works on any type — int, float, string, bool, structs.
+- `print` writes a value with no newline; `println` appends one. Both work on any type — int, float, string, bool, char, structs.
+- The return type is optional when a function returns nothing (`fun main()`).
 - Conditions need parentheses: `if (n <= 1)`, not `if n <= 1`.
 
 ## Next steps
@@ -77,4 +78,4 @@ Things to notice:
 - [Variables](language/variables.md) — declaration, inference, and assignment rules.
 - [Types](language/types.md) — the full type system including nullable and arrays.
 - [Structs](language/structs.md) — define your own data types with methods.
-- [Collections](stdlib/collections.md) — `List<T>` and `Map<K, V>`.
+- [List](stdlib/list.md) and [Map](stdlib/map.md) — the standard collections.

@@ -19,11 +19,11 @@ struct GenericBox<T> {
 
     fun print_val() {
         if (this.val is int) {
-            print_int(this.val);
+            println(this.val);
         } else if (this.val is float) {
-            print_float(this.val);
+            println(this.val);
         } else if (this.val is string) {
-            print_string(this.val);
+            print(this.val);
         }
     }
 
@@ -36,7 +36,7 @@ fun main() {
     let c = Counter { count: 0 };
     c.increment();
     c.add(4);
-    print(c.get());
+    println(c.get());
 
     let int_box = GenericBox<int> { val: 42 };
     int_box.print_val();

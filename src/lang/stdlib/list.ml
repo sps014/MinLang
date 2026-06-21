@@ -1,0 +1,106 @@
+// MinLang standard List<T>, auto-imported into every program.
+//
+// A dynamic array backed by a reference-counted buffer that grows on demand. It is
+// monomorphized per concrete element type, so `List<int>` compiles to dedicated,
+// allocation-free-dispatch WASM (no boxing, no virtual calls).
+//
+//   let xs = List<int>();
+
+struct List<T> {
+    items: T[];
+    count: int;
+
+    // Number of elements currently stored.
+    fun size(): int {
+        return this.count;
+    }
+
+    // Doubles the backing buffer, copying existing elements across.
+    fun grow(): void {
+        let old_cap = this.items.len();
+        let new_cap = old_cap * 2;
+        if (new_cap < 4) {
+            new_cap = 4;
+        }
+        let bigger = array_new<T>(new_cap);
+        let i = 0;
+        while (i < this.count) {
+            bigger[i] = this.items[i];
+            i = i + 1;
+        }
+        this.items = bigger;
+    }
+
+    // Appends a value to the end, growing if necessary.
+    fun push(value: T): void {
+        if (this.count == this.items.len()) {
+            this.grow();
+        }
+        this.items[this.count] = value;
+        this.count = this.count + 1;
+    }
+
+    // Returns the element at `index` (no bounds checking).
+    fun get(index: int): T {
+        return this.items[index];
+    }
+
+    // Overwrites the element at `index`.
+    fun set(index: int, value: T): void {
+        this.items[index] = value;
+    }
+
+    // Removes and returns the last element.
+    fun pop(): T {
+        let last = this.items[this.count - 1];
+        this.count = this.count - 1;
+        return last;
+    }
+
+    // True if `value` is present (uses value equality, including string contents).
+    fun contains(value: T): bool {
+        let i = 0;
+        let found = false;
+        while (i < this.count) {
+            if (this.items[i] == value) {
+                found = true;
+            }
+            i = i + 1;
+        }
+        return found;
+    }
+
+    // Index of the first matching element, or -1.
+    fun index_of(value: T): int {
+        let i = 0;
+        let result = -1;
+        while (i < this.count) {
+            if (result < 0) {
+                if (this.items[i] == value) {
+                    result = i;
+                }
+            }
+            i = i + 1;
+        }
+        return result;
+    }
+
+    // Logically empties the list.
+    fun clear(): void {
+        this.count = 0;
+    }
+
+    // Removes the element at `index`, shifting later elements left.
+    fun remove_at(index: int): void {
+        let i = index;
+        while (i < this.count - 1) {
+            this.items[i] = this.items[i + 1];
+            i = i + 1;
+        }
+        this.count = this.count - 1;
+    }
+}
+
+fun List<T>(): List<T> {
+    return List<T> { items: array_new<T>(8), count: 0 };
+}

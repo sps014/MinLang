@@ -21,8 +21,8 @@ fun main() {
     
     let final_free = debug_get_free_list_head();
     if (initial_free == final_free) {
-        print_string("Memory perfectly reclaimed!");
+        print("Memory perfectly reclaimed!");
     } else {
-        print_string("Memory leak detected!");
+        print("Memory leak detected!");
     }
 }

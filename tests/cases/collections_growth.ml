@@ -5,9 +5,9 @@ fun main(): void {
         xs.push(i * 2);
         i = i + 1;
     }
-    print(xs.size());
-    print(xs.get(0));
-    print(xs.get(99));
+    println(xs.size());
+    println(xs.get(0));
+    println(xs.get(99));
 
     let sum = 0;
     let j = 0;
@@ -15,7 +15,7 @@ fun main(): void {
         sum = sum + xs.get(j);
         j = j + 1;
     }
-    print(sum);
+    println(sum);
 
     let words = List<string>();
     let k = 0;
@@ -23,7 +23,7 @@ fun main(): void {
         words.push("x");
         k = k + 1;
     }
-    print(words.size());
+    println(words.size());
     print(words.get(19));
     print("\n");
     print(words.contains("x"));
@@ -37,7 +37,7 @@ fun main(): void {
         squares.put(n, n * n);
         n = n + 1;
     }
-    print(squares.size());
-    print(squares.get(12));
-    print(squares.get(63));
+    println(squares.size());
+    println(squares.get(12));
+    println(squares.get(63));
 }

@@ -182,16 +182,16 @@ fn test_parse_const_and_labeled_break() {
 
 #[test]
 fn test_parse_char_literal() {
-    let code = "fun test(): void { let c: int = 'A'; }";
+    let code = "fun test(): void { let c: char = 'A'; }";
     let arena = bumpalo::Bump::new();
     let (program, diagnostics) = parse_code(code, &arena);
 
     assert_eq!(diagnostics.has_errors(), false);
     let func = &program.functions[0];
-    if let StatementNode::Declaration(_, _, ExpressionNode::Literal(Type::Integer(t)), _) = &func.body[0] {
+    if let StatementNode::Declaration(_, _, ExpressionNode::Literal(Type::Char(t)), _) = &func.body[0] {
         assert_eq!(t.text, "65");
     } else {
-        panic!("Expected char literal lowered to integer 65");
+        panic!("Expected char literal with code point 65");
     }
 }
 

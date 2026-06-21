@@ -23,12 +23,12 @@ fun main() {
     let p = Point { x: 3, y: 7 };
     print(to_string(p));
     print("\n");
-    print(hash_code(p));
+    println(hash_code(p));
 
     let n = Named { id: 5, label: "hello" };
     print(to_string(n));
     print("\n");
-    print(hash_code(n));
+    println(hash_code(n));
 
     let o: object = p;
     print(to_string(o));

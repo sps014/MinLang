@@ -2,22 +2,22 @@ fun main(): void {
     let x = 10;
     
     if (x > 5 ) {
-        print_int(1);
+        println(1);
     } else {
-        print_int(0);
+        println(0);
     }
     
     if (x < 5 ) {
-        print_int(0);
+        println(0);
     } else if (x == 10 ) {
-        print_int(2);
+        println(2);
     } else {
-        print_int(0);
+        println(0);
     }
     
     let i = 0;
     while (i < 3 ) {
-        print_int(i);
+        println(i);
         i = i + 1;
     }
     
@@ -25,6 +25,6 @@ fun main(): void {
         if (j == 1 ) {
             continue;
         }
-        print_int(j);
+        println(j);
     }
 }

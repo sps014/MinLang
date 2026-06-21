@@ -31,7 +31,7 @@ fun make_list(): int[] {
 
 fun main(): void {
     let result = make_list();   // ref_count = 1
-    print(result[0]);
+    println(result[0]);
 }                               // result goes out of scope -> ref_count 0 -> freed
 ```
 

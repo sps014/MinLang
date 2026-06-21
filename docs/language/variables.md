@@ -47,8 +47,7 @@ fun main(): void {
     let a = 10;
     {
         let b = 20;        // b is only alive here
-        print(a + b);
-        print("\n");
+        println(a + b);
     }
     // b is gone here; a is still fine
 }

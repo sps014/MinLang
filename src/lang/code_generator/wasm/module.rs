@@ -18,8 +18,12 @@ impl<'a> WasmGenerator<'a> {
         writer.write_line("(module");
         writer.indent();
         
-        // Import stdlib functions
-        for std_func in crate::lang::stdlib::StdlibFunction::get_all() {
+        // Import the host I/O functions (print_*) plus the importable stdlib functions.
+        // `concat`/`strlen`/`debug_get_free_list_head` are compiled inline, not imported.
+        let imports = crate::lang::stdlib::StdlibFunction::host_imports()
+            .into_iter()
+            .chain(crate::lang::stdlib::StdlibFunction::get_all());
+        for std_func in imports {
             if std_func.name == "concat" || std_func.name == "strlen" || std_func.name == "debug_get_free_list_head" { continue; } // handled internally
             
             let mut params_str = String::new();

@@ -5,13 +5,13 @@ fun main(): void {
     for (let x in arr) {
         sum += x;
     }
-    print_int(sum);
+    println(sum);
 
     let words: string[] = ["a", "b", "c"];
     for (let w in words) {
-        print_string(w);
+        print(w);
     }
-    print_string("\n");
+    print("\n");
 
     let count: int = 0;
     for (let y in arr) {
@@ -19,7 +19,7 @@ fun main(): void {
         if (y == 30) { break; }
         count += 1;
     }
-    print_int(count);
+    println(count);
 
     let total: int = 0;
     for (let a in arr) {
@@ -27,5 +27,5 @@ fun main(): void {
             total += 1;
         }
     }
-    print_int(total);
+    println(total);
 }

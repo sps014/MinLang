@@ -1,10 +1,10 @@
 fun Test<T>(data: T) {
     if (data is int) {
-        print_int(data);
+        println(data);
     } else if (data is float) {
-        print_float(data);
+        println(data);
     } else if (data is string) {
-        print_string(data);
+        print(data);
     }
 }
 

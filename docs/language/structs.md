@@ -26,9 +26,9 @@ Fields can be provided in any order.
 Use `.`:
 
 ```kotlin
-print(p.x);      // 3
+println(p.x);      // 3
 p.x = 10;
-print(p.x);      // 10
+println(p.x);      // 10
 ```
 
 ## Methods
@@ -52,7 +52,7 @@ fun main(): void {
     let c = Counter { count: 0 };
     c.increment();
     c.increment();
-    print(c.get());   // 2
+    println(c.get());   // 2
 }
 ```
 

@@ -143,36 +143,43 @@ impl Compiler {
         diagnostics: &mut DiagnosticBag,
         file_contents: &mut std::collections::HashMap<String, String>,
     ) -> Result<(), Error> {
-        const PRELUDE_SRC: &str = include_str!("stdlib/collections.ml");
-        let prelude_name = "<std>/collections.ml".to_string();
-        file_contents.insert(prelude_name.clone(), PRELUDE_SRC.to_string());
+        // Each standard-collection type lives in its own prelude file.
+        const PRELUDE_FILES: [(&str, &str); 2] = [
+            ("<std>/list.ml", include_str!("stdlib/list.ml")),
+            ("<std>/map.ml", include_str!("stdlib/map.ml")),
+        ];
 
-        let mut prelude_diagnostics = DiagnosticBag::new(Some(prelude_name.clone()));
-        let lexer = Lexer::new(PRELUDE_SRC.to_string());
-        let mut parser = Parser::new(lexer, arena, &mut prelude_diagnostics);
-        let ast = match parser.parse() {
-            Ok(ast) => ast,
-            Err(e) => {
-                diagnostics.extend(&prelude_diagnostics);
-                return Err(e);
-            }
-        };
-        diagnostics.extend(&prelude_diagnostics);
+        for (prelude_name, prelude_src) in PRELUDE_FILES {
+            let prelude_name = prelude_name.to_string();
+            file_contents.insert(prelude_name.clone(), prelude_src.to_string());
 
-        let program = ast.get_root();
-        let file_tag: std::rc::Rc<str> = std::rc::Rc::from(prelude_name.as_str());
-        for function in program.functions.iter().cloned() {
-            let mut function = function;
-            function.file_path = Some(file_tag.clone());
-            all_functions.push(function);
-        }
-        for struct_decl in program.structs.iter().cloned() {
-            let mut struct_decl = struct_decl;
-            struct_decl.file_path = Some(file_tag.clone());
-            for method in struct_decl.methods.iter_mut() {
-                method.file_path = Some(file_tag.clone());
+            let mut prelude_diagnostics = DiagnosticBag::new(Some(prelude_name.clone()));
+            let lexer = Lexer::new(prelude_src.to_string());
+            let mut parser = Parser::new(lexer, arena, &mut prelude_diagnostics);
+            let ast = match parser.parse() {
+                Ok(ast) => ast,
+                Err(e) => {
+                    diagnostics.extend(&prelude_diagnostics);
+                    return Err(e);
+                }
+            };
+            diagnostics.extend(&prelude_diagnostics);
+
+            let program = ast.get_root();
+            let file_tag: std::rc::Rc<str> = std::rc::Rc::from(prelude_name.as_str());
+            for function in program.functions.iter().cloned() {
+                let mut function = function;
+                function.file_path = Some(file_tag.clone());
+                all_functions.push(function);
             }
-            all_structs.push(struct_decl);
+            for struct_decl in program.structs.iter().cloned() {
+                let mut struct_decl = struct_decl;
+                struct_decl.file_path = Some(file_tag.clone());
+                for method in struct_decl.methods.iter_mut() {
+                    method.file_path = Some(file_tag.clone());
+                }
+                all_structs.push(struct_decl);
+            }
         }
 
         Ok(())

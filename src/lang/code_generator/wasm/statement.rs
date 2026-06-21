@@ -39,6 +39,7 @@ impl<'a> WasmGenerator<'a> {
             StatementNode::FunctionInvocation(n, generic_args, p) => {
                 match n.text.as_str() {
                     "print" if p.len() == 1 => self.build_print(&p[0], function, writer)?,
+                    "println" if p.len() == 1 => self.build_println(&p[0], function, writer)?,
                     "to_string" if p.len() == 1 => {
                         self.build_to_string(&p[0], function, writer)?;
                         writer.write_line("drop");

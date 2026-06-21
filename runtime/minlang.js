@@ -242,9 +242,10 @@ function defaultEnv(getInstance, options) {
   return {
     print_string: (ptr) => writeOut(getInstance().readString(ptr)),
     println: (ptr) => writeLine(getInstance().readString(ptr)),
-    print_int: (v) => writeLine(String(v)),
-    print_float: (v) => writeLine(String(v)),
-    print_double: (v) => writeLine(String(v)),
+    print_int: (v) => writeOut(String(v)),
+    print_float: (v) => writeOut(String(v)),
+    print_double: (v) => writeOut(String(v)),
+    print_char: (v) => writeOut(String.fromCharCode(v)),
     sin: Math.sin,
     cos: Math.cos,
     abs: Math.abs,

@@ -6,7 +6,7 @@ fun main() {
     print("\n");
 
     let n: int = (int)o;
-    print(n);
+    println(n);
 
     let s: object = "hi";
     print(to_string(s));

@@ -7,7 +7,7 @@ fun main(): void {
             if (i == 2) {
                 break outer;
             }
-            print_int(i * 10 + j);
+            println(i * 10 + j);
         }
     }
 }

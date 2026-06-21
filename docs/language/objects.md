@@ -27,14 +27,12 @@ Check the runtime type of an `object` before casting:
 fun describe(o: object): void {
     if (o is int) {
         print("int: ");
-        print((int)o);
-        print("\n");
+        println((int)o);
     } else if (o is string) {
         print("string: ");
-        print((string)o);
-        print("\n");
+        println((string)o);
     } else {
-        print("something else\n");
+        println("something else");
     }
 }
 ```

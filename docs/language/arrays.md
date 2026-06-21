@@ -22,10 +22,10 @@ Going out of bounds is undefined behaviour — there is no automatic bounds chec
 
 ## Array length
 
-Use `len` to get the number of elements:
+Use the `len` method to get the number of elements:
 
 ```kotlin
-let count = len(nums);   // 5
+let count = nums.len();   // 5
 ```
 
 ## Passing arrays to functions
@@ -35,7 +35,7 @@ Arrays are reference types. Passing an array to a function does not copy it; bot
 ```kotlin
 fun fill_zeros(arr: int[]): void {
     let i = 0;
-    while (i < len(arr)) {
+    while (i < arr.len()) {
         arr[i] = 0;
         i = i + 1;
     }
@@ -46,13 +46,13 @@ fun fill_zeros(arr: int[]): void {
 
 Arrays created from literals are fixed-size. You cannot push or pop from them.
 
-If you need a growable array, use [`List<T>`](../stdlib/collections.md):
+If you need a growable array, use [`List<T>`](../stdlib/list.md):
 
 ```kotlin
 let xs = List<int>();
 xs.push(10);
 xs.push(20);
-print(xs.size());   // 2
+println(xs.size());   // 2
 ```
 
 ## Array of structs
@@ -64,5 +64,5 @@ let pts: Point[] = [
     Point { x: 0, y: 0 },
     Point { x: 1, y: 2 },
 ];
-print(pts[1].x);   // 1
+println(pts[1].x);   // 1
 ```

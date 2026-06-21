@@ -1,13 +1,13 @@
 fun main(): void {
     let i: int = 0;
     do {
-        print_int(i);
+        println(i);
         i = i + 1;
     } while (i < 3);
 
     let j: int = 10;
     do {
-        print_int(j);
+        println(j);
         j = j + 1;
     } while (j < 5);
 }

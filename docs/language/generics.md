@@ -14,9 +14,8 @@ fun first<T>(arr: T[]): T {
 fun main(): void {
     let nums = [10, 20, 30];
     let words = ["a", "b", "c"];
-    print(first<int>(nums));     // 10
-    print(first<string>(words)); // a
-    print("\n");
+    println(first<int>(nums));     // 10
+    println(first<string>(words)); // a
 }
 ```
 
@@ -42,10 +41,8 @@ struct Pair<A, B> {
 
 fun main(): void {
     let p = Pair<int, string> { first: 1, second: "one" };
-    print(p.first);
-    print("\n");
-    print(p.second);
-    print("\n");
+    println(p.first);
+    println(p.second);
 }
 ```
 
@@ -69,7 +66,7 @@ struct Box<T> {
 fun main(): void {
     let b = Box<int> { value: 42 };
     b.set(100);
-    print(b.get());   // 100
+    println(b.get());   // 100
 }
 ```
 
@@ -81,12 +78,10 @@ Use `is` to branch on the concrete type at compile time. The compiler eliminates
 fun describe<T>(v: T): void {
     if (v is int) {
         print("it's an int: ");
-        print(v);
-        print("\n");
+        println(v);
     } else if (v is string) {
         print("it's a string: ");
-        print(v);
-        print("\n");
+        println(v);
     }
 }
 ```

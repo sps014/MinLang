@@ -63,6 +63,7 @@ nav:
     - Operators: language/operators.md
     - Control Flow: language/control-flow.md
     - Functions: language/functions.md
+    - Imports: language/imports.md
     - Arrays: language/arrays.md
     - Structs: language/structs.md
     - Generics: language/generics.md
@@ -70,5 +71,6 @@ nav:
     - JS Interop: language/interop.md
   - Standard Library:
     - Builtins: stdlib/builtins.md
-    - Collections: stdlib/collections.md
+    - List: stdlib/list.md
+    - Map: stdlib/map.md
   - Memory Model: memory.md

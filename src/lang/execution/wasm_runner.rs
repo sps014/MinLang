@@ -21,15 +21,21 @@ pub fn execute_wasm(wat_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut linker = Linker::new(&engine);
 
     linker.func_wrap("env", "print_int", |v: i32| {
-        println!("{}", v);
+        print!("{}", v);
     })?;
 
     linker.func_wrap("env", "print_float", |v: f32| {
-        println!("{}", v);
+        print!("{}", v);
     })?;
 
     linker.func_wrap("env", "print_double", |v: f64| {
-        println!("{}", v);
+        print!("{}", v);
+    })?;
+
+    linker.func_wrap("env", "print_char", |v: i32| {
+        if let Some(c) = char::from_u32(v as u32) {
+            print!("{}", c);
+        }
     })?;
 
     linker.func_wrap("env", "print_string", |mut caller: Caller<'_, ()>, ptr: i32| {

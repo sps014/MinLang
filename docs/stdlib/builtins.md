@@ -4,19 +4,26 @@ These are available in every MinLang program without any import.
 
 ## print
 
-Prints a value to stdout. Works on all types.
+Prints a value to stdout without a trailing newline. Works on all types.
 
 ```kotlin
-print(42);         // prints "42\n"
-print(3.14f);      // prints "3.14\n"
-print("hello");    // prints "hello"  (no automatic newline for strings)
+print(42);         // prints "42"
+print(3.14f);      // prints "3.14"
+print("hello");    // prints "hello"
 print(true);       // prints "true"
+print('A');        // prints "A"
 ```
 
-!!! note "Newlines"
-    `print` adds a trailing newline for numeric types (`int`, `float`, `double`) but not for `string` or `bool`. Use `print("\n")` to add one explicitly.
-
 For structs that override `to_string`, `print` calls the override automatically.
+
+## println
+
+Like `print`, but appends a newline (`\n`) after the value.
+
+```kotlin
+println(42);       // prints "42\n"
+println("hello");  // prints "hello\n"
+```
 
 ## to_string
 
@@ -43,24 +50,29 @@ Used internally by `Map<K, V>` to find buckets.
 
 ## Math
 
-| Function | Signature             | Description          |
-|----------|-----------------------|----------------------|
-| `sin`    | `(float) -> float`    | Sine (radians)       |
-| `cos`    | `(float) -> float`    | Cosine (radians)     |
-| `sqrt`   | `(float) -> float`    | Square root          |
-| `abs`    | `(float) -> float`    | Absolute value       |
+Math functions live in the `Math` namespace and are called with `Math.<name>(x)`.
+
+| Function     | Signature          | Description     |
+|--------------|--------------------|-----------------|
+| `Math.sin`   | `(float) -> float` | Sine (radians)  |
+| `Math.cos`   | `(float) -> float` | Cosine (radians)|
+| `Math.sqrt`  | `(float) -> float` | Square root     |
+| `Math.abs`   | `(float) -> float` | Absolute value  |
 
 ```kotlin
-let hyp = sqrt(3.0f * 3.0f + 4.0f * 4.0f);   // 5.0
+let hyp = Math.sqrt(3.0f * 3.0f + 4.0f * 4.0f);   // 5.0
 ```
 
 ## len
 
-Returns the number of elements in an array:
+`len` is a method on arrays and strings:
 
 ```kotlin
 let arr = [10, 20, 30];
-print(len(arr));   // 3
+println(arr.len());     // 3
+
+let name = "hello";
+println(name.len());    // 5
 ```
 
 ## array_new

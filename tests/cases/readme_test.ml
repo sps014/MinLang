@@ -27,7 +27,7 @@ fun main(): void {
     
     let curr = list;
     while (curr != null) {
-        print_int(curr.value);
+        println(curr.value);
         if (curr.has_next()) {
             print(" -> ");
         }

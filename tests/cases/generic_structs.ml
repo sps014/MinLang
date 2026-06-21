@@ -8,11 +8,11 @@ struct Pair<T> {
 }
 
 fun print_box_int(b: Box<int>) {
-    print(b.val);
+    println(b.val);
 }
 
 fun print_box_float(b: Box<float>) {
-    print(b.val);
+    println(b.val);
 }
 
 fun main(): void {
@@ -25,6 +25,6 @@ fun main(): void {
     print(str_box.val);
 
     let p = Pair<int> { first: 10, second: 20 };
-    print(p.first);
-    print(p.second);
+    println(p.first);
+    println(p.second);
 }

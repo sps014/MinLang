@@ -1,0 +1,12 @@
+/**
+ * JSDoc-style multi-line comment.
+ * Describes the entry point.
+ * @returns nothing
+ */
+fun main(): void {
+    /* a plain block
+       comment spanning
+       multiple lines */
+    let x: int = 42; // a trailing line comment
+    println(x);
+}

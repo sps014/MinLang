@@ -390,6 +390,7 @@ impl<'a> WasmGenerator<'a> {
         self.build_release_func("float[]", None, writer)?;
         self.build_release_func("double[]", None, writer)?;
         self.build_release_func("bool[]", None, writer)?;
+        self.build_release_func("char[]", None, writer)?;
         self.build_release_func("string[]", None, writer)?;
         
         for name in self.struct_table.structs.keys() {

@@ -3,24 +3,24 @@ fun main(): void {
     m.put("one", 1);
     m.put("two", 2);
     m.put("three", 3);
-    print(m.size());
-    print(m.get("one"));
-    print(m.get("three"));
+    println(m.size());
+    println(m.get("one"));
+    println(m.get("three"));
     print(m.contains("two"));
     print("\n");
     print(m.contains("nope"));
     print("\n");
-    print(m.get("missing"));
-    print(m.get_or("missing", -1));
+    println(m.get("missing"));
+    println(m.get_or("missing", -1));
     m.put("two", 22);
-    print(m.get("two"));
-    print(m.size());
+    println(m.get("two"));
+    println(m.size());
     print(m.remove("two"));
     print("\n");
-    print(m.size());
+    println(m.size());
     print(m.contains("two"));
     print("\n");
-    print(m.get("two"));
+    println(m.get("two"));
 
     let counts = Map<int, int>();
     let i = 0;
@@ -28,10 +28,10 @@ fun main(): void {
         counts.put(i, i * i);
         i = i + 1;
     }
-    print(counts.size());
-    print(counts.get(7));
-    print(counts.get(39));
+    println(counts.size());
+    println(counts.get(7));
+    println(counts.get(39));
     print(counts.contains(40));
     print("\n");
-    print(counts.get_or(40, -7));
+    println(counts.get_or(40, -7));
 }

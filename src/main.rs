@@ -27,6 +27,8 @@ fn main()
 
     let subscriber = FmtSubscriber::builder()
         .with_max_level(if verbose { Level::INFO } else { Level::WARN })
+        .without_time()
+        .with_target(false)
         .finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 

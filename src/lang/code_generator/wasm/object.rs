@@ -13,11 +13,12 @@ pub const TAG_DOUBLE: i32 = 3;
 pub const TAG_BOOL: i32 = 4;
 pub const TAG_STRING: i32 = 5;
 pub const TAG_ARRAY: i32 = 6;
+pub const TAG_CHAR: i32 = 7;
 /// Structs are assigned consecutive tags starting here, ordered by sorted struct name.
-pub const TAG_STRUCT_BASE: i32 = 7;
+pub const TAG_STRUCT_BASE: i32 = 8;
 
 /// Element types for which array `to_string`/`hash_code` helpers are generated.
-const PRIMITIVE_ARRAY_ELEMENTS: [&str; 5] = ["int", "float", "double", "bool", "string"];
+const PRIMITIVE_ARRAY_ELEMENTS: [&str; 6] = ["int", "float", "double", "bool", "char", "string"];
 
 /// The fixed object-protocol runtime that does not depend on the user program: boxing /
 /// unboxing of primitives, primitive hashers, and `$int_to_string` (digit extraction).
@@ -259,12 +260,53 @@ const OBJECT_RUNTIME_FIXED: &str = r#"(func $box_int (param $v i32) (result i32)
     )
     local.get $p
 )
+(func $box_char (param $v i32) (result i32)
+    (local $p i32)
+    i32.const 4
+    i32.const 7
+    call $malloc
+    local.set $p
+    local.get $p
+    local.get $v
+    i32.store
+    local.get $p
+)
+(func $unbox_char (param $p i32) (result i32)
+    local.get $p
+    i32.load
+)
+(func $char_to_string (param $v i32) (result i32)
+    (local $p i32)
+    i32.const 2
+    i32.const 5
+    call $malloc
+    local.set $p
+    local.get $p
+    local.get $v
+    i32.store8
+    local.get $p
+    i32.const 1
+    i32.add
+    i32.const 0
+    i32.store8
+    local.get $p
+)
 "#;
 
 impl<'a> WasmGenerator<'a> {
-    /// Returns true for the four boxable scalar primitives.
+    /// Returns true for the boxable scalar primitives.
     pub fn is_primitive_name(name: &str) -> bool {
-        matches!(name, "int" | "float" | "double" | "bool")
+        matches!(name, "int" | "float" | "double" | "bool" | "char")
+    }
+
+    /// Normalizes a type name for value rendering: enum types are `i32`s at runtime, so they
+    /// collapse to `int`; everything else is returned unchanged.
+    pub fn enum_or_int(&self, name: &str) -> String {
+        if self.enums.contains_key(name) {
+            "int".to_string()
+        } else {
+            name.to_string()
+        }
     }
 
     /// Struct names in a stable (sorted) order; their position determines their runtime tag.
@@ -285,6 +327,7 @@ impl<'a> WasmGenerator<'a> {
             "float" => TAG_FLOAT,
             "double" => TAG_DOUBLE,
             "bool" => TAG_BOOL,
+            "char" => TAG_CHAR,
             "string" => TAG_STRING,
             "object" => 0,
             _ => {
@@ -495,6 +538,7 @@ impl<'a> WasmGenerator<'a> {
         match strip_nullable(type_name) {
             "int" => writer.write_line("call $int_to_string"),
             "bool" => writer.write_line("call $bool_to_string"),
+            "char" => writer.write_line("call $char_to_string"),
             "float" => writer.write_line("call $float_to_string"),
             "double" => writer.write_line("call $double_to_string"),
             "string" => {} // identity
@@ -506,7 +550,7 @@ impl<'a> WasmGenerator<'a> {
     /// (i32) on the stack.
     fn emit_value_to_hash(type_name: &str, writer: &mut IndentedTextWriter) {
         match strip_nullable(type_name) {
-            "int" | "bool" => {}
+            "int" | "bool" | "char" => {}
             "float" => writer.write_line("i32.reinterpret_f32"),
             "double" => {
                 writer.write_line("f32.demote_f64");
@@ -760,6 +804,7 @@ impl<'a> WasmGenerator<'a> {
         self.write_tag_arm(TAG_FLOAT, &["local.get $ptr", "call $unbox_float", "call $float_to_string"], writer);
         self.write_tag_arm(TAG_DOUBLE, &["local.get $ptr", "call $unbox_double", "call $double_to_string"], writer);
         self.write_tag_arm(TAG_BOOL, &["local.get $ptr", "call $unbox_bool", "call $bool_to_string"], writer);
+        self.write_tag_arm(TAG_CHAR, &["local.get $ptr", "call $unbox_char", "call $char_to_string"], writer);
         self.write_tag_arm(TAG_STRING, &["local.get $ptr"], writer);
         for (i, name) in self.sorted_struct_names().iter().enumerate() {
             let call = format!("call ${}_to_string", name);
@@ -789,6 +834,7 @@ impl<'a> WasmGenerator<'a> {
         self.write_tag_arm(TAG_FLOAT, &["local.get $ptr", "call $unbox_float", "call $hash_float"], writer);
         self.write_tag_arm(TAG_DOUBLE, &["local.get $ptr", "call $unbox_double", "call $hash_double"], writer);
         self.write_tag_arm(TAG_BOOL, &["local.get $ptr", "call $unbox_bool"], writer);
+        self.write_tag_arm(TAG_CHAR, &["local.get $ptr", "call $unbox_char"], writer);
         self.write_tag_arm(TAG_STRING, &["local.get $ptr", "call $hash_string"], writer);
         for (i, name) in self.sorted_struct_names().iter().enumerate() {
             let call = format!("call ${}_hash_code", name);
@@ -821,6 +867,7 @@ impl<'a> WasmGenerator<'a> {
         self.write_tag_arm(TAG_FLOAT, &["local.get $ptr", "call $unbox_float", "call $print_float"], writer);
         self.write_tag_arm(TAG_DOUBLE, &["local.get $ptr", "call $unbox_double", "call $print_double"], writer);
         self.write_tag_arm(TAG_BOOL, &["local.get $ptr", "call $unbox_bool", "call $bool_to_string", "call $print_string"], writer);
+        self.write_tag_arm(TAG_CHAR, &["local.get $ptr", "call $unbox_char", "call $print_char"], writer);
         self.write_tag_arm(TAG_STRING, &["local.get $ptr", "call $print_string"], writer);
         // Structs and arrays: render via to_string then print.
         writer.write_line("local.get $ptr");
@@ -857,7 +904,8 @@ impl<'a> WasmGenerator<'a> {
     /// Builds `to_string(arg)` leaving a string pointer on the stack.
     pub fn build_to_string(&mut self, arg: &ExpressionNode<'a>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let t = self.infer_expression_type(arg, function)?;
-        let base = strip_nullable(&t).to_string();
+        // Enum values are plain i32s at runtime; render them like ints.
+        let base = self.enum_or_int(strip_nullable(&t));
         if base.ends_with("[]") {
             let elem = base[..base.len() - 2].to_string();
             if self.array_element_types().contains(&elem) {
@@ -870,6 +918,7 @@ impl<'a> WasmGenerator<'a> {
         match base.as_str() {
             "int" => writer.write_line("call $int_to_string"),
             "bool" => writer.write_line("call $bool_to_string"),
+            "char" => writer.write_line("call $char_to_string"),
             "float" => writer.write_line("call $float_to_string"),
             "double" => writer.write_line("call $double_to_string"),
             "string" => {}
@@ -881,7 +930,7 @@ impl<'a> WasmGenerator<'a> {
     /// Builds `hash_code(arg)` leaving an i32 on the stack.
     pub fn build_hash_code(&mut self, arg: &ExpressionNode<'a>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let t = self.infer_expression_type(arg, function)?;
-        let base = strip_nullable(&t).to_string();
+        let base = self.enum_or_int(strip_nullable(&t));
         if base.ends_with("[]") {
             let elem = base[..base.len() - 2].to_string();
             if self.array_element_types().contains(&elem) {
@@ -892,7 +941,7 @@ impl<'a> WasmGenerator<'a> {
         }
         self.build_expression(arg, &t, function, writer)?;
         match base.as_str() {
-            "int" | "bool" => {}
+            "int" | "bool" | "char" => {}
             "float" => writer.write_line("i32.reinterpret_f32"),
             "double" => {
                 writer.write_line("f32.demote_f64");
@@ -909,7 +958,7 @@ impl<'a> WasmGenerator<'a> {
     /// render via `to_string`.
     pub fn build_print(&mut self, arg: &ExpressionNode<'a>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let t = self.infer_expression_type(arg, function)?;
-        let base = strip_nullable(&t).to_string();
+        let base = self.enum_or_int(strip_nullable(&t));
         match base.as_str() {
             "int" => {
                 self.build_expression(arg, &t, function, writer)?;
@@ -928,6 +977,10 @@ impl<'a> WasmGenerator<'a> {
                 writer.write_line("call $bool_to_string");
                 writer.write_line("call $print_string");
             }
+            "char" => {
+                self.build_expression(arg, &t, function, writer)?;
+                writer.write_line("call $print_char");
+            }
             "string" => {
                 self.build_expression(arg, &t, function, writer)?;
                 writer.write_line("call $print_string");
@@ -941,6 +994,15 @@ impl<'a> WasmGenerator<'a> {
                 writer.write_line("call $print_string");
             }
         }
+        Ok(())
+    }
+
+    /// Builds `println(arg)`: prints the value (no trailing newline from `print`) followed by a
+    /// single `\n` (code point 10) via the char host.
+    pub fn build_println(&mut self, arg: &ExpressionNode<'a>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        self.build_print(arg, function, writer)?;
+        writer.write_line("i32.const 10");
+        writer.write_line("call $print_char");
         Ok(())
     }
 }

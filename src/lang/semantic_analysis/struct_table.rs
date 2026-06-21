@@ -49,7 +49,7 @@ impl StructTable {
             };
 
             let (size, alignment) = match field_type.get_type().as_str() {
-                "bool" => (1, 1),
+                "bool" | "char" => (1, 1),
                 "double" => (8, 8),
                 _ => (4, 4), // int, float, and pointers (arrays, structs, strings)
             };
@@ -71,7 +71,7 @@ impl StructTable {
         let max_alignment = fields.values().map(|f| {
             match f.type_.get_type().as_str() {
                 "double" => 8,
-                "bool" => 1,
+                "bool" | "char" => 1,
                 _ => 4,
             }
         }).max().unwrap_or(4);

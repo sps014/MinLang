@@ -163,6 +163,7 @@ pub enum TokenKind
     #[token("double")]
     #[token("string")]
     #[token("bool")]
+    #[token("char")]
     #[token("void")]
     #[token("object")]
     DataTypeToken,
