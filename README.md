@@ -7,7 +7,7 @@ A statically typed language that compiles to WebAssembly. Simple syntax, automat
 ## Build
 
 ```bash
-git clone https://github.com/sps014/MinLang
+git clone https://github.com/sps014/Dream
 cd Dream
 cargo build --release
 ```
