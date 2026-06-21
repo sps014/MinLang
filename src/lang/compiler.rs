@@ -52,12 +52,13 @@ impl Compiler {
         let mut visited_files = HashSet::new();
         let mut all_functions = vec![];
         let mut all_structs = vec![];
+        let mut all_enums = vec![];
         let mut file_contents = std::collections::HashMap::new();
         
         let arena = Bump::new();
         let mut diagnostics = DiagnosticBag::new(None);
         
-        self.parse_file_recursive(main_file_path, &mut visited_files, &mut all_functions, &mut all_structs, &arena, &mut diagnostics, &mut file_contents)?;
+        self.parse_file_recursive(main_file_path, &mut visited_files, &mut all_functions, &mut all_structs, &mut all_enums, &arena, &mut diagnostics, &mut file_contents)?;
 
         // The standard collections (List<T>, Map<K, V>) are embedded in the compiler and merged
         // into every program as a prelude. They are generic templates, so they emit no code unless
@@ -69,7 +70,7 @@ impl Compiler {
             return Err(Error::new(ErrorKind::Other, "Syntax errors found during parsing"));
         }
 
-        let combined_program = ProgramNode::new(vec![], all_structs, all_functions);
+        let combined_program = ProgramNode::new(vec![], all_structs, all_functions, all_enums);
         let ast = SyntaxTree::new(combined_program);
         
         info!("finished parsing");
@@ -183,6 +184,7 @@ impl Compiler {
         visited: &mut HashSet<String>,
         all_functions: &mut Vec<crate::lang::code_analysis::syntax::nodes::FunctionNode<'a>>,
         all_structs: &mut Vec<crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode<'a>>,
+        all_enums: &mut Vec<crate::lang::code_analysis::syntax::nodes::EnumDeclarationNode>,
         arena: &'a Bump,
         diagnostics: &mut DiagnosticBag,
         file_contents: &mut std::collections::HashMap<String, String>,
@@ -243,7 +245,7 @@ impl Compiler {
                 continue;
             }
             
-            self.parse_file_recursive(&import_path_str, visited, all_functions, all_structs, arena, diagnostics, file_contents)?;
+            self.parse_file_recursive(&import_path_str, visited, all_functions, all_structs, all_enums, arena, diagnostics, file_contents)?;
         }
         
         // Tag every declaration with its source file so semantic diagnostics (which run on the
@@ -261,6 +263,9 @@ impl Compiler {
                 method.file_path = Some(file_tag.clone());
             }
             all_structs.push(struct_decl);
+        }
+        for enum_decl in program.enums.iter().cloned() {
+            all_enums.push(enum_decl);
         }
         
         Ok(())

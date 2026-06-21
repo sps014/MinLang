@@ -1,0 +1,13 @@
+fun main(): void {
+    outer: for (let i: int = 0; i < 3; i = i + 1) {
+        for (let j: int = 0; j < 3; j = j + 1) {
+            if (j == 1) {
+                continue outer;
+            }
+            if (i == 2) {
+                break outer;
+            }
+            print_int(i * 10 + j);
+        }
+    }
+}

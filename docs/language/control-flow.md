@@ -2,7 +2,6 @@
 
 ## if / else
 
-Parentheses around the condition are required. The body must be a block:
 
 ```kotlin
 if (score >= 90) {
@@ -14,7 +13,7 @@ if (score >= 90) {
 }
 ```
 
-There is no ternary operator; use an `if` block instead.
+A ternary expression is also available for value selection: `cond ? a : b` (see [operators](operators.md)).
 
 ## while
 
@@ -39,6 +38,65 @@ for (let i = 0; i < 5; i = i + 1) {
 ```
 
 The initializer runs once. The condition is checked before each iteration. The increment runs after each body execution.
+
+## do / while
+
+Like `while`, but the body always runs at least once because the condition is checked at the end:
+
+```kotlin
+let i = 0;
+do {
+    print(i);
+    i = i + 1;
+} while (i < 3);
+```
+
+## for-each
+
+Iterate the elements of an array directly with `for (let x in arr)`:
+
+```kotlin
+let xs: int[] = [10, 20, 30];
+for (let value in xs) {
+    print(value);
+}
+```
+
+The loop variable is bound to each element in turn (its type is the array's element type).
+
+## switch
+
+`switch` matches a subject against one or more constant labels. There is **no implicit fallthrough** - each `case` runs only its own block. A case may list several comma-separated labels, and a `default` clause is optional:
+
+```kotlin
+switch (code) {
+    case 1, 2:
+        print("low\n");
+    case 3:
+        print("three\n");
+    default:
+        print("other\n");
+}
+```
+
+Labels must be constants (integers, strings, booleans, or enum members) and match the subject's type. Duplicate labels are a compile error.
+
+## switch over enums
+
+`switch` works naturally with [enums](types.md#enums):
+
+```kotlin
+enum Color { Red, Green, Blue }
+
+switch (c) {
+    case Color.Red:
+        print("red\n");
+    case Color.Green:
+        print("green\n");
+    default:
+        print("other\n");
+}
+```
 
 ## break and continue
 
@@ -67,3 +125,23 @@ for (let i = 0; i < 10; i = i + 1) {
 ```
 
 Both `break` and `continue` produce a compile error if used outside a loop.
+
+## Labeled loops
+
+A loop may be given a label so that `break`/`continue` can target an outer loop from within a nested one:
+
+```kotlin
+outer: for (let i = 0; i < 3; i = i + 1) {
+    for (let j = 0; j < 3; j = j + 1) {
+        if (j == 1) {
+            continue outer;   // jump to the next iteration of the outer loop
+        }
+        if (i == 2) {
+            break outer;      // exit both loops
+        }
+        print(i * 10 + j);
+    }
+}
+```
+
+Targeting a label that is not an enclosing loop is a compile error.

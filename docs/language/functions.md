@@ -69,6 +69,28 @@ fun pair_first<A, B>(a: A, b: B): A {
 }
 ```
 
+## First-class functions
+
+A function name used as a value refers to the function itself, and the function type is written `fun(ParamTypes): ReturnType`. Functions can be stored in variables and passed as parameters, then invoked like any other call:
+
+```kotlin
+fun twice(x: int): int {
+    return x * 2;
+}
+
+fun apply(f: fun(int): int, value: int): int {
+    return f(value);
+}
+
+fun main(): void {
+    let g: fun(int): int = twice;
+    print_int(g(5));            // 10
+    print_int(apply(twice, 8)); // 16
+}
+```
+
+Under the hood, function values are indices into a WebAssembly function table and calls through them lower to `call_indirect`. Closures (capturing surrounding variables) are not yet supported.
+
 ## Exported functions
 
 Mark a function `export` to expose it to the WebAssembly host environment:

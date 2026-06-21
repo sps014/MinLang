@@ -4,6 +4,7 @@ impl TokenKind {
     pub fn get_binary_precedence(&self) -> i32 {
         return match self {
             TokenKind::BitWiseAmpersandToken => 90,
+            TokenKind::BitWiseXorToken => 85,
             TokenKind::BitWisePipeToken => 80,
 
             TokenKind::ModulusToken => 55,
@@ -13,6 +14,9 @@ impl TokenKind {
 
             TokenKind::PlusToken => 40,
             TokenKind::MinusToken => 40,
+
+            TokenKind::ShiftLeftToken => 35,
+            TokenKind::ShiftRightToken => 35,
 
             TokenKind::BangToken => 30,
 
@@ -25,6 +29,7 @@ impl TokenKind {
             TokenKind::IsToken => 15,
             TokenKind::AmpersandAmpersandToken => 20,
             TokenKind::PipePipeToken => 10,
+            TokenKind::QuestionQuestionToken => 8,
 
             _ => 0,
         };

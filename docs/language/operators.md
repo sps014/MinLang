@@ -45,7 +45,36 @@ String `==` and `!=` compare the **contents** of the strings, not their addresse
 | `\|\|`     | Logical OR  |
 | `!`      | Logical NOT |
 
-Both sides of `&&` and `||` must be `bool`.
+Both sides of `&&` and `||` must be `bool`. `&&` and `||` **short-circuit**: the right operand is only evaluated when it can still affect the result.
+
+## Bitwise
+
+These operate on `int` values:
+
+| Operator | Meaning       |
+|----------|---------------|
+| `&`      | Bitwise AND   |
+| `\|`      | Bitwise OR    |
+| `^`      | Bitwise XOR   |
+| `<<`     | Shift left    |
+| `>>`     | Shift right (arithmetic) |
+
+## Null-coalescing
+
+`a ?? b` evaluates to `a` when it is non-null, otherwise to `b`. The left operand should be a nullable (`T?`) value and the result type is the unwrapped `T`:
+
+```kotlin
+let name: string? = lookup();
+let display: string = name ?? "anonymous";
+```
+
+## Ternary
+
+`cond ? a : b` evaluates `cond` (a `bool`); the result is `a` when true and `b` when false. Both branches must share a type:
+
+```kotlin
+let label = score >= 60 ? "pass" : "fail";
+```
 
 ## Assignment
 
@@ -55,6 +84,16 @@ Both sides of `&&` and `||` must be `bool`.
 x = 10;
 arr[0] = 99;
 point.x = 3;
+```
+
+### Compound assignment and increment
+
+`+=`, `-=`, `*=`, `/=`, and `%=` update a target in place, and `++`/`--` add or subtract one:
+
+```kotlin
+total += 5;     // total = total + 5
+count++;        // count = count + 1
+i--;
 ```
 
 ## Negation
@@ -71,11 +110,17 @@ Higher rows bind tighter:
 
 | Precedence | Operators         |
 |------------|-------------------|
-| 6          | unary `-`, `!`    |
-| 5          | `*`, `/`, `%`     |
-| 4          | `+`, `-`          |
-| 3          | `<`, `<=`, `>`, `>=` |
-| 2          | `==`, `!=`        |
-| 1          | `&&`, `\|\|`        |
+| unary      | unary `-`, `!`    |
+| highest    | `&`               |
+|            | `^`               |
+|            | `\|`               |
+|            | `%`               |
+|            | `*`, `/`          |
+|            | `+`, `-`          |
+|            | `<<`, `>>`        |
+|            | `<`, `<=`, `>`, `>=`, `==`, `!=`, `is` |
+|            | `&&`              |
+|            | `\|\|`             |
+| lowest     | `??`, then `? :`  |
 
 Use parentheses to make order explicit.

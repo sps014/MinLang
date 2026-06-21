@@ -240,6 +240,10 @@ impl<'a> WasmGenerator<'a> {
                     },
                     _ => {}
                 }
+                // Indirect call through a function-typed local: result is the signature's return.
+                if let Some((_, ret)) = self.function_typed_local(&name.text, function) {
+                    return Ok(ret.get_type());
+                }
                 let resolved_name = self.resolve_call_name(&name.text, generic_args, args, function);
                 if let Ok(func) = self.function_table.get_function(&resolved_name) {
                     if let Some(ret_type) = &func.return_type {
@@ -269,6 +273,11 @@ impl<'a> WasmGenerator<'a> {
                     TokenKind::GreaterThanToken | TokenKind::SmallerThanToken |
                     TokenKind::GreaterThanEqualToken | TokenKind::SmallerThanEqualToken |
                     TokenKind::AmpersandAmpersandToken | TokenKind::PipePipeToken => Ok("bool".to_string()),
+                    // `a ?? b` yields the unwrapped (non-nullable) element type of `a`.
+                    TokenKind::QuestionQuestionToken => {
+                        let left_type = self.infer_expression_type(left, function)?;
+                        Ok(left_type.trim_end_matches('?').to_string())
+                    },
                     _ => self.infer_expression_type(left, function)
                 }
             },
@@ -289,6 +298,12 @@ impl<'a> WasmGenerator<'a> {
                 Ok(struct_name)
             },
             ExpressionNode::MemberAccess(obj, member) => {
+                // Enum member access yields the enum type (an i32 at runtime).
+                if let ExpressionNode::Identifier(id) = obj {
+                    if self.enums.contains_key(&id.text) {
+                        return Ok(id.text.clone());
+                    }
+                }
                 let obj_type = self.infer_expression_type(obj, function)?;
                 if let Some(struct_info) = self.struct_table.get_struct(&obj_type) {
                     if let Some(field_info) = struct_info.fields.get(&member.text) {
@@ -298,6 +313,7 @@ impl<'a> WasmGenerator<'a> {
                 Ok("void".to_string())
             },
             ExpressionNode::IsExpression(_, _) => Ok("bool".to_string()),
+            ExpressionNode::Ternary(_, then_e, _) => self.infer_expression_type(then_e, function),
             ExpressionNode::MethodCall(obj, method, _, _) => {
                 let obj_type = self.infer_expression_type(obj, function)?;
                 let struct_name = strip_nullable(&obj_type);

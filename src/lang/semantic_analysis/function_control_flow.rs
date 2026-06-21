@@ -141,8 +141,11 @@ impl<'a> FunctionControlGraph<'a>
     fn visit_node(&mut self, statement:&StatementNode<'a>, parent:&Rc<RefCell<FlowNode>>) ->Result<(),Error>
     {
           match statement {
-            StatementNode::Return(r)=>
-                self.visit_return(r.as_ref().unwrap(), parent)?,
+            // Both `return expr;` and a bare `return;` terminate the current path. The latter is
+            // only valid in void functions (checked by the analyzer); handling it here without a
+            // value avoids panicking on malformed `return;` inside a non-void function.
+            StatementNode::Return(_)=>
+                self.visit_return(parent)?,
             StatementNode::IfElse(_,if_body,else_pair,else_body)=>
                 self.visit_if_else(if_body, else_pair, else_body, parent)?,
             _=>
@@ -191,9 +194,9 @@ impl<'a> FunctionControlGraph<'a>
     }
 
     //add return node to parent block and mark: has return
-    fn visit_return(&mut self,return_node:&ExpressionNode<'a>,parent:&Rc<RefCell<FlowNode>>)->Result<(),Error>
+    fn visit_return(&mut self,parent:&Rc<RefCell<FlowNode>>)->Result<(),Error>
     {
-        let return_flow = Rc::new(RefCell::new(FlowNode::from(true,format!("return {:?}",return_node))));
+        let return_flow = Rc::new(RefCell::new(FlowNode::from(true,"return".to_string())));
         (*parent).as_ref().borrow_mut().child_nodes.push(return_flow.clone());
         Ok(())
     }

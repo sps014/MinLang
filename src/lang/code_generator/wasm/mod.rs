@@ -37,13 +37,22 @@ pub struct WasmGenerator<'a> {
     pub runtime_strings: HashMap<String, usize>,
     pub next_string_offset: usize,
     pub loop_counter: usize,
-    pub loop_stack: Vec<usize>,
+    /// Stack of active loops as `(loop_id, optional_label)` so labeled `break`/`continue` can
+    /// target an enclosing loop by name.
+    pub loop_stack: Vec<(usize, Option<String>)>,
+    /// A label parsed via `label:` that the next loop construct should adopt.
+    pub pending_loop_label: Option<String>,
     /// Active generic parameter -> concrete type bindings while emitting a monomorphized
     /// generic function body (empty when not inside one).
     pub current_generic_bindings: HashMap<String, String>,
     pub current_mangled_name: Option<String>,
+    /// Stable function-table index assigned to each indexable (non-generic) top-level function.
+    /// Used to lower first-class function values and `call_indirect`.
+    pub function_indices: HashMap<String, usize>,
     pub instantiated_generics: &'a HashMap<String, (crate::lang::semantic_analysis::analyzer::GenericBindings, &'a crate::lang::code_analysis::syntax::nodes::FunctionNode<'a>)>,
     pub struct_methods: &'a Vec<(&'a crate::lang::code_analysis::syntax::nodes::FunctionNode<'a>, crate::lang::semantic_analysis::analyzer::GenericBindings)>,
+    /// Registered enums: name -> (member -> i32 value). Enum members lower to `i32.const`.
+    pub enums: &'a crate::lang::semantic_analysis::analyzer::EnumTable,
 }
 
 impl<'a> CodeGenerator<'a> for WasmGenerator<'a> {
@@ -68,10 +77,13 @@ impl<'a> WasmGenerator<'a> {
             next_string_offset: 4 + HEAP_HEADER_SIZE,
             loop_counter: 0,
             loop_stack: Vec::new(),
+            pending_loop_label: None,
             current_generic_bindings: HashMap::new(),
             current_mangled_name: None,
+            function_indices: HashMap::new(),
             instantiated_generics: &semantic_info.instantiated_generics,
             struct_methods: &semantic_info.struct_methods,
+            enums: &semantic_info.enums,
         }
     }
 }

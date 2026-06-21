@@ -83,6 +83,9 @@ fn substitute_generic_token(token: &SyntaxToken, bindings: &[(String, String)]) 
 /// Maps each generic parameter name to the concrete type bound to it for one monomorphization.
 pub type GenericBindings = Vec<(String, String)>;
 
+/// Enum name -> (member name -> integer value).
+pub type EnumTable = HashMap<String, HashMap<String, i32>>;
+
 pub struct SemanticInfo<'a>
 {
     pub hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>,
@@ -90,10 +93,11 @@ pub struct SemanticInfo<'a>
     pub struct_table: &'a StructTable,
     pub instantiated_generics: HashMap<String, (GenericBindings, &'a FunctionNode<'a>)>,
     pub struct_methods: Vec<(&'a FunctionNode<'a>, GenericBindings)>,
+    pub enums: EnumTable,
 }
 
 impl<'a> SemanticInfo<'a> {
-    pub fn new(hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>, function_table: &'a FunctionTable, struct_table: &'a StructTable, instantiated_generics: HashMap<String, (GenericBindings, &'a FunctionNode<'a>)>, struct_methods: Vec<(&'a FunctionNode<'a>, GenericBindings)>) -> SemanticInfo<'a>
+    pub fn new(hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>, function_table: &'a FunctionTable, struct_table: &'a StructTable, instantiated_generics: HashMap<String, (GenericBindings, &'a FunctionNode<'a>)>, struct_methods: Vec<(&'a FunctionNode<'a>, GenericBindings)>, enums: EnumTable) -> SemanticInfo<'a>
     {
         SemanticInfo {
             hash_map,
@@ -101,6 +105,7 @@ impl<'a> SemanticInfo<'a> {
             struct_table,
             instantiated_generics,
             struct_methods,
+            enums,
         }
     }
 }
@@ -115,14 +120,19 @@ pub struct Analyzer<'a> {
     instantiated_generics: HashMap<String, (GenericBindings, &'a FunctionNode<'a>)>,
     generic_structs: HashMap<String, &'a crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode<'a>>,
     struct_methods: Vec<(&'a FunctionNode<'a>, GenericBindings)>,
+    /// Registered enums: name -> (member -> value). Enum values are plain `i32`s at runtime.
+    enum_table: EnumTable,
     /// The generic substitution bindings active while analyzing a monomorphized function or
     /// struct-method body. Empty outside of any generic instantiation. Used to resolve generic
     /// type parameters that appear inside a body (e.g. the `T` in `array_new<T>(...)`).
     current_generic_bindings: GenericBindings,
+    /// Stack of loop labels currently in scope, so `break label;`/`continue label;` can be
+    /// validated against an enclosing labeled loop.
+    loop_labels: Vec<String>,
 }
 impl<'a> Analyzer<'a> {
     pub fn new(tree: &'a SyntaxTree<'a>, arena: &'a Bump) -> Self {
-        Self { syntax_tree:tree, function_table: FunctionTable::new(), struct_table: StructTable::new(), arena, generic_functions: HashMap::new(), instantiated_generics: HashMap::new(), generic_structs: HashMap::new(), struct_methods: Vec::new(), current_generic_bindings: Vec::new() }
+        Self { syntax_tree:tree, function_table: FunctionTable::new(), struct_table: StructTable::new(), arena, generic_functions: HashMap::new(), instantiated_generics: HashMap::new(), generic_structs: HashMap::new(), struct_methods: Vec::new(), enum_table: HashMap::new(), current_generic_bindings: Vec::new(), loop_labels: Vec::new() }
     }
     pub fn analyze(&mut self, diagnostics: &mut DiagnosticBag) -> Result<SemanticInfo<'_>, ()> {
         let pgm= self.syntax_tree.get_root();
@@ -177,13 +187,52 @@ impl<'a> Analyzer<'a> {
     fn analyze_pgm(&mut self,node:&'a ProgramNode<'a>, diagnostics: &mut DiagnosticBag) -> Result<SemanticInfo<'_>, ()> {
         let mut symbol_table_map = HashMap::new();
 
+        self.register_enums(node, diagnostics);
         self.register_structs(node, diagnostics);
         self.register_functions(node, diagnostics);
         self.analyze_function_bodies(node, &mut symbol_table_map, diagnostics)?;
         self.analyze_instantiated_generics(&mut symbol_table_map, diagnostics)?;
         self.analyze_struct_method_bodies(&mut symbol_table_map, diagnostics)?;
 
-        Ok(SemanticInfo::new(symbol_table_map, &self.function_table, &self.struct_table, self.instantiated_generics.clone(), self.struct_methods.clone()))
+        Ok(SemanticInfo::new(symbol_table_map, &self.function_table, &self.struct_table, self.instantiated_generics.clone(), self.struct_methods.clone(), self.enum_table.clone()))
+    }
+
+    /// Pass: register every enum and its members (member -> integer value), reporting duplicate
+    /// enum names and duplicate member names.
+    fn register_enums(&mut self, node: &'a ProgramNode<'a>, diagnostics: &mut DiagnosticBag) {
+        for enum_decl in node.enums.iter() {
+            if self.enum_table.contains_key(&enum_decl.name.text) {
+                diagnostics.report_error(
+                    format!("Enum '{}' is already defined", enum_decl.name.text),
+                    Some(enum_decl.name.position.clone()),
+                );
+                continue;
+            }
+            let mut members = HashMap::new();
+            for (member, value) in enum_decl.members.iter() {
+                if members.contains_key(&member.text) {
+                    diagnostics.report_error(
+                        format!("Duplicate member '{}' in enum '{}'", member.text, enum_decl.name.text),
+                        Some(member.position.clone()),
+                    );
+                    continue;
+                }
+                members.insert(member.text.clone(), *value);
+            }
+            self.enum_table.insert(enum_decl.name.text.clone(), members);
+        }
+    }
+
+    /// Returns the integer value of an enum member, if `enum_name.member` names a known enum member.
+    fn enum_member_value(&self, enum_name: &str, member: &str) -> Option<i32> {
+        self.enum_table.get(enum_name).and_then(|m| m.get(member)).copied()
+    }
+
+    /// Enum-typed values are integers at runtime, so an enum type and `int` are mutually
+    /// assignable/comparable (C-style). Used to relax type checks involving enums.
+    fn enum_int_compatible(&self, a: &str, b: &str) -> bool {
+        (self.enum_table.contains_key(a) && b == "int")
+            || (self.enum_table.contains_key(b) && a == "int")
     }
 
     /// Pass 0: register every (non-generic) struct and its methods; stash generic templates.
@@ -522,8 +571,8 @@ impl<'a> Analyzer<'a> {
     {
         match statement
         {
-            StatementNode::Declaration(left, type_annotation, right) =>
-                self.analyze_declaration(left, type_annotation, right,parent_function,&symbol_table, diagnostics)?,
+            StatementNode::Declaration(left, type_annotation, right, is_const) =>
+                self.analyze_declaration(left, type_annotation, right, *is_const, parent_function,&symbol_table, diagnostics)?,
             StatementNode::Assignment(left,right) =>
                 self.analyze_assignment(left,right,parent_function,&symbol_table, diagnostics)?,
             StatementNode::IndexAssignment(left, index, right) =>
@@ -538,12 +587,24 @@ impl<'a> Analyzer<'a> {
                 self.analyze_return(expression,parent_function,&symbol_table, diagnostics)?,
             StatementNode::While(condition,body) =>
                 self.analyze_while(condition,body,parent_function,&symbol_table, diagnostics)?,
+            StatementNode::DoWhile(body,condition) =>
+                self.analyze_while(condition,body,parent_function,&symbol_table, diagnostics)?,
             StatementNode::For(init,condition,increment,body) =>
                 self.analyze_for(init,condition,increment,body,parent_function,&symbol_table, diagnostics)?,
-            StatementNode::Break=>
-                self.analyze_break(parent_function,has_parent_while, diagnostics)?,
-            StatementNode::Continue=>
-                self.analyze_continue(parent_function,has_parent_while, diagnostics)?,
+            StatementNode::ForEach(element, iterable, index_name, array_name, body) =>
+                self.analyze_foreach(element, iterable, index_name, array_name, body, parent_function, &symbol_table, diagnostics)?,
+            StatementNode::Switch(subject, cases, default_body) =>
+                self.analyze_switch(subject, cases, default_body, parent_function, &symbol_table, has_parent_while, diagnostics)?,
+            StatementNode::Labeled(label, inner) => {
+                self.loop_labels.push(label.clone());
+                let result = self.analyze_statement(inner, parent_function, symbol_table, has_parent_while, diagnostics);
+                self.loop_labels.pop();
+                result?;
+            },
+            StatementNode::Break(label)=>
+                self.analyze_break(label,parent_function,has_parent_while, diagnostics)?,
+            StatementNode::Continue(label)=>
+                self.analyze_continue(label,parent_function,has_parent_while, diagnostics)?,
             StatementNode::FunctionInvocation(name, generic_args, params) =>
                 {self.analyze_function_call(name, generic_args, params,parent_function,symbol_table, diagnostics)?;},
             StatementNode::MethodInvocation(obj, method, generic_args, params) =>
@@ -616,6 +677,28 @@ impl<'a> Analyzer<'a> {
             params_types.push(self.analyze_expression(param,parent_function,symbol_table, diagnostics)?.get_type());
         }
 
+        // Indirect call: if the called name is a local variable of function type, validate the
+        // arguments against the function-type signature and return its result type.
+        if let Ok(Type::Function(param_types, ret)) = (*symbol_table).as_ref().borrow().get_symbol(name) {
+            if param_types.len() != params_types.len() {
+                diagnostics.report_error(
+                    format!("function value '{}' expects {} arguments, got {}", name.text, param_types.len(), params_types.len()),
+                    Some(name.position.clone()),
+                );
+                return Ok((*ret).clone());
+            }
+            for i in 0..param_types.len() {
+                let expected = param_types[i].get_type();
+                if expected != "object" && expected != params_types[i] {
+                    diagnostics.report_error(
+                        format!("function value '{}' expects argument {} to be {}, got {}", name.text, i + 1, expected, params_types[i]),
+                        Some(name.position.clone()),
+                    );
+                }
+            }
+            return Ok((*ret).clone());
+        }
+
         // Monomorphization: bind every generic parameter to a concrete type, then register
         // (once) a specialized signature under the mangled name.
         if self.generic_functions.contains_key(&function_name) {
@@ -667,6 +750,11 @@ impl<'a> Analyzer<'a> {
                 continue;
             }
             if store_sig.parameters.get(i)!=params_types.get(i) {
+                let expected = store_sig.parameters.get(i).map(|s| s.as_str()).unwrap_or("");
+                let given = params_types.get(i).map(|s| s.as_str()).unwrap_or("");
+                if self.enum_int_compatible(expected, given) {
+                    continue;
+                }
                 diagnostics.report_error(format!("Function {} has param {} of type {:?} but param {} of type {:?} is given",
                                                                function_name,i,store_sig.parameters.get(i),i,params_types[i]), Some(name.position.clone()));
             }
@@ -731,17 +819,117 @@ impl<'a> Analyzer<'a> {
         Ok(store_sig.return_type.unwrap_or(Type::Void))
     }
 
-    fn analyze_break(&mut self,parent_function:&FunctionNode<'a>,has_parent_while:bool, diagnostics: &mut DiagnosticBag)->Result<(),()> {
+    fn analyze_break(&mut self,label:&Option<String>,parent_function:&FunctionNode<'a>,has_parent_while:bool, diagnostics: &mut DiagnosticBag)->Result<(),()> {
         if !has_parent_while {
             diagnostics.report_error(
                                   format!("Break statement is not in a loop in function {}",parent_function.name.text), Some(parent_function.name.position.clone()));
         }
+        if let Some(name) = label {
+            if !self.loop_labels.contains(name) {
+                diagnostics.report_error(
+                    format!("Break targets unknown loop label '{}'", name), Some(parent_function.name.position.clone()));
+            }
+        }
         Ok(())
     }
-    fn analyze_continue(&mut self,parent_function:&FunctionNode<'a>,has_parent_while:bool, diagnostics: &mut DiagnosticBag)->Result<(),()> {
+    fn analyze_continue(&mut self,label:&Option<String>,parent_function:&FunctionNode<'a>,has_parent_while:bool, diagnostics: &mut DiagnosticBag)->Result<(),()> {
         if !has_parent_while {
             diagnostics.report_error(
                                   format!("Continue statement is not in a loop in function {}",parent_function.name.text), Some(parent_function.name.position.clone()));
+        }
+        if let Some(name) = label {
+            if !self.loop_labels.contains(name) {
+                diagnostics.report_error(
+                    format!("Continue targets unknown loop label '{}'", name), Some(parent_function.name.position.clone()));
+            }
+        }
+        Ok(())
+    }
+    fn analyze_foreach(&mut self, element:&SyntaxToken, iterable:&ExpressionNode<'a>,
+                       index_name:&str, array_name:&str, body:&[StatementNode<'a>],
+                       parent_function:&FunctionNode<'a>, symbol_table:&Rc<RefCell<SymbolTable>>,
+                       diagnostics: &mut DiagnosticBag)->Result<(),()>
+    {
+        let iterable_type = self.analyze_expression(iterable, parent_function, symbol_table, diagnostics)?;
+        let element_type = match &iterable_type {
+            Type::Array(inner) => (**inner).clone(),
+            _ => {
+                diagnostics.report_error(
+                    format!("for-each can only iterate over arrays, got {}", iterable_type.get_type()),
+                    iterable.position(),
+                );
+                Type::Void
+            }
+        };
+
+        // Register the synthetic loop locals plus the user's element binding in a dedicated scope.
+        let foreach_scope = Rc::new(RefCell::new(SymbolTable::new(Some(symbol_table.clone()))));
+        (*symbol_table).borrow_mut().add_child(foreach_scope.clone());
+        {
+            let mut scope = (*foreach_scope).borrow_mut();
+            let _ = scope.add_symbol(array_name.to_string(), iterable_type.clone());
+            let _ = scope.add_symbol(index_name.to_string(), Type::Integer(synthetic_token(TokenKind::DataTypeToken, "int")));
+            if let Err(e) = scope.add_symbol(element.text.clone(), element_type) {
+                diagnostics.report_error(e.to_string(), Some(element.position.clone()));
+            }
+        }
+        self.analyze_body(body, parent_function, Some(&foreach_scope), true, diagnostics)?;
+        Ok(())
+    }
+    fn analyze_switch(&mut self, subject:&ExpressionNode<'a>,
+                      cases:&Vec<(Vec<ExpressionNode<'a>>, &'a [StatementNode<'a>])>,
+                      default_body:&Option<&'a [StatementNode<'a>]>,
+                      parent_function:&FunctionNode<'a>, symbol_table:&Rc<RefCell<SymbolTable>>,
+                      has_parent_while:bool, diagnostics: &mut DiagnosticBag)->Result<(),()>
+    {
+        let subject_type = self.analyze_expression(subject, parent_function, symbol_table, diagnostics)?;
+        let subject_name = subject_type.get_type();
+        let subject_is_enum = self.enum_table.contains_key(&subject_name);
+        if !matches!(subject_name.as_str(), "int" | "string" | "bool") && !subject_is_enum {
+            diagnostics.report_error(
+                format!("switch subject must be int, string, bool, or an enum, got {}", subject_name),
+                subject.position(),
+            );
+        }
+
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for (labels, body) in cases.iter() {
+            for label in labels.iter() {
+                // Labels must be compile-time constants: a literal, or (for enum switches) an
+                // enum member access like `Color.Red`.
+                let is_enum_label = matches!(label, ExpressionNode::MemberAccess(_, _));
+                if !matches!(label, ExpressionNode::Literal(_)) && !is_enum_label {
+                    diagnostics.report_error(
+                        "switch case labels must be constant literals or enum members".to_string(),
+                        label.position(),
+                    );
+                }
+                let label_type = self.analyze_expression(label, parent_function, symbol_table, diagnostics)?;
+                self.compare_data_type(&subject_type, &label_type, &empty_span(), diagnostics)?;
+
+                let key = match label {
+                    ExpressionNode::Literal(lit) => match lit {
+                        Type::Integer(t) | Type::Float(t) | Type::Double(t)
+                        | Type::String(t) | Type::Boolean(t) => Some(t.text.clone()),
+                        _ => None,
+                    },
+                    ExpressionNode::MemberAccess(_, m) => Some(m.text.clone()),
+                    _ => None,
+                };
+                if let Some(k) = key {
+                    if !seen.insert(k.clone()) {
+                        diagnostics.report_error(
+                            format!("duplicate case label '{}' in switch statement", k),
+                            label.position(),
+                        );
+                    }
+                }
+            }
+            self.analyze_body(body, parent_function, Some(symbol_table), has_parent_while, diagnostics)?;
+        }
+
+        if let Some(db) = default_body {
+            self.analyze_body(db, parent_function, Some(symbol_table), has_parent_while, diagnostics)?;
         }
         Ok(())
     }
@@ -778,8 +966,32 @@ impl<'a> Analyzer<'a> {
         Ok(())
     }
     ///return type is returned currently int and float supported
-    fn analyze_declaration(&mut self,left:&SyntaxToken, type_annotation: &Option<Type>, right:&ExpressionNode<'a>,parent_function:&FunctionNode<'a>,
+    fn analyze_declaration(&mut self,left:&SyntaxToken, type_annotation: &Option<Type>, right:&ExpressionNode<'a>, is_const: bool, parent_function:&FunctionNode<'a>,
                            symbol_table:&Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag)->Result<(),()> {
+        // Empty array literals carry no element type, so the declaration must supply one via an
+        // array-typed annotation (e.g. `let xs: int[] = [];`).
+        if let ExpressionNode::ArrayLiteral(elements) = right {
+            if elements.is_empty() {
+                match type_annotation {
+                    Some(t) if t.is_array() => {
+                        if let Err(e) = (*symbol_table).as_ref().borrow_mut().add_symbol(left.text.clone(), t.clone()) {
+                            diagnostics.report_error(e.to_string(), Some(left.position.clone()));
+                        }
+                        if is_const {
+                            (*symbol_table).as_ref().borrow_mut().mark_const(left.text.clone());
+                        }
+                        return Ok(());
+                    }
+                    _ => {
+                        diagnostics.report_error(
+                            "Empty array literal requires an array type annotation, e.g. `let xs: int[] = [];`".to_string(),
+                            Some(left.position.clone()),
+                        );
+                        return Ok(());
+                    }
+                }
+            }
+        }
         //return right type
         let right_type=self.analyze_expression(right,parent_function,symbol_table, diagnostics)?;
         
@@ -793,10 +1005,19 @@ impl<'a> Analyzer<'a> {
         if let Err(e) = (*symbol_table).as_ref().borrow_mut().add_symbol(left.text.clone(), var_type) {
             diagnostics.report_error(e.to_string(), Some(left.position.clone()));
         }
+        if is_const {
+            (*symbol_table).as_ref().borrow_mut().mark_const(left.text.clone());
+        }
         Ok(())
     }
     fn analyze_assignment(&mut self,left:&SyntaxToken,right:&ExpressionNode<'a>,parent_function:&FunctionNode<'a>,
                           symbol_table:&Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag)->Result<(),()> {
+        if (*symbol_table).as_ref().borrow().is_const(&left.text) {
+            diagnostics.report_error(
+                format!("Cannot assign to '{}' because it is a const binding", left.text),
+                Some(left.position.clone()),
+            );
+        }
         let r=self.analyze_expression(right,parent_function,symbol_table, diagnostics)?;
         let l = match (*symbol_table).as_ref().borrow().get_symbol(left) {
             Ok(sym) => sym,
@@ -940,6 +1161,20 @@ impl<'a> Analyzer<'a> {
             },
             ExpressionNode::Parenthesized(expr)=>
                 Ok(self.analyze_expression(expr,parent_function,symbol_table, diagnostics)?),
+            ExpressionNode::Ternary(condition, then_expr, else_expr) => {
+                let cond_type = self.analyze_expression(condition, parent_function, symbol_table, diagnostics)?;
+                if cond_type.get_type() != "bool" {
+                    diagnostics.report_error(
+                        format!("Ternary condition must be of type bool, got {}", cond_type.get_type()),
+                        condition.position(),
+                    );
+                }
+                let then_type = self.analyze_expression(then_expr, parent_function, symbol_table, diagnostics)?;
+                let else_type = self.analyze_expression(else_expr, parent_function, symbol_table, diagnostics)?;
+                // Both branches must agree; reuse the standard compatibility check.
+                self.compare_data_type(&then_type, &else_type, &empty_span(), diagnostics)?;
+                Ok(then_type)
+            },
             ExpressionNode::StructInstantiation(name, generic_args, fields) => {
                 // Resolve generic type arguments through the active monomorphization bindings so a
                 // `List<T>{...}` written inside a generic function/method body instantiates the
@@ -990,6 +1225,18 @@ impl<'a> Analyzer<'a> {
                 Ok(Type::Struct(dummy_token, None))
             },
             ExpressionNode::MemberAccess(obj, member) => {
+                // Enum member access `EnumName.Member` resolves to the enum type (an i32 at runtime).
+                if let ExpressionNode::Identifier(id) = obj {
+                    if self.enum_table.contains_key(&id.text) {
+                        if self.enum_member_value(&id.text, &member.text).is_none() {
+                            diagnostics.report_error(
+                                format!("Enum '{}' has no member '{}'", id.text, member.text),
+                                Some(member.position.clone()),
+                            );
+                        }
+                        return Ok(Type::Struct(id.clone(), None));
+                    }
+                }
                 let obj_type = self.analyze_expression(obj, parent_function, symbol_table, diagnostics)?;
 
                 let (base_name, generic_args) = match Self::resolve_struct_parts(&obj_type) {
@@ -1066,6 +1313,21 @@ impl<'a> Analyzer<'a> {
         let left_value = self.analyze_expression(left,parent_function,symbol_table, diagnostics)?;
         let right_value = self.analyze_expression(right,parent_function,symbol_table, diagnostics)?;
 
+        // Null-coalescing `a ?? b`: `a` should be nullable; the result is the unwrapped element
+        // type, and `b` must be assignable to it (or itself nullable of the same element type).
+        if opr.kind == TokenKind::QuestionQuestionToken {
+            let result_type = match &left_value {
+                Type::Nullable(inner) => (**inner).clone(),
+                other => other.clone(),
+            };
+            let right_unwrapped = match &right_value {
+                Type::Nullable(inner) => (**inner).clone(),
+                other => other.clone(),
+            };
+            self.compare_data_type(&result_type,&right_unwrapped,&opr.position, diagnostics)?;
+            return Ok(result_type);
+        }
+
         self.compare_data_type(&left_value,&right_value,&opr.position, diagnostics)?;
         match (&left_value,&opr.kind) {
           (Type::String(_),TokenKind::PlusToken)=> {}
@@ -1089,6 +1351,9 @@ impl<'a> Analyzer<'a> {
     }
     fn compare_data_type(&mut self, left:&Type, right:&Type, position:&TextSpan, diagnostics: &mut DiagnosticBag) ->Result<(),()> {
         if left.get_type() == right.get_type() {
+            return Ok(())
+        }
+        if self.enum_int_compatible(&left.get_type(), &right.get_type()) {
             return Ok(())
         }
 
@@ -1137,11 +1402,24 @@ impl<'a> Analyzer<'a> {
         let r= match (*symbol_table).as_ref().borrow().get_symbol(id) {
             Ok(t) => t,
             Err(e) => {
+                // A bare identifier that names a top-level function is a first-class function value.
+                if let Ok(sig) = self.function_table.get_function(&id.text) {
+                    let params = sig.parameters.iter().map(|p| Self::type_from_name(p)).collect();
+                    let ret = sig.return_type.clone().unwrap_or(Type::Void);
+                    return Ok(Type::Function(params, Box::new(ret)));
+                }
                 diagnostics.report_error(e.to_string(), Some(id.position.clone()));
                 Type::Void
             }
         };
         Ok(r)
+    }
+
+    /// Reconstructs a `Type` from its canonical type-name string (as stored in function-table
+    /// signatures), e.g. "int", "string", "Node", "int[]". Falls back to `void` if unparseable.
+    fn type_from_name(name: &str) -> Type {
+        let token = synthetic_token(TokenKind::IdentifierToken, name);
+        Type::from_token(token).unwrap_or(Type::Void)
     }
 
     fn analyze_if_else(&mut self, condition:&ExpressionNode<'a>, if_body:&[StatementNode<'a>],

@@ -25,7 +25,7 @@ impl<'a> WasmGenerator<'a> {
     /// Builds an expression (no implicit object boxing).
     pub fn build_expression_inner(&mut self, expression: &ExpressionNode<'a>, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         match expression {
-            ExpressionNode::Identifier(identifier) => self.build_identifier(identifier, writer)?,
+            ExpressionNode::Identifier(identifier) => self.build_identifier(identifier, function, writer)?,
             ExpressionNode::ArrayLiteral(elements) => self.build_array_literal(elements, left_side, function, writer)?,
             ExpressionNode::IndexAccess(array_expr, index_expr) => self.build_index_access(array_expr, index_expr, left_side, function, writer)?,
             ExpressionNode::Unary(opr, expression) => self.build_unary(opr, expression, left_side, function, writer)?,
@@ -39,8 +39,12 @@ impl<'a> WasmGenerator<'a> {
                     "array_new" if args.len() == 1 => self.build_array_new(generic_args, &args[0], function, writer)?,
                     "len" if args.len() == 1 => self.build_len(&args[0], function, writer)?,
                     _ => {
-                        let function_name = self.resolve_call_name(&n.text, generic_args, args, function);
-                        self.build_function_invocation(&function_name, args, function, writer)?
+                        if let Some((params_decl, ret)) = self.function_typed_local(&n.text, function) {
+                            self.build_indirect_call(&n.text, &params_decl, &ret, args, function, writer)?;
+                        } else {
+                            let function_name = self.resolve_call_name(&n.text, generic_args, args, function);
+                            self.build_function_invocation(&function_name, args, function, writer)?
+                        }
                     }
                 }
             },
@@ -63,7 +67,30 @@ impl<'a> WasmGenerator<'a> {
                 }
             },
             ExpressionNode::MethodCall(obj, method, generic_args, params) => self.build_method_call(obj, method, generic_args, params, left_side, function, writer)?,
+            ExpressionNode::Ternary(cond, then_e, else_e) => self.build_ternary(cond, then_e, else_e, left_side, function, writer)?,
         }
+        Ok(())
+    }
+
+    /// Builds a ternary `cond ? then : else` as a typed `(if (result T) ...)`. Both branches are
+    /// emitted with the surrounding expected type so boxing/conversions stay consistent.
+    pub fn build_ternary(&mut self, cond: &ExpressionNode<'a>, then_e: &ExpressionNode<'a>, else_e: &ExpressionNode<'a>, left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        let result_wasm = WasmGenerator::get_wasm_type_from(self.resolve_type(left_side))?;
+        self.build_expression(cond, &"int".to_string(), function, writer)?;
+        writer.write_line(&format!("(if (result {})", result_wasm));
+        writer.indent();
+        writer.write_line("(then");
+        writer.indent();
+        self.build_expression(then_e, left_side, function, writer)?;
+        writer.unindent();
+        writer.write_line(")");
+        writer.write_line("(else");
+        writer.indent();
+        self.build_expression(else_e, left_side, function, writer)?;
+        writer.unindent();
+        writer.write_line(")");
+        writer.unindent();
+        writer.write_line(")");
         Ok(())
     }
 
@@ -89,10 +116,15 @@ impl<'a> WasmGenerator<'a> {
 
         self.build_expression_inner(expr, &source_str, function, writer)?;
 
-        if target_str == "float" && source_str == "int" {
-            writer.write_line("f32.convert_i32_s");
-        } else if target_str == "int" && source_str == "float" {
-            writer.write_line("i32.trunc_f32_s");
+        // Numeric conversions between int/float/double. Same-type casts emit nothing.
+        match (source_base.as_str(), target_base.as_str()) {
+            ("int", "float") => writer.write_line("f32.convert_i32_s"),
+            ("int", "double") => writer.write_line("f64.convert_i32_s"),
+            ("float", "int") => writer.write_line("i32.trunc_f32_s"),
+            ("double", "int") => writer.write_line("i32.trunc_f64_s"),
+            ("float", "double") => writer.write_line("f64.promote_f32"),
+            ("double", "float") => writer.write_line("f32.demote_f64"),
+            _ => {}
         }
         // For object<->reference and same-type casts the pointer is already correct.
 
@@ -168,7 +200,9 @@ impl<'a> WasmGenerator<'a> {
             },
             None => name.text.clone(),
         };
-        let struct_info = self.struct_table.get_struct(&struct_name).unwrap().clone();
+        let struct_info = self.struct_table.get_struct(&struct_name)
+            .ok_or_else(|| Error::new(ErrorKind::Other, format!("unknown struct '{}' in instantiation", struct_name)))?
+            .clone();
         
         // 1. Allocate memory using $malloc, tagging the block with this struct's runtime tag.
         writer.write_line(&format!("i32.const {}", struct_info.size));
@@ -178,7 +212,8 @@ impl<'a> WasmGenerator<'a> {
         
         // 2. Evaluate and store each field
         for (field_name, expr) in fields.iter() {
-            let field_info = struct_info.fields.get(&field_name.text).unwrap();
+            let field_info = struct_info.fields.get(&field_name.text)
+                .ok_or_else(|| Error::new(ErrorKind::Other, format!("unknown field '{}' on struct '{}'", field_name.text, struct_name)))?;
             let offset = field_info.offset;
             let field_type = field_info.type_.get_type();
 
@@ -199,10 +234,23 @@ impl<'a> WasmGenerator<'a> {
 
     /// Builds a member access
     pub fn build_member_access(&mut self, obj: &ExpressionNode<'a>, member: &SyntaxToken, _left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        // Enum member access `EnumName.Member` lowers to the member's integer constant.
+        if let ExpressionNode::Identifier(id) = obj {
+            if let Some(members) = self.enums.get(&id.text) {
+                let value = members.get(&member.text).copied().ok_or_else(|| {
+                    Error::new(ErrorKind::Other, format!("enum '{}' has no member '{}'", id.text, member.text))
+                })?;
+                writer.write_line(&format!("i32.const {}", value));
+                return Ok(());
+            }
+        }
         let obj_type_str = self.infer_expression_type(obj, function)?;
         let base_obj_type_str = strip_nullable(&obj_type_str).to_string();
-        let struct_info = self.struct_table.get_struct(&base_obj_type_str).unwrap().clone();
-        let field_info = struct_info.fields.get(&member.text).unwrap();
+        let struct_info = self.struct_table.get_struct(&base_obj_type_str)
+            .ok_or_else(|| Error::new(ErrorKind::Other, format!("unknown struct '{}' in member access", base_obj_type_str)))?
+            .clone();
+        let field_info = struct_info.fields.get(&member.text)
+            .ok_or_else(|| Error::new(ErrorKind::Other, format!("unknown field '{}' on struct '{}'", member.text, base_obj_type_str)))?;
         let offset = field_info.offset;
         let field_type = field_info.type_.get_type();
 
@@ -225,7 +273,8 @@ impl<'a> WasmGenerator<'a> {
             Type::Double(d) => format!("f64.const {}", d.text),
             Type::Boolean(f) => format!("i32.const {}", if f.text == "true" { 1 } else { 0 }),
             Type::String(s) => {
-                let offset = self.strings.get(&s.text).unwrap();
+                let offset = self.strings.get(&s.text)
+                    .ok_or_else(|| Error::new(ErrorKind::Other, format!("string literal not interned: {}", s.text)))?;
                 format!("i32.const {}", offset)
             },
             Type::Nullable(_) => "i32.const 0".to_string(),
@@ -237,6 +286,57 @@ impl<'a> WasmGenerator<'a> {
 
     /// Builds a binary expression
     pub fn build_binary(&mut self, left_exp: &ExpressionNode<'a>, opr: &SyntaxToken, right_expr: &ExpressionNode<'a>, left: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        // Short-circuit logical operators: the right operand is only evaluated when its result can
+        // still affect the outcome. `&&` -> `if left then right else 0`; `||` -> `if left then 1
+        // else right`. The eager bitwise `&`/`|` operators are handled in the generic path below.
+        // Null-coalescing `a ?? b`: evaluate `a` once into a scratch local; if it is non-null
+        // (pointer != 0) yield it, otherwise evaluate and yield `b`.
+        if opr.kind == TokenKind::QuestionQuestionToken {
+            self.build_expression(left_exp, left, function, writer)?;
+            writer.write_line("local.tee $scratch_coalesce");
+            writer.write_line("i32.const 0");
+            writer.write_line("i32.ne");
+            writer.write_line("(if (result i32)");
+            writer.indent();
+            writer.write_line("(then");
+            writer.indent();
+            writer.write_line("local.get $scratch_coalesce");
+            writer.unindent();
+            writer.write_line(")");
+            writer.write_line("(else");
+            writer.indent();
+            self.build_expression(right_expr, left, function, writer)?;
+            writer.unindent();
+            writer.write_line(")");
+            writer.unindent();
+            writer.write_line(")");
+            return Ok(());
+        }
+
+        if matches!(opr.kind, TokenKind::AmpersandAmpersandToken | TokenKind::PipePipeToken) {
+            self.build_expression(left_exp, left, function, writer)?;
+            writer.write_line("(if (result i32)");
+            writer.indent();
+            if opr.kind == TokenKind::AmpersandAmpersandToken {
+                writer.write_line("(then");
+                writer.indent();
+                self.build_expression(right_expr, left, function, writer)?;
+                writer.unindent();
+                writer.write_line(")");
+                writer.write_line("(else (i32.const 0))");
+            } else {
+                writer.write_line("(then (i32.const 1))");
+                writer.write_line("(else");
+                writer.indent();
+                self.build_expression(right_expr, left, function, writer)?;
+                writer.unindent();
+                writer.write_line(")");
+            }
+            writer.unindent();
+            writer.write_line(")");
+            return Ok(());
+        }
+
         self.build_expression(left_exp, left, function, writer)?;
         self.build_expression(right_expr, left, function, writer)?;
 
@@ -300,6 +400,9 @@ impl<'a> WasmGenerator<'a> {
                 TokenKind::SmallerThanEqualToken => writer.write_line(&format!("{}.le_s", symbol)),
                 TokenKind::AmpersandAmpersandToken | TokenKind::BitWiseAmpersandToken => writer.write_line(&format!("{}.and", symbol)),
                 TokenKind::PipePipeToken | TokenKind::BitWisePipeToken => writer.write_line(&format!("{}.or", symbol)),
+                TokenKind::BitWiseXorToken => writer.write_line(&format!("{}.xor", symbol)),
+                TokenKind::ShiftLeftToken => writer.write_line(&format!("{}.shl", symbol)),
+                TokenKind::ShiftRightToken => writer.write_line(&format!("{}.shr_s", symbol)),
                 TokenKind::PlusToken | TokenKind::MinusToken | TokenKind::StarToken | TokenKind::EqualEqualToken | TokenKind::NotEqualToken => {},
                 _ => return Err(Error::new(ErrorKind::Other, format!("unknown operator {}", opr.text)))
             };
@@ -330,8 +433,66 @@ impl<'a> WasmGenerator<'a> {
     }
 
     /// Builds an identifier reference
-    pub fn build_identifier(&mut self, identifier: &SyntaxToken, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+    pub fn build_identifier(&mut self, identifier: &SyntaxToken, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        // A bare identifier that is not a local variable but names a top-level function is a
+        // first-class function value: emit its function-table index.
+        let func_name = self.current_mangled_name.as_ref().unwrap_or(&function.name.text);
+        let is_local = self.combined_symbol_lookup.get(func_name)
+            .map(|m| m.contains_key(&identifier.text))
+            .unwrap_or(false);
+        if !is_local {
+            if let Some(idx) = self.function_indices.get(&identifier.text) {
+                writer.write_line(&format!("i32.const {}", idx));
+                return Ok(());
+            }
+        }
         writer.write_line(&format!("local.get ${}", identifier.text));
+        Ok(())
+    }
+
+    /// Returns the structured signature `(param types, return type)` when `var_name` is a local
+    /// variable of function type in the current function, otherwise `None`.
+    pub fn function_typed_local(&self, var_name: &str, function: &FunctionNode<'a>) -> Option<(Vec<Type>, Type)> {
+        let func_name = self.current_mangled_name.as_ref().unwrap_or(&function.name.text);
+        let t = self.combined_symbol_lookup.get(func_name)?.get(var_name)?;
+        if let Type::Function(params, ret) = t {
+            Some((params.clone(), (**ret).clone()))
+        } else {
+            None
+        }
+    }
+
+    /// Builds an indirect call through a function-typed local variable using `call_indirect`.
+    /// The variable holds an `i32` index into the module's function table.
+    pub fn build_indirect_call(&mut self, var_name: &str, params_decl: &[Type], ret: &Type, args: &Vec<ExpressionNode<'a>>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        for (i, expr) in args.iter().enumerate() {
+            let pt = params_decl.get(i).map(|t| t.get_type()).unwrap_or_else(|| "int".to_string());
+            self.build_expression(expr, &pt, function, writer)?;
+        }
+        // Push the table index held by the variable, then dispatch.
+        writer.write_line(&format!("local.get ${}", var_name));
+
+        let mut param_str = String::new();
+        for p in params_decl {
+            param_str.push_str(&WasmGenerator::get_wasm_type_from(self.resolve_type(&p.get_type()))?);
+            param_str.push(' ');
+        }
+        let mut sig = String::new();
+        if !param_str.trim().is_empty() {
+            sig.push_str(&format!("(param {})", param_str.trim()));
+        }
+        if !matches!(ret, Type::Void) {
+            let ret_wasm = WasmGenerator::get_wasm_type_from(self.resolve_type(&ret.get_type()))?;
+            if !ret_wasm.is_empty() {
+                if !sig.is_empty() { sig.push(' '); }
+                sig.push_str(&format!("(result {})", ret_wasm));
+            }
+        }
+        if sig.is_empty() {
+            writer.write_line("call_indirect");
+        } else {
+            writer.write_line(&format!("call_indirect {}", sig));
+        }
         Ok(())
     }
 

@@ -52,6 +52,9 @@ pub enum Type {
     Struct(SyntaxToken, Option<Vec<Type>>),
     Generic(String),
     Nullable(Box<Type>),
+    /// A first-class function value `fun(params...): ret`. Represented at runtime as an `i32`
+    /// index into the module's function table (used with `call_indirect`).
+    Function(Vec<Type>, Box<Type>),
     Void,
 }
 
@@ -75,6 +78,10 @@ impl Type {
             },
             Type::Generic(name) => name.clone(),
             Type::Nullable(inner) => format!("{}?", inner.get_type()),
+            Type::Function(params, ret) => {
+                let params_str = params.iter().map(|p| p.get_type()).collect::<Vec<_>>().join(",");
+                format!("fun({}):{}", params_str, ret.get_type())
+            }
         }
     }
 
@@ -106,7 +113,7 @@ impl Type {
             | Type::Object(token)
             | Type::Struct(token, _) => Some(token.position.clone()),
             Type::Array(inner) | Type::Nullable(inner) => inner.get_span(),
-            Type::Void | Type::Generic(_) => None,
+            Type::Void | Type::Generic(_) | Type::Function(_, _) => None,
         }
     }
 
@@ -124,6 +131,7 @@ impl Type {
             Type::Struct(token, _) => token.position.get_point_str(),
             Type::Generic(_) => "".to_string(), // Can be improved
             Type::Nullable(inner) => inner.get_line_str(),
+            Type::Function(_, _) => "".to_string(),
         }
     }
 

@@ -40,6 +40,47 @@ node = Node { value: 5, next: null };
 
 Primitive types (`int`, `float`, `double`, `bool`) cannot be nullable.
 
+The null-coalescing operator `??` provides a fallback for nullable values (see [operators](operators.md)).
+
+## Char literals
+
+A character literal in single quotes is an `int` holding the character's code point. Common escapes (`'\n'`, `'\t'`, `'\r'`, `'\0'`, `'\\'`, `'\''`) are supported:
+
+```kotlin
+let a: int = 'A';        // 65
+let newline: int = '\n'; // 10
+let next: int = 'A' + 1; // 66
+```
+
+## Enums
+
+A C-style enum defines a set of named integer constants. Members are numbered from `0` by default, and an explicit value makes subsequent members continue from it:
+
+```kotlin
+enum Color { Red, Green, Blue }          // 0, 1, 2
+enum Status { Active = 10, Inactive }    // 10, 11
+```
+
+Access a member with `Enum.Member`. Enum values are integers at runtime, so they interoperate with `int` (e.g. they can be passed to `print_int`) and work as [`switch`](control-flow.md#switch-over-enums) subjects and labels:
+
+```kotlin
+let c: Color = Color.Green;
+print_int(c);            // 1
+```
+
+## Type aliases
+
+`type` introduces an alias for an existing type. Aliases are resolved at compile time (they are interchangeable with the underlying type) and must be declared before use:
+
+```kotlin
+type Number = int;
+type Names = string[];
+
+fun add(a: Number, b: Number): Number {
+    return a + b;
+}
+```
+
 ## Structs
 
 User-defined types. See [Structs](structs.md).

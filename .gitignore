@@ -4,3 +4,5 @@
 
 *.wat
 *.wasm
+
+*.abi.json

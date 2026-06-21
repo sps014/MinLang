@@ -18,6 +18,8 @@ pub enum ExpressionNode<'a> {
     MemberAccess(&'a ExpressionNode<'a>, SyntaxToken),
     IsExpression(&'a ExpressionNode<'a>, Type),
     MethodCall(&'a ExpressionNode<'a>, SyntaxToken, Option<Vec<Type>>, Vec<ExpressionNode<'a>>),
+    /// `condition ? then_value : else_value`
+    Ternary(&'a ExpressionNode<'a>, &'a ExpressionNode<'a>, &'a ExpressionNode<'a>),
 }
 
 impl<'a> ExpressionNode<'a> {
@@ -37,6 +39,7 @@ impl<'a> ExpressionNode<'a> {
             | ExpressionNode::Unary(token, _) => Some(token.position.clone()),
             ExpressionNode::Parenthesized(inner)
             | ExpressionNode::IsExpression(inner, _) => inner.position(),
+            ExpressionNode::Ternary(cond, _, _) => cond.position(),
             ExpressionNode::IndexAccess(array_expr, _) => array_expr.position(),
             ExpressionNode::Cast(target_type, expr) => target_type.get_span().or_else(|| expr.position()),
             ExpressionNode::ArrayLiteral(elements) => elements.first().and_then(|e| e.position()),

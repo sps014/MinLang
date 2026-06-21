@@ -6,7 +6,7 @@ fn parse_code<'a>(code: &str, arena: &'a bumpalo::Bump) -> (ProgramNode<'a>, Dia
     let mut diagnostics = DiagnosticBag::new(None);
     let lexer = Lexer::new(code.to_string());
     let mut parser = Parser::new(lexer, arena, &mut diagnostics);
-    let tree = parser.parse().unwrap_or_else(|_| crate::lang::code_analysis::syntax::syntax_tree::SyntaxTree::new(ProgramNode::new(vec![], vec![], vec![])));
+    let tree = parser.parse().unwrap_or_else(|_| crate::lang::code_analysis::syntax::syntax_tree::SyntaxTree::new(ProgramNode::new(vec![], vec![], vec![], vec![])));
     (tree.get_root().clone(), diagnostics)
 }
 
@@ -43,7 +43,7 @@ fn test_parse_array_declaration_and_assignment() {
     assert_eq!(func.body.len(), 2);
     
     // Check declaration
-    if let StatementNode::Declaration(id, type_annotation, ExpressionNode::ArrayLiteral(elements)) = &func.body[0] {
+    if let StatementNode::Declaration(id, type_annotation, ExpressionNode::ArrayLiteral(elements), _) = &func.body[0] {
         assert_eq!(id.text, "arr");
         assert!(type_annotation.is_some());
         assert_eq!(elements.len(), 3);
@@ -74,7 +74,7 @@ fn test_parse_binary_expression_precedence() {
     assert_eq!(diagnostics.has_errors(), false);
     let func = &program.functions[0];
     
-    if let StatementNode::Declaration(_, _, ExpressionNode::Binary(left, opr, right)) = &func.body[0] {
+    if let StatementNode::Declaration(_, _, ExpressionNode::Binary(left, opr, right), _) = &func.body[0] {
         assert_eq!(opr.kind, TokenKind::PlusToken);
         assert!(matches!(**left, ExpressionNode::Literal(Type::Integer(_))));
         assert!(matches!(**right, ExpressionNode::Binary(_, _, _))); // The * should be grouped on the right
@@ -123,6 +123,76 @@ fn test_parse_extern_rejects_body() {
 
     // A body where a `;` is expected must produce a diagnostic.
     assert_eq!(diagnostics.has_errors(), true);
+}
+
+#[test]
+fn test_parse_enum_declaration() {
+    let code = "enum Color { Red, Green = 5, Blue }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    assert_eq!(program.enums.len(), 1);
+
+    let decl = &program.enums[0];
+    assert_eq!(decl.name.text, "Color");
+    assert_eq!(decl.members.len(), 3);
+    // Auto-assigned, explicit, then continues from explicit value.
+    assert_eq!(decl.members[0].0.text, "Red");
+    assert_eq!(decl.members[0].1, 0);
+    assert_eq!(decl.members[1].0.text, "Green");
+    assert_eq!(decl.members[1].1, 5);
+    assert_eq!(decl.members[2].0.text, "Blue");
+    assert_eq!(decl.members[2].1, 6);
+}
+
+#[test]
+fn test_parse_do_while() {
+    let code = "fun test(): void { do { print_int(1); } while (false); }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    let func = &program.functions[0];
+    assert!(matches!(func.body[0], StatementNode::DoWhile(_, _)));
+}
+
+#[test]
+fn test_parse_const_and_labeled_break() {
+    let code = "fun test(): void { const x: int = 1; loop: while (true) { break loop; } }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    let func = &program.functions[0];
+    // First statement is a const declaration (is_const == true).
+    assert!(matches!(&func.body[0], StatementNode::Declaration(_, _, _, true)));
+    // Second statement is a labeled loop containing a `break loop;`.
+    if let StatementNode::Labeled(label, inner) = &func.body[1] {
+        assert_eq!(label, "loop");
+        if let StatementNode::While(_, body) = inner {
+            assert!(matches!(&body[0], StatementNode::Break(Some(l)) if l == "loop"));
+        } else {
+            panic!("Expected labeled while loop");
+        }
+    } else {
+        panic!("Expected labeled statement");
+    }
+}
+
+#[test]
+fn test_parse_char_literal() {
+    let code = "fun test(): void { let c: int = 'A'; }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    let func = &program.functions[0];
+    if let StatementNode::Declaration(_, _, ExpressionNode::Literal(Type::Integer(t)), _) = &func.body[0] {
+        assert_eq!(t.text, "65");
+    } else {
+        panic!("Expected char literal lowered to integer 65");
+    }
 }
 
 #[test]

@@ -71,6 +71,23 @@ impl<'a> WasmGenerator<'a> {
         // Object protocol: boxing/unboxing, to_string/hash_code dispatchers, defaults.
         self.build_object_runtime(writer)?;
 
+        // Function table for first-class function values / `call_indirect`. Every non-generic
+        // top-level function (including externs) gets a stable index.
+        let mut indexed_functions: Vec<&str> = Vec::new();
+        for func in program.functions.iter() {
+            if func.generic_parameters.is_some() { continue; }
+            let name = func.name.text.as_str();
+            if !self.function_indices.contains_key(name) {
+                self.function_indices.insert(name.to_string(), indexed_functions.len());
+                indexed_functions.push(name);
+            }
+        }
+        if !indexed_functions.is_empty() {
+            writer.write_line(&format!("(table $fn_table {} funcref)", indexed_functions.len()));
+            let refs = indexed_functions.iter().map(|n| format!("${}", n)).collect::<Vec<_>>().join(" ");
+            writer.write_line(&format!("(elem (i32.const 0) {})", refs));
+        }
+
         writer.write_line("(memory 10)");
         for (s, offset) in &self.strings {
             let unquoted = if s.starts_with('"') && s.ends_with('"') {
@@ -131,6 +148,8 @@ impl<'a> WasmGenerator<'a> {
         writer.write(" (local $scratch_double f64)");
         writer.write(" (local $scratch_len i32)");
         writer.write(" (local $scratch_arr i32)");
+        writer.write(" (local $scratch_switch i32)");
+        writer.write(" (local $scratch_coalesce i32)");
         writer.write_line("");
         writer.indent();
 

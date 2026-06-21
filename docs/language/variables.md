@@ -18,14 +18,25 @@ let score: double = 99.5d;
 let items: int[] = [1, 2, 3];
 ```
 
+## Constants
+
+Use `const` instead of `let` to declare an immutable binding. Reassigning a `const` is a compile error:
+
+```kotlin
+const pi: int = 3;
+// pi = 4;   // error: cannot assign to 'pi' because it is a const binding
+```
+
 ## Assignment
 
-Variables are mutable by default. Assign a new value with `=`:
+Variables declared with `let` are mutable. Assign a new value with `=`:
 
 ```kotlin
 let count = 0;
 count = count + 1;
 ```
+
+Compound assignment (`+=`, `-=`, `*=`, `/=`, `%=`) and increment/decrement (`++`, `--`) are also supported (see [operators](operators.md)).
 
 ## Scope
 

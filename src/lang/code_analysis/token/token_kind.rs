@@ -18,6 +18,9 @@ pub enum TokenKind
     
     #[regex(r#""([^"\\]*(\\.[^"\\]*)*)""#)]
     StringToken,
+
+    #[regex(r#"'(\\.|[^'\\])'"#)]
+    CharToken,
     
     #[token("true")]
     #[token("false")]
@@ -36,6 +39,20 @@ pub enum TokenKind
     #[token("%")]
     ModulusToken,
     
+    #[token("+=")]
+    PlusEqualToken,
+    #[token("-=")]
+    MinusEqualToken,
+    #[token("*=")]
+    StarEqualToken,
+    #[token("/=")]
+    SlashEqualToken,
+    #[token("%=")]
+    ModulusEqualToken,
+    #[token("++")]
+    PlusPlusToken,
+    #[token("--")]
+    MinusMinusToken,
     #[token("==")]
     EqualEqualToken,
     #[token("!=")]
@@ -48,6 +65,14 @@ pub enum TokenKind
     BitWisePipeToken,
     #[token("&")]
     BitWiseAmpersandToken,
+    #[token("^")]
+    BitWiseXorToken,
+    #[token("<<")]
+    ShiftLeftToken,
+    #[token(">>")]
+    ShiftRightToken,
+    #[token("??")]
+    QuestionQuestionToken,
     #[token("=")]
     EqualToken,
     #[token(">=")]
@@ -91,6 +116,8 @@ pub enum TokenKind
     ForToken,
     #[token("while")]
     WhileToken,
+    #[token("do")]
+    DoToken,
     #[token("return")]
     ReturnToken,
     #[token("break")]
@@ -99,6 +126,8 @@ pub enum TokenKind
     ContinueToken,
     #[token("let")]
     LetToken,
+    #[token("const")]
+    ConstToken,
     #[token("fun")]
     FunToken,
     #[token("import")]
@@ -113,6 +142,18 @@ pub enum TokenKind
     NullToken,
     #[token("is")]
     IsToken,
+    #[token("in")]
+    InToken,
+    #[token("enum")]
+    EnumToken,
+    #[token("type")]
+    TypeToken,
+    #[token("switch")]
+    SwitchToken,
+    #[token("case")]
+    CaseToken,
+    #[token("default")]
+    DefaultToken,
 
     #[token("@")]
     AtToken,

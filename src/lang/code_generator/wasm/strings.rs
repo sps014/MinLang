@@ -19,7 +19,7 @@ impl<'a> WasmGenerator<'a> {
     pub fn collect_strings_from_body(&mut self, body: &[StatementNode<'a>]) {
         for stmt in body {
             match stmt {
-                StatementNode::Declaration(_, _, expr) | StatementNode::Assignment(_, expr) => {
+                StatementNode::Declaration(_, _, expr, _) | StatementNode::Assignment(_, expr) => {
                     self.collect_strings_from_expr(expr);
                 }
                 StatementNode::IndexAssignment(arr, index, expr) => {
@@ -41,6 +41,13 @@ impl<'a> WasmGenerator<'a> {
                 StatementNode::While(cond, body) => {
                     self.collect_strings_from_expr(cond);
                     self.collect_strings_from_body(body);
+                }
+                StatementNode::DoWhile(body, cond) => {
+                    self.collect_strings_from_body(body);
+                    self.collect_strings_from_expr(cond);
+                }
+                StatementNode::Labeled(_, inner) => {
+                    self.collect_strings_from_body(std::slice::from_ref(*inner));
                 }
                 StatementNode::For(init, cond, inc, body) => {
                     if let Some(init_stmt) = init {
@@ -71,6 +78,22 @@ impl<'a> WasmGenerator<'a> {
                 StatementNode::MemberAssignment(obj, _, expr) => {
                     self.collect_strings_from_expr(obj);
                     self.collect_strings_from_expr(expr);
+                }
+                StatementNode::ForEach(_, iterable, _, _, body) => {
+                    self.collect_strings_from_expr(iterable);
+                    self.collect_strings_from_body(body);
+                }
+                StatementNode::Switch(subject, cases, default_body) => {
+                    self.collect_strings_from_expr(subject);
+                    for (labels, body) in cases {
+                        for label in labels {
+                            self.collect_strings_from_expr(label);
+                        }
+                        self.collect_strings_from_body(body);
+                    }
+                    if let Some(db) = default_body {
+                        self.collect_strings_from_body(db);
+                    }
                 }
                 _ => {}
             }
@@ -131,6 +154,11 @@ impl<'a> WasmGenerator<'a> {
                 for param in params {
                     self.collect_strings_from_expr(param);
                 }
+            }
+            ExpressionNode::Ternary(cond, then_e, else_e) => {
+                self.collect_strings_from_expr(cond);
+                self.collect_strings_from_expr(then_e);
+                self.collect_strings_from_expr(else_e);
             }
             _ => {}
         }
