@@ -4,7 +4,7 @@
 
 ## Creating a map
 
-```kotlin
+```c
 let scores = Map<string, int>();
 let cache  = Map<int, string>();
 ```
@@ -15,7 +15,7 @@ let cache  = Map<int, string>();
 
 Inserts or updates the value for `key`.
 
-```kotlin
+```c
 scores.put("alice", 95);
 scores.put("bob", 80);
 scores.put("alice", 100);   // overwrites 95
@@ -25,7 +25,7 @@ scores.put("alice", 100);   // overwrites 95
 
 Returns the value for `key`. If the key is absent, returns the zero value of `V` (`0` for `int`, `null` for references).
 
-```kotlin
+```c
 println(scores.get("alice"));   // 100
 println(scores.get("nobody"));  // 0
 ```
@@ -34,7 +34,7 @@ println(scores.get("nobody"));  // 0
 
 Returns the value for `key`, or `fallback` if the key is absent.
 
-```kotlin
+```c
 let v = scores.get_or("nobody", -1);   // -1
 ```
 
@@ -42,7 +42,7 @@ let v = scores.get_or("nobody", -1);   // -1
 
 Returns `true` if the key is present.
 
-```kotlin
+```c
 println(scores.contains("bob"));     // true
 println(scores.contains("nobody"));  // false
 ```
@@ -51,7 +51,7 @@ println(scores.contains("nobody"));  // false
 
 Removes the key and returns `true` if it existed, `false` otherwise.
 
-```kotlin
+```c
 let removed = scores.remove("bob");   // true
 ```
 
@@ -59,13 +59,13 @@ let removed = scores.remove("bob");   // true
 
 Number of key-value pairs currently in the map.
 
-```kotlin
+```c
 println(scores.size());   // 1
 ```
 
 ## Example
 
-```kotlin
+```c
 fun main() {
     let freq = Map<string, int>();
     let words = ["the", "cat", "sat", "on", "the", "mat"];

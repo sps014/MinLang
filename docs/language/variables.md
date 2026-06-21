@@ -4,7 +4,7 @@
 
 Use `let` to declare a local variable. The type is inferred from the right-hand side:
 
-```kotlin
+```c
 let x = 42;          // int
 let name = "Alice";  // string
 let ratio = 3.14;    // float
@@ -13,7 +13,7 @@ let done = false;    // bool
 
 You can also write the type explicitly. This is required when the initializer alone is ambiguous:
 
-```kotlin
+```c
 let score: double = 99.5d;
 let items: int[] = [1, 2, 3];
 ```
@@ -22,7 +22,7 @@ let items: int[] = [1, 2, 3];
 
 Use `const` instead of `let` to declare an immutable binding. Reassigning a `const` is a compile error:
 
-```kotlin
+```c
 const pi: int = 3;
 // pi = 4;   // error: cannot assign to 'pi' because it is a const binding
 ```
@@ -31,7 +31,7 @@ const pi: int = 3;
 
 Variables declared with `let` are mutable. Assign a new value with `=`:
 
-```kotlin
+```c
 let count = 0;
 count = count + 1;
 ```
@@ -42,7 +42,7 @@ Compound assignment (`+=`, `-=`, `*=`, `/=`, `%=`) and increment/decrement (`++`
 
 Variables live until the end of the block they are declared in. When a reference-typed variable (string, array, struct) goes out of scope, its reference count is decremented automatically.
 
-```kotlin
+```c
 fun main(): void {
     let a = 10;
     {
@@ -65,7 +65,7 @@ The compiler infers the type from the initializer expression. A few things to wa
 
 If inference gives you the wrong type, add an explicit annotation or a suffix:
 
-```kotlin
+```c
 let pi: double = 3.14159;   // explicit annotation
 let pi2 = 3.14159d;         // suffix
 ```

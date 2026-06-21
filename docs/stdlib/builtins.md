@@ -6,7 +6,7 @@ These are available in every Dream program without any import.
 
 Prints a value to stdout without a trailing newline. Works on all types.
 
-```kotlin
+```c
 print(42);         // prints "42"
 print(3.14f);      // prints "3.14"
 print("hello");    // prints "hello"
@@ -20,7 +20,7 @@ For structs that override `to_string`, `print` calls the override automatically.
 
 Like `print`, but appends a newline (`\n`) after the value.
 
-```kotlin
+```c
 println(42);       // prints "42\n"
 println("hello");  // prints "hello\n"
 ```
@@ -29,7 +29,7 @@ println("hello");  // prints "hello\n"
 
 Converts any value to its string representation:
 
-```kotlin
+```c
 let s = to_string(42);      // "42"
 let b = to_string(true);    // "true"
 let f = to_string(3.14f);   // "3.14"
@@ -41,7 +41,7 @@ For structs with a `@override pub fun to_string()` method, that method is called
 
 Returns a stable `int` hash for any value:
 
-```kotlin
+```c
 let h = hash_code("hello");
 let h2 = hash_code(42);
 ```
@@ -59,7 +59,7 @@ Math functions live in the `Math` namespace and are called with `Math.<name>(x)`
 | `Math.sqrt`  | `(float) -> float` | Square root     |
 | `Math.abs`   | `(float) -> float` | Absolute value  |
 
-```kotlin
+```c
 let hyp = Math.sqrt(3.0f * 3.0f + 4.0f * 4.0f);   // 5.0
 ```
 
@@ -67,7 +67,7 @@ let hyp = Math.sqrt(3.0f * 3.0f + 4.0f * 4.0f);   // 5.0
 
 `len` is a method on arrays and strings:
 
-```kotlin
+```c
 let arr = [10, 20, 30];
 println(arr.len());     // 3
 
@@ -79,6 +79,6 @@ println(name.len());    // 5
 
 Allocates a zeroed array of a given size. Mainly used by the standard library internals. You can use it in your own code when you need an array whose size isn't known at compile time:
 
-```kotlin
+```c
 let buf = array_new<int>(100);   // int[] with 100 zero-initialized slots
 ```

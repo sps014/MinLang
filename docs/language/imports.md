@@ -4,7 +4,7 @@ A Dream program can be split across multiple `.dream` files. Use `import` at the
 
 ## Importing a file
 
-```kotlin
+```c
 import "math_lib.dream"
 ```
 
@@ -12,14 +12,14 @@ import "math_lib.dream"
 - The `.dream` extension is optional: `import "math_lib"` and `import "math_lib.dream"` are equivalent.
 - Imported declarations become directly usable — no namespace prefix.
 
-```kotlin
+```c
 // math_lib.dream
 pub fun add_numbers(a: int, b: int): int {
     return a + b;
 }
 ```
 
-```kotlin
+```c
 // main.dream
 import "math_lib.dream"
 
@@ -34,7 +34,7 @@ Imports are resolved recursively (an imported file may import others), and each 
 
 Mark a declaration `pub` to make it part of a file's public surface and to expose it to the host environment. An exported function cannot expose a struct that is not itself exported.
 
-```kotlin
+```c
 pub struct Point {
     x: int;
     y: int;

@@ -16,14 +16,14 @@
 
 Append `[]` to any type to get an array of that type:
 
-```kotlin
+```c
 let nums: int[] = [10, 20, 30];
 let names: string[] = ["a", "b", "c"];
 ```
 
 Array access is zero-indexed:
 
-```kotlin
+```c
 let first = nums[0];   // 10
 nums[1] = 99;
 ```
@@ -34,7 +34,7 @@ Arrays are fixed-size once created from a literal. For a growable list, use [`Li
 
 Any reference type can be marked nullable with `?`. A nullable variable may hold either a real value or `null`:
 
-```kotlin
+```c
 let node: Node? = null;
 node = Node { value: 5, next: null };
 ```
@@ -47,7 +47,7 @@ The null-coalescing operator `??` provides a fallback for nullable values (see [
 
 `char` is a dedicated single-character type. A character literal is written in single quotes, and common escapes (`'\n'`, `'\t'`, `'\r'`, `'\0'`, `'\\'`, `'\''`) are supported. Each `char` occupies one byte in memory (in arrays and struct fields), making `char[]` a compact byte/character buffer:
 
-```kotlin
+```c
 let a: char = 'A';
 let newline: char = '\n';
 print(a);                  // prints "A"
@@ -58,7 +58,7 @@ print(letters[0]);         // prints "h"
 
 A `char` and an `int` convert losslessly via a cast (a `char` is a code point):
 
-```kotlin
+```c
 let code: int = (int)a;       // 65
 let next: char = (char)(code + 1);  // 'B'
 ```
@@ -67,21 +67,21 @@ let next: char = (char)(code + 1);  // 'B'
 
 A C-style enum defines a set of named integer constants. Members are numbered from `0` by default, and an explicit value makes subsequent members continue from it:
 
-```kotlin
+```c
 enum Color { Red, Green, Blue }          // 0, 1, 2
 enum Status { Active = 10, Inactive }    // 10, 11
 ```
 
 Access a member with `Enum.Member`. Enum values are integers at runtime, so they interoperate with `int` and work as [`switch`](control-flow.md#switch-over-enums) subjects and labels:
 
-```kotlin
+```c
 let c: Color = Color.Green;
 println(c);              // 1
 ```
 
 Call `.name()` on an enum value to get its variant name as a string:
 
-```kotlin
+```c
 println(Color.Green.name());   // Green
 println(c.name());             // Green
 ```
@@ -90,7 +90,7 @@ println(c.name());             // Green
 
 `type` introduces an alias for an existing type. Aliases are resolved at compile time (they are interchangeable with the underlying type) and must be declared before use:
 
-```kotlin
+```c
 type Number = int;
 type Names = string[];
 
@@ -111,7 +111,7 @@ A universal container that can hold any value at runtime. Useful for heterogeneo
 
 Use a C-style cast to convert between numeric types or between a value and `object`:
 
-```kotlin
+```c
 let n = 7;
 let f = (float)n;        // int -> float
 let back = (int)f;       // float -> int

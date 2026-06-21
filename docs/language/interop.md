@@ -6,7 +6,7 @@ Dream compiles to WebAssembly, so it runs anywhere WASM does — including the b
 
 An `extern fun` has a signature but no body. It is lowered to a WebAssembly *import* instead of a defined function:
 
-```kotlin
+```c
 extern fun alert(msg: string): void;
 
 fun main(): void {
@@ -20,7 +20,7 @@ By default the import comes from the `env` module under the function's own name.
 
 Use the `@js(module, name)` attribute to control which import module and field the extern binds to:
 
-```kotlin
+```c
 // binds to importObject["dom"]["setText"]
 @js("dom", "setText")
 extern fun set_text(value: string): void;

@@ -4,7 +4,7 @@ Structs are user-defined types that group related data together.
 
 ## Defining a struct
 
-```kotlin
+```c
 struct Point {
     x: int;
     y: int;
@@ -19,13 +19,13 @@ There are two ways to create an instance.
 
 Using a struct literal, naming each field (fields can be provided in any order):
 
-```kotlin
+```c
 let p = Point { x: 3, y: 4 };
 ```
 
 Or using a constructor call, passing values positionally:
 
-```kotlin
+```c
 let p = Point(3, 4);
 ```
 
@@ -38,7 +38,7 @@ To run custom logic when an instance is created, define a constructor with `pub 
 When an `init` is present, the constructor call matches its parameters instead of the fields,
 and any field you do not assign starts at its zero value (`0`, `0.0`, `false`, or `null`):
 
-```kotlin
+```c
 struct Account {
     owner: string;
     balance: int;
@@ -62,7 +62,7 @@ body, `this` refers to the new instance.
 
 Use `.`:
 
-```kotlin
+```c
 println(p.x);      // 3
 p.x = 10;
 println(p.x);      // 10
@@ -72,7 +72,7 @@ println(p.x);      // 10
 
 Define methods inside the struct body using `fun`. Methods automatically receive a `this` parameter that refers to the current instance:
 
-```kotlin
+```c
 struct Counter {
     count: int;
 
@@ -102,7 +102,7 @@ when its last reference goes out of scope; `drop` runs automatically just before
 released, while the fields are still valid. A destructor takes no parameters and has no return
 type:
 
-```kotlin
+```c
 struct File {
     name: string;
 
@@ -128,7 +128,7 @@ You never call `drop` yourself; the runtime invokes it as part of automatic memo
 
 Append `?` to a struct type to allow `null`:
 
-```kotlin
+```c
 struct Node {
     value: int;
     next: Node?;
@@ -142,7 +142,7 @@ head = Node { value: 1, next: null };
 
 A struct can hold a nullable reference to itself (non-nullable self-references would have infinite size):
 
-```kotlin
+```c
 struct Node {
     value: int;
     next: Node?;
@@ -157,7 +157,7 @@ struct Node {
 
 Mark a struct `pub` to make it visible to the WebAssembly host:
 
-```kotlin
+```c
 pub struct Vec2 {
     x: float;
     y: float;

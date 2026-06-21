@@ -6,7 +6,7 @@
 
 Assigning to an `object` variable automatically boxes the value:
 
-```kotlin
+```c
 let o: object = 42;       // boxing an int
 let s: object = "hello";  // boxing a string
 ```
@@ -15,7 +15,7 @@ let s: object = "hello";  // boxing a string
 
 To get the original value out, cast with the concrete type. If the stored type doesn't match, the program traps at runtime:
 
-```kotlin
+```c
 let n = (int)o;    // 42, if o holds an int
 ```
 
@@ -23,7 +23,7 @@ let n = (int)o;    // 42, if o holds an int
 
 Check the runtime type of an `object` before casting:
 
-```kotlin
+```c
 fun describe(o: object): void {
     if (o is int) {
         print("int: ");
@@ -43,7 +43,7 @@ On a non-`object` variable, `is` is resolved at compile time. If the types match
 
 Every value responds to `to_string` (returns a `string`) and `hash_code` (returns an `int`):
 
-```kotlin
+```c
 let s = to_string(42);       // "42"
 let h = hash_code("hello");  // some stable integer
 ```
@@ -54,7 +54,7 @@ These work on any type, including `object`.
 
 A struct can customize `to_string` and `hash_code` by declaring them with `@override pub`:
 
-```kotlin
+```c
 struct Color {
     r: int;
     g: int;
