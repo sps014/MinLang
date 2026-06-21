@@ -75,6 +75,9 @@ impl<'a> WasmGenerator<'a> {
         // Object protocol: boxing/unboxing, to_string/hash_code dispatchers, defaults.
         self.build_object_runtime(writer)?;
 
+        // Per-enum `name()` lookup functions.
+        self.build_enum_runtime(writer);
+
         // Function table for first-class function values / `call_indirect`. Every non-generic
         // top-level function (including externs) gets a stable index.
         let mut indexed_functions: Vec<&str> = Vec::new();
@@ -154,6 +157,10 @@ impl<'a> WasmGenerator<'a> {
         writer.write(" (local $scratch_arr i32)");
         writer.write(" (local $scratch_switch i32)");
         writer.write(" (local $scratch_coalesce i32)");
+        // Base-pointer locals for nested heap constructors (see `ctor_base_local`).
+        for i in 0..Self::CTOR_BASE_POOL {
+            writer.write(&format!(" (local $ctor_base{} i32)", i));
+        }
         writer.write_line("");
         writer.indent();
 

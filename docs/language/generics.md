@@ -46,6 +46,16 @@ fun main(): void {
 }
 ```
 
+Type arguments can themselves be generic (or arrays), so generics nest freely:
+
+```kotlin
+let nested = Pair<Box<int>, int> { first: Box<int> { v: 7 }, second: 5 };
+println(nested.first.v);   // 7
+
+let pts: Pair<int, int>[] = [Pair<int, int> { first: 1, second: 2 }];
+println(pts[0].second);    // 2
+```
+
 ## Generic methods
 
 Methods on generic structs automatically have access to the struct's type parameters:

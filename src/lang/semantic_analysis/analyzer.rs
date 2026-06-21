@@ -761,6 +761,17 @@ impl<'a> Analyzer<'a> {
 
         let obj_type = self.analyze_expression(obj, parent_function, symbol_table, diagnostics)?;
 
+        // `EnumValue.name()`: built-in accessor returning the variant name as a string.
+        if method.text == "name" {
+            let base = strip_nullable(&obj_type.get_type()).to_string();
+            if self.enum_table.contains_key(&base) {
+                if !params.is_empty() {
+                    diagnostics.report_error(format!("'name' takes no arguments, got {}", params.len()), Some(method.position.clone()));
+                }
+                return Ok(Type::String(synthetic_token(TokenKind::DataTypeToken, "string")));
+            }
+        }
+
         // `arr.len()` / `str.len()`: built-in length method on arrays and strings.
         if method.text == "len" {
             let base = strip_nullable(&obj_type.get_type()).to_string();

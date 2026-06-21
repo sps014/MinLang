@@ -79,6 +79,13 @@ let c: Color = Color.Green;
 println(c);              // 1
 ```
 
+Call `.name()` on an enum value to get its variant name as a string:
+
+```kotlin
+println(Color.Green.name());   // Green
+println(c.name());             // Green
+```
+
 ## Type aliases
 
 `type` introduces an alias for an existing type. Aliases are resolved at compile time (they are interchangeable with the underlying type) and must be declared before use:

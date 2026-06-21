@@ -66,3 +66,14 @@ let pts: Point[] = [
 ];
 println(pts[1].x);   // 1
 ```
+
+## Nested arrays
+
+The element type can itself be an array (or any other type), giving multi-dimensional arrays:
+
+```kotlin
+let grid: int[][] = [[1, 2, 3], [4, 5, 6]];
+println(grid.len());      // 2  (rows)
+println(grid[0].len());   // 3  (columns)
+println(grid[1][2]);      // 6
+```

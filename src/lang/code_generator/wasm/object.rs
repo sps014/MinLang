@@ -380,7 +380,7 @@ impl<'a> WasmGenerator<'a> {
     /// Interns every runtime string the object protocol needs (primitive labels plus each
     /// struct's default `to_string` pieces). Call once, after user strings are collected.
     pub fn register_object_runtime_strings(&mut self) {
-        for s in ["true", "false", "null", "<object>", "-", "[", "]", ", "] {
+        for s in ["true", "false", "null", "<object>", "-", "[", "]", ", ", ""] {
             self.intern_runtime_string(s);
         }
         let infos: Vec<StructInfo> = self.struct_table.structs.values().cloned().collect();
@@ -392,12 +392,49 @@ impl<'a> WasmGenerator<'a> {
             }
             self.intern_runtime_string(&suffix);
         }
+        // Every enum variant name, returned by `EnumValue.name()`.
+        let member_names: Vec<String> = self.enums.values()
+            .flat_map(|members| members.keys().cloned())
+            .collect();
+        for name in member_names {
+            self.intern_runtime_string(&name);
+        }
     }
 
     /// True if the struct provides its own `@override` implementation of `method`
     /// (`to_string` / `hash_code`); otherwise a default is generated.
     fn has_protocol_override(&self, struct_name: &str, method: &str) -> bool {
         self.function_table.get_function(&format!("{}_{}", struct_name, method)).is_ok()
+    }
+
+    /// Emits one `$enum_name_<Enum>(i32) -> i32` lookup per declared enum, returning the
+    /// interned variant-name string for a value (or the empty string if none matches, which
+    /// only happens for out-of-range values produced by an `int` -> enum cast).
+    pub fn build_enum_runtime(&self, writer: &mut IndentedTextWriter) {
+        let fallback = self.rstr("");
+        let mut enum_names: Vec<&String> = self.enums.keys().collect();
+        enum_names.sort();
+        for enum_name in enum_names {
+            writer.write_line(&format!("(func $enum_name_{} (param $v i32) (result i32)", enum_name));
+            writer.indent();
+            let mut entries: Vec<(&String, &i32)> = self.enums[enum_name].iter().collect();
+            entries.sort_by_key(|(_, value)| **value);
+            for (member, value) in entries {
+                let strptr = self.rstr(member);
+                writer.write_line("local.get $v");
+                writer.write_line(&format!("i32.const {}", value));
+                writer.write_line("i32.eq");
+                writer.write_line("if");
+                writer.indent();
+                writer.write_line(&format!("i32.const {}", strptr));
+                writer.write_line("return");
+                writer.unindent();
+                writer.write_line("end");
+            }
+            writer.write_line(&format!("i32.const {}", fallback));
+            writer.unindent();
+            writer.write_line(")");
+        }
     }
 
     /// Emits the entire object-protocol runtime into the module.

@@ -205,3 +205,33 @@ fn test_parse_error_recovery() {
     // The parser should report an error for the missing expression but continue parsing `let y = 5;`
     assert!(diagnostics.diagnostics.len() > 0);
 }
+
+#[test]
+fn test_parse_nested_generic_type_annotation() {
+    // Nested generics close with `>>` (a single ShiftRight token); the parser must split it.
+    let code = "fun main(): void { let b: Box<Box<int>> = null; }";
+    let arena = bumpalo::Bump::new();
+    let (_, diagnostics) = parse_code(code, &arena);
+    assert_eq!(diagnostics.has_errors(), false);
+}
+
+#[test]
+fn test_parse_multi_arg_nested_generic_instantiation() {
+    // `Pair<Box<int>, int> { ... }` must be recognized as a struct instantiation despite the
+    // nested generic in the first type argument.
+    let code = "struct Box<T> { v: T; } struct Pair<A, B> { first: A; second: B; } \
+                fun main(): void { let p = Pair<Box<int>, int> { first: Box<int> { v: 1 }, second: 2 }; }";
+    let arena = bumpalo::Bump::new();
+    let (_, diagnostics) = parse_code(code, &arena);
+    assert_eq!(diagnostics.has_errors(), false);
+}
+
+#[test]
+fn test_parse_struct_comma_fields_recovers_without_hanging() {
+    // Comma-separated struct fields are invalid (fields use ';'). The parser must report an
+    // error and terminate rather than spin forever on the unexpected token.
+    let code = "struct Point { x: int, y: int, } fun main(): void { }";
+    let arena = bumpalo::Bump::new();
+    let (_, diagnostics) = parse_code(code, &arena);
+    assert_eq!(diagnostics.has_errors(), true);
+}

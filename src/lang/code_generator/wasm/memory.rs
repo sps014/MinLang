@@ -384,20 +384,71 @@ impl<'a> WasmGenerator<'a> {
             self.build_release_func(name, Some(struct_info), writer)?;
         }
 
-        // Array releases (we need to know which array types are used)
-        // For now, we can just generate release functions for basic array types
-        self.build_release_func("int[]", None, writer)?;
-        self.build_release_func("float[]", None, writer)?;
-        self.build_release_func("double[]", None, writer)?;
-        self.build_release_func("bool[]", None, writer)?;
-        self.build_release_func("char[]", None, writer)?;
-        self.build_release_func("string[]", None, writer)?;
-        
+        // Array releases. We emit a `$release_*_array` for every array type the program can
+        // actually reference, expanded to all nested levels (e.g. `int[][]` requires both
+        // `int_array_array` and `int_array`). The primitive and struct arrays are always
+        // included so simple programs and the object protocol's dispatch keep working.
+        let mut array_types: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        for prim in ["int", "float", "double", "bool", "char", "string"] {
+            array_types.insert(format!("{}[]", prim));
+        }
         for name in self.struct_table.structs.keys() {
-            self.build_release_func(&format!("{}[]", name), None, writer)?;
+            array_types.insert(format!("{}[]", name));
+        }
+        self.collect_used_array_types(&mut array_types);
+
+        for array_type in &array_types {
+            self.build_release_func(array_type, None, writer)?;
         }
 
         Ok(())
+    }
+
+    /// Scans the program (every function's locals/params, struct fields, and function
+    /// signatures) for array-typed values and records each one - plus every nested array
+    /// level it contains - into `set`, normalized so the names match `release_func_suffix`
+    /// (all `?` markers dropped). Generic and otherwise non-emittable element types are skipped.
+    fn collect_used_array_types(&self, set: &mut std::collections::BTreeSet<String>) {
+        for table in self.symbol_map.values() {
+            if let Ok(vars) = self.get_local_variables(table) {
+                for ty in vars.values() {
+                    self.add_array_levels(&ty.get_type(), set);
+                }
+            }
+        }
+        for struct_info in self.struct_table.structs.values() {
+            for field in struct_info.fields.values() {
+                self.add_array_levels(&field.type_.get_type(), set);
+            }
+        }
+        for func in self.syntax_tree.get_root().functions.iter() {
+            for param in &func.parameters {
+                self.add_array_levels(&param.type_.get_type(), set);
+            }
+            if let Some(ret) = &func.return_type {
+                self.add_array_levels(&ret.get_type(), set);
+            }
+        }
+    }
+
+    /// Adds `type_str` and each of its nested array levels to `set` when the element base is a
+    /// type we can release (primitive, `object`, or a known struct). Nullable markers are
+    /// stripped so the generated function names match the call sites in `emit_release`.
+    fn add_array_levels(&self, type_str: &str, set: &mut std::collections::BTreeSet<String>) {
+        let mut cur = self.resolve_type(type_str).replace('?', "");
+        if !cur.ends_with("[]") {
+            return;
+        }
+        let base = cur.trim_end_matches("[]");
+        let is_emittable = matches!(base, "int" | "float" | "double" | "bool" | "char" | "string" | "object")
+            || self.struct_table.get_struct(base).is_some();
+        if !is_emittable {
+            return;
+        }
+        while cur.ends_with("[]") {
+            set.insert(cur.clone());
+            cur.truncate(cur.len() - 2);
+        }
     }
 
     fn build_release_func(&self, type_name: &str, struct_info: Option<&crate::lang::semantic_analysis::struct_table::StructInfo>, writer: &mut IndentedTextWriter) -> Result<(), Error> {

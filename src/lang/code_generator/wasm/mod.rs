@@ -53,6 +53,11 @@ pub struct WasmGenerator<'a> {
     pub struct_methods: &'a Vec<(&'a crate::lang::code_analysis::syntax::nodes::FunctionNode<'a>, crate::lang::semantic_analysis::analyzer::GenericBindings)>,
     /// Registered enums: name -> (member -> i32 value). Enum members lower to `i32.const`.
     pub enums: &'a crate::lang::semantic_analysis::analyzer::EnumTable,
+    /// Current nesting depth of heap constructors (struct instantiations / array literals).
+    /// Each level borrows a distinct `$ctor_base{depth}` local to hold its allocation pointer
+    /// across sub-expression evaluation, so nested literals (`[P{...}]`, `Box<Box<int>>`) do
+    /// not clobber each other's base pointer.
+    pub alloc_depth: usize,
 }
 
 impl<'a> CodeGenerator<'a> for WasmGenerator<'a> {
@@ -84,6 +89,18 @@ impl<'a> WasmGenerator<'a> {
             instantiated_generics: &semantic_info.instantiated_generics,
             struct_methods: &semantic_info.struct_methods,
             enums: &semantic_info.enums,
+            alloc_depth: 0,
         }
+    }
+
+    /// Number of `$ctor_base{n}` scratch locals declared per function. Bounds the supported
+    /// nesting depth of literal heap constructors; deeper nesting falls back to the last slot.
+    pub const CTOR_BASE_POOL: usize = 16;
+
+    /// Returns the name of the base-pointer local for the current constructor nesting depth,
+    /// clamped to the declared pool so it always refers to a real local.
+    pub fn ctor_base_local(&self) -> String {
+        let idx = self.alloc_depth.min(Self::CTOR_BASE_POOL - 1);
+        format!("$ctor_base{}", idx)
     }
 }

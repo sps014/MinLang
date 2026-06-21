@@ -1,0 +1,1 @@
+Struct fields are separated with ';', not ','. A wrong separator must report a clean parse error rather than hanging the compiler.

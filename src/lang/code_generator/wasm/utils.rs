@@ -337,6 +337,10 @@ impl<'a> WasmGenerator<'a> {
                 if method.text == "len" && (struct_name.ends_with("[]") || struct_name == "string") {
                     return Ok("int".to_string());
                 }
+                // `EnumValue.name()` yields the variant name as a string.
+                if method.text == "name" && self.enums.contains_key(struct_name) {
+                    return Ok("string".to_string());
+                }
                 let mangled_name = format!("{}_{}", struct_name, method.text);
                 if let Ok(func_info) = self.function_table.get_function(&mangled_name) {
                     if let Some(ret) = &func_info.return_type {

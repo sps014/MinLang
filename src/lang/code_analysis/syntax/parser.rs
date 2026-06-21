@@ -90,6 +90,78 @@ impl<'a, 'b> Parser<'a, 'b>
             SyntaxToken::new(kind, token.position.clone(), "".to_string())
         }
     }
+    /// True if the current token can close a generic argument list: either a plain `>` or the
+    /// first half of a `>>` (`ShiftRightToken`), which appears when two generic lists end
+    /// together, e.g. the `>>` in `Box<Box<int>>`.
+    fn is_generic_close(&self) -> bool {
+        matches!(
+            self.current_token().kind,
+            TokenKind::GreaterThanToken | TokenKind::ShiftRightToken
+        )
+    }
+    /// Consumes one generic-list closing `>`. When the current token is `>>` it is split in
+    /// place: one `>` is consumed conceptually and the pending token is rewritten to a single
+    /// `>` so the enclosing generic list can close on the next call. Reports an error if neither
+    /// is present.
+    fn match_generic_close(&mut self) {
+        let token = self.current_token();
+        match token.kind {
+            TokenKind::GreaterThanToken => {
+                self.next_token();
+            }
+            TokenKind::ShiftRightToken => {
+                // Rewrite `>>` to a single `>` and stay put so the outer close consumes it.
+                if self.current_token_index < self.tokens.len() {
+                    let remaining = &mut self.tokens[self.current_token_index];
+                    remaining.kind = TokenKind::GreaterThanToken;
+                    remaining.text = ">".to_string();
+                }
+            }
+            _ => {
+                self.match_token(TokenKind::GreaterThanToken);
+            }
+        }
+    }
+    /// Recovery guard for token-consuming loops: if no token has been consumed since `mark`,
+    /// skip one token so malformed input surfaces an error (already reported by the failing
+    /// `match_token`) instead of spinning forever. Never advances past end-of-file.
+    fn ensure_progress(&mut self, mark: usize) {
+        if self.current_token_index == mark
+            && self.current_token().kind != TokenKind::EndOfFileToken
+        {
+            self.next_token();
+        }
+    }
+    /// Lookahead over a balanced generic argument list whose first argument token is at peek
+    /// offset `start` (i.e. the opening `<` was already seen). Tracks nesting so multi-argument
+    /// and nested generics (`Pair<Box<int>, int>`, `Box<Box<int>>`) are handled, treating `>>`
+    /// as two closing `>`. Returns the peek offset of the token right after the matching close,
+    /// or `None` if a `;`/end-of-file is hit first (not a generic list). Used only to
+    /// disambiguate generic calls/instantiations from `<`/`>` comparisons.
+    fn scan_generic_args(&self, mut i: usize) -> Option<usize> {
+        let mut depth: i32 = 1;
+        while self.peek_token(i).kind != TokenKind::EndOfFileToken {
+            match self.peek_token(i).kind {
+                TokenKind::SmallerThanToken => depth += 1,
+                TokenKind::GreaterThanToken => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(i + 1);
+                    }
+                }
+                TokenKind::ShiftRightToken => {
+                    depth -= 2;
+                    if depth <= 0 {
+                        return Some(i + 1);
+                    }
+                }
+                TokenKind::SemicolonToken => return None,
+                _ => {}
+            }
+            i += 1;
+        }
+        None
+    }
     ///parse all tokens from lexer and returns a syntax tree or error
     pub fn parse(&mut self)->Result<SyntaxTree<'a>,Error>
     {
@@ -203,10 +275,12 @@ impl<'a, 'b> Parser<'a, 'b>
             self.match_token(TokenKind::SmallerThanToken);
             let mut params = Vec::new();
             while self.current_token().kind != TokenKind::GreaterThanToken && self.current_token().kind != TokenKind::EndOfFileToken {
+                let iter = self.current_token_index;
                 params.push(self.match_token(TokenKind::IdentifierToken));
                 if self.current_token().kind == TokenKind::CommaToken {
                     self.match_token(TokenKind::CommaToken);
                 }
+                self.ensure_progress(iter);
             }
             self.match_token(TokenKind::GreaterThanToken);
             generic_parameters = Some(params);
@@ -217,6 +291,7 @@ impl<'a, 'b> Parser<'a, 'b>
         let mut fields = Vec::new();
         let mut methods = Vec::new();
         while self.current_token().kind != TokenKind::CurlyCloseBracketToken && self.current_token().kind != TokenKind::EndOfFileToken {
+            let iter = self.current_token_index;
             if self.current_token().kind == TokenKind::FunToken || self.current_token().kind == TokenKind::ExportToken || self.current_token().kind == TokenKind::AtToken {
                 methods.push(self.parse_function()?);
             } else {
@@ -246,6 +321,7 @@ impl<'a, 'b> Parser<'a, 'b>
                     type_token: field_type_token,
                 });
             }
+            self.ensure_progress(iter);
         }
         
         self.match_token(TokenKind::CurlyCloseBracketToken);
@@ -270,10 +346,12 @@ impl<'a, 'b> Parser<'a, 'b>
             while self.current_token().kind != TokenKind::CloseParenthesisToken
                 && self.current_token().kind != TokenKind::EndOfFileToken
             {
+                let iter = self.current_token_index;
                 params.push(self.parse_type()?);
                 if self.current_token().kind == TokenKind::CommaToken {
                     self.match_token(TokenKind::CommaToken);
                 }
+                self.ensure_progress(iter);
             }
             self.match_token(TokenKind::CloseParenthesisToken);
             let ret = if self.current_token().kind == TokenKind::ColonToken {
@@ -307,13 +385,15 @@ impl<'a, 'b> Parser<'a, 'b>
             if self.current_token().kind == TokenKind::SmallerThanToken {
                 self.match_token(TokenKind::SmallerThanToken);
                 let mut args = Vec::new();
-                while self.current_token().kind != TokenKind::GreaterThanToken && self.current_token().kind != TokenKind::EndOfFileToken {
+                while !self.is_generic_close() && self.current_token().kind != TokenKind::EndOfFileToken {
+                    let iter = self.current_token_index;
                     args.push(self.parse_type()?);
                     if self.current_token().kind == TokenKind::CommaToken {
                         self.match_token(TokenKind::CommaToken);
                     }
+                    self.ensure_progress(iter);
                 }
-                self.match_token(TokenKind::GreaterThanToken);
+                self.match_generic_close();
                 parsed_type = Type::Struct(token.clone(), Some(args));
             }
         }
@@ -387,10 +467,12 @@ impl<'a, 'b> Parser<'a, 'b>
             self.match_token(TokenKind::SmallerThanToken);
             let mut params = Vec::new();
             while self.current_token().kind != TokenKind::GreaterThanToken && self.current_token().kind != TokenKind::EndOfFileToken {
+                let iter = self.current_token_index;
                 params.push(self.match_token(TokenKind::IdentifierToken));
                 if self.current_token().kind == TokenKind::CommaToken {
                     self.match_token(TokenKind::CommaToken);
                 }
+                self.ensure_progress(iter);
             }
             self.match_token(TokenKind::GreaterThanToken);
             generic_parameters = Some(params);
@@ -498,8 +580,10 @@ impl<'a, 'b> Parser<'a, 'b>
         while self.current_token().kind!=TokenKind::CurlyCloseBracketToken
             && self.current_token().kind!=TokenKind::EndOfFileToken
         {
+            let iter = self.current_token_index;
             let statement=self.parse_statement()?;
             statements.push(statement);
+            self.ensure_progress(iter);
         }
         //eat the close curly brace
         self.match_token(TokenKind::CurlyCloseBracketToken);
@@ -782,10 +866,12 @@ impl<'a, 'b> Parser<'a, 'b>
             self.match_token(TokenKind::OpenBracketToken);
             let mut elements = Vec::new();
             while self.current_token().kind != TokenKind::CloseBracketToken && self.current_token().kind != TokenKind::EndOfFileToken {
+                let iter = self.current_token_index;
                 elements.push(self.parse_expression(0)?);
                 if self.current_token().kind == TokenKind::CommaToken {
                     self.match_token(TokenKind::CommaToken);
                 }
+                self.ensure_progress(iter);
             }
             self.match_token(TokenKind::CloseBracketToken);
             return Ok(ExpressionNode::ArrayLiteral(elements));
@@ -810,21 +896,14 @@ impl<'a, 'b> Parser<'a, 'b>
             } else if self.peek_token(1).kind==TokenKind::CurlyOpenBracketToken {
                 is_struct_instantiation = true;
             } else if self.peek_token(1).kind == TokenKind::SmallerThanToken {
-                // Check if it's a generic invocation like `Test<int>(...)` or `Box<int> { ... }`
-                let mut i = 2;
-                while self.peek_token(i).kind != TokenKind::EndOfFileToken {
-                    if self.peek_token(i).kind == TokenKind::GreaterThanToken {
-                        if self.peek_token(i + 1).kind == TokenKind::OpenParenthesisToken {
-                            is_invocation = true;
-                        } else if self.peek_token(i + 1).kind == TokenKind::CurlyOpenBracketToken {
-                            is_struct_instantiation = true;
-                        }
-                        break;
+                // Check if it's a generic invocation like `Test<int>(...)` or `Box<int> { ... }`,
+                // tracking generic nesting so `Pair<Box<int>, int> { ... }` is recognized.
+                if let Some(after) = self.scan_generic_args(2) {
+                    match self.peek_token(after).kind {
+                        TokenKind::OpenParenthesisToken => is_invocation = true,
+                        TokenKind::CurlyOpenBracketToken => is_struct_instantiation = true,
+                        _ => {}
                     }
-                    if self.peek_token(i).kind == TokenKind::SemicolonToken || self.peek_token(i).kind == TokenKind::CurlyOpenBracketToken {
-                        break;
-                    }
-                    i += 1;
                 }
             }
 
@@ -841,19 +920,22 @@ impl<'a, 'b> Parser<'a, 'b>
                 if self.current_token().kind == TokenKind::SmallerThanToken {
                     self.match_token(TokenKind::SmallerThanToken);
                     let mut args = Vec::new();
-                    while self.current_token().kind != TokenKind::GreaterThanToken && self.current_token().kind != TokenKind::EndOfFileToken {
+                    while !self.is_generic_close() && self.current_token().kind != TokenKind::EndOfFileToken {
+                        let iter = self.current_token_index;
                         args.push(self.parse_type()?);
                         if self.current_token().kind == TokenKind::CommaToken {
                             self.match_token(TokenKind::CommaToken);
                         }
+                        self.ensure_progress(iter);
                     }
-                    self.match_token(TokenKind::GreaterThanToken);
+                    self.match_generic_close();
                     generic_arguments = Some(args);
                 }
                 
                 self.match_token(TokenKind::CurlyOpenBracketToken);
                 let mut fields = Vec::new();
                 while self.current_token().kind != TokenKind::CurlyCloseBracketToken && self.current_token().kind != TokenKind::EndOfFileToken {
+                    let iter = self.current_token_index;
                     let field_name = self.match_token(TokenKind::IdentifierToken);
                     self.match_token(TokenKind::ColonToken);
                     let field_value = self.parse_expression(0)?;
@@ -861,6 +943,7 @@ impl<'a, 'b> Parser<'a, 'b>
                     if self.current_token().kind == TokenKind::CommaToken {
                         self.match_token(TokenKind::CommaToken);
                     }
+                    self.ensure_progress(iter);
                 }
                 self.match_token(TokenKind::CurlyCloseBracketToken);
                 return Ok(ExpressionNode::StructInstantiation(struct_name, generic_arguments, fields));
@@ -885,31 +968,23 @@ impl<'a, 'b> Parser<'a, 'b>
                         
                         let mut generic_args = None;
                         if self.current_token().kind == TokenKind::SmallerThanToken {
-                            // Method generic args
-                            let mut i = 1;
-                            let mut is_generic = false;
-                            while self.peek_token(i).kind != TokenKind::EndOfFileToken {
-                                if self.peek_token(i).kind == TokenKind::GreaterThanToken {
-                                    if self.peek_token(i + 1).kind == TokenKind::OpenParenthesisToken {
-                                        is_generic = true;
-                                    }
-                                    break;
-                                }
-                                if self.peek_token(i).kind == TokenKind::SemicolonToken || self.peek_token(i).kind == TokenKind::CurlyOpenBracketToken {
-                                    break;
-                                }
-                                i += 1;
-                            }
+                            // Method generic args, e.g. `obj.cast<Foo<int>>()`. Only treat as
+                            // generic when the balanced `<...>` is immediately followed by `(`.
+                            let is_generic = self.scan_generic_args(1)
+                                .map(|after| self.peek_token(after).kind == TokenKind::OpenParenthesisToken)
+                                .unwrap_or(false);
                             if is_generic {
                                 self.match_token(TokenKind::SmallerThanToken);
                                 let mut args = Vec::new();
-                                while self.current_token().kind != TokenKind::GreaterThanToken && self.current_token().kind != TokenKind::EndOfFileToken {
+                                while !self.is_generic_close() && self.current_token().kind != TokenKind::EndOfFileToken {
+                                    let iter = self.current_token_index;
                                     args.push(self.parse_type()?);
                                     if self.current_token().kind == TokenKind::CommaToken {
                                         self.match_token(TokenKind::CommaToken);
                                     }
+                                    self.ensure_progress(iter);
                                 }
-                                self.match_token(TokenKind::GreaterThanToken);
+                                self.match_generic_close();
                                 generic_args = Some(args);
                             }
                         }
@@ -918,10 +993,12 @@ impl<'a, 'b> Parser<'a, 'b>
                             self.match_token(TokenKind::OpenParenthesisToken);
                             let mut params = Vec::new();
                             while self.current_token().kind != TokenKind::CloseParenthesisToken && self.current_token().kind != TokenKind::EndOfFileToken {
+                                let iter = self.current_token_index;
                                 params.push(self.parse_expression(0)?);
                                 if self.current_token().kind == TokenKind::CommaToken {
                                     self.match_token(TokenKind::CommaToken);
                                 }
+                                self.ensure_progress(iter);
                             }
                             self.match_token(TokenKind::CloseParenthesisToken);
                             
@@ -1000,13 +1077,15 @@ impl<'a, 'b> Parser<'a, 'b>
         if self.current_token().kind == TokenKind::SmallerThanToken {
             self.match_token(TokenKind::SmallerThanToken);
             let mut args = Vec::new();
-            while self.current_token().kind != TokenKind::GreaterThanToken && self.current_token().kind != TokenKind::EndOfFileToken {
+            while !self.is_generic_close() && self.current_token().kind != TokenKind::EndOfFileToken {
+                let iter = self.current_token_index;
                 args.push(self.parse_type()?);
                 if self.current_token().kind == TokenKind::CommaToken {
                     self.match_token(TokenKind::CommaToken);
                 }
+                self.ensure_progress(iter);
             }
-            self.match_token(TokenKind::GreaterThanToken);
+            self.match_generic_close();
             generic_arguments = Some(args);
         }
 
@@ -1015,6 +1094,7 @@ impl<'a, 'b> Parser<'a, 'b>
         let mut arguments=Vec::new();
         while self.current_token().kind!=TokenKind::CloseParenthesisToken && self.current_token().kind!=EndOfFileToken
         {
+            let iter = self.current_token_index;
             //parse the argument
             let argument=self.parse_expression(0)?;
             arguments.push(argument);
@@ -1023,6 +1103,7 @@ impl<'a, 'b> Parser<'a, 'b>
                 //eat the comma
                 self.match_token(TokenKind::CommaToken);
             }
+            self.ensure_progress(iter);
         }
         //eat the close parenthesis
         self.match_token(TokenKind::CloseParenthesisToken);
@@ -1186,6 +1267,7 @@ impl<'a, 'b> Parser<'a, 'b>
         while self.current_token().kind != TokenKind::CurlyCloseBracketToken
             && self.current_token().kind != TokenKind::EndOfFileToken
         {
+            let iter = self.current_token_index;
             if self.current_token().kind == TokenKind::CaseToken {
                 self.match_token(TokenKind::CaseToken);
                 // One or more comma-separated label expressions.
@@ -1215,6 +1297,7 @@ impl<'a, 'b> Parser<'a, 'b>
                 );
                 self.next_token();
             }
+            self.ensure_progress(iter);
         }
 
         self.match_token(TokenKind::CurlyCloseBracketToken);
@@ -1231,7 +1314,9 @@ impl<'a, 'b> Parser<'a, 'b>
             && self.current_token().kind != TokenKind::CurlyCloseBracketToken
             && self.current_token().kind != TokenKind::EndOfFileToken
         {
+            let iter = self.current_token_index;
             statements.push(self.parse_statement()?);
+            self.ensure_progress(iter);
         }
         Ok(self.arena.alloc_slice_fill_iter(statements))
     }

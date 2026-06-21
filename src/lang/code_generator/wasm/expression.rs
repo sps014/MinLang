@@ -205,19 +205,24 @@ impl<'a> WasmGenerator<'a> {
             .clone();
         
         // 1. Allocate memory using $malloc, tagging the block with this struct's runtime tag.
+        // Hold the allocation pointer in a depth-specific local so evaluating field values
+        // (which may themselves allocate) cannot clobber it.
+        let base = self.ctor_base_local();
         writer.write_line(&format!("i32.const {}", struct_info.size));
         writer.write_line(&format!("i32.const {}", self.type_tag(&struct_name)));
         writer.write_line("call $malloc");
-        writer.write_line("local.set $scratch_ptr");
-        
-        // 2. Evaluate and store each field
+        writer.write_line(&format!("local.set {}", base));
+
+        // 2. Evaluate and store each field (one nesting level deeper so field values that
+        // allocate borrow a different base local).
+        self.alloc_depth += 1;
         for (field_name, expr) in fields.iter() {
             let field_info = struct_info.fields.get(&field_name.text)
                 .ok_or_else(|| Error::new(ErrorKind::Other, format!("unknown field '{}' on struct '{}'", field_name.text, struct_name)))?;
             let offset = field_info.offset;
             let field_type = field_info.type_.get_type();
 
-            writer.write_line("local.get $scratch_ptr"); // ptr
+            writer.write_line(&format!("local.get {}", base)); // ptr
             if offset > 0 {
                 writer.write_line(&format!("i32.const {}", offset));
                 writer.write_line("i32.add"); // ptr + offset
@@ -226,9 +231,10 @@ impl<'a> WasmGenerator<'a> {
             self.build_expression(expr, &field_type, function, writer)?;
             WasmGenerator::emit_store(&field_type, writer)?;
         }
-        
+        self.alloc_depth -= 1;
+
         // 3. Leave the pointer on the stack
-        writer.write_line("local.get $scratch_ptr");
+        writer.write_line(&format!("local.get {}", base));
         Ok(())
     }
 
@@ -535,6 +541,17 @@ impl<'a> WasmGenerator<'a> {
 
         let obj_type = self.infer_expression_type(obj, function)?;
 
+        // `EnumValue.name()`: map an enum's integer value to its variant-name string via the
+        // per-enum `$enum_name_*` lookup function.
+        if method.text == "name" {
+            let base = strip_nullable(&obj_type).to_string();
+            if self.enums.contains_key(&base) {
+                self.build_expression(obj, &obj_type, function, writer)?;
+                writer.write_line(&format!("call $enum_name_{}", base));
+                return Ok(());
+            }
+        }
+
         // `arr.len()` / `str.len()`: length of an array (stored count) or string (`$strlen`).
         if method.text == "len" {
             let base = strip_nullable(&obj_type).to_string();
@@ -583,30 +600,35 @@ impl<'a> WasmGenerator<'a> {
         let element_size = WasmGenerator::element_size_of(&inner_type_str);
         let total_size = 4 + (len * element_size); // 4 bytes for length + element_size per element
 
-        // 1. Allocate the backing buffer (tagged as an array) and keep its pointer in $scratch_ptr.
+        // 1. Allocate the backing buffer (tagged as an array). Hold its pointer in a
+        // depth-specific local so evaluating element values (which may themselves allocate)
+        // cannot clobber it.
+        let base = self.ctor_base_local();
         writer.write_line(&format!("i32.const {}", total_size));
         writer.write_line(&format!("i32.const {}", super::object::TAG_ARRAY));
         writer.write_line("call $malloc");
-        writer.write_line("local.set $scratch_ptr");
+        writer.write_line(&format!("local.set {}", base));
 
         // 2. Store the element count at offset 0.
-        writer.write_line("local.get $scratch_ptr");
+        writer.write_line(&format!("local.get {}", base));
         writer.write_line(&format!("i32.const {}", len));
         writer.write_line("i32.store");
 
-        // 3. Evaluate and store each element
+        // 3. Evaluate and store each element (one nesting level deeper).
+        self.alloc_depth += 1;
         for (i, expr) in elements.iter().enumerate() {
             let offset = 4 + (i * element_size);
-            writer.write_line("local.get $scratch_ptr"); // ptr
+            writer.write_line(&format!("local.get {}", base)); // ptr
             writer.write_line(&format!("i32.const {}", offset));
             writer.write_line("i32.add"); // ptr + offset
-            
+
             self.build_expression(expr, &inner_type_str, function, writer)?;
             WasmGenerator::emit_store(&inner_type_str, writer)?;
         }
-        
+        self.alloc_depth -= 1;
+
         // 4. Leave the pointer on the stack
-        writer.write_line("local.get $scratch_ptr");
+        writer.write_line(&format!("local.get {}", base));
         Ok(())
     }
 
