@@ -86,6 +86,23 @@ impl StdlibFunction {
                 parameters: vec!["string".to_string()],
                 return_type: Some(Self::create_type("int")),
             },
+            // Low-level string/char primitives that the primitive "class" prelude (int/char/string
+            // .dream) builds on. Their bodies live in `RUNTIME_STRINGS` (see codegen/wasm/memory.rs).
+            StdlibFunction {
+                name: "char_at".to_string(),
+                parameters: vec!["string".to_string(), "int".to_string()],
+                return_type: Some(Self::create_type("char")),
+            },
+            StdlibFunction {
+                name: "string_alloc".to_string(),
+                parameters: vec!["int".to_string()],
+                return_type: Some(Self::create_type("string")),
+            },
+            StdlibFunction {
+                name: "string_set".to_string(),
+                parameters: vec!["string".to_string(), "int".to_string(), "char".to_string()],
+                return_type: None,
+            },
             StdlibFunction {
                 name: "debug_get_free_list_head".to_string(),
                 parameters: vec![],

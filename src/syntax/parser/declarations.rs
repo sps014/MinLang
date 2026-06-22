@@ -105,7 +105,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             let is_ctor_dtor = self.current_token().kind == TokenKind::IdentifierToken
                 && matches!(self.current_token().text.as_str(), "init" | "drop")
                 && self.peek_token(1).kind == TokenKind::OpenParenthesisToken;
-            if self.current_token().kind == TokenKind::FunToken || self.current_token().kind == TokenKind::PubToken || self.current_token().kind == TokenKind::AtToken || is_ctor_dtor {
+            if self.current_token().kind == TokenKind::FunToken || self.current_token().kind == TokenKind::PubToken || self.current_token().kind == TokenKind::AtToken || self.current_token().kind == TokenKind::StaticToken || is_ctor_dtor {
                 methods.push(self.parse_function()?);
             } else {
                 let field_name = self.match_token(TokenKind::IdentifierToken);
@@ -180,7 +180,8 @@ impl<'a, 'b> Parser<'a, 'b> {
             let iter = self.current_token_index;
             if self.current_token().kind == TokenKind::FunToken
                 || self.current_token().kind == TokenKind::PubToken
-                || self.current_token().kind == TokenKind::AtToken {
+                || self.current_token().kind == TokenKind::AtToken
+                || self.current_token().kind == TokenKind::StaticToken {
                 methods.push(self.parse_function()?);
             } else {
                 let cur = self.current_token();
@@ -318,6 +319,13 @@ impl<'a, 'b> Parser<'a, 'b> {
             }
         }
 
+        // `static fun ...`: a method with no implicit `this`, called as `Type.method(...)`.
+        let mut is_static = false;
+        if self.current_token().kind == TokenKind::StaticToken {
+            self.match_token(TokenKind::StaticToken);
+            is_static = true;
+        }
+
         // Constructor (`init`) / destructor (`drop`) declarations omit the `fun` keyword and the
         // return type; they are lowered to ordinary methods named `init`/`drop` and dispatched
         // specially (constructor calls, scope-exit destructor calls).
@@ -370,6 +378,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             let empty: &'a [StatementNode<'a>] = self.arena.alloc_slice_fill_iter(std::iter::empty());
             let mut node = FunctionNode::new(function_name.clone(), generic_parameters, return_type, params, empty, false);
             node.is_extern = true;
+            node.is_static = is_static;
             node.import_module = import_module.or_else(|| Some("env".to_string()));
             node.import_name = import_name.or_else(|| Some(function_name.text.clone()));
             return Ok(node);
@@ -378,6 +387,7 @@ impl<'a, 'b> Parser<'a, 'b> {
         let block=self.parse_block()?;
         let mut node = FunctionNode::new(function_name,generic_parameters,return_type,params,block,is_exported);
         node.is_override = is_override;
+        node.is_static = is_static;
         Ok(node)
     }
 

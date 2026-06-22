@@ -439,8 +439,22 @@ impl<'a> WasmGenerator<'a> {
             return Ok(());
         }
 
-        self.build_expression(left_exp, left, function, writer)?;
-        self.build_expression(right_expr, left, function, writer)?;
+        // For a comparison the surrounding `left` is the bool/int result context, not the operand
+        // type, so evaluate the operands (and pick the comparison instruction) in their own type.
+        // This makes float/double/char comparisons emit `f32.lt`/`f64.lt`/... instead of `i32.lt_s`.
+        let is_comparison = matches!(opr.kind,
+            TokenKind::EqualEqualToken | TokenKind::NotEqualToken
+            | TokenKind::GreaterThanToken | TokenKind::GreaterThanEqualToken
+            | TokenKind::SmallerThanToken | TokenKind::SmallerThanEqualToken);
+        let operand_ctx = if is_comparison {
+            let t = self.infer_expression_type(left_exp, function).unwrap_or_else(|_| left.clone());
+            strip_nullable(&t).to_string()
+        } else {
+            left.clone()
+        };
+
+        self.build_expression(left_exp, &operand_ctx, function, writer)?;
+        self.build_expression(right_expr, &operand_ctx, function, writer)?;
 
         if left == "string" && opr.kind == TokenKind::PlusToken {
             writer.write_line("call $concat_strings");
@@ -460,7 +474,7 @@ impl<'a> WasmGenerator<'a> {
             }
         }
 
-        let symbol = WasmGenerator::get_wasm_type_from(left.clone())?;
+        let symbol = WasmGenerator::get_wasm_type_from(operand_ctx.clone())?;
         match opr.kind {
             TokenKind::PlusToken => writer.write_line(&format!("{}.add", symbol)),
             TokenKind::MinusToken => writer.write_line(&format!("{}.sub", symbol)),
@@ -634,6 +648,20 @@ impl<'a> WasmGenerator<'a> {
                 writer.write_line(&format!("call ${}", method.text));
                 return Ok(());
             }
+        }
+
+        // `Type.method(args)`: a static call. Arguments map 1:1 to the parameters (no `this`).
+        if let Some(key) = self.resolve_static_call(obj, &method.text, params, function) {
+            let param_types: Vec<String> = self.function_table.get_function(&key)?.parameters.clone();
+            let saved_tmp = self.ctx.tmp_depth;
+            let mut owned_temps: Vec<(usize, String)> = Vec::new();
+            for (i, expr) in params.iter().enumerate() {
+                let param_type = param_types.get(i).cloned().unwrap_or_else(|| "int".to_string());
+                self.build_call_arg(expr, &param_type, function, &mut owned_temps, writer)?;
+            }
+            writer.write_line(&format!("call ${}", key));
+            self.release_call_temps(&owned_temps, saved_tmp, writer);
+            return Ok(());
         }
 
         let obj_type = self.infer_expression_type(obj, function)?;

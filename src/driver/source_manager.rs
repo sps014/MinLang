@@ -18,12 +18,17 @@ pub(crate) fn merge_prelude<'a>(
     diagnostics: &mut DiagnosticBag,
     file_contents: &mut HashMap<String, String>,
 ) -> Result<(), Error> {
-    // Each standard-collection type lives in its own prelude file. `primitives.dream` defines
-    // the methods that make the built-in types (int, string, ...) real, extensible classes.
-    const PRELUDE_FILES: [(&str, &str); 3] = [
+    // Each standard type lives in its own prelude file. The primitive files (int/char/string/...)
+    // make the built-in types real, extensible classes via `extend` blocks.
+    const PRELUDE_FILES: [(&str, &str); 8] = [
         ("<std>/list.dream", include_str!("../stdlib/list.dream")),
         ("<std>/map.dream", include_str!("../stdlib/map.dream")),
-        ("<std>/primitives.dream", include_str!("../stdlib/primitives.dream")),
+        ("<std>/int.dream", include_str!("../stdlib/int.dream")),
+        ("<std>/char.dream", include_str!("../stdlib/char.dream")),
+        ("<std>/string.dream", include_str!("../stdlib/string.dream")),
+        ("<std>/bool.dream", include_str!("../stdlib/bool.dream")),
+        ("<std>/float.dream", include_str!("../stdlib/float.dream")),
+        ("<std>/double.dream", include_str!("../stdlib/double.dream")),
     ];
 
     for (prelude_name, prelude_src) in PRELUDE_FILES {

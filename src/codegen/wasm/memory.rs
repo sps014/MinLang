@@ -358,6 +358,39 @@ const RUNTIME_STRINGS: &str = r#"(func $strlen (param $ptr i32) (result i32)
     )
     i32.const 0
 )
+
+(func $char_at (param $ptr i32) (param $i i32) (result i32)
+    local.get $ptr
+    local.get $i
+    i32.add
+    i32.load8_u
+)
+
+(func $string_alloc (param $n i32) (result i32)
+    (local $p i32)
+    ;; n data bytes + 1 null terminator
+    local.get $n
+    i32.const 1
+    i32.add
+    i32.const 5
+    call $malloc
+    local.set $p
+    ;; write the null terminator at [n]; the n data bytes are filled by the caller via $string_set
+    local.get $p
+    local.get $n
+    i32.add
+    i32.const 0
+    i32.store8
+    local.get $p
+)
+
+(func $string_set (param $ptr i32) (param $i i32) (param $c i32)
+    local.get $ptr
+    local.get $i
+    i32.add
+    local.get $c
+    i32.store8
+)
 "#;
 
 impl<'a> WasmGenerator<'a> {

@@ -1,0 +1,14 @@
+fun main(): void {
+    println(int.parse("123"));
+    println(int.parse("-45"));
+    println(Int32.parse("7"));
+    let n = 0 - 9;
+    println(n.abs());
+    let two = 2;
+    println(two.pow(8));
+    let a = 10;
+    println(a.clamp(0, 5));
+    let b = 3;
+    println(b.min(7));
+    println(b.max(7));
+}

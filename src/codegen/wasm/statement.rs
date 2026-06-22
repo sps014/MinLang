@@ -257,6 +257,8 @@ impl<'a> WasmGenerator<'a> {
                 }
             } else if ret_type_str == "double" {
                 writer.write_line("local.set $scratch_double");
+            } else if ret_type_str == "float" {
+                writer.write_line("local.set $scratch_float");
             } else {
                 writer.write_line("local.set $scratch_ptr");
             }
@@ -271,6 +273,8 @@ impl<'a> WasmGenerator<'a> {
                 .ok_or_else(|| Error::new(ErrorKind::Other, format!("function '{}' returns a value but has no declared return type", function.name.text)))?;
             if return_type.get_type() == "double" {
                 writer.write_line("local.get $scratch_double");
+            } else if return_type.get_type() == "float" {
+                writer.write_line("local.get $scratch_float");
             } else {
                 writer.write_line("local.get $scratch_ptr");
             }

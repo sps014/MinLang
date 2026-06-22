@@ -19,12 +19,13 @@ impl<'a> WasmGenerator<'a> {
         writer.indent();
         
         // Import the host I/O functions (print_*) plus the importable stdlib functions.
-        // `concat`/`strlen`/`debug_get_free_list_head` are compiled inline, not imported.
+        // The string/char runtime helpers below are compiled inline (see RUNTIME_STRINGS), not imported.
+        const INLINE_STDLIB: [&str; 6] = ["concat", "strlen", "debug_get_free_list_head", "char_at", "string_alloc", "string_set"];
         let imports = crate::stdlib::StdlibFunction::host_imports()
             .into_iter()
             .chain(crate::stdlib::StdlibFunction::get_all());
         for std_func in imports {
-            if std_func.name == "concat" || std_func.name == "strlen" || std_func.name == "debug_get_free_list_head" { continue; } // handled internally
+            if INLINE_STDLIB.contains(&std_func.name.as_str()) { continue; } // handled internally
             
             let mut params_str = String::new();
             for p in &std_func.parameters {
@@ -163,6 +164,7 @@ impl<'a> WasmGenerator<'a> {
         writer.write(" (local $scratch_ptr i32)");
         writer.write(" (local $scratch_addr i32)");
         writer.write(" (local $scratch_double f64)");
+        writer.write(" (local $scratch_float f32)");
         writer.write(" (local $scratch_len i32)");
         writer.write(" (local $scratch_arr i32)");
         writer.write(" (local $scratch_switch i32)");
@@ -207,6 +209,36 @@ impl<'a> WasmGenerator<'a> {
             }
             if i.is_exported || i.name.text == "main" {
                 let emitted = self.function_table.resolve_emitted_name(&i.name.text, &Self::func_param_types(i));
+
+                // `main(args: string[])`: the host runner invokes `main` as `() -> ()`, so instead
+                // of exporting the user `$main` (which takes an array pointer) we export a synthetic
+                // zero-arg wrapper that allocates an empty `string[]`, forwards it, drops any return,
+                // and releases the array.
+                if i.name.text == "main" && !i.parameters.is_empty() {
+                    writer.write_line("(func (export \"main\")");
+                    writer.indent();
+                    writer.write_line("(local $args i32)");
+                    // Allocate a zero-length array: 4-byte length word, TAG_ARRAY block.
+                    writer.write_line("i32.const 4");
+                    writer.write_line(&format!("i32.const {}", super::object::TAG_ARRAY));
+                    writer.write_line("call $malloc");
+                    writer.write_line("local.set $args");
+                    writer.write_line("local.get $args");
+                    writer.write_line("i32.const 0");
+                    writer.write_line("i32.store");
+                    // Forward to the user entry point.
+                    writer.write_line("local.get $args");
+                    writer.write_line(&format!("call ${}", emitted));
+                    if i.return_type.as_ref().map(|t| t.get_type() != "void").unwrap_or(false) {
+                        writer.write_line("drop");
+                    }
+                    writer.write_line("local.get $args");
+                    writer.write_line("call $release_generic");
+                    writer.unindent();
+                    writer.write_line(")");
+                    continue;
+                }
+
                 // Overloaded exports are surfaced under their mangled key so export names stay unique.
                 let export_label = if self.function_table.is_overloaded(&i.name.text) {
                     emitted.clone()

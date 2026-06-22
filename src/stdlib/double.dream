@@ -1,0 +1,28 @@
+// The `double` primitive as an extensible class (a 64-bit IEEE float at runtime).
+// Auto-imported into every program.
+
+extend double {
+    // Absolute value of this double.
+    fun abs(): double {
+        if (this < 0.0d) {
+            return 0.0d - this;
+        }
+        return this;
+    }
+
+    // The smaller of this and `other`.
+    fun min(other: double): double {
+        if (this < other) {
+            return this;
+        }
+        return other;
+    }
+
+    // The larger of this and `other`.
+    fun max(other: double): double {
+        if (this > other) {
+            return this;
+        }
+        return other;
+    }
+}

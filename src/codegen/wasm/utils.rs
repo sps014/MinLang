@@ -3,7 +3,7 @@ use std::io::Error;
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::syntax::nodes::{FunctionNode, Type};
-use crate::syntax::nodes::types::{mangle_generic, mangle_with_suffixes, release_func_suffix, strip_nullable};
+use crate::syntax::nodes::types::{canonical_type_name, mangle_generic, mangle_with_suffixes, release_func_suffix, strip_nullable};
 use crate::syntax::text::indented_text_writer::IndentedTextWriter;
 use crate::semantics::symbol_table::SymbolTable;
 use crate::semantics::function_table::{OverloadResolution, overload_arg_compatible};
@@ -51,6 +51,30 @@ impl<'a> WasmGenerator<'a> {
             OverloadResolution::Unique(key) => key,
             _ => base,
         }
+    }
+
+    /// True if `name` is a local variable/parameter of the function currently being emitted.
+    pub fn is_local_var(&self, name: &str, function: &FunctionNode<'a>) -> bool {
+        let func_name = self.ctx.current_mangled_name.as_ref().unwrap_or(&function.name.text);
+        self.ctx.combined_symbol_lookup.get(func_name)
+            .map(|m| m.contains_key(name))
+            .unwrap_or(false)
+    }
+
+    /// If `obj.method(...)` is actually a static call `Type.method(...)` (the receiver names a type,
+    /// not a local value, and `{type}_{method}` exists), returns the emitted function name to call
+    /// (overload-resolved over the explicit arguments, which carry no implicit `this`).
+    pub fn resolve_static_call(&self, obj: &crate::syntax::nodes::ExpressionNode<'a>, method: &str, params: &[crate::syntax::nodes::ExpressionNode<'a>], function: &FunctionNode<'a>) -> Option<String> {
+        let crate::syntax::nodes::ExpressionNode::Identifier(id) = obj else { return None; };
+        if id.text == "Math" || self.is_local_var(&id.text, function) {
+            return None;
+        }
+        let type_name = canonical_type_name(&id.text).unwrap_or(id.text.as_str()).to_string();
+        let base = format!("{}_{}", type_name, method);
+        if !(self.function_table.is_overloaded(&base) || self.function_table.get_function(&base).is_ok()) {
+            return None;
+        }
+        Some(self.resolve_call_name(&base, &None, params, function))
     }
 
     /// The monomorphized struct name a constructor call `Name(...)` / `Name<T>(...)` targets,
@@ -177,6 +201,14 @@ impl<'a> WasmGenerator<'a> {
                 return Ok(true);
             }
         }
+        if let Some(key) = self.resolve_static_call(obj, &method.text, params, function) {
+            let returns_value = self.function_table.get_function(&key)
+                .ok()
+                .and_then(|info| info.return_type)
+                .map(|ret| ret.get_type() != "void")
+                .unwrap_or(false);
+            return Ok(returns_value);
+        }
         let obj_type = self.infer_expression_type(obj, function)?;
         let struct_name = strip_nullable(&obj_type).to_string();
         if method.text == "len" && (struct_name.ends_with("[]") || struct_name == "string") {
@@ -199,6 +231,12 @@ impl<'a> WasmGenerator<'a> {
             if id.text == "Math" {
                 return Ok(Some("float".to_string()));
             }
+        }
+        if let Some(key) = self.resolve_static_call(obj, &method.text, params, function) {
+            return Ok(self.function_table.get_function(&key)
+                .ok()
+                .and_then(|info| info.return_type)
+                .map(|ret| ret.get_type()));
         }
         let obj_type = self.infer_expression_type(obj, function)?;
         let struct_name = strip_nullable(&obj_type).to_string();
@@ -486,6 +524,11 @@ impl<'a> WasmGenerator<'a> {
                 if let ExpressionNode::Identifier(id) = obj {
                     if id.text == "Math" {
                         return Ok("float".to_string());
+                    }
+                }
+                if let Some(key) = self.resolve_static_call(obj, &method.text, params, function) {
+                    if let Ok(func_info) = self.function_table.get_function(&key) {
+                        return Ok(func_info.return_type.as_ref().map(|r| r.get_type()).unwrap_or_else(|| "void".to_string()));
                     }
                 }
                 let obj_type = self.infer_expression_type(obj, function)?;

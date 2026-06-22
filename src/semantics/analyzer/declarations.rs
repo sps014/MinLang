@@ -88,9 +88,19 @@ impl<'a> Analyzer<'a> {
                 diagnostics.report_error(e.to_string(), Some(function.name.position.clone()));
             }
         }
-        // The entry point is exported under the fixed name `main`, so it cannot be overloaded.
+        // The entry point is exported under the fixed name `main`. It may be declared as `main()`
+        // or `main(args: string[])`, but not overloaded or given any other signature.
         if self.function_table.is_overloaded("main") {
             diagnostics.report_error("'main' cannot be overloaded".to_string(), None);
+        } else if let Ok(info) = self.function_table.get_function(&"main".to_string()) {
+            let ok = info.parameters.is_empty()
+                || (info.parameters.len() == 1 && info.parameters[0] == "string[]");
+            if !ok {
+                diagnostics.report_error(
+                    "'main' must be declared as 'main()' or 'main(args: string[])'".to_string(),
+                    None,
+                );
+            }
         }
     }
 
@@ -235,7 +245,10 @@ impl<'a> Analyzer<'a> {
                 Self::substitute_generic_signature(&mut new_method, bindings);
             }
 
-            new_method.parameters.insert(0, Self::make_this_param(target_type_str));
+            // Static methods have no implicit receiver; instance methods get `this` at index 0.
+            if !new_method.is_static {
+                new_method.parameters.insert(0, Self::make_this_param(target_type_str));
+            }
 
             let method_ref = self.arena.alloc(new_method);
             self.struct_methods.push((method_ref, bindings.to_vec()));

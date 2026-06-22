@@ -1,0 +1,17 @@
+fun main(): void {
+    let s = "Hello, World";
+    println(s.length());
+    println(s.substring(0, 5));
+    println(s.substring(7, 12));
+    println(s.to_lower());
+    println(s.to_upper());
+    println(s.index_of('o'));
+    println(s.contains("World"));
+    println(s.starts_with("Hell"));
+    println(s.ends_with("rld"));
+    let pad = "  trimmed  ";
+    println(pad.trim());
+    let ab = "ab";
+    println(ab.repeat(3));
+    println(s.equals("Hello, World"));
+}

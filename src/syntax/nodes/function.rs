@@ -32,6 +32,9 @@ pub struct FunctionNode<'a> {
     /// True for `extern fun` declarations: the function has no body and is lowered to a WASM
     /// import instead of a defined function. Used for JS interop.
     pub is_extern: bool,
+    /// True for `static fun` methods declared inside a `struct`/`extend` block: the method has no
+    /// implicit `this` parameter and is dispatched via `Type.method(...)` instead of `value.method(...)`.
+    pub is_static: bool,
     /// WASM import module for an `extern` function. Defaults to `"env"` when unspecified.
     pub import_module: Option<String>,
     /// WASM import field name for an `extern` function. Defaults to the function name.
@@ -60,6 +63,7 @@ impl<'a> FunctionNode<'a> {
             is_exported,
             is_override: false,
             is_extern: false,
+            is_static: false,
             import_module: None,
             import_name: None,
             file_path: None,

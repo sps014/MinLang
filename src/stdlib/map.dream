@@ -162,8 +162,57 @@ struct Map<K, V> {
         }
         return false;
     }
+
+    // True when the map holds no key/value pairs.
+    fun is_empty(): bool {
+        return this.count == 0;
+    }
+
+    // Removes every entry, resetting the map to its initial empty capacity.
+    fun clear(): void {
+        this.keys = array_new<K>(8);
+        this.values = array_new<V>(8);
+        this.states = array_new<int>(8);
+        this.count = 0;
+        this.used = 0;
+        this.cap = 8;
+    }
+
+    // A freshly allocated array of every stored key, in unspecified order.
+    fun keys(): K[] {
+        let result = array_new<K>(this.count);
+        let i = 0;
+        let j = 0;
+        while (i < this.cap) {
+            if (this.states[i] == 1) {
+                result[j] = this.keys[i];
+                j = j + 1;
+            }
+            i = i + 1;
+        }
+        return result;
+    }
+
+    // A freshly allocated array of every stored value, in unspecified order (key-aligned with
+    // `keys()` when the map is not mutated between calls).
+    fun values(): V[] {
+        let result = array_new<V>(this.count);
+        let i = 0;
+        let j = 0;
+        while (i < this.cap) {
+            if (this.states[i] == 1) {
+                result[j] = this.values[i];
+                j = j + 1;
+            }
+            i = i + 1;
+        }
+        return result;
+    }
 }
 
+// Creates an empty `Map<K, V>` with a small initial capacity, e.g. `let m = Map<string, int>();`.
+// This factory is the canonical way to construct a map (the struct's backing arrays must be
+// allocated, so a bare `Map<K, V> { ... }` literal is not used directly).
 fun Map<K, V>(): Map<K, V> {
     return Map<K, V> {
         keys: array_new<K>(8),

@@ -5,7 +5,7 @@ use std::rc::Rc;
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, Type, ProgramNode, StatementNode};
 use crate::syntax::nodes::struct_node::{StructDeclarationNode, StructFieldNode};
 use crate::syntax::nodes::function::ParameterNode;
-use crate::syntax::nodes::types::{mangle_generic, mangle_with_suffixes, strip_array, strip_nullable};
+use crate::syntax::nodes::types::{canonical_type_name, mangle_generic, mangle_with_suffixes, strip_array, strip_nullable};
 use crate::syntax::syntax_tree::SyntaxTree;
 use crate::syntax::text::line_text::LineText;
 use crate::syntax::text::text_span::TextSpan;
@@ -119,6 +119,94 @@ impl<'a> Analyzer<'a> {
                 "Ambiguous call to '{}' with argument types ({}); candidates: {}", base, arg_types.join(", "), keys.join(", ")
             )),
         }
+    }
+
+    /// Analyzes a static-method call `Type.method(args)` (resolved by the caller to the type
+    /// `type_name`). Static methods have no implicit `this`, so the explicit arguments map 1:1 to
+    /// the declared parameters.
+    pub(super) fn analyze_static_call(&mut self, type_name: &str, method: &SyntaxToken, params: &Vec<ExpressionNode<'a>>,
+                                      parent_function: &FunctionNode<'a>, symbol_table: &Rc<RefCell<SymbolTable>>,
+                                      diagnostics: &mut DiagnosticBag) -> Result<Type, ()> {
+        let base = format!("{}_{}", type_name, method.text);
+
+        let mut arg_types = Vec::new();
+        for param in params.iter() {
+            arg_types.push(self.analyze_expression(param, parent_function, symbol_table, diagnostics)?.get_type());
+        }
+
+        let store_sig = if self.function_table.is_overloaded(&base) {
+            match self.select_function_overload(&base, &arg_types) {
+                Ok(sig) => sig,
+                Err(message) => {
+                    diagnostics.report_error(message, Some(method.position.clone()));
+                    return Ok(Type::Void);
+                }
+            }
+        } else {
+            match self.function_table.get_function(&base) {
+                Ok(s) => s.clone(),
+                Err(_) => {
+                    diagnostics.report_error(
+                        format!("Type '{}' has no static method '{}'", type_name, method.text),
+                        Some(method.position.clone()),
+                    );
+                    return Ok(Type::Void);
+                }
+            }
+        };
+
+        if method.text.starts_with('_') && !self.in_methods_of(parent_function, type_name) {
+            diagnostics.report_error(
+                format!("'{}' is private to '{}'", method.text, type_name),
+                Some(method.position.clone()),
+            );
+        }
+
+        let expected_params = store_sig.parameters.clone();
+        if expected_params.len() != arg_types.len() {
+            diagnostics.report_error(
+                format!("static method {} expects {} parameters, got {}", base, expected_params.len(), arg_types.len()),
+                Some(method.position.clone()),
+            );
+            return Ok(store_sig.return_type.unwrap_or(Type::Void));
+        }
+        for (i, given_type) in arg_types.iter().enumerate() {
+            let expected = &expected_params[i];
+            if expected == "object" {
+                continue;
+            }
+            let numeric_ok = matches!(
+                (expected.as_str(), given_type.as_str()),
+                ("int", "float") | ("float", "int") | ("double", "int") | ("int", "double") | ("float", "double") | ("double", "float")
+            );
+            if numeric_ok {
+                continue;
+            }
+            if given_type != expected {
+                diagnostics.report_error(
+                    format!("static method {} expects parameter {} to be {}, got {}", base, i + 1, expected, given_type),
+                    Some(method.position.clone()),
+                );
+            }
+        }
+
+        Ok(store_sig.return_type.unwrap_or(Type::Void))
+    }
+
+    /// True when `parent_function` is a method whose implicit `this` receiver has base type
+    /// `base_name` (allowing for monomorphized generic variants). Used to gate access to
+    /// `_`-prefixed (private) members.
+    pub(super) fn in_methods_of(&self, parent_function: &FunctionNode<'a>, base_name: &str) -> bool {
+        let Some(first) = parent_function.parameters.first() else { return false; };
+        if first.name.text != "this" {
+            return false;
+        }
+        let this_base = Self::resolve_struct_parts(&first.type_)
+            .map(|(b, _)| b)
+            .unwrap_or_else(|| strip_nullable(&first.type_.get_type()).to_string());
+        this_base == base_name
+            || this_base.starts_with(&format!("{}_", base_name))
+            || base_name.starts_with(&format!("{}_", this_base))
     }
 
     pub(super) fn analyze_function_call(&mut self,name:&SyntaxToken,generic_args: &Option<Vec<Type>>,params:&Vec<ExpressionNode<'a>>,
@@ -343,9 +431,34 @@ impl<'a> Analyzer<'a> {
             if id.text == "Math" {
                 return self.analyze_math_call(method, params, parent_function, symbol_table, diagnostics);
             }
+
+            // `Type.method(args)`: a static-method call. The receiver names a type (not a local
+            // variable), so resolve `{type}_{method}` directly with no implicit `this`.
+            let is_local = (*symbol_table).as_ref().borrow().get_symbol(id).is_ok();
+            if !is_local {
+                let type_name = canonical_type_name(&id.text).unwrap_or(id.text.as_str()).to_string();
+                let base = format!("{}_{}", type_name, method.text);
+                if self.function_table.is_overloaded(&base) || self.function_table.get_function(&base).is_ok() {
+                    return self.analyze_static_call(&type_name, method, params, parent_function, symbol_table, diagnostics);
+                }
+            }
         }
 
         let obj_type = self.analyze_expression(obj, parent_function, symbol_table, diagnostics)?;
+
+        // Private methods (`_name`) may only be called from within the declaring type's own methods.
+        if method.text.starts_with('_') {
+            let receiver_base = strip_nullable(&obj_type.get_type()).to_string();
+            let base_name = Self::resolve_struct_parts(&obj_type)
+                .map(|(b, _)| b)
+                .unwrap_or_else(|| receiver_base.clone());
+            if !self.in_methods_of(parent_function, &base_name) {
+                diagnostics.report_error(
+                    format!("'{}' is private to '{}'", method.text, base_name),
+                    Some(method.position.clone()),
+                );
+            }
+        }
 
         // `EnumValue.name()`: built-in accessor returning the variant name as a string.
         if method.text == "name" {
@@ -746,6 +859,14 @@ impl<'a> Analyzer<'a> {
             }
         };
 
+        // Private fields (`_name`) may only be written from within the declaring type's methods.
+        if member.text.starts_with('_') && !self.in_methods_of(parent_function, &base_name) {
+            diagnostics.report_error(
+                format!("'{}' is private to '{}'", member.text, base_name),
+                Some(member.position.clone()),
+            );
+        }
+
         let right_type = self.analyze_expression(right, parent_function, symbol_table, diagnostics)?;
         self.compare_data_type(&field_type, &right_type, &member.position, diagnostics)?;
         
@@ -928,7 +1049,17 @@ impl<'a> Analyzer<'a> {
                     }
                 };
 
-                Ok(field_info.type_.clone())
+                let field_type = field_info.type_.clone();
+
+                // Private fields (`_name`) may only be read from within the declaring type's methods.
+                if member.text.starts_with('_') && !self.in_methods_of(parent_function, &base_name) {
+                    diagnostics.report_error(
+                        format!("'{}' is private to '{}'", member.text, base_name),
+                        Some(member.position.clone()),
+                    );
+                }
+
+                Ok(field_type)
             },
             ExpressionNode::Cast(target_type, expr) => {
                 let expr_type = self.analyze_expression(expr, parent_function, symbol_table, diagnostics)?;

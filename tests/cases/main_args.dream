@@ -1,0 +1,4 @@
+fun main(args: string[]): void {
+    println("args length:");
+    println(args.len());
+}

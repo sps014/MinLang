@@ -130,6 +130,45 @@ impl<'a, 'b> Parser<'a, 'b> {
             // `Nullable(Void)` represents the `null` literal until its concrete type is known.
             return Ok(ExpressionNode::Literal(Type::Nullable(Box::new(Type::Void))));
         }
+        // A primitive type name used as a static-call receiver, e.g. `int.parse("5")`. The
+        // keyword is treated as an identifier so the member/method-access loop below applies;
+        // static dispatch is resolved later by the analyzer/codegen.
+        else if self.current_token().kind==TokenKind::DataTypeToken
+            && self.peek_token(1).kind==TokenKind::DotToken
+        {
+            let mut expr = ExpressionNode::Identifier(self.next_token());
+            while self.current_token().kind == TokenKind::DotToken {
+                self.match_token(TokenKind::DotToken);
+                let member = self.match_token(TokenKind::IdentifierToken);
+                let mut generic_args = None;
+                if self.current_token().kind == TokenKind::SmallerThanToken {
+                    let is_generic = self.scan_generic_args(1)
+                        .map(|after| self.peek_token(after).kind == TokenKind::OpenParenthesisToken)
+                        .unwrap_or(false);
+                    if is_generic {
+                        self.match_token(TokenKind::SmallerThanToken);
+                        generic_args = Some(self.parse_generic_args()?);
+                    }
+                }
+                if self.current_token().kind == TokenKind::OpenParenthesisToken {
+                    self.match_token(TokenKind::OpenParenthesisToken);
+                    let mut params = Vec::new();
+                    while self.current_token().kind != TokenKind::CloseParenthesisToken && self.current_token().kind != TokenKind::EndOfFileToken {
+                        let iter = self.current_token_index;
+                        params.push(self.parse_expression(0)?);
+                        if self.current_token().kind == TokenKind::CommaToken {
+                            self.match_token(TokenKind::CommaToken);
+                        }
+                        self.ensure_progress(iter);
+                    }
+                    self.match_token(TokenKind::CloseParenthesisToken);
+                    expr = ExpressionNode::MethodCall(self.arena.alloc(expr), member, generic_args, params);
+                } else {
+                    expr = ExpressionNode::MemberAccess(self.arena.alloc(expr), member);
+                }
+            }
+            return Ok(expr);
+        }
         //parse identifiers
         else if self.current_token().kind==IdentifierToken
         {

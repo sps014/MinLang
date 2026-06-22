@@ -1,0 +1,24 @@
+struct Vec2 {
+    x: int;
+    y: int;
+
+    static fun origin(): Vec2 {
+        return Vec2 { x: 0, y: 0 };
+    }
+
+    static fun of(x: int, y: int): Vec2 {
+        return Vec2 { x: x, y: y };
+    }
+
+    fun sum(): int {
+        return this.x + this.y;
+    }
+}
+
+fun main(): void {
+    let o = Vec2.origin();
+    println(o.sum());
+    let p = Vec2.of(3, 4);
+    println(p.sum());
+    println(int.parse("100"));
+}

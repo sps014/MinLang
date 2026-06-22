@@ -1,0 +1,28 @@
+// The `float` primitive as an extensible class (a 32-bit IEEE float at runtime).
+// Auto-imported into every program.
+
+extend float {
+    // Absolute value of this float.
+    fun abs(): float {
+        if (this < 0.0) {
+            return 0.0 - this;
+        }
+        return this;
+    }
+
+    // The smaller of this and `other`.
+    fun min(other: float): float {
+        if (this < other) {
+            return this;
+        }
+        return other;
+    }
+
+    // The larger of this and `other`.
+    fun max(other: float): float {
+        if (this > other) {
+            return this;
+        }
+        return other;
+    }
+}

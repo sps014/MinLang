@@ -130,6 +130,8 @@ pub enum TokenKind
     ConstToken,
     #[token("fun")]
     FunToken,
+    #[token("static")]
+    StaticToken,
     #[token("import")]
     ImportToken,
     #[token("pub")]
