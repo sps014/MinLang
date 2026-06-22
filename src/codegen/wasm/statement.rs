@@ -1,8 +1,8 @@
 use std::io::{Error, ErrorKind};
-use crate::lang::code_analysis::syntax::nodes::{StatementNode, FunctionNode, ExpressionNode, Type};
-use crate::lang::code_analysis::syntax::nodes::types::strip_nullable;
-use crate::lang::code_analysis::text::indented_text_writer::IndentedTextWriter;
-use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
+use crate::syntax::nodes::{StatementNode, FunctionNode, ExpressionNode, Type};
+use crate::syntax::nodes::types::strip_nullable;
+use crate::syntax::text::indented_text_writer::IndentedTextWriter;
+use crate::syntax::token::syntax_token::SyntaxToken;
 use super::WasmGenerator;
 
 impl<'a> WasmGenerator<'a> {
@@ -29,9 +29,9 @@ impl<'a> WasmGenerator<'a> {
             StatementNode::Switch(subject, cases, default_body) => self.build_switch(subject, cases, default_body, function, writer)?,
             StatementNode::Labeled(label, inner) => {
                 // The next loop construct adopts this label for targeted break/continue.
-                self.pending_loop_label = Some(label.clone());
+                self.ctx.pending_loop_label = Some(label.clone());
                 self.build_statement(inner, function, writer)?;
-                self.pending_loop_label = None;
+                self.ctx.pending_loop_label = None;
             },
             StatementNode::Break(label) => self.build_break(label, writer)?,
             StatementNode::Continue(label) => self.build_continue(label, writer)?,
@@ -263,7 +263,7 @@ impl<'a> WasmGenerator<'a> {
         }
         
         // Release all local reference variables in the current function scope.
-        let func_name = self.current_mangled_name.clone().unwrap_or_else(|| function.name.text.clone());
+        let func_name = self.ctx.current_mangled_name.clone().unwrap_or_else(|| function.name.text.clone());
         self.emit_release_locals(&func_name, writer);
 
         if expression.is_some() {
@@ -282,10 +282,10 @@ impl<'a> WasmGenerator<'a> {
 
     /// Builds a while loop
     pub fn build_while(&mut self, condition: &ExpressionNode<'a>, body: &[StatementNode<'a>], function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
-        let loop_id = self.loop_counter;
-        self.loop_counter += 1;
-        let label = self.pending_loop_label.take();
-        self.loop_stack.push((loop_id, label));
+        let loop_id = self.ctx.loop_counter;
+        self.ctx.loop_counter += 1;
+        let label = self.ctx.pending_loop_label.take();
+        self.ctx.loop_stack.push((loop_id, label));
         
         writer.write_line(&format!("(block $loop_end_{}", loop_id));
         writer.indent();
@@ -308,17 +308,17 @@ impl<'a> WasmGenerator<'a> {
         writer.unindent();
         writer.write_line(")");
         
-        self.loop_stack.pop();
+        self.ctx.loop_stack.pop();
         Ok(())
     }
 
     /// Builds a do-while loop. The body runs once before the condition is tested. The condition is
     /// checked at the end of the loop; `continue` jumps to that check.
     pub fn build_do_while(&mut self, body: &[StatementNode<'a>], condition: &ExpressionNode<'a>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
-        let loop_id = self.loop_counter;
-        self.loop_counter += 1;
-        let label = self.pending_loop_label.take();
-        self.loop_stack.push((loop_id, label));
+        let loop_id = self.ctx.loop_counter;
+        self.ctx.loop_counter += 1;
+        let label = self.ctx.pending_loop_label.take();
+        self.ctx.loop_stack.push((loop_id, label));
 
         writer.write_line(&format!("(block $loop_end_{}", loop_id));
         writer.indent();
@@ -341,7 +341,7 @@ impl<'a> WasmGenerator<'a> {
         writer.unindent();
         writer.write_line(")");
 
-        self.loop_stack.pop();
+        self.ctx.loop_stack.pop();
         Ok(())
     }
 
@@ -351,10 +351,10 @@ impl<'a> WasmGenerator<'a> {
             self.build_statement(init_stmt, function, writer)?;
         }
         
-        let loop_id = self.loop_counter;
-        self.loop_counter += 1;
-        let label = self.pending_loop_label.take();
-        self.loop_stack.push((loop_id, label));
+        let loop_id = self.ctx.loop_counter;
+        self.ctx.loop_counter += 1;
+        let label = self.ctx.pending_loop_label.take();
+        self.ctx.loop_stack.push((loop_id, label));
         
         writer.write_line(&format!("(block $loop_end_{}", loop_id));
         writer.indent();
@@ -384,7 +384,7 @@ impl<'a> WasmGenerator<'a> {
         writer.unindent();
         writer.write_line(")");
         
-        self.loop_stack.pop();
+        self.ctx.loop_stack.pop();
         Ok(())
     }
 
@@ -417,10 +417,10 @@ impl<'a> WasmGenerator<'a> {
         writer.write_line("i32.const 0");
         writer.write_line(&format!("local.set ${}", index_name));
 
-        let loop_id = self.loop_counter;
-        self.loop_counter += 1;
-        let label = self.pending_loop_label.take();
-        self.loop_stack.push((loop_id, label));
+        let loop_id = self.ctx.loop_counter;
+        self.ctx.loop_counter += 1;
+        let label = self.ctx.pending_loop_label.take();
+        self.ctx.loop_stack.push((loop_id, label));
 
         writer.write_line(&format!("(block $loop_end_{}", loop_id));
         writer.indent();
@@ -475,7 +475,7 @@ impl<'a> WasmGenerator<'a> {
         writer.unindent();
         writer.write_line(")");
 
-        self.loop_stack.pop();
+        self.ctx.loop_stack.pop();
         Ok(())
     }
 
@@ -483,8 +483,8 @@ impl<'a> WasmGenerator<'a> {
     /// carrying that label; otherwise the innermost loop.
     fn resolve_loop_id(&self, label: &Option<String>) -> Option<usize> {
         match label {
-            Some(name) => self.loop_stack.iter().rev().find(|(_, l)| l.as_deref() == Some(name.as_str())).map(|(id, _)| *id),
-            None => self.loop_stack.last().map(|(id, _)| *id),
+            Some(name) => self.ctx.loop_stack.iter().rev().find(|(_, l)| l.as_deref() == Some(name.as_str())).map(|(id, _)| *id),
+            None => self.ctx.loop_stack.last().map(|(id, _)| *id),
         }
     }
 

@@ -1,4 +1,4 @@
-use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
+use crate::syntax::token::syntax_token::SyntaxToken;
 use super::function::FunctionNode;
 use super::struct_node::StructDeclarationNode;
 

@@ -1,5 +1,5 @@
-use crate::lang::code_analysis::text::text_span::TextSpan;
-use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
+use crate::syntax::text::text_span::TextSpan;
+use crate::syntax::token::syntax_token::SyntaxToken;
 use super::types::Type;
 
 /// Represents an expression node in the AST

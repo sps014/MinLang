@@ -1,5 +1,6 @@
 use std::io::Error;
-use crate::lang::code_analysis::text::indented_text_writer::IndentedTextWriter;
+use crate::syntax::nodes::types::release_func_suffix;
+use crate::syntax::text::indented_text_writer::IndentedTextWriter;
 use super::WasmGenerator;
 
 /// The fixed WebAssembly runtime emitted into every module: memory globals plus the
@@ -365,7 +366,7 @@ impl<'a> WasmGenerator<'a> {
     pub fn build_memory_management(&self, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         // Place the heap above all string/runtime-string data (8-byte aligned), never below the
         // historical 1024-byte base so small programs are byte-for-byte unchanged.
-        let heap_base = std::cmp::max(1024, (self.next_string_offset + 7) & !7);
+        let heap_base = std::cmp::max(1024, (self.ctx.next_string_offset + 7) & !7);
         writer.write_line(&format!("(global $heap_ptr (mut i32) (i32.const {}))", heap_base));
         writer.write_line("(global $free_list_head (mut i32) (i32.const 0))");
         writer.write_line("");
@@ -451,9 +452,10 @@ impl<'a> WasmGenerator<'a> {
         }
     }
 
-    fn build_release_func(&self, type_name: &str, struct_info: Option<&crate::lang::semantic_analysis::struct_table::StructInfo>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
-        // Replace [] with _array for function name
-        let func_name = type_name.replace("[]", "_array");
+    fn build_release_func(&self, type_name: &str, struct_info: Option<&crate::semantics::struct_table::StructInfo>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        // Map the type name to its `$release_*` suffix (arrays -> `_array`, `?` dropped).
+        // `type_name` here is already normalized to drop `?`, so this matches the call sites.
+        let func_name = release_func_suffix(type_name);
         
         writer.write_line(&format!("(func $release_{} (param $ptr i32)", func_name));
         writer.indent();
@@ -516,7 +518,7 @@ impl<'a> WasmGenerator<'a> {
             for (_, field_info) in &info.fields {
                 let field_type = field_info.type_.get_type();
                 if self.is_reference_type(&field_type) {
-                    let release_func = field_type.replace("[]", "_array").replace("?", "");
+                    let release_func = release_func_suffix(&field_type);
                     writer.write_line("local.get $ptr");
                     if field_info.offset > 0 {
                         writer.write_line(&format!("i32.const {}", field_info.offset));
@@ -529,7 +531,7 @@ impl<'a> WasmGenerator<'a> {
         } else if type_name.ends_with("[]") {
             let inner_type = &type_name[..type_name.len() - 2];
             if self.is_reference_type(inner_type) {
-                let release_func = inner_type.replace("[]", "_array").replace("?", "");
+                let release_func = release_func_suffix(inner_type);
                 
                 // Get length
                 writer.write_line("local.get $ptr");

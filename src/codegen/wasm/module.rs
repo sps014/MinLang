@@ -1,6 +1,6 @@
 use std::io::Error;
-use crate::lang::code_analysis::syntax::nodes::{ProgramNode, FunctionNode, ParameterNode};
-use crate::lang::code_analysis::text::indented_text_writer::IndentedTextWriter;
+use crate::syntax::nodes::{ProgramNode, FunctionNode, ParameterNode};
+use crate::syntax::text::indented_text_writer::IndentedTextWriter;
 use super::WasmGenerator;
 
 impl<'a> WasmGenerator<'a> {
@@ -20,9 +20,9 @@ impl<'a> WasmGenerator<'a> {
         
         // Import the host I/O functions (print_*) plus the importable stdlib functions.
         // `concat`/`strlen`/`debug_get_free_list_head` are compiled inline, not imported.
-        let imports = crate::lang::stdlib::StdlibFunction::host_imports()
+        let imports = crate::stdlib::StdlibFunction::host_imports()
             .into_iter()
-            .chain(crate::lang::stdlib::StdlibFunction::get_all());
+            .chain(crate::stdlib::StdlibFunction::get_all());
         for std_func in imports {
             if std_func.name == "concat" || std_func.name == "strlen" || std_func.name == "debug_get_free_list_head" { continue; } // handled internally
             
@@ -84,8 +84,8 @@ impl<'a> WasmGenerator<'a> {
         for func in program.functions.iter() {
             if func.generic_parameters.is_some() { continue; }
             let name = func.name.text.as_str();
-            if !self.function_indices.contains_key(name) {
-                self.function_indices.insert(name.to_string(), indexed_functions.len());
+            if !self.ctx.function_indices.contains_key(name) {
+                self.ctx.function_indices.insert(name.to_string(), indexed_functions.len());
                 indexed_functions.push(name);
             }
         }
@@ -96,7 +96,7 @@ impl<'a> WasmGenerator<'a> {
         }
 
         writer.write_line("(memory 10)");
-        for (s, offset) in &self.strings {
+        for (s, offset) in &self.ctx.strings {
             let unquoted = if s.starts_with('"') && s.ends_with('"') {
                 &s[1..s.len()-1]
             } else {
@@ -104,7 +104,7 @@ impl<'a> WasmGenerator<'a> {
             };
             self.write_string_data(*offset, unquoted, writer);
         }
-        for (content, offset) in &self.runtime_strings {
+        for (content, offset) in &self.ctx.runtime_strings {
             self.write_string_data(*offset, content, writer);
         }
         
@@ -119,18 +119,18 @@ impl<'a> WasmGenerator<'a> {
             self.build_function(i, writer)?;
         }
         for (mangled_name, (bindings, template)) in self.instantiated_generics {
-            self.current_generic_bindings = bindings.iter().cloned().collect();
-            self.current_mangled_name = Some(mangled_name.clone());
+            self.ctx.current_generic_bindings = bindings.iter().cloned().collect();
+            self.ctx.current_mangled_name = Some(mangled_name.clone());
             self.build_function(template, writer)?;
-            self.current_generic_bindings.clear();
-            self.current_mangled_name = None;
+            self.ctx.current_generic_bindings.clear();
+            self.ctx.current_mangled_name = None;
         }
         for (method, bindings) in self.struct_methods {
-            self.current_generic_bindings = bindings.iter().cloned().collect();
-            self.current_mangled_name = Some(method.name.text.clone());
+            self.ctx.current_generic_bindings = bindings.iter().cloned().collect();
+            self.ctx.current_mangled_name = Some(method.name.text.clone());
             self.build_function(method, writer)?;
-            self.current_mangled_name = None;
-            self.current_generic_bindings.clear();
+            self.ctx.current_mangled_name = None;
+            self.ctx.current_generic_bindings.clear();
         }
 
         self.build_export(program, writer)?;
@@ -141,7 +141,7 @@ impl<'a> WasmGenerator<'a> {
 
     /// Builds a single WebAssembly function
     pub fn build_function(&mut self, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
-        let func_name = self.current_mangled_name.as_ref().unwrap_or(&function.name.text);
+        let func_name = self.ctx.current_mangled_name.as_ref().unwrap_or(&function.name.text);
         writer.write("(func $");
         writer.write(func_name);
         for i in function.parameters.iter() {
@@ -175,7 +175,7 @@ impl<'a> WasmGenerator<'a> {
         self.build_body(function.body, function, writer)?;
 
         // Release all local reference variables in case the function falls through without a return.
-        let func_name = self.current_mangled_name.clone().unwrap_or_else(|| function.name.text.clone());
+        let func_name = self.ctx.current_mangled_name.clone().unwrap_or_else(|| function.name.text.clone());
         self.emit_release_locals(&func_name, writer);
 
         writer.unindent();

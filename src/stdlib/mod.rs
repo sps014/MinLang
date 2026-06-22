@@ -1,9 +1,9 @@
-use crate::lang::code_analysis::syntax::nodes::Type;
-use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
-use crate::lang::code_analysis::token::token_kind::TokenKind;
-use crate::lang::code_analysis::text::text_span::TextSpan;
+use crate::syntax::nodes::Type;
+use crate::syntax::token::syntax_token::SyntaxToken;
+use crate::syntax::token::token_kind::TokenKind;
+use crate::syntax::text::text_span::TextSpan;
 use std::rc::Rc;
-use crate::lang::code_analysis::text::line_text::LineText;
+use crate::syntax::text::line_text::LineText;
 
 pub struct StdlibFunction {
     pub name: String,
@@ -15,15 +15,7 @@ impl StdlibFunction {
     fn create_type(type_str: &str) -> Type {
         let dummy_span = TextSpan::new((0, 0), &Rc::new(LineText::new("".to_string())));
         let token = SyntaxToken::new(TokenKind::DataTypeToken, dummy_span, type_str.to_string());
-        match type_str {
-            "int" => Type::Integer(token),
-            "float" => Type::Float(token),
-            "double" => Type::Double(token),
-            "string" => Type::String(token),
-            "bool" => Type::Boolean(token),
-            "char" => Type::Char(token),
-            _ => Type::Void,
-        }
+        crate::syntax::nodes::types::primitive_type(type_str, token).unwrap_or(Type::Void)
     }
 
     /// Host functions that are always imported into every module but are NOT user-callable.

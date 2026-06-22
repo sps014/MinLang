@@ -1,6 +1,6 @@
 use super::*;
-use crate::lang::code_analysis::syntax::lexer::Lexer;
-use crate::lang::code_analysis::syntax::parser::Parser;
+use crate::syntax::lexer::Lexer;
+use crate::syntax::parser::Parser;
 use pretty_assertions::assert_eq;
 
 fn analyze_code(code: &str) -> DiagnosticBag {

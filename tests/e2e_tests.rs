@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use wasmtime::*;
-use dream::lang::compiler::{Compiler, Target};
+use dream::driver::compiler::{Compiler, Target};
 use pretty_assertions::assert_eq;
 
 #[derive(Clone)]

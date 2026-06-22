@@ -1,11 +1,10 @@
 #![allow(dead_code)]
-mod lang;
 
 use std::path::Path;
 use tracing::{info, error, Level};
 use tracing_subscriber::FmtSubscriber;
-use dream::lang::compiler::{Compiler, Target};
-use dream::lang::execution::wasm_runner::execute_wasm;
+use dream::driver::compiler::{Compiler, Target};
+use dream::execution::wasm_runner::execute_wasm;
 
 fn main()
 {

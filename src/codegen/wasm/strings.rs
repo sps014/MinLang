@@ -1,4 +1,4 @@
-use crate::lang::code_analysis::syntax::nodes::{ProgramNode, StatementNode, ExpressionNode, Type};
+use crate::syntax::nodes::{ProgramNode, StatementNode, ExpressionNode, Type};
 use super::WasmGenerator;
 
 impl<'a> WasmGenerator<'a> {
@@ -105,10 +105,10 @@ impl<'a> WasmGenerator<'a> {
         match expr {
             ExpressionNode::Literal(Type::String(token)) => {
                 let s = token.text.clone();
-                if !self.strings.contains_key(&s) {
-                    self.strings.insert(s.clone(), self.next_string_offset);
+                if !self.ctx.strings.contains_key(&s) {
+                    self.ctx.strings.insert(s.clone(), self.ctx.next_string_offset);
                     // +1 for the null terminator, + header for the next block's [size][tag][ref_count].
-                    self.next_string_offset += s.len() + 1 + super::HEAP_HEADER_SIZE;
+                    self.ctx.next_string_offset += s.len() + 1 + super::HEAP_HEADER_SIZE;
                 }
             }
             ExpressionNode::Binary(left, _, right) => {

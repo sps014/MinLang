@@ -1,9 +1,9 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::io::{Error, ErrorKind};
 use std::rc::{Rc};
-use crate::lang::code_analysis::syntax::nodes::Type;
-use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
+use crate::semantics::errors::SymbolError;
+use crate::syntax::nodes::Type;
+use crate::syntax::token::syntax_token::SyntaxToken;
 
 #[derive(Debug)]
 pub struct SymbolTable
@@ -57,24 +57,23 @@ impl SymbolTable{
         result
     }
 
-    pub fn add_symbol(&mut self, name:String, token: Type) ->Result<(),Error> {
+    pub fn add_symbol(&mut self, name:String, token: Type) ->Result<(),SymbolError> {
 
         return match self.symbols.insert(name.clone(),token)
         {
-            Some(_) => Err(Error::new(ErrorKind::Other,format!("variable {} already exists at: {}",name
+            Some(_) => Err(SymbolError::new(format!("variable {} already exists at: {}",name
                                                                ,self.symbols.get(&name).unwrap().get_line_str()))),
             None => Ok(()),
         }
     }
-    pub fn get_symbol(&self, name: &SyntaxToken) -> Result<Type, Error> {
+    pub fn get_symbol(&self, name: &SyntaxToken) -> Result<Type, SymbolError> {
         if let Some(symbol) = self.symbols.get(&name.text) {
             return Ok(symbol.clone());
         }
 
         match self.parent {
             Some(ref parent) => parent.as_ref().borrow().get_symbol(name),
-            None => Err(Error::new(
-                ErrorKind::Other,
+            None => Err(SymbolError::new(
                 format!("variable {} does not exist at: {}", name.text, name.position.get_point_str()),
             )),
         }

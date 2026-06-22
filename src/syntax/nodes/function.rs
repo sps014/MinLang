@@ -1,5 +1,5 @@
 use std::rc::Rc;
-use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
+use crate::syntax::token::syntax_token::SyntaxToken;
 use super::statement::StatementNode;
 use super::types::Type;
 

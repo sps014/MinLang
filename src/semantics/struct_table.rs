@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use crate::lang::code_analysis::syntax::nodes::Type;
-use crate::lang::code_analysis::syntax::nodes::struct_node::StructDeclarationNode;
+use crate::syntax::nodes::Type;
+use crate::syntax::nodes::struct_node::StructDeclarationNode;
 
 #[derive(Debug, Clone)]
 pub struct StructFieldInfo {
@@ -98,7 +98,7 @@ impl StructTable {
     /// Returns true if `type_name` is a heap-allocated reference type known to this table
     /// (a string, an array, or a registered struct).
     pub fn is_reference_type(&self, type_name: &str) -> bool {
-        crate::lang::code_analysis::syntax::nodes::types::is_reference_type_name(
+        crate::syntax::nodes::types::is_reference_type_name(
             type_name,
             |name| self.get_struct(name).is_some(),
         )

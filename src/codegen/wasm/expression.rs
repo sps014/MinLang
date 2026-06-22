@@ -1,9 +1,9 @@
 use std::io::{Error, ErrorKind};
-use crate::lang::code_analysis::syntax::nodes::{ExpressionNode, FunctionNode, Type};
-use crate::lang::code_analysis::syntax::nodes::types::strip_nullable;
-use crate::lang::code_analysis::text::indented_text_writer::IndentedTextWriter;
-use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
-use crate::lang::code_analysis::token::token_kind::TokenKind;
+use crate::syntax::nodes::{ExpressionNode, FunctionNode, Type};
+use crate::syntax::nodes::types::{mangle_with_suffixes, strip_nullable};
+use crate::syntax::text::indented_text_writer::IndentedTextWriter;
+use crate::syntax::token::syntax_token::SyntaxToken;
+use crate::syntax::token::token_kind::TokenKind;
 use super::WasmGenerator;
 
 impl<'a> WasmGenerator<'a> {
@@ -196,14 +196,7 @@ impl<'a> WasmGenerator<'a> {
         let struct_name = match generic_args {
             // Resolve each type argument through the active monomorphization bindings so a
             // `List<T>{...}` inside a generic body targets the concrete `List_int` layout.
-            Some(args) => {
-                let mut mangled = name.text.clone();
-                for arg in args {
-                    mangled.push('_');
-                    mangled.push_str(&self.resolve_type(&arg.get_type()));
-                }
-                mangled
-            },
+            Some(args) => mangle_with_suffixes(&name.text, args.iter().map(|arg| self.resolve_type(&arg.get_type()))),
             None => name.text.clone(),
         };
         let struct_info = self.struct_table.get_struct(&struct_name)
@@ -221,7 +214,7 @@ impl<'a> WasmGenerator<'a> {
 
         // 2. Evaluate and store each field (one nesting level deeper so field values that
         // allocate borrow a different base local).
-        self.alloc_depth += 1;
+        self.ctx.alloc_depth += 1;
         for (field_name, expr) in fields.iter() {
             let field_info = struct_info.fields.get(&field_name.text)
                 .ok_or_else(|| Error::new(ErrorKind::Other, format!("unknown field '{}' on struct '{}'", field_name.text, struct_name)))?;
@@ -245,7 +238,7 @@ impl<'a> WasmGenerator<'a> {
             }
             WasmGenerator::emit_store(&field_type, writer)?;
         }
-        self.alloc_depth -= 1;
+        self.ctx.alloc_depth -= 1;
 
         // 3. Leave the pointer on the stack
         writer.write_line(&format!("local.get {}", base));
@@ -293,22 +286,22 @@ impl<'a> WasmGenerator<'a> {
             // call $Struct_init(this, args...). Owned argument temporaries are released after the
             // call (init returns void, so nothing is on the stack to disturb).
             let param_types: Vec<String> = self.function_table.get_function(&init_name)?.parameters.clone();
-            let saved_tmp = self.tmp_depth;
+            let saved_tmp = self.ctx.tmp_depth;
             let mut owned_temps: Vec<(usize, String)> = Vec::new();
             writer.write_line(&format!("local.get {}", base)); // implicit `this`
-            self.alloc_depth += 1;
+            self.ctx.alloc_depth += 1;
             for (i, expr) in args.iter().enumerate() {
                 let pt = param_types.get(i + 1).cloned().unwrap_or_else(|| "int".to_string());
                 self.build_call_arg(expr, &pt, function, &mut owned_temps, writer)?;
             }
-            self.alloc_depth -= 1;
+            self.ctx.alloc_depth -= 1;
             writer.write_line(&format!("call ${}", init_name));
             self.release_call_temps(&owned_temps, saved_tmp, writer);
         } else {
             // Auto-generated constructor: store each argument into its field positionally. The
             // struct owns its reference fields, so a borrowed value is retained while an owned one
             // (constructor/literal/call result, or a boxed primitive) is taken as-is.
-            self.alloc_depth += 1;
+            self.ctx.alloc_depth += 1;
             for (i, (_, field_info)) in ordered.iter().enumerate() {
                 let ft = field_info.type_.get_type();
                 let retain_field = match args.get(i) {
@@ -332,7 +325,7 @@ impl<'a> WasmGenerator<'a> {
                 }
                 WasmGenerator::emit_store(&ft, writer)?;
             }
-            self.alloc_depth -= 1;
+            self.ctx.alloc_depth -= 1;
         }
 
         writer.write_line(&format!("local.get {}", base));
@@ -382,7 +375,7 @@ impl<'a> WasmGenerator<'a> {
             // A char literal's token text already holds its numeric code point.
             Type::Char(c) => format!("i32.const {}", c.text),
             Type::String(s) => {
-                let offset = self.strings.get(&s.text)
+                let offset = self.ctx.strings.get(&s.text)
                     .ok_or_else(|| Error::new(ErrorKind::Other, format!("string literal not interned: {}", s.text)))?;
                 format!("i32.const {}", offset)
             },
@@ -545,12 +538,12 @@ impl<'a> WasmGenerator<'a> {
     pub fn build_identifier(&mut self, identifier: &SyntaxToken, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         // A bare identifier that is not a local variable but names a top-level function is a
         // first-class function value: emit its function-table index.
-        let func_name = self.current_mangled_name.as_ref().unwrap_or(&function.name.text);
-        let is_local = self.combined_symbol_lookup.get(func_name)
+        let func_name = self.ctx.current_mangled_name.as_ref().unwrap_or(&function.name.text);
+        let is_local = self.ctx.combined_symbol_lookup.get(func_name)
             .map(|m| m.contains_key(&identifier.text))
             .unwrap_or(false);
         if !is_local {
-            if let Some(idx) = self.function_indices.get(&identifier.text) {
+            if let Some(idx) = self.ctx.function_indices.get(&identifier.text) {
                 writer.write_line(&format!("i32.const {}", idx));
                 return Ok(());
             }
@@ -562,8 +555,8 @@ impl<'a> WasmGenerator<'a> {
     /// Returns the structured signature `(param types, return type)` when `var_name` is a local
     /// variable of function type in the current function, otherwise `None`.
     pub fn function_typed_local(&self, var_name: &str, function: &FunctionNode<'a>) -> Option<(Vec<Type>, Type)> {
-        let func_name = self.current_mangled_name.as_ref().unwrap_or(&function.name.text);
-        let t = self.combined_symbol_lookup.get(func_name)?.get(var_name)?;
+        let func_name = self.ctx.current_mangled_name.as_ref().unwrap_or(&function.name.text);
+        let t = self.ctx.combined_symbol_lookup.get(func_name)?.get(var_name)?;
         if let Type::Function(params, ret) = t {
             Some((params.clone(), (**ret).clone()))
         } else {
@@ -574,7 +567,7 @@ impl<'a> WasmGenerator<'a> {
     /// Builds an indirect call through a function-typed local variable using `call_indirect`.
     /// The variable holds an `i32` index into the module's function table.
     pub fn build_indirect_call(&mut self, var_name: &str, params_decl: &[Type], ret: &Type, args: &Vec<ExpressionNode<'a>>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
-        let saved_tmp = self.tmp_depth;
+        let saved_tmp = self.ctx.tmp_depth;
         let mut owned_temps: Vec<(usize, String)> = Vec::new();
         for (i, expr) in args.iter().enumerate() {
             let pt = params_decl.get(i).map(|t| t.get_type()).unwrap_or_else(|| "int".to_string());
@@ -612,7 +605,7 @@ impl<'a> WasmGenerator<'a> {
     pub fn build_function_invocation(&mut self, name: &String, parameters: &Vec<ExpressionNode<'a>>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let param_types: Vec<String> = self.function_table.get_function(name)?.parameters.clone();
 
-        let saved_tmp = self.tmp_depth;
+        let saved_tmp = self.ctx.tmp_depth;
         let mut owned_temps: Vec<(usize, String)> = Vec::new();
         for (i, expr) in parameters.iter().enumerate() {
             let param_type = param_types.get(i).cloned()
@@ -674,7 +667,7 @@ impl<'a> WasmGenerator<'a> {
         let mangled_name = format!("{}_{}", struct_name, method.text);
         let param_types: Vec<String> = self.function_table.get_function(&mangled_name)?.parameters.clone();
 
-        let saved_tmp = self.tmp_depth;
+        let saved_tmp = self.ctx.tmp_depth;
         let mut owned_temps: Vec<(usize, String)> = Vec::new();
 
         // 1. Evaluate 'this' (the object). If the receiver is itself an owned temporary (e.g. a
@@ -682,8 +675,8 @@ impl<'a> WasmGenerator<'a> {
         let recv_owned = self.is_reference_type(&struct_name) && self.produces_owned_ref(obj, function);
         self.build_expression(obj, &obj_type, function, writer)?;
         if recv_owned {
-            let slot = self.tmp_depth.min(Self::TMP_POOL - 1);
-            self.tmp_depth += 1;
+            let slot = self.ctx.tmp_depth.min(Self::TMP_POOL - 1);
+            self.ctx.tmp_depth += 1;
             writer.write_line(&format!("local.tee $tmp{}", slot));
             owned_temps.push((slot, struct_name.clone()));
         }
@@ -727,7 +720,7 @@ impl<'a> WasmGenerator<'a> {
         writer.write_line("i32.store");
 
         // 3. Evaluate and store each element (one nesting level deeper).
-        self.alloc_depth += 1;
+        self.ctx.alloc_depth += 1;
         for (i, expr) in elements.iter().enumerate() {
             let offset = 4 + (i * element_size);
             writer.write_line(&format!("local.get {}", base)); // ptr
@@ -744,7 +737,7 @@ impl<'a> WasmGenerator<'a> {
             }
             WasmGenerator::emit_store(&inner_type_str, writer)?;
         }
-        self.alloc_depth -= 1;
+        self.ctx.alloc_depth -= 1;
 
         // 4. Leave the pointer on the stack
         writer.write_line(&format!("local.get {}", base));

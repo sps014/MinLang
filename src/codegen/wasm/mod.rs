@@ -3,12 +3,12 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::io::Error;
 
-use crate::lang::code_analysis::syntax::nodes::Type;
-use crate::lang::code_analysis::syntax::syntax_tree::SyntaxTree;
-use crate::lang::semantic_analysis::analyzer::SemanticInfo;
-use crate::lang::semantic_analysis::function_table::FunctionTable;
-use crate::lang::semantic_analysis::symbol_table::SymbolTable;
-use crate::lang::code_generator::CodeGenerator;
+use crate::syntax::nodes::Type;
+use crate::syntax::syntax_tree::SyntaxTree;
+use crate::semantics::analyzer::SemanticInfo;
+use crate::semantics::function_table::FunctionTable;
+use crate::semantics::symbol_table::SymbolTable;
+use crate::codegen::CodeGenerator;
 
 pub mod expression;
 pub mod module;
@@ -22,13 +22,11 @@ pub mod object;
 /// Allocated pointers point at `data` (block_start + HEAP_HEADER_SIZE).
 pub const HEAP_HEADER_SIZE: usize = 12;
 
-/// Generates WebAssembly (WAT) code from the given syntax tree and semantic info.
+/// Mutable working state accumulated while lowering a module to WAT. Separated from the
+/// borrowed, read-only inputs on [`WasmGenerator`] so the generator cleanly distinguishes
+/// "what we read" (syntax tree, semantic tables) from "what we mutate" during emission.
 #[allow(dead_code)]
-pub struct WasmGenerator<'a> {
-    pub syntax_tree: &'a SyntaxTree<'a>,
-    pub symbol_map: &'a HashMap<String, Rc<RefCell<SymbolTable>>>,
-    pub function_table: &'a FunctionTable,
-    pub struct_table: &'a crate::lang::semantic_analysis::struct_table::StructTable,
+pub struct CodegenContext {
     // key 1: function name, key 2: parameter name
     pub combined_symbol_lookup: HashMap<String, HashMap<String, Type>>,
     pub strings: HashMap<String, usize>,
@@ -49,10 +47,6 @@ pub struct WasmGenerator<'a> {
     /// Stable function-table index assigned to each indexable (non-generic) top-level function.
     /// Used to lower first-class function values and `call_indirect`.
     pub function_indices: HashMap<String, usize>,
-    pub instantiated_generics: &'a HashMap<String, (crate::lang::semantic_analysis::analyzer::GenericBindings, &'a crate::lang::code_analysis::syntax::nodes::FunctionNode<'a>)>,
-    pub struct_methods: &'a Vec<(&'a crate::lang::code_analysis::syntax::nodes::FunctionNode<'a>, crate::lang::semantic_analysis::analyzer::GenericBindings)>,
-    /// Registered enums: name -> (member -> i32 value). Enum members lower to `i32.const`.
-    pub enums: &'a crate::lang::semantic_analysis::analyzer::EnumTable,
     /// Current nesting depth of heap constructors (struct instantiations / array literals).
     /// Each level borrows a distinct `$ctor_base{depth}` local to hold its allocation pointer
     /// across sub-expression evaluation, so nested literals (`[P{...}]`, `Box<Box<int>>`) do
@@ -62,6 +56,41 @@ pub struct WasmGenerator<'a> {
     /// `local.tee`'d into the next free `$tmp{n}` so they can be released after the call; the
     /// counter advances while a slot is held and is restored once the call's temps are released.
     pub tmp_depth: usize,
+}
+
+impl CodegenContext {
+    fn new() -> Self {
+        Self {
+            combined_symbol_lookup: HashMap::new(),
+            strings: HashMap::new(),
+            runtime_strings: HashMap::new(),
+            // Start past the null word (0..4) and the first block's 12-byte header (4..16).
+            next_string_offset: 4 + HEAP_HEADER_SIZE,
+            loop_counter: 0,
+            loop_stack: Vec::new(),
+            pending_loop_label: None,
+            current_generic_bindings: HashMap::new(),
+            current_mangled_name: None,
+            function_indices: HashMap::new(),
+            alloc_depth: 0,
+            tmp_depth: 0,
+        }
+    }
+}
+
+/// Generates WebAssembly (WAT) code from the given syntax tree and semantic info.
+#[allow(dead_code)]
+pub struct WasmGenerator<'a> {
+    pub syntax_tree: &'a SyntaxTree<'a>,
+    pub symbol_map: &'a HashMap<String, Rc<RefCell<SymbolTable>>>,
+    pub function_table: &'a FunctionTable,
+    pub struct_table: &'a crate::semantics::struct_table::StructTable,
+    pub instantiated_generics: &'a HashMap<String, (crate::semantics::analyzer::GenericBindings, &'a crate::syntax::nodes::FunctionNode<'a>)>,
+    pub struct_methods: &'a Vec<(&'a crate::syntax::nodes::FunctionNode<'a>, crate::semantics::analyzer::GenericBindings)>,
+    /// Registered enums: name -> (member -> i32 value). Enum members lower to `i32.const`.
+    pub enums: &'a crate::semantics::analyzer::EnumTable,
+    /// Mutable working state accumulated during emission.
+    pub ctx: CodegenContext,
 }
 
 impl<'a> CodeGenerator<'a> for WasmGenerator<'a> {
@@ -79,22 +108,10 @@ impl<'a> WasmGenerator<'a> {
             symbol_map: &semantic_info.hash_map,
             function_table: &semantic_info.function_table,
             struct_table: &semantic_info.struct_table,
-            combined_symbol_lookup: HashMap::new(),
-            strings: HashMap::new(),
-            runtime_strings: HashMap::new(),
-            // Start past the null word (0..4) and the first block's 12-byte header (4..16).
-            next_string_offset: 4 + HEAP_HEADER_SIZE,
-            loop_counter: 0,
-            loop_stack: Vec::new(),
-            pending_loop_label: None,
-            current_generic_bindings: HashMap::new(),
-            current_mangled_name: None,
-            function_indices: HashMap::new(),
             instantiated_generics: &semantic_info.instantiated_generics,
             struct_methods: &semantic_info.struct_methods,
             enums: &semantic_info.enums,
-            alloc_depth: 0,
-            tmp_depth: 0,
+            ctx: CodegenContext::new(),
         }
     }
 
@@ -110,7 +127,7 @@ impl<'a> WasmGenerator<'a> {
     /// Returns the name of the base-pointer local for the current constructor nesting depth,
     /// clamped to the declared pool so it always refers to a real local.
     pub fn ctor_base_local(&self) -> String {
-        let idx = self.alloc_depth.min(Self::CTOR_BASE_POOL - 1);
+        let idx = self.ctx.alloc_depth.min(Self::CTOR_BASE_POOL - 1);
         format!("$ctor_base{}", idx)
     }
 }

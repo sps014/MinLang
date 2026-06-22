@@ -1,12 +1,12 @@
 use super::*;
-use crate::lang::code_analysis::syntax::lexer::Lexer;
+use crate::syntax::lexer::Lexer;
 use pretty_assertions::assert_eq;
 
 fn parse_code<'a>(code: &str, arena: &'a bumpalo::Bump) -> (ProgramNode<'a>, DiagnosticBag) {
     let mut diagnostics = DiagnosticBag::new(None);
     let lexer = Lexer::new(code.to_string());
     let mut parser = Parser::new(lexer, arena, &mut diagnostics);
-    let tree = parser.parse().unwrap_or_else(|_| crate::lang::code_analysis::syntax::syntax_tree::SyntaxTree::new(ProgramNode::new(vec![], vec![], vec![], vec![])));
+    let tree = parser.parse().unwrap_or_else(|_| crate::syntax::syntax_tree::SyntaxTree::new(ProgramNode::new(vec![], vec![], vec![], vec![])));
     (tree.get_root().clone(), diagnostics)
 }
 

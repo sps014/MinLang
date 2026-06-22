@@ -1,21 +1,42 @@
 use std::io::{Error, ErrorKind};
-use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
+use crate::syntax::token::syntax_token::SyntaxToken;
 
 /// Returns the given type name with a single trailing nullable (`?`) suffix removed.
 pub fn strip_nullable(type_name: &str) -> &str {
     type_name.strip_suffix('?').unwrap_or(type_name)
 }
 
+/// Single source of truth for name mangling: joins `base` with each suffix using `_`
+/// separators, e.g. base `Pair` with `["int", "string"]` becomes `Pair_int_string`.
+/// With no suffixes the base name is returned unchanged.
+pub fn mangle_with_suffixes<S: AsRef<str>>(base: &str, suffixes: impl IntoIterator<Item = S>) -> String {
+    let mut name = base.to_string();
+    for suffix in suffixes {
+        name.push('_');
+        name.push_str(suffix.as_ref());
+    }
+    name
+}
+
 /// Builds the monomorphized name for a generic instantiation by appending every concrete
 /// type argument, e.g. base `Pair` with `[int, string]` becomes `Pair_int_string`. With no
 /// arguments the base name is returned unchanged.
 pub fn mangle_generic(base: &str, args: &[Type]) -> String {
-    let mut name = base.to_string();
-    for arg in args {
-        name.push('_');
-        name.push_str(&arg.get_type());
-    }
-    name
+    mangle_with_suffixes(base, args.iter().map(|arg| arg.get_type()))
+}
+
+/// Constructs the primitive `Type` named by `name`, backed by `token`, or returns `None`
+/// if `name` does not denote a primitive. Single source of truth for primitive construction.
+pub fn primitive_type(name: &str, token: SyntaxToken) -> Option<Type> {
+    Some(match name {
+        "int" => Type::Integer(token),
+        "float" => Type::Float(token),
+        "double" => Type::Double(token),
+        "string" => Type::String(token),
+        "bool" => Type::Boolean(token),
+        "char" => Type::Char(token),
+        _ => return None,
+    })
 }
 
 /// Returns the given type name with a single trailing array (`[]`) suffix removed.
@@ -107,7 +128,7 @@ impl Type {
     /// Returns the source span of the token backing this type, if any.
     /// Composite types (arrays, nullables) defer to their inner type; `Void`/`Generic`
     /// have no backing token and return `None`.
-    pub fn get_span(&self) -> Option<crate::lang::code_analysis::text::text_span::TextSpan> {
+    pub fn get_span(&self) -> Option<crate::syntax::text::text_span::TextSpan> {
         match self {
             Type::Integer(token)
             | Type::Float(token)
@@ -143,15 +164,12 @@ impl Type {
 
     /// Parses a Type from a given SyntaxToken
     pub fn from_token(token: SyntaxToken) -> Result<Type, Error> {
+        if let Some(primitive) = primitive_type(&token.text, token.clone()) {
+            return Ok(primitive);
+        }
         let r = match token.text.as_str() {
-            "int" => Type::Integer(token),
-            "float" => Type::Float(token),
-            "double" => Type::Double(token),
-            "string" => Type::String(token),
             "object" => Type::Object(token),
             "void" => Type::Void,
-            "bool" => Type::Boolean(token),
-            "char" => Type::Char(token),
             _ => {
                 if token.text.ends_with("?") {
                     let base_type_str = &token.text[0..token.text.len() - 1];

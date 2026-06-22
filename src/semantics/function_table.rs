@@ -1,7 +1,7 @@
 use std::collections::HashMap;
-use std::io::{Error, ErrorKind};
-use crate::lang::code_analysis::syntax::nodes::{FunctionNode, Type};
-use crate::lang::stdlib::StdlibFunction;
+use crate::semantics::errors::SymbolError;
+use crate::syntax::nodes::{FunctionNode, Type};
+use crate::stdlib::StdlibFunction;
 
 #[derive(Debug, Clone)]
 pub struct FunctionTable {
@@ -27,21 +27,21 @@ impl FunctionTable {
         table
     }
 
-    pub fn add_function(&mut self, name: String, function_info: FunctionTableInfo) -> Result<(), Error>
+    pub fn add_function(&mut self, name: String, function_info: FunctionTableInfo) -> Result<(), SymbolError>
     {
         if self.functions.contains_key(&name)
         {
-            return Err(Error::new(ErrorKind::Other, format!("Function already exists ({})", name)));
+            return Err(SymbolError::new(format!("Function already exists ({})", name)));
         }
         self.functions.insert(name, function_info);
         Ok(())
     }
 
 
-    pub fn get_function(&self, name: &String) -> Result<FunctionTableInfo, Error> {
+    pub fn get_function(&self, name: &String) -> Result<FunctionTableInfo, SymbolError> {
         if !self.functions.contains_key(name)
         {
-            return Err(Error::new(ErrorKind::Other, format!("Function does not exist ({})", name)));
+            return Err(SymbolError::new(format!("Function does not exist ({})", name)));
         }
         Ok(self.functions.get(name).unwrap().clone())
     }

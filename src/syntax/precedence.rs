@@ -1,4 +1,4 @@
-use crate::lang::code_analysis::token::token_kind::TokenKind;
+use crate::syntax::token::token_kind::TokenKind;
 
 impl TokenKind {
     pub fn get_binary_precedence(&self) -> i32 {

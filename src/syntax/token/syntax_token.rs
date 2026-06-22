@@ -1,4 +1,4 @@
-use crate::lang::code_analysis::text::text_span::TextSpan;
+use crate::syntax::text::text_span::TextSpan;
 use super::token_kind::*;
 
 ///Represents a basic token in any given language

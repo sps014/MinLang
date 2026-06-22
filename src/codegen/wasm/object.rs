@@ -1,8 +1,8 @@
 use std::io::Error;
-use crate::lang::code_analysis::syntax::nodes::{ExpressionNode, FunctionNode};
-use crate::lang::code_analysis::syntax::nodes::types::strip_nullable;
-use crate::lang::code_analysis::text::indented_text_writer::IndentedTextWriter;
-use crate::lang::semantic_analysis::struct_table::StructInfo;
+use crate::syntax::nodes::{ExpressionNode, FunctionNode};
+use crate::syntax::nodes::types::strip_nullable;
+use crate::syntax::text::indented_text_writer::IndentedTextWriter;
+use crate::semantics::struct_table::StructInfo;
 use super::WasmGenerator;
 
 /// Runtime type tags stored in each heap block's header. Reference types carry their tag in
@@ -340,8 +340,8 @@ impl<'a> WasmGenerator<'a> {
     }
 
     /// Fields of a struct ordered by their byte offset (i.e. declaration order).
-    pub(crate) fn sorted_fields<'b>(info: &'b StructInfo) -> Vec<(String, &'b crate::lang::semantic_analysis::struct_table::StructFieldInfo)> {
-        let mut fields: Vec<(String, &crate::lang::semantic_analysis::struct_table::StructFieldInfo)> =
+    pub(crate) fn sorted_fields<'b>(info: &'b StructInfo) -> Vec<(String, &'b crate::semantics::struct_table::StructFieldInfo)> {
+        let mut fields: Vec<(String, &crate::semantics::struct_table::StructFieldInfo)> =
             info.fields.iter().map(|(k, v)| (k.clone(), v)).collect();
         fields.sort_by_key(|(_, f)| f.offset);
         fields
@@ -350,18 +350,18 @@ impl<'a> WasmGenerator<'a> {
     /// Interns a runtime-only string literal, returning its data-segment offset (the data
     /// pointer, with the block header living just before it).
     pub fn intern_runtime_string(&mut self, content: &str) -> usize {
-        if let Some(&offset) = self.runtime_strings.get(content) {
+        if let Some(&offset) = self.ctx.runtime_strings.get(content) {
             return offset;
         }
-        let offset = self.next_string_offset;
-        self.runtime_strings.insert(content.to_string(), offset);
-        self.next_string_offset += content.len() + 1 + super::HEAP_HEADER_SIZE;
+        let offset = self.ctx.next_string_offset;
+        self.ctx.runtime_strings.insert(content.to_string(), offset);
+        self.ctx.next_string_offset += content.len() + 1 + super::HEAP_HEADER_SIZE;
         offset
     }
 
     /// Looks up an already-interned runtime string offset.
     fn rstr(&self, content: &str) -> usize {
-        *self.runtime_strings.get(content)
+        *self.ctx.runtime_strings.get(content)
             .unwrap_or_else(|| panic!("runtime string not interned: {:?}", content))
     }
 

@@ -1,10 +1,10 @@
 use std::rc::Rc;
 use logos::Logos;
-use crate::lang::code_analysis::text::line_text::LineText;
-use crate::lang::code_analysis::text::text_span::TextSpan;
-use crate::lang::code_analysis::token::syntax_token::SyntaxToken;
-use crate::lang::code_analysis::token::token_kind::TokenKind;
-use crate::lang::diagnostics::DiagnosticBag;
+use crate::syntax::text::line_text::LineText;
+use crate::syntax::text::text_span::TextSpan;
+use crate::syntax::token::syntax_token::SyntaxToken;
+use crate::syntax::token::token_kind::TokenKind;
+use crate::driver::diagnostics::DiagnosticBag;
 
 ///Lex's all token and all invalid tokens are reported via diagnostics
 pub struct Lexer {
