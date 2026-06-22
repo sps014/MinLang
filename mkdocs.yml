@@ -65,7 +65,7 @@ nav:
     - Functions: language/functions.md
     - Imports: language/imports.md
     - Arrays: language/arrays.md
-    - Structs: language/structs.md
+    - Classes: language/classes.md
     - Generics: language/generics.md
     - The object Type: language/objects.md
     - JS Interop: language/interop.md

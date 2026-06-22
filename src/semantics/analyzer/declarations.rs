@@ -113,7 +113,7 @@ impl<'a> Analyzer<'a> {
             if let Some(struct_info) = self.struct_table.get_struct(&base_type_str) {
                 if !struct_info.is_exported {
                     diagnostics.report_error(
-                        format!("Exported function '{}' exposes unexported struct '{}'", function.name.text, base_type_str),
+                        format!("Exported function '{}' exposes unexported class '{}'", function.name.text, base_type_str),
                         Some(function.name.position.clone()),
                     );
                 }
@@ -191,7 +191,7 @@ impl<'a> Analyzer<'a> {
         let params = template.generic_parameters.as_deref().unwrap_or(&[]);
         if args.len() != params.len() {
             diagnostics.report_error(
-                format!("Generic struct '{}' expects {} type argument(s), but {} were provided", base_name, params.len(), args.len()),
+                format!("Generic class '{}' expects {} type argument(s), but {} were provided", base_name, params.len(), args.len()),
                 Some(position.clone()),
             );
         }
@@ -300,14 +300,14 @@ impl<'a> Analyzer<'a> {
     pub(super) fn validate_protocol_override(&self, method: &FunctionNode<'a>, diagnostics: &mut DiagnosticBag) {
         let name = method.name.text.as_str();
 
-        // Constructors/destructors: `drop` takes no parameters and neither declares a return type.
-        if name == "drop" && !method.parameters.is_empty() {
+        // Constructors/destructors: `del` takes no parameters and neither declares a return type.
+        if name == "del" && !method.parameters.is_empty() {
             diagnostics.report_error(
-                "destructor 'drop' must not declare parameters".to_string(),
+                "destructor 'del' must not declare parameters".to_string(),
                 Some(method.name.position.clone()),
             );
         }
-        if (name == "init" || name == "drop") && method.return_type.is_some() {
+        if (name == "constructor" || name == "del") && method.return_type.is_some() {
             diagnostics.report_error(
                 format!("'{}' must not declare a return type", name),
                 Some(method.name.position.clone()),

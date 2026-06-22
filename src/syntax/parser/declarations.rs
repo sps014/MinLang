@@ -70,12 +70,12 @@ impl<'a, 'b> Parser<'a, 'b> {
     /// Parses a struct declaration
     pub(super) fn parse_struct_declaration(&mut self) -> Result<crate::syntax::nodes::struct_node::StructDeclarationNode<'a>, Error> {
         let mut is_exported = false;
-        if self.current_token().kind == TokenKind::PubToken {
-            self.match_token(TokenKind::PubToken);
+        if self.current_token().kind == TokenKind::ExportToken {
+            self.match_token(TokenKind::ExportToken);
             is_exported = true;
         }
         
-        self.match_token(TokenKind::StructToken);
+        self.match_token(TokenKind::ClassToken);
         let struct_name = self.match_token(TokenKind::IdentifierToken);
 
         let mut generic_parameters = None;
@@ -100,12 +100,12 @@ impl<'a, 'b> Parser<'a, 'b> {
         let mut methods = Vec::new();
         while self.current_token().kind != TokenKind::CurlyCloseBracketToken && self.current_token().kind != TokenKind::EndOfFileToken {
             let iter = self.current_token_index;
-            // `init(...)` / `drop(...)` without a leading `pub` still declare a constructor/
-            // destructor method rather than a field.
+            // `constructor(...)` / `del(...)` without a leading `export` still declare a
+            // constructor/destructor method rather than a field.
             let is_ctor_dtor = self.current_token().kind == TokenKind::IdentifierToken
-                && matches!(self.current_token().text.as_str(), "init" | "drop")
+                && matches!(self.current_token().text.as_str(), "constructor" | "del")
                 && self.peek_token(1).kind == TokenKind::OpenParenthesisToken;
-            if self.current_token().kind == TokenKind::FunToken || self.current_token().kind == TokenKind::PubToken || self.current_token().kind == TokenKind::AtToken || self.current_token().kind == TokenKind::StaticToken || is_ctor_dtor {
+            if self.current_token().kind == TokenKind::FunToken || self.current_token().kind == TokenKind::ExportToken || self.current_token().kind == TokenKind::AtToken || self.current_token().kind == TokenKind::StaticToken || is_ctor_dtor {
                 methods.push(self.parse_function()?);
             } else {
                 let field_name = self.match_token(TokenKind::IdentifierToken);
@@ -143,7 +143,7 @@ impl<'a, 'b> Parser<'a, 'b> {
     
     /// Parses an `extend Type { ... }` block: a set of methods attached to an existing type
     /// (a primitive, `object`, or a struct). The body holds method declarations only (no
-    /// fields, no `init`/`drop`). The target name is normalized to its canonical primitive
+    /// fields, no `constructor`/`del`). The target name is normalized to its canonical primitive
     /// spelling (e.g. `String` -> `string`).
     pub(super) fn parse_extend_declaration(&mut self) -> Result<crate::syntax::nodes::ExtendNode<'a>, Error> {
         self.match_token(TokenKind::ExtendToken);
@@ -179,7 +179,7 @@ impl<'a, 'b> Parser<'a, 'b> {
         while self.current_token().kind != TokenKind::CurlyCloseBracketToken && self.current_token().kind != TokenKind::EndOfFileToken {
             let iter = self.current_token_index;
             if self.current_token().kind == TokenKind::FunToken
-                || self.current_token().kind == TokenKind::PubToken
+                || self.current_token().kind == TokenKind::ExportToken
                 || self.current_token().kind == TokenKind::AtToken
                 || self.current_token().kind == TokenKind::StaticToken {
                 methods.push(self.parse_function()?);
@@ -302,8 +302,8 @@ impl<'a, 'b> Parser<'a, 'b> {
         }
 
         let mut is_exported = false;
-        if self.current_token().kind == TokenKind::PubToken {
-            self.match_token(TokenKind::PubToken);
+        if self.current_token().kind == TokenKind::ExportToken {
+            self.match_token(TokenKind::ExportToken);
             is_exported = true;
         }
 
@@ -313,7 +313,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             is_extern = true;
             if is_exported {
                 self.diagnostics.report_error(
-                    "A function cannot be both 'pub' and 'extern'".to_string(),
+                    "A function cannot be both 'export' and 'extern'".to_string(),
                     Some(self.current_token().position.clone())
                 );
             }
@@ -326,15 +326,22 @@ impl<'a, 'b> Parser<'a, 'b> {
             is_static = true;
         }
 
-        // Constructor (`init`) / destructor (`drop`) declarations omit the `fun` keyword and the
-        // return type; they are lowered to ordinary methods named `init`/`drop` and dispatched
-        // specially (constructor calls, scope-exit destructor calls).
+        // Constructor (`constructor`) / destructor (`del`) declarations omit the `fun` keyword and
+        // the return type; they are lowered to ordinary methods named `constructor`/`del` and
+        // dispatched specially (constructor calls, scope-exit destructor calls). They cannot be
+        // marked `export`.
         if self.current_token().kind == TokenKind::IdentifierToken
-            && matches!(self.current_token().text.as_str(), "init" | "drop") {
+            && matches!(self.current_token().text.as_str(), "constructor" | "del") {
             let ctor_name = self.match_token(TokenKind::IdentifierToken);
+            if is_exported {
+                self.diagnostics.report_error(
+                    format!("'{}' cannot be marked 'export'", ctor_name.text),
+                    Some(ctor_name.position.clone())
+                );
+            }
             let params = self.parse_formal_parameters()?;
             let block = self.parse_block()?;
-            return Ok(FunctionNode::new(ctor_name, None, None, params, block, is_exported));
+            return Ok(FunctionNode::new(ctor_name, None, None, params, block, false));
         }
 
         //eat the fun keyword

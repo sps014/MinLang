@@ -1,10 +1,10 @@
 # Imports
 
-A Dream program can be split across multiple `.dream` files. Use `import` at the top of a file to pull in the declarations (functions, structs, enums) from another file.
+A Dream program can be split across multiple `.dream` files. Use `import` at the top of a file to pull in the declarations (functions, classes, enums) from another file.
 
 ## Importing a file
 
-```c
+```ts
 import "math_lib.dream"
 ```
 
@@ -12,14 +12,14 @@ import "math_lib.dream"
 - The `.dream` extension is optional: `import "math_lib"` and `import "math_lib.dream"` are equivalent.
 - Imported declarations become directly usable — no namespace prefix.
 
-```c
+```ts
 // math_lib.dream
-pub fun add_numbers(a: int, b: int): int {
+export fun add_numbers(a: int, b: int): int {
     return a + b;
 }
 ```
 
-```c
+```ts
 // main.dream
 import "math_lib.dream"
 
@@ -32,15 +32,15 @@ Imports are resolved recursively (an imported file may import others), and each 
 
 ## Export visibility
 
-Mark a declaration `pub` to make it part of a file's public surface and to expose it to the host environment. An exported function cannot expose a struct that is not itself exported.
+Mark a declaration `export` to make it part of a file's public surface and to expose it to the host environment. An exported function cannot expose a class that is not itself exported.
 
-```c
-pub struct Point {
+```ts
+export class Point {
     x: int;
     y: int;
 }
 
-pub fun origin(): Point {
+export fun origin(): Point {
     return Point { x: 0, y: 0 };
 }
 ```

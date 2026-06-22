@@ -1,5 +1,5 @@
 extend int {
-    pub fun doubled(): int { return this * 2; }
+    export fun doubled(): int { return this * 2; }
 }
 
 fun main(): void {

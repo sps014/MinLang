@@ -4,7 +4,7 @@
 
 ## Creating a map
 
-```c
+```ts
 let scores = Map<string, int>();
 let cache  = Map<int, string>();
 ```
@@ -15,7 +15,7 @@ let cache  = Map<int, string>();
 
 Inserts or updates the value for `key`.
 
-```c
+```ts
 scores.put("alice", 95);
 scores.put("bob", 80);
 scores.put("alice", 100);   // overwrites 95
@@ -25,7 +25,7 @@ scores.put("alice", 100);   // overwrites 95
 
 Returns the value for `key`. If the key is absent, returns the zero value of `V` (`0` for `int`, `null` for references).
 
-```c
+```ts
 println(scores.get("alice"));   // 100
 println(scores.get("nobody"));  // 0
 ```
@@ -34,7 +34,7 @@ println(scores.get("nobody"));  // 0
 
 Returns the value for `key`, or `fallback` if the key is absent.
 
-```c
+```ts
 let v = scores.get_or("nobody", -1);   // -1
 ```
 
@@ -42,7 +42,7 @@ let v = scores.get_or("nobody", -1);   // -1
 
 Returns `true` if the key is present.
 
-```c
+```ts
 println(scores.contains("bob"));     // true
 println(scores.contains("nobody"));  // false
 ```
@@ -51,7 +51,7 @@ println(scores.contains("nobody"));  // false
 
 Removes the key and returns `true` if it existed, `false` otherwise.
 
-```c
+```ts
 let removed = scores.remove("bob");   // true
 ```
 
@@ -59,7 +59,7 @@ let removed = scores.remove("bob");   // true
 
 Number of key-value pairs currently in the map.
 
-```c
+```ts
 println(scores.size());   // 1
 ```
 
@@ -67,7 +67,7 @@ println(scores.size());   // 1
 
 Returns `true` when the map holds no key-value pairs.
 
-```c
+```ts
 println(scores.is_empty());   // false
 ```
 
@@ -75,7 +75,7 @@ println(scores.is_empty());   // false
 
 Removes every entry and resets the map to its initial empty capacity.
 
-```c
+```ts
 scores.clear();
 println(scores.size());   // 0
 ```
@@ -84,7 +84,7 @@ println(scores.size());   // 0
 
 Returns a freshly allocated array of every stored key, in unspecified order.
 
-```c
+```ts
 let ks = scores.keys();   // string[]
 ```
 
@@ -92,13 +92,13 @@ let ks = scores.keys();   // string[]
 
 Returns a freshly allocated array of every stored value, in unspecified order (key-aligned with `keys()` when the map is not mutated between calls).
 
-```c
+```ts
 let vs = scores.values();   // int[]
 ```
 
 ## Example
 
-```c
+```ts
 fun main() {
     let freq = Map<string, int>();
     let words = ["the", "cat", "sat", "on", "the", "mat"];
@@ -120,4 +120,4 @@ Any type can be a key as long as `hash_code` and `==` work correctly for it:
 
 - **Primitives** (`int`, `float`, `bool`, `char`) — value equality, deterministic hash.
 - **`string`** — content equality (not pointer equality), stable hash.
-- **Structs** — identity equality and default hash unless `hash_code` and `==` are customized; see [The object type](../language/objects.md).
+- **Classes** — identity equality and default hash unless `hash_code` and `==` are customized; see [The object type](../language/objects.md).

@@ -6,7 +6,7 @@
 
 Returns `true` if this character is an ASCII decimal digit (`'0'`–`'9'`).
 
-```c
+```ts
 println('5'.is_digit());   // true
 println('a'.is_digit());   // false
 ```
@@ -15,7 +15,7 @@ println('a'.is_digit());   // false
 
 Returns `true` if this character is an ASCII letter (`'a'`–`'z'` or `'A'`–`'Z'`).
 
-```c
+```ts
 println('A'.is_alpha());   // true
 println('3'.is_alpha());   // false
 ```
@@ -24,7 +24,7 @@ println('3'.is_alpha());   // false
 
 Returns `true` if this character is ASCII whitespace (space, tab `'\t'`, newline `'\n'`, or carriage return `'\r'`).
 
-```c
+```ts
 println(' '.is_whitespace());    // true
 println('a'.is_whitespace());    // false
 ```
@@ -33,7 +33,7 @@ println('a'.is_whitespace());    // false
 
 Returns the lowercase form of an ASCII uppercase letter. Other characters are returned unchanged.
 
-```c
+```ts
 println('A'.to_lower());   // 'a'
 println('5'.to_lower());   // '5'
 ```
@@ -42,7 +42,7 @@ println('5'.to_lower());   // '5'
 
 Returns the uppercase form of an ASCII lowercase letter. Other characters are returned unchanged.
 
-```c
+```ts
 println('a'.to_upper());   // 'A'
 ```
 
@@ -50,7 +50,7 @@ println('a'.to_upper());   // 'A'
 
 Returns the numeric code point of this character.
 
-```c
+```ts
 let n = 'A'.to_int();   // 65
 ```
 
@@ -58,6 +58,6 @@ let n = 'A'.to_int();   // 65
 
 Returns a new single-character string containing this character.
 
-```c
+```ts
 let s = 'H'.as_string();   // "H"
 ```

@@ -1,4 +1,4 @@
-struct Node {
+class Node {
     value: int;
     next: Node?;
 

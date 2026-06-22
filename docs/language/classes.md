@@ -1,49 +1,49 @@
-# Structs
+# Classes
 
-Structs are user-defined types that group related data together.
+Classes are user-defined types that group related data together.
 
-## Defining a struct
+## Defining a class
 
-```c
-struct Point {
+```ts
+class Point {
     x: int;
     y: int;
 }
 ```
 
-Fields are declared as `name: type;` pairs. A struct literal must provide every field; a constructor with a custom `pub init` may leave fields unset, in which case they start at their zero value (see [Constructors](#constructors)).
+Fields are declared as `name: type;` pairs. A class literal must provide every field; a custom `constructor` may leave fields unset, in which case they start at their zero value (see [Constructors](#constructors)).
 
 ## Creating an instance
 
 There are two ways to create an instance.
 
-Using a struct literal, naming each field (fields can be provided in any order):
+Using a class literal, naming each field (fields can be provided in any order):
 
-```c
+```ts
 let p = Point { x: 3, y: 4 };
 ```
 
 Or using a constructor call, passing values positionally:
 
-```c
+```ts
 let p = Point(3, 4);
 ```
 
 ## Constructors
 
-Every struct has an **auto-generated constructor** that accepts its fields in declaration
+Every class has an **auto-generated constructor** that accepts its fields in declaration
 order. For `Point` above, that is `Point(x, y)`.
 
-To run custom logic when an instance is created, define a constructor with `pub init(...)`.
-When an `init` is present, the constructor call matches its parameters instead of the fields,
+To run custom logic when an instance is created, define a `constructor(...)`.
+When a `constructor` is present, the constructor call matches its parameters instead of the fields,
 and any field you do not assign starts at its zero value (`0`, `0.0`, `false`, or `null`):
 
-```c
-struct Account {
+```ts
+class Account {
     owner: string;
     balance: int;
 
-    pub init(owner: string) {
+    constructor(owner: string) {
         this.owner = owner;
         this.balance = 100;   // default starting balance
     }
@@ -55,14 +55,14 @@ fun main(): void {
 }
 ```
 
-An `init` declares no return type — it always produces an instance of its struct. Inside the
-body, `this` refers to the new instance.
+A `constructor` declares no return type — it always produces an instance of its class. Inside the
+body, `this` refers to the new instance. A `constructor` cannot be marked `export`.
 
 ## Accessing and mutating fields
 
 Use `.`:
 
-```c
+```ts
 println(p.x);      // 3
 p.x = 10;
 println(p.x);      // 10
@@ -70,10 +70,10 @@ println(p.x);      // 10
 
 ## Methods
 
-Define methods inside the struct body using `fun`. Methods automatically receive a `this` parameter that refers to the current instance:
+Define methods inside the class body using `fun`. Methods automatically receive a `this` parameter that refers to the current instance:
 
-```c
-struct Counter {
+```ts
+class Counter {
     count: int;
 
     fun increment(): void {
@@ -97,20 +97,20 @@ Methods are called with `instance.method(args)`. The `this` parameter is implici
 
 ## Destructors
 
-Define `pub drop()` to run cleanup logic when an instance is destroyed. A struct is destroyed
-when its last reference goes out of scope; `drop` runs automatically just before the memory is
+Define `del()` to run cleanup logic when an instance is destroyed. A class is destroyed
+when its last reference goes out of scope; `del` runs automatically just before the memory is
 released, while the fields are still valid. A destructor takes no parameters and has no return
-type:
+type, and cannot be marked `export`:
 
-```c
-struct File {
+```ts
+class File {
     name: string;
 
-    pub init(name: string) {
+    constructor(name: string) {
         this.name = name;
     }
 
-    pub drop() {
+    del() {
         print("closing ");
         println(this.name);
     }
@@ -122,14 +122,14 @@ fun use_file() {
 }                                  // f goes out of scope here -> "closing data.txt"
 ```
 
-You never call `drop` yourself; the runtime invokes it as part of automatic memory management.
+You never call `del` yourself; the runtime invokes it as part of automatic memory management.
 
-## Nullable structs
+## Nullable classes
 
-Append `?` to a struct type to allow `null`:
+Append `?` to a class type to allow `null`:
 
-```c
-struct Node {
+```ts
+class Node {
     value: int;
     next: Node?;
 }
@@ -138,12 +138,12 @@ let head: Node? = null;
 head = Node { value: 1, next: null };
 ```
 
-## Recursive structs
+## Recursive classes
 
-A struct can hold a nullable reference to itself (non-nullable self-references would have infinite size):
+A class can hold a nullable reference to itself (non-nullable self-references would have infinite size):
 
-```c
-struct Node {
+```ts
+class Node {
     value: int;
     next: Node?;
 
@@ -153,12 +153,12 @@ struct Node {
 }
 ```
 
-## Exporting structs
+## Exporting classes
 
-Mark a struct `pub` to make it visible to the WebAssembly host:
+Mark a class `export` to make it visible to the WebAssembly host:
 
-```c
-pub struct Vec2 {
+```ts
+export class Vec2 {
     x: float;
     y: float;
 }
@@ -166,8 +166,8 @@ pub struct Vec2 {
 
 ## Object protocol overrides
 
-Structs can customize how they are printed and hashed by overriding `to_string` and `hash_code`. See [The object type](objects.md) for details.
+Classes can customize how they are printed and hashed by overriding `to_string` and `hash_code`. See [The object type](objects.md) for details.
 
 ## Memory
 
-Each struct instance is a heap allocation. The memory is freed automatically when the last reference to it drops — no manual `free` needed. If the struct defines a `pub drop()` destructor, it runs just before the memory is released. See [Memory Model](../memory.md) for a full explanation.
+Each class instance is a heap allocation. The memory is freed automatically when the last reference to it drops — no manual `free` needed. If the class defines a `del()` destructor, it runs just before the memory is released. See [Memory Model](../memory.md) for a full explanation.

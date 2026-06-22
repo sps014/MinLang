@@ -217,9 +217,9 @@ fn test_parse_nested_generic_type_annotation() {
 
 #[test]
 fn test_parse_multi_arg_nested_generic_instantiation() {
-    // `Pair<Box<int>, int> { ... }` must be recognized as a struct instantiation despite the
+    // `Pair<Box<int>, int> { ... }` must be recognized as a class instantiation despite the
     // nested generic in the first type argument.
-    let code = "struct Box<T> { v: T; } struct Pair<A, B> { first: A; second: B; } \
+    let code = "class Box<T> { v: T; } class Pair<A, B> { first: A; second: B; } \
                 fun main(): void { let p = Pair<Box<int>, int> { first: Box<int> { v: 1 }, second: 2 }; }";
     let arena = bumpalo::Bump::new();
     let (_, diagnostics) = parse_code(code, &arena);
@@ -228,9 +228,9 @@ fn test_parse_multi_arg_nested_generic_instantiation() {
 
 #[test]
 fn test_parse_struct_comma_fields_recovers_without_hanging() {
-    // Comma-separated struct fields are invalid (fields use ';'). The parser must report an
+    // Comma-separated class fields are invalid (fields use ';'). The parser must report an
     // error and terminate rather than spin forever on the unexpected token.
-    let code = "struct Point { x: int, y: int, } fun main(): void { }";
+    let code = "class Point { x: int, y: int, } fun main(): void { }";
     let arena = bumpalo::Bump::new();
     let (_, diagnostics) = parse_code(code, &arena);
     assert_eq!(diagnostics.has_errors(), true);
@@ -238,11 +238,11 @@ fn test_parse_struct_comma_fields_recovers_without_hanging() {
 
 #[test]
 fn test_parse_struct_constructor_and_destructor() {
-    // `pub init(...)` and `pub drop()` (and their bare forms) parse as struct methods named
-    // `init` / `drop` without the `fun` keyword or a return type.
-    let code = "struct Point { x: int; y: int; \
-                pub init(x: int, y: int) { this.x = x; this.y = y; } \
-                pub drop() { } \
+    // `constructor(...)` and `del()` parse as class methods named `constructor` / `del`
+    // without the `fun` keyword or a return type.
+    let code = "class Point { x: int; y: int; \
+                constructor(x: int, y: int) { this.x = x; this.y = y; } \
+                del() { } \
                 fun sum(): int { return this.x + this.y; } }";
     let arena = bumpalo::Bump::new();
     let (program, diagnostics) = parse_code(code, &arena);
@@ -252,11 +252,11 @@ fn test_parse_struct_constructor_and_destructor() {
     let s = &program.structs[0];
     assert_eq!(s.fields.len(), 2);
 
-    let init = s.methods.iter().find(|m| m.name.text == "init").expect("init method");
+    let init = s.methods.iter().find(|m| m.name.text == "constructor").expect("constructor method");
     assert_eq!(init.parameters.len(), 2);
     assert!(init.return_type.is_none());
 
-    let drop = s.methods.iter().find(|m| m.name.text == "drop").expect("drop method");
+    let drop = s.methods.iter().find(|m| m.name.text == "del").expect("del method");
     assert_eq!(drop.parameters.len(), 0);
     assert!(drop.return_type.is_none());
 

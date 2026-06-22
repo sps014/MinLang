@@ -1,4 +1,4 @@
-struct Counter {
+class Counter {
     count: int;
 
     fun increment() {
@@ -14,7 +14,7 @@ struct Counter {
     }
 }
 
-struct GenericBox<T> {
+class GenericBox<T> {
     val: T;
 
     fun print_val() {

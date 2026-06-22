@@ -6,7 +6,7 @@
 
 Returns `1` for `true` and `0` for `false`.
 
-```c
+```ts
 println(true.to_int());    // 1
 println(false.to_int());   // 0
 ```

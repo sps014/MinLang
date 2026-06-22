@@ -16,8 +16,8 @@ editor, giving a playground with live language features.
 
 - Live diagnostics (lexer/parser/semantic errors and warnings)
 - Syntax highlighting (Monarch grammar) and semantic tokens
-- Hover (function/struct/enum/variable signatures and types)
-- Autocomplete (keywords, in-scope symbols, struct members, enum members)
+- Hover (function/class/enum/variable signatures and types)
+- Autocomplete (keywords, in-scope symbols, class members, enum members)
 - Go to definition and find all references
 - Document formatting (brace-depth reindentation)
 
@@ -35,7 +35,14 @@ editor, giving a playground with live language features.
 
 ## Build and run
 
-From this `tooling/` directory:
+The quickest way is the `start` script, which installs deps (first run only), builds the
+WebAssembly analyzer, and launches the dev server. It works from any directory:
+
+```bash
+./tooling/start
+```
+
+Or do it manually from this `tooling/` directory:
 
 ```bash
 # 1. Build the WebAssembly language service into web/src/pkg

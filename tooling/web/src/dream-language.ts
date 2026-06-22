@@ -7,8 +7,8 @@ export const LANGUAGE_ID = "dream";
 
 const keywords = [
   "if", "else", "for", "while", "do", "return", "break", "continue", "let", "const",
-  "fun", "static", "import", "pub", "extern", "struct", "extend", "enum", "type",
-  "switch", "case", "default", "is", "in",
+  "fun", "static", "import", "export", "extern", "class", "extend", "enum", "type",
+  "switch", "case", "default", "is", "in", "this", "constructor", "del",
 ];
 
 const typeKeywords = ["int", "float", "double", "string", "bool", "char", "void", "object"];

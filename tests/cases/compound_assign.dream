@@ -1,4 +1,4 @@
-struct P { v: int; }
+class P { v: int; }
 
 fun main(): void {
     let x: int = 10;

@@ -187,10 +187,10 @@ impl<'a> WasmGenerator<'a> {
             obj_type_str.clone()
         };
         let struct_info = self.struct_table.get_struct(&base_obj_type_str)
-            .ok_or_else(|| Error::new(ErrorKind::Other, format!("unknown struct '{}' in member assignment", base_obj_type_str)))?
+            .ok_or_else(|| Error::new(ErrorKind::Other, format!("unknown class '{}' in member assignment", base_obj_type_str)))?
             .clone();
         let field_info = struct_info.fields.get(&member.text)
-            .ok_or_else(|| Error::new(ErrorKind::Other, format!("unknown field '{}' on struct '{}'", member.text, base_obj_type_str)))?;
+            .ok_or_else(|| Error::new(ErrorKind::Other, format!("unknown field '{}' on class '{}'", member.text, base_obj_type_str)))?;
         let offset = field_info.offset;
         let field_type_str = field_info.type_.get_type();
 

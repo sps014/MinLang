@@ -1,4 +1,4 @@
-struct Mixed {
+class Mixed {
     b1: bool;
     i1: int;
     d1: double;

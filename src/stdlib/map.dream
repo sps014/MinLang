@@ -8,7 +8,7 @@
 //
 //   let m = Map<string, int>();
 
-struct Map<K, V> {
+class Map<K, V> {
     keys: K[];
     values: V[];
     states: int[];
@@ -211,7 +211,7 @@ struct Map<K, V> {
 }
 
 // Creates an empty `Map<K, V>` with a small initial capacity, e.g. `let m = Map<string, int>();`.
-// This factory is the canonical way to construct a map (the struct's backing arrays must be
+// This factory is the canonical way to construct a map (the class's backing arrays must be
 // allocated, so a bare `Map<K, V> { ... }` literal is not used directly).
 fun Map<K, V>(): Map<K, V> {
     return Map<K, V> {

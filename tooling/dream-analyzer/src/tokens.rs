@@ -22,7 +22,12 @@ pub fn classify(text: &str) -> Vec<TokenOut> {
     tokens
         .into_iter()
         .filter_map(|token| {
-            let kind = category(token.kind)?;
+            // `this` lexes as an identifier but reads as a keyword inside methods.
+            let kind = if token.kind == TokenKind::IdentifierToken && token.text == "this" {
+                "keyword"
+            } else {
+                category(token.kind)?
+            };
             let span = token.position;
             Some(TokenOut { range: line_index.range(span.start, span.end), kind })
         })
@@ -41,7 +46,7 @@ fn category(kind: TokenKind) -> Option<&'static str> {
         BooleanToken | NullToken => "keyword",
         IfToken | ElseToken | ForToken | WhileToken | DoToken | ReturnToken | BreakToken
         | ContinueToken | LetToken | ConstToken | FunToken | StaticToken | ImportToken
-        | PubToken | ExternToken | StructToken | ExtendToken | IsToken | InToken | EnumToken
+        | ExportToken | ExternToken | ClassToken | ExtendToken | IsToken | InToken | EnumToken
         | TypeToken | SwitchToken | CaseToken | DefaultToken => "keyword",
         PlusToken | MinusToken | SlashToken | StarToken | BangToken | ModulusToken
         | PlusEqualToken | MinusEqualToken | StarEqualToken | SlashEqualToken

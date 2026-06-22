@@ -134,12 +134,12 @@ pub enum TokenKind
     StaticToken,
     #[token("import")]
     ImportToken,
-    #[token("pub")]
-    PubToken,
+    #[token("export")]
+    ExportToken,
     #[token("extern")]
     ExternToken,
-    #[token("struct")]
-    StructToken,
+    #[token("class")]
+    ClassToken,
     #[token("extend")]
     ExtendToken,
     #[token("null")]

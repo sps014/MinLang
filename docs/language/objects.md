@@ -1,12 +1,12 @@
 # The `object` Type
 
-`object` is a universal container — it can hold any value: an `int`, a `string`, a struct, an array, anything.
+`object` is a universal container — it can hold any value: an `int`, a `string`, a class, an array, anything.
 
 ## Storing a value
 
 Assigning to an `object` variable automatically boxes the value:
 
-```c
+```ts
 let o: object = 42;       // boxing an int
 let s: object = "hello";  // boxing a string
 ```
@@ -15,7 +15,7 @@ let s: object = "hello";  // boxing a string
 
 To get the original value out, cast with the concrete type. If the stored type doesn't match, the program traps at runtime:
 
-```c
+```ts
 let n = (int)o;    // 42, if o holds an int
 ```
 
@@ -23,7 +23,7 @@ let n = (int)o;    // 42, if o holds an int
 
 Check the runtime type of an `object` before casting:
 
-```c
+```ts
 fun describe(o: object): void {
     if (o is int) {
         print("int: ");
@@ -43,35 +43,35 @@ On a non-`object` variable, `is` is resolved at compile time. If the types match
 
 Every value responds to `to_string` (returns a `string`) and `hash_code` (returns an `int`):
 
-```c
+```ts
 let s = to_string(42);       // "42"
 let h = hash_code("hello");  // some stable integer
 ```
 
 These work on any type, including `object`.
 
-## Overriding protocol methods on structs
+## Overriding protocol methods on classes
 
-A struct can customize `to_string` and `hash_code` by declaring them with `@override pub`:
+A class can customize `to_string` and `hash_code` by declaring them with `@override export`:
 
-```c
-struct Color {
+```ts
+class Color {
     r: int;
     g: int;
     b: int;
 
-    @override pub fun to_string(): string {
+    @override export fun to_string(): string {
         return "rgb(" + to_string(this.r) + ", " + to_string(this.g) + ", " + to_string(this.b) + ")";
     }
 
-    @override pub fun hash_code(): int {
+    @override export fun hash_code(): int {
         return this.r * 65536 + this.g * 256 + this.b;
     }
 }
 ```
 
 Requirements:
-- Both `@override` and `pub` must be present.
+- Both `@override` and `export` must be present.
 - `to_string` must return `string` and take no parameters.
 - `hash_code` must return `int` and take no parameters.
 

@@ -205,7 +205,7 @@ impl<'a, 'b> Parser<'a, 'b>
         
         while self.current_token().kind!=TokenKind::EndOfFileToken
         {
-            if self.current_token().kind == TokenKind::StructToken || (self.current_token().kind == TokenKind::PubToken && self.peek_token(1).kind == TokenKind::StructToken) {
+            if self.current_token().kind == TokenKind::ClassToken || (self.current_token().kind == TokenKind::ExportToken && self.peek_token(1).kind == TokenKind::ClassToken) {
                 let struct_decl = self.parse_struct_declaration()?;
                 structs.push(struct_decl);
             } else if self.current_token().kind == TokenKind::EnumToken {
@@ -214,13 +214,13 @@ impl<'a, 'b> Parser<'a, 'b>
                 extends.push(self.parse_extend_declaration()?);
             } else if self.current_token().kind == TokenKind::TypeToken {
                 self.parse_type_alias()?;
-            } else if self.current_token().kind == TokenKind::FunToken || self.current_token().kind == TokenKind::AtToken || self.current_token().kind == TokenKind::ExternToken || (self.current_token().kind == TokenKind::PubToken && self.peek_token(1).kind == TokenKind::FunToken) {
+            } else if self.current_token().kind == TokenKind::FunToken || self.current_token().kind == TokenKind::AtToken || self.current_token().kind == TokenKind::ExternToken || (self.current_token().kind == TokenKind::ExportToken && self.peek_token(1).kind == TokenKind::FunToken) {
                 let function=self.parse_function()?;
                 functions.push(function);
             } else {
                 let cur = self.current_token();
                 self.diagnostics.report_error(
-                    format!("Expected function, struct, or enum declaration but found {:?}", cur.kind),
+                    format!("Expected function, class, or enum declaration but found {:?}", cur.kind),
                     Some(cur.position.clone())
                 );
                 self.next_token();

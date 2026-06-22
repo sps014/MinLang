@@ -1,8 +1,8 @@
-// A struct method that shadows an object-protocol method must be marked `@override`.
-struct Foo {
+// A class method that shadows an object-protocol method must be marked `@override`.
+class Foo {
     x: int;
 
-    pub fun to_string(): string {
+    export fun to_string(): string {
         return "foo";
     }
 }

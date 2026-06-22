@@ -369,7 +369,7 @@ impl<'a> Analyzer<'a> {
         Ok(store_sig.return_type.unwrap_or(Type::Void))
     }
 
-    /// Type-checks a constructor call `Struct(args)`. When the struct defines a custom `init`
+    /// Type-checks a constructor call `Struct(args)`. When the struct defines a custom `constructor`
     /// the call is checked against `init`'s parameters; otherwise it is checked positionally
     /// against the struct's fields in declaration order (the auto-generated constructor).
     pub(super) fn analyze_constructor_call(&mut self, name: &SyntaxToken, generic_args: &Option<Vec<Type>>, params_types: &[String], diagnostics: &mut DiagnosticBag) -> Result<Type, ()> {
@@ -381,7 +381,7 @@ impl<'a> Analyzer<'a> {
             _ => {
                 if self.generic_structs.contains_key(&name.text) {
                     diagnostics.report_error(
-                        format!("Generic struct '{}' requires type arguments, e.g. {}<int>(...)", name.text, name.text),
+                        format!("Generic class '{}' requires type arguments, e.g. {}<int>(...)", name.text, name.text),
                         Some(name.position.clone()),
                     );
                 }
@@ -389,9 +389,9 @@ impl<'a> Analyzer<'a> {
             }
         };
 
-        let init_name = format!("{}_init", struct_name);
+        let init_name = format!("{}_constructor", struct_name);
         let expected: Vec<String> = if let Ok(sig) = self.function_table.get_function(&init_name) {
-            // `init` is registered as a method, so parameter 0 is the implicit `this`.
+            // `constructor` is registered as a method, so parameter 0 is the implicit `this`.
             sig.parameters.iter().skip(1).cloned().collect()
         } else if let Some(info) = self.struct_table.get_struct(&struct_name) {
             let mut ordered: Vec<(&String, &crate::semantics::struct_table::StructFieldInfo)> =
@@ -833,7 +833,7 @@ impl<'a> Analyzer<'a> {
         let (base_name, generic_args) = match Self::resolve_struct_parts(&obj_type) {
             Some(parts) => parts,
             None => {
-                diagnostics.report_error(format!("Cannot access member of non-struct type {}", obj_type.get_type()), Some(member.position.clone()));
+                diagnostics.report_error(format!("Cannot access member of non-class type {}", obj_type.get_type()), Some(member.position.clone()));
                 return Ok(());
             }
         };
@@ -853,7 +853,7 @@ impl<'a> Analyzer<'a> {
             match struct_info.fields.get(&member.text) {
                 Some(info) => info.type_.clone(),
                 None => {
-                    diagnostics.report_error(format!("Field '{}' not found in struct '{}'", member.text, struct_name), Some(member.position.clone()));
+                    diagnostics.report_error(format!("Field '{}' not found in class '{}'", member.text, struct_name), Some(member.position.clone()));
                     return Ok(());
                 }
             }
@@ -987,7 +987,7 @@ impl<'a> Analyzer<'a> {
                     let field_info = match struct_info.fields.get(&field_name.text) {
                         Some(info) => info,
                         None => {
-                            diagnostics.report_error(format!("Field '{}' not found in struct '{}'", field_name.text, struct_name), Some(field_name.position.clone()));
+                            diagnostics.report_error(format!("Field '{}' not found in class '{}'", field_name.text, struct_name), Some(field_name.position.clone()));
                             continue;
                         }
                     };
@@ -999,7 +999,7 @@ impl<'a> Analyzer<'a> {
                 // Check for missing fields
                 for expected_field in struct_info.fields.keys() {
                     if !provided_fields.contains(expected_field) {
-                        diagnostics.report_error(format!("Missing field '{}' in struct instantiation of '{}'", expected_field, struct_name), Some(name.position.clone()));
+                        diagnostics.report_error(format!("Missing field '{}' in class instantiation of '{}'", expected_field, struct_name), Some(name.position.clone()));
                     }
                 }
 
@@ -1025,7 +1025,7 @@ impl<'a> Analyzer<'a> {
                 let (base_name, generic_args) = match Self::resolve_struct_parts(&obj_type) {
                     Some(parts) => parts,
                     None => {
-                        diagnostics.report_error(format!("Cannot access member of non-struct type {}", obj_type.get_type()), Some(member.position.clone()));
+                        diagnostics.report_error(format!("Cannot access member of non-class type {}", obj_type.get_type()), Some(member.position.clone()));
                         return Ok(Type::Void);
                     }
                 };
@@ -1044,7 +1044,7 @@ impl<'a> Analyzer<'a> {
                 let field_info = match struct_info.fields.get(&member.text) {
                     Some(info) => info,
                     None => {
-                        diagnostics.report_error(format!("Field '{}' not found in struct '{}'", member.text, struct_name), Some(member.position.clone()));
+                        diagnostics.report_error(format!("Field '{}' not found in class '{}'", member.text, struct_name), Some(member.position.clone()));
                         return Ok(Type::Void);
                     }
                 };

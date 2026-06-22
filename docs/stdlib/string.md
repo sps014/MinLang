@@ -6,7 +6,7 @@
 
 Returns the number of characters. This is the same as `length()`.
 
-```c
+```ts
 let n = "hello".len();   // 5
 ```
 
@@ -14,7 +14,7 @@ let n = "hello".len();   // 5
 
 Alias for `len()`.
 
-```c
+```ts
 let n = "hello".length();   // 5
 ```
 
@@ -22,7 +22,7 @@ let n = "hello".length();   // 5
 
 Returns `true` when the string has no characters.
 
-```c
+```ts
 println("".is_empty());       // true
 println("hi".is_empty());     // false
 ```
@@ -31,7 +31,7 @@ println("hi".is_empty());     // false
 
 Returns the character at `index`. No bounds checking.
 
-```c
+```ts
 let c = "hello".char_at(1);   // 'e'
 ```
 
@@ -39,7 +39,7 @@ let c = "hello".char_at(1);   // 'e'
 
 Returns a new string containing the characters in the half-open range `[start, end)`. A non-positive length yields the empty string.
 
-```c
+```ts
 let s = "hello world".substring(6, 11);   // "world"
 ```
 
@@ -47,7 +47,7 @@ let s = "hello world".substring(6, 11);   // "world"
 
 Returns the index of the first occurrence of character `target`, or `-1` if absent.
 
-```c
+```ts
 let i = "hello".index_of('l');   // 2
 let j = "hello".index_of('z');   // -1
 ```
@@ -56,7 +56,7 @@ let j = "hello".index_of('z');   // -1
 
 Returns `true` if `sub` occurs anywhere in the string. The empty string is always contained.
 
-```c
+```ts
 println("hello world".contains("world"));   // true
 println("hello world".contains("xyz"));     // false
 ```
@@ -65,7 +65,7 @@ println("hello world".contains("xyz"));     // false
 
 Returns `true` if the string begins with `prefix`.
 
-```c
+```ts
 println("hello".starts_with("hel"));   // true
 ```
 
@@ -73,7 +73,7 @@ println("hello".starts_with("hel"));   // true
 
 Returns `true` if the string ends with `suffix`.
 
-```c
+```ts
 println("hello".ends_with("llo"));   // true
 ```
 
@@ -81,7 +81,7 @@ println("hello".ends_with("llo"));   // true
 
 Returns a new string with every ASCII uppercase letter lowercased.
 
-```c
+```ts
 println("Hello World".to_lower());   // "hello world"
 ```
 
@@ -89,7 +89,7 @@ println("Hello World".to_lower());   // "hello world"
 
 Returns a new string with every ASCII lowercase letter uppercased.
 
-```c
+```ts
 println("Hello World".to_upper());   // "HELLO WORLD"
 ```
 
@@ -97,7 +97,7 @@ println("Hello World".to_upper());   // "HELLO WORLD"
 
 Returns a new string with leading and trailing ASCII whitespace removed.
 
-```c
+```ts
 println("  hello  ".trim());   // "hello"
 ```
 
@@ -105,7 +105,7 @@ println("  hello  ".trim());   // "hello"
 
 Returns a new string consisting of the original repeated `times` times. A count of `0` or less yields the empty string.
 
-```c
+```ts
 println("ab".repeat(3));   // "ababab"
 ```
 
@@ -113,6 +113,6 @@ println("ab".repeat(3));   // "ababab"
 
 Returns `true` if this string has the same contents as `other`. This is identical to using `==`.
 
-```c
+```ts
 println("hello".equals("hello"));   // true
 ```

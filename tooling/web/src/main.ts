@@ -1,4 +1,9 @@
-import * as monaco from "monaco-editor/esm/vs/editor/editor.api";
+// `edcore.main` bundles the full editor including all contributions (suggest widget, hover,
+// definition peek, find references, formatting actions, context menu) but excludes the built-in
+// languages we don't need. Importing the bare `editor.api` would omit these contributions, so the
+// suggestion/hover popups would never appear. Types come from the ambient declaration in
+// `monaco-edcore.d.ts`, which re-exports the full `editor.api` namespace.
+import * as monaco from "monaco-editor/esm/vs/editor/edcore.main";
 import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 
 import { LANGUAGE_ID, registerDreamLanguage } from "./dream-language";
@@ -23,7 +28,7 @@ import {
 const SAMPLE = `// Welcome to the Dream playground.
 // Edit the code below to see live diagnostics, hover, completion, and more.
 
-struct Point {
+class Point {
     x: int;
     y: int;
 
@@ -149,22 +154,27 @@ function registerProviders(): void {
   monaco.languages.registerCompletionItemProvider(LANGUAGE_ID, {
     triggerCharacters: ["."],
     provideCompletionItems: (model, position) => {
-      const word = model.getWordUntilPosition(position);
-      const range: monaco.IRange = {
-        startLineNumber: position.lineNumber,
-        endLineNumber: position.lineNumber,
-        startColumn: word.startColumn,
-        endColumn: word.endColumn,
-      };
-      const items = getCompletions(model.getValue(), position.lineNumber - 1, position.column - 1);
-      const suggestions = items.map((item) => ({
-        label: item.label,
-        kind: completionKind(item.kind),
-        detail: item.detail,
-        insertText: item.label,
-        range,
-      }));
-      return { suggestions };
+      try {
+        const word = model.getWordUntilPosition(position);
+        const range: monaco.IRange = {
+          startLineNumber: position.lineNumber,
+          endLineNumber: position.lineNumber,
+          startColumn: word.startColumn,
+          endColumn: word.endColumn,
+        };
+        const items = getCompletions(model.getValue(), position.lineNumber - 1, position.column - 1);
+        const suggestions = items.map((item) => ({
+          label: item.label,
+          kind: completionKind(item.kind),
+          detail: item.detail,
+          insertText: item.label,
+          range,
+        }));
+        return { suggestions };
+      } catch (err) {
+        console.error("completion provider failed", err);
+        return { suggestions: [] };
+      }
     },
   });
 
@@ -203,6 +213,20 @@ async function bootstrap(): Promise<void> {
     minimap: { enabled: false },
     "semanticHighlighting.enabled": true,
     formatOnType: false,
+    // Pop the suggestion list automatically while typing, after `.`, and don't fall back to
+    // generic word-based suggestions (we provide our own).
+    quickSuggestions: { other: true, comments: false, strings: false },
+    quickSuggestionsDelay: 0,
+    suggestOnTriggerCharacters: true,
+    wordBasedSuggestions: "off",
+    tabCompletion: "on",
+    acceptSuggestionOnEnter: "on",
+  });
+
+  // macOS reserves Ctrl+Space (input-source switching), so Monaco's default trigger-suggest
+  // shortcut never reaches the editor. Bind Cmd/Ctrl+I as a reliable manual trigger too.
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyI, () => {
+    editor.trigger("keyboard", "editor.action.triggerSuggest", {});
   });
 
   let timer: number | undefined;
@@ -214,7 +238,7 @@ async function bootstrap(): Promise<void> {
   refreshDiagnostics(model);
 
   status.textContent =
-    "Analyzer ready. Try hover, Ctrl/Cmd+Click (go to definition), right-click \u2192 Format Document, and autocomplete.";
+    "Analyzer ready. Autocomplete pops as you type (or press Cmd/Ctrl+I). Hover, Ctrl/Cmd+Click for definition, right-click \u2192 Format Document.";
   void editor;
 }
 

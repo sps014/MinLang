@@ -2,7 +2,7 @@
 
 Dream is a statically typed language that compiles to WebAssembly. It has a simple, readable syntax and manages memory automatically — no garbage collector, no manual frees.
 
-```c
+```ts
 fun greet(name: string): string {
     return "Hello, " + name;
 }
@@ -17,7 +17,7 @@ fun main() {
 - **Statically typed** — every variable and expression has a type, checked at compile time.
 - **Compiles to WASM** — the output is a `.wat` file you can run with any WebAssembly runtime.
 - **Automatic memory management** — reference counting keeps allocations clean without a GC pause.
-- **Generics** — write one function or struct, get specialized code for every type you use it with.
+- **Generics** — write one function or class, get specialized code for every type you use it with.
 - **Standard collections** — `List<T>` and `Map<K, V>` are built in, no imports needed.
 
 ## Start here

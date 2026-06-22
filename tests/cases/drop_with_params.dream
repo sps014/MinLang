@@ -1,8 +1,8 @@
 // A destructor must not declare parameters.
-struct Bad {
+class Bad {
     id: int;
 
-    pub drop(extra: int) {
+    del(extra: int) {
         println(this.id);
     }
 }

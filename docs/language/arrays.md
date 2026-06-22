@@ -4,7 +4,7 @@
 
 Write a comma-separated list of values inside `[...]`. All elements must be the same type:
 
-```c
+```ts
 let nums = [1, 2, 3, 4, 5];       // int[]
 let words = ["red", "green", "blue"]; // string[]
 ```
@@ -13,7 +13,7 @@ let words = ["red", "green", "blue"]; // string[]
 
 Zero-indexed bracket access:
 
-```c
+```ts
 let first = nums[0];   // 1
 nums[2] = 99;          // [1, 2, 99, 4, 5]
 ```
@@ -24,7 +24,7 @@ Going out of bounds is undefined behaviour — there is no automatic bounds chec
 
 Use the `len` method to get the number of elements:
 
-```c
+```ts
 let count = nums.len();   // 5
 ```
 
@@ -32,7 +32,7 @@ let count = nums.len();   // 5
 
 Arrays are reference types. Passing an array to a function does not copy it; both the caller and the callee see the same backing buffer:
 
-```c
+```ts
 fun fill_zeros(arr: int[]): void {
     let i = 0;
     while (i < arr.len()) {
@@ -48,17 +48,17 @@ Arrays created from literals are fixed-size. You cannot push or pop from them.
 
 If you need a growable array, use [`List<T>`](../stdlib/list.md):
 
-```c
+```ts
 let xs = List<int>();
 xs.push(10);
 xs.push(20);
 println(xs.size());   // 2
 ```
 
-## Array of structs
+## Array of classes
 
-```c
-struct Point { x: int; y: int; }
+```ts
+class Point { x: int; y: int; }
 
 let pts: Point[] = [
     Point { x: 0, y: 0 },
@@ -71,7 +71,7 @@ println(pts[1].x);   // 1
 
 The element type can itself be an array (or any other type), giving multi-dimensional arrays:
 
-```c
+```ts
 let grid: int[][] = [[1, 2, 3], [4, 5, 6]];
 println(grid.len());      // 2  (rows)
 println(grid[0].len());   // 3  (columns)

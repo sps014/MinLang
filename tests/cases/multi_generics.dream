@@ -1,7 +1,7 @@
-// Multiple generic parameters: two-parameter struct (with a method using both params),
+// Multiple generic parameters: two-parameter class (with a method using both params),
 // two-parameter functions, and a mangling-collision check between Pair<int, float> and
 // Pair<int, double> (which previously both collapsed to "Pair_int").
-struct Pair<K, V> {
+class Pair<K, V> {
     key: K;
     value: V;
 

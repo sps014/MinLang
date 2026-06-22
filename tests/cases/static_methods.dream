@@ -1,4 +1,4 @@
-struct Vec2 {
+class Vec2 {
     x: int;
     y: int;
 

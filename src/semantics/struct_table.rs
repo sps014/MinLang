@@ -40,7 +40,7 @@ impl StructTable {
         for field in &struct_decl.fields {
             let field_name = field.name.text.clone();
             if fields.contains_key(&field_name) {
-                return Err(format!("Field '{}' is already defined in struct '{}'", field_name, name));
+                return Err(format!("Field '{}' is already defined in class '{}'", field_name, name));
             }
 
             let field_type = match Type::from_token(field.type_token.clone()) {

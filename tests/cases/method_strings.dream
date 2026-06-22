@@ -1,6 +1,6 @@
 // Regression test: string literals inside method bodies and passed as method
 // arguments must be collected into the data segment (previously panicked at codegen).
-struct Greeter {
+class Greeter {
     name: string;
 
     fun greet() {

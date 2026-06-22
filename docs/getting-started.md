@@ -18,7 +18,7 @@ The binary ends up at `target/release/dream`. You can run it directly from that 
 
 Create a file called `hello.dream`:
 
-```c
+```ts
 fun main() {
     println("Hello, world!");
 }
@@ -48,7 +48,7 @@ This writes a `hello.wat` file next to your source.
 
 ## A slightly bigger example
 
-```c
+```ts
 fun factorial(n: int): int {
     if (n <= 1) {
         return 1;
@@ -69,7 +69,7 @@ Things to notice:
 
 - `fun` declares a function. The return type comes after `:`.
 - `let` declares a local variable. The type is inferred from the initializer.
-- `print` writes a value with no newline; `println` appends one. Both work on any type — int, float, string, bool, char, structs.
+- `print` writes a value with no newline; `println` appends one. Both work on any type — int, float, string, bool, char, classes.
 - The return type is optional when a function returns nothing (`fun main()`).
 - Conditions need parentheses: `if (n <= 1)`, not `if n <= 1`.
 
@@ -77,5 +77,5 @@ Things to notice:
 
 - [Variables](language/variables.md) — declaration, inference, and assignment rules.
 - [Types](language/types.md) — the full type system including nullable and arrays.
-- [Structs](language/structs.md) — define your own data types with methods.
+- [Classes](language/classes.md) — define your own data types with methods.
 - [List](stdlib/list.md) and [Map](stdlib/map.md) — the standard collections.

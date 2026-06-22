@@ -1,4 +1,4 @@
-struct Box {
+class Box {
     _secret: int;
 
     fun reveal(): int {

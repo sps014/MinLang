@@ -200,7 +200,7 @@ impl<'a> WasmGenerator<'a> {
             None => name.text.clone(),
         };
         let struct_info = self.struct_table.get_struct(&struct_name)
-            .ok_or_else(|| Error::new(ErrorKind::Other, format!("unknown struct '{}' in instantiation", struct_name)))?
+            .ok_or_else(|| Error::new(ErrorKind::Other, format!("unknown class '{}' in instantiation", struct_name)))?
             .clone();
         
         // 1. Allocate memory using $malloc, tagging the block with this struct's runtime tag.
@@ -217,7 +217,7 @@ impl<'a> WasmGenerator<'a> {
         self.ctx.alloc_depth += 1;
         for (field_name, expr) in fields.iter() {
             let field_info = struct_info.fields.get(&field_name.text)
-                .ok_or_else(|| Error::new(ErrorKind::Other, format!("unknown field '{}' on struct '{}'", field_name.text, struct_name)))?;
+                .ok_or_else(|| Error::new(ErrorKind::Other, format!("unknown field '{}' on class '{}'", field_name.text, struct_name)))?;
             let offset = field_info.offset;
             let field_type = field_info.type_.get_type();
 
@@ -246,14 +246,14 @@ impl<'a> WasmGenerator<'a> {
     }
 
     /// Builds a constructor call `Struct(args)`. Allocates the struct then either runs the
-    /// user-defined `init` method (custom constructor) or stores the arguments positionally into
-    /// the fields in declaration order (auto-generated constructor). Leaves the new pointer on
+    /// user-defined `constructor` method (custom constructor) or stores the arguments positionally
+    /// into the fields in declaration order (auto-generated constructor). Leaves the new pointer on
     /// the stack. `struct_name` is already monomorphized (e.g. `Point_int`).
     pub fn build_constructor(&mut self, struct_name: &str, args: &Vec<ExpressionNode<'a>>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let struct_info = self.struct_table.get_struct(struct_name)
-            .ok_or_else(|| Error::new(ErrorKind::Other, format!("unknown struct '{}' in constructor", struct_name)))?
+            .ok_or_else(|| Error::new(ErrorKind::Other, format!("unknown class '{}' in constructor", struct_name)))?
             .clone();
-        let init_name = format!("{}_init", struct_name);
+        let init_name = format!("{}_constructor", struct_name);
         let has_init = self.function_table.get_function(&init_name).is_ok();
 
         // Allocate, tagging the block with this struct's runtime tag, into a depth-specific local.
@@ -266,8 +266,8 @@ impl<'a> WasmGenerator<'a> {
         let ordered = WasmGenerator::sorted_fields(&struct_info);
 
         if has_init {
-            // Zero every field before running `init` (reused heap blocks are not zeroed), so an
-            // `init` that leaves some fields unset observes 0/null rather than stale data.
+            // Zero every field before running `constructor` (reused heap blocks are not zeroed), so
+            // a `constructor` that leaves some fields unset observes 0/null rather than stale data.
             for (_, field_info) in &ordered {
                 let ft = field_info.type_.get_type();
                 writer.write_line(&format!("local.get {}", base));
@@ -283,8 +283,8 @@ impl<'a> WasmGenerator<'a> {
                 WasmGenerator::emit_store(&ft, writer)?;
             }
 
-            // call $Struct_init(this, args...). Owned argument temporaries are released after the
-            // call (init returns void, so nothing is on the stack to disturb).
+            // call $Struct_constructor(this, args...). Owned argument temporaries are released after
+            // the call (constructor returns void, so nothing is on the stack to disturb).
             let param_types: Vec<String> = self.function_table.get_function(&init_name)?.parameters.clone();
             let saved_tmp = self.ctx.tmp_depth;
             let mut owned_temps: Vec<(usize, String)> = Vec::new();
@@ -347,10 +347,10 @@ impl<'a> WasmGenerator<'a> {
         let obj_type_str = self.infer_expression_type(obj, function)?;
         let base_obj_type_str = strip_nullable(&obj_type_str).to_string();
         let struct_info = self.struct_table.get_struct(&base_obj_type_str)
-            .ok_or_else(|| Error::new(ErrorKind::Other, format!("unknown struct '{}' in member access", base_obj_type_str)))?
+            .ok_or_else(|| Error::new(ErrorKind::Other, format!("unknown class '{}' in member access", base_obj_type_str)))?
             .clone();
         let field_info = struct_info.fields.get(&member.text)
-            .ok_or_else(|| Error::new(ErrorKind::Other, format!("unknown field '{}' on struct '{}'", member.text, base_obj_type_str)))?;
+                .ok_or_else(|| Error::new(ErrorKind::Other, format!("unknown field '{}' on class '{}'", member.text, base_obj_type_str)))?;
         let offset = field_info.offset;
         let field_type = field_info.type_.get_type();
 

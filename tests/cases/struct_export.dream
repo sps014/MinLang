@@ -1,16 +1,16 @@
-struct InternalData {
+class InternalData {
     value: int;
 }
 
-pub struct PublicData {
+export class PublicData {
     val: int;
 }
 
-pub fun get_internal(): InternalData {
+export fun get_internal(): InternalData {
     return InternalData { value: 1 };
 }
 
-pub fun get_public(): PublicData {
+export fun get_public(): PublicData {
     return PublicData { val: 2 };
 }
 

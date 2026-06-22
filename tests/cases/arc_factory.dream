@@ -1,21 +1,21 @@
-// Exercises deterministic reclamation (and `drop`) for owned values that are NOT direct
+// Exercises deterministic reclamation (and `del`) for owned values that are NOT direct
 // constructor calls: factory-function results, loop reassignment, method results, reference
 // fields, and owned temporaries passed as call arguments.
 
-struct Tracked {
+class Tracked {
     id: int;
 
-    pub init(id: int) {
+    constructor(id: int) {
         this.id = id;
     }
 
-    pub drop() {
+    del() {
         print("drop ");
         println(this.id);
     }
 }
 
-struct Factory {
+class Factory {
     base: int;
 
     fun create(n: int): Tracked {
@@ -23,10 +23,10 @@ struct Factory {
     }
 }
 
-struct Named {
+class Named {
     name: string;
 
-    pub drop() {
+    del() {
         print("bye ");
         println(this.name);
     }
@@ -62,14 +62,14 @@ fun loop_reassign() {
     }
 }
 
-// A method that returns a freshly built struct; the result is owned and dropped at scope exit.
+// A method that returns a freshly built class; the result is owned and dropped at scope exit.
 fun method_factory() {
     let f = Factory(10);
     let m = f.create(5);
     println(m.id);
 }
 
-// A factory whose struct owns a reference (string) field; freeing it must not corrupt the
+// A factory whose class owns a reference (string) field; freeing it must not corrupt the
 // interned literal.
 fun ref_field() {
     let x = make_named("Zaphod");

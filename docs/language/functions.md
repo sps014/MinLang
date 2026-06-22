@@ -2,7 +2,7 @@
 
 ## Defining a function
 
-```c
+```ts
 fun add(a: int, b: int): int {
     return a + b;
 }
@@ -14,7 +14,7 @@ fun add(a: int, b: int): int {
 
 The return type is optional for functions that return nothing. These two are equivalent:
 
-```c
+```ts
 fun greet() {
     println("hi");
 }
@@ -26,7 +26,7 @@ fun greet(): void {
 
 ## Calling a function
 
-```c
+```ts
 let result = add(3, 4);
 ```
 
@@ -34,7 +34,7 @@ let result = add(3, 4);
 
 Use `return`:
 
-```c
+```ts
 fun clamp(value: int, lo: int, hi: int): int {
     if (value < lo) { return lo; }
     if (value > hi) { return hi; }
@@ -48,7 +48,7 @@ The compiler checks that all code paths return a value when the return type is n
 
 Functions can call themselves:
 
-```c
+```ts
 fun fib(n: int): int {
     if (n <= 1) { return n; }
     return fib(n - 1) + fib(n - 2);
@@ -59,7 +59,7 @@ fun fib(n: int): int {
 
 Add `<TypeParam>` after the function name to make it generic. The type parameter stands in for any concrete type:
 
-```c
+```ts
 fun identity<T>(value: T): T {
     return value;
 }
@@ -74,7 +74,7 @@ The compiler generates a separate copy of the function body for each distinct ty
 
 Multiple type parameters are allowed:
 
-```c
+```ts
 fun pair_first<A, B>(a: A, b: B): A {
     return a;
 }
@@ -84,7 +84,7 @@ fun pair_first<A, B>(a: A, b: B): A {
 
 A function name used as a value refers to the function itself, and the function type is written `fun(ParamTypes): ReturnType`. Functions can be stored in variables and passed as parameters, then invoked like any other call:
 
-```c
+```ts
 fun twice(x: int): int {
     return x * 2;
 }
@@ -104,21 +104,21 @@ Closures (capturing surrounding variables) are not yet supported.
 
 ## Exported functions
 
-Mark a function `pub` to expose it to the WebAssembly host environment:
+Mark a function `export` to expose it to the WebAssembly host environment:
 
-```c
-pub fun compute(n: int): int {
+```ts
+export fun compute(n: int): int {
     return n * n;
 }
 ```
 
-Exported functions cannot expose structs that are not themselves exported.
+Exported functions cannot expose classes that are not themselves exported.
 
 ## Entry point
 
 The runtime calls `main` to start the program. Every runnable Dream program needs one. The return type can be omitted:
 
-```c
+```ts
 fun main() {
     println("hello");
 }

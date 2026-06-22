@@ -1,8 +1,8 @@
-struct Box<T> {
+class Box<T> {
     v: T;
 }
 
-struct Pair<A, B> {
+class Pair<A, B> {
     first: A;
     second: B;
 }

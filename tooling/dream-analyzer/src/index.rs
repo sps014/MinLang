@@ -233,32 +233,43 @@ impl Index {
         out
     }
 
-    /// Members (fields + methods) available on `receiver`. If `receiver`'s type resolves to a
-    /// known struct, only that struct's members are offered; otherwise every struct member is.
+    /// Members available on `receiver`, resolved by type. If `receiver` is a variable/parameter
+    /// (including `this`) whose type is a known struct, only that struct's fields and methods are
+    /// offered. If `receiver` names an enum, its members are offered. Otherwise nothing is
+    /// offered, so member access never dumps unrelated symbols.
     fn member_completions(&self, receiver: &str, scope: usize, before: usize) -> Vec<(String, SymKind, String)> {
-        if let Some(ty) = self.variable_type(receiver, scope, before) {
-            let base = ty.trim_end_matches('?');
-            if self.decls.iter().any(|d| d.kind == SymKind::Struct && d.name == base) {
-                return self
-                    .decls
-                    .iter()
-                    .filter(|d| matches!(d.kind, SymKind::Field | SymKind::Method) && d.scope == GLOBAL && d.detail.starts_with(&format!("{}.", base)))
-                    .map(|d| (d.name.clone(), d.kind, d.detail.clone()))
-                    .collect();
-            }
-        }
-        // Enum member access (`Color.`) or unknown receiver: offer matching members.
+        // `Type.` / `Color.` static or enum access: the receiver itself names a struct or enum.
         if self.decls.iter().any(|d| d.kind == SymKind::Enum && d.name == receiver) {
-            return self
-                .decls
-                .iter()
-                .filter(|d| d.kind == SymKind::EnumMember && d.detail.starts_with(&format!("{}.", receiver)))
-                .map(|d| (d.name.clone(), d.kind, d.detail.clone()))
-                .collect();
+            return self.members_of_enum(receiver);
         }
+
+        if let Some(ty) = self.variable_type(receiver, scope, before) {
+            let base = ty.trim_end_matches('?').trim_end_matches("[]");
+            return self.members_of_struct(base);
+        }
+
+        // A bare struct name used as a receiver (e.g. static method access `Point.`).
+        if self.decls.iter().any(|d| d.kind == SymKind::Struct && d.name == receiver) {
+            return self.members_of_struct(receiver);
+        }
+
+        Vec::new()
+    }
+
+    fn members_of_struct(&self, base: &str) -> Vec<(String, SymKind, String)> {
+        let prefix = format!("{}.", base);
         self.decls
             .iter()
-            .filter(|d| matches!(d.kind, SymKind::Field | SymKind::Method))
+            .filter(|d| matches!(d.kind, SymKind::Field | SymKind::Method) && d.scope == GLOBAL && d.detail.starts_with(&prefix))
+            .map(|d| (d.name.clone(), d.kind, d.detail.clone()))
+            .collect()
+    }
+
+    fn members_of_enum(&self, name: &str) -> Vec<(String, SymKind, String)> {
+        let prefix = format!("{}.", name);
+        self.decls
+            .iter()
+            .filter(|d| d.kind == SymKind::EnumMember && d.detail.starts_with(&prefix))
             .map(|d| (d.name.clone(), d.kind, d.detail.clone()))
             .collect()
     }
@@ -310,7 +321,7 @@ impl Builder {
     }
 
     fn walk_struct(&mut self, st: &StructDeclarationNode) {
-        let detail = format!("struct {}", st.name.text);
+        let detail = format!("class {}", st.name.text);
         self.push_decl(&st.name, SymKind::Struct, detail, GLOBAL, None);
         for field in &st.fields {
             let detail = format!("{}.{}: {}", st.name.text, field.name.text, field.type_token.text);
@@ -325,6 +336,19 @@ impl Builder {
         let scope = self.fresh_scope();
         let detail = format!("{}.{}", owner, signature(func));
         self.push_decl(&func.name, SymKind::Method, detail, GLOBAL, None);
+        // Instance methods receive an implicit `this` bound to the owning type, so member
+        // access on `this` can be resolved to the owner's fields/methods. Static methods do not.
+        if !func.is_static {
+            self.decls.push(Decl {
+                name: "this".to_string(),
+                kind: SymKind::Param,
+                detail: format!("(this) {}", owner),
+                start: func.name.position.start,
+                end: func.name.position.end,
+                scope,
+                ty: Some(owner.to_string()),
+            });
+        }
         self.walk_params_and_body(func, scope);
     }
 
@@ -592,8 +616,8 @@ fn is_ident_byte(b: u8) -> bool {
 }
 
 /// Language keywords offered as completion proposals.
-pub const KEYWORDS: [&str; 27] = [
+pub const KEYWORDS: [&str; 29] = [
     "if", "else", "for", "while", "do", "return", "break", "continue", "let", "const", "fun",
-    "static", "import", "pub", "extern", "struct", "extend", "enum", "type", "switch", "case",
-    "default", "is", "in", "true", "false", "null",
+    "static", "import", "export", "extern", "class", "extend", "enum", "type", "switch", "case",
+    "default", "is", "in", "true", "false", "null", "constructor", "del",
 ];

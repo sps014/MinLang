@@ -530,13 +530,13 @@ impl<'a> WasmGenerator<'a> {
         writer.write_line("(then");
         writer.indent();
 
-        // User-defined destructor: when the last reference is released, run `$Struct_drop(ptr)`
+        // User-defined destructor: when the last reference is released, run `$Struct_del(ptr)`
         // while the fields are still valid, before releasing them and freeing the block.
         // The destructor body retains/releases its own `this` parameter (net zero), so the
         // refcount is first pinned to 1; this keeps that internal release from dropping the
         // count back to 0 and re-entering this release function.
         if struct_info.is_some() {
-            let drop_name = format!("{}_drop", type_name);
+            let drop_name = format!("{}_del", type_name);
             if self.function_table.get_function(&drop_name).is_ok() {
                 writer.write_line("local.get $ref_count_ptr");
                 writer.write_line("i32.const 1");

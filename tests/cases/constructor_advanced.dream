@@ -1,25 +1,25 @@
-// Generic struct with an auto-generated constructor.
-struct Box<T> {
+// Generic class with an auto-generated constructor.
+class Box<T> {
     value: T;
 }
 
-// Struct holding a reference-typed field, built via the default constructor.
-struct Named {
+// Class holding a reference-typed field, built via the default constructor.
+class Named {
     name: string;
     score: int;
 }
 
 // Custom constructor that derives a field, plus a destructor.
-struct Account {
+class Account {
     owner: string;
     balance: int;
 
-    pub init(owner: string) {
+    constructor(owner: string) {
         this.owner = owner;
         this.balance = 100;
     }
 
-    pub drop() {
+    del() {
         print("closing ");
         println(this.owner);
     }

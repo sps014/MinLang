@@ -6,7 +6,7 @@ Dream compiles to WebAssembly, so it runs anywhere WASM does — including the b
 
 An `extern fun` has a signature but no body. It is lowered to a WebAssembly *import* instead of a defined function:
 
-```c
+```ts
 extern fun alert(msg: string): void;
 
 fun main(): void {
@@ -20,7 +20,7 @@ By default the import comes from the `env` module under the function's own name.
 
 Use the `@js(module, name)` attribute to control which import module and field the extern binds to:
 
-```c
+```ts
 // binds to importObject["dom"]["setText"]
 @js("dom", "setText")
 extern fun set_text(value: string): void;
@@ -31,7 +31,7 @@ extern fun log(msg: string): void;
 ```
 
 !!! note "Restrictions"
-    Extern functions cannot have a body, cannot be generic, and cannot be combined with `pub`.
+    Extern functions cannot have a body, cannot be generic, and cannot be combined with `export`.
 
 ## Running it from JavaScript
 
@@ -80,7 +80,7 @@ With the ABI loaded, arguments and return values are converted between Dream's h
 | `bool` | `boolean` | `boolean` |
 | `string` | `string` (decoded UTF-8) | return a `string` |
 | `T[]` | `Array` of marshaled elements | (pointer) |
-| `object`, structs, `List<T>` | opaque pointer (`number`) | (pointer) |
+| `object`, classes, `List<T>` | opaque pointer (`number`) | (pointer) |
 
 For reference types you can read the underlying data with the instance helpers:
 
@@ -88,7 +88,7 @@ For reference types you can read the underlying data with the instance helpers:
 mod.readString(ptr);          // null-terminated UTF-8 string
 mod.readArray(ptr, "int");    // -> number[]
 mod.readList(ptr, "string");  // List<string> -> string[]
-mod.readStruct(ptr, [         // struct by field schema (declaration order)
+mod.readStruct(ptr, [         // class by field schema (declaration order)
   { name: "x", type: "int" },
   { name: "y", type: "int" },
 ]);
@@ -98,7 +98,7 @@ To hand a string back to Dream from a JS implementation, the runtime calls the e
 
 ## References and callbacks (planned)
 
-Reference types cross the boundary as opaque `i32` pointers and are read with the helpers above; there is no general "JavaScript object into Dream" path yet, since Dream's only dynamic type is `object` (a boxed primitive or struct).
+Reference types cross the boundary as opaque `i32` pointers and are read with the helpers above; there is no general "JavaScript object into Dream" path yet, since Dream's only dynamic type is `object` (a boxed primitive or class).
 
 Passing a function as an argument is also not supported yet:
 

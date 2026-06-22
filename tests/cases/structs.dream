@@ -1,9 +1,9 @@
-struct Point {
+class Point {
     x: int;
     y: int;
 }
 
-struct Rect {
+class Rect {
     p1: Point;
     p2: Point;
 }
