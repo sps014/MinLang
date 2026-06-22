@@ -65,8 +65,11 @@ impl<'a> WasmGenerator<'a> {
 
             let module = func.import_module.as_deref().unwrap_or("env");
             let field = func.import_name.as_deref().unwrap_or(&func.name.text);
+            // Overloaded externs get distinct internal `$key` names but share the imported field,
+            // so a single host function can back every signature.
+            let internal = self.function_table.resolve_emitted_name(&func.name.text, &Self::func_param_types(func));
             writer.write_line(&format!("(import \"{}\" \"{}\" (func ${} (param {}){}))",
-                module, field, func.name.text, params_str.trim(), result_str));
+                module, field, internal, params_str.trim(), result_str));
         }
 
         // Memory management functions
@@ -84,6 +87,8 @@ impl<'a> WasmGenerator<'a> {
         for func in program.functions.iter() {
             if func.generic_parameters.is_some() { continue; }
             let name = func.name.text.as_str();
+            // Overloaded names are ambiguous as first-class function values, so they get no slot.
+            if self.function_table.is_overloaded(name) { continue; }
             if !self.ctx.function_indices.contains_key(name) {
                 self.ctx.function_indices.insert(name.to_string(), indexed_functions.len());
                 indexed_functions.push(name);
@@ -116,7 +121,10 @@ impl<'a> WasmGenerator<'a> {
             if i.is_extern {
                 continue;
             }
+            // Overloaded functions are emitted under their signature-mangled key.
+            self.ctx.current_mangled_name = Some(self.function_table.resolve_emitted_name(&i.name.text, &Self::func_param_types(i)));
             self.build_function(i, writer)?;
+            self.ctx.current_mangled_name = None;
         }
         for (mangled_name, (bindings, template)) in self.instantiated_generics {
             self.ctx.current_generic_bindings = bindings.iter().cloned().collect();
@@ -127,7 +135,9 @@ impl<'a> WasmGenerator<'a> {
         }
         for (method, bindings) in self.struct_methods {
             self.ctx.current_generic_bindings = bindings.iter().cloned().collect();
-            self.ctx.current_mangled_name = Some(method.name.text.clone());
+            // Overloaded methods are emitted under their signature-mangled key (the parameter
+            // list includes the implicit `this`, matching how they were registered).
+            self.ctx.current_mangled_name = Some(self.function_table.resolve_emitted_name(&method.name.text, &Self::func_param_types(method)));
             self.build_function(method, writer)?;
             self.ctx.current_mangled_name = None;
             self.ctx.current_generic_bindings.clear();
@@ -196,10 +206,23 @@ impl<'a> WasmGenerator<'a> {
                 continue;
             }
             if i.is_exported || i.name.text == "main" {
-                writer.write_line(&format!("(export \"{}\" (func ${}))", i.name.text, i.name.text));
+                let emitted = self.function_table.resolve_emitted_name(&i.name.text, &Self::func_param_types(i));
+                // Overloaded exports are surfaced under their mangled key so export names stay unique.
+                let export_label = if self.function_table.is_overloaded(&i.name.text) {
+                    emitted.clone()
+                } else {
+                    i.name.text.clone()
+                };
+                writer.write_line(&format!("(export \"{}\" (func ${}))", export_label, emitted));
             }
         }
         Ok(())
+    }
+
+    /// The declared parameter type names of `func` (no monomorphization), matching the keys used
+    /// when the function/method was registered in the function table.
+    fn func_param_types(func: &FunctionNode) -> Vec<String> {
+        func.parameters.iter().map(|p| p.type_.get_type()).collect()
     }
 
     /// Emits the data segments for one heap-resident string: the 12-byte block header

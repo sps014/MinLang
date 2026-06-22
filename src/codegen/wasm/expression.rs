@@ -664,7 +664,8 @@ impl<'a> WasmGenerator<'a> {
         }
 
         let struct_name = strip_nullable(&obj_type).to_string();
-        let mangled_name = format!("{}_{}", struct_name, method.text);
+        // Resolve the (possibly overloaded) method to its emitted variant, matching the analyzer.
+        let mangled_name = self.resolve_method_key(&struct_name, &method.text, params, function);
         let param_types: Vec<String> = self.function_table.get_function(&mangled_name)?.parameters.clone();
 
         let saved_tmp = self.ctx.tmp_depth;

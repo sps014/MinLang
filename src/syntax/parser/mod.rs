@@ -197,6 +197,7 @@ impl<'a, 'b> Parser<'a, 'b>
         let mut functions=vec![];
         let mut structs=vec![];
         let mut enums=vec![];
+        let mut extends=vec![];
         
         while self.current_token().kind == TokenKind::ImportToken {
             imports.push(self.parse_import()?);
@@ -209,6 +210,8 @@ impl<'a, 'b> Parser<'a, 'b>
                 structs.push(struct_decl);
             } else if self.current_token().kind == TokenKind::EnumToken {
                 enums.push(self.parse_enum_declaration()?);
+            } else if self.current_token().kind == TokenKind::ExtendToken {
+                extends.push(self.parse_extend_declaration()?);
             } else if self.current_token().kind == TokenKind::TypeToken {
                 self.parse_type_alias()?;
             } else if self.current_token().kind == TokenKind::FunToken || self.current_token().kind == TokenKind::AtToken || self.current_token().kind == TokenKind::ExternToken || (self.current_token().kind == TokenKind::PubToken && self.peek_token(1).kind == TokenKind::FunToken) {
@@ -223,7 +226,7 @@ impl<'a, 'b> Parser<'a, 'b>
                 self.next_token();
             }
         }
-        Ok(ProgramNode::new(imports, structs, functions, enums))
+        Ok(ProgramNode::new(imports, structs, functions, enums, extends))
     }
 
 }

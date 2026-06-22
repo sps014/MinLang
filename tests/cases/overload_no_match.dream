@@ -1,0 +1,8 @@
+// No overload accepts a bool argument -> no-match error.
+fun h(x: int): int { return 1; }
+fun h(x: string): int { return 2; }
+
+fun main(): void {
+    let b: bool = true;
+    println(h(b));
+}

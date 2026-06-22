@@ -12,7 +12,7 @@ use crate::syntax::text::text_span::TextSpan;
 use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
 use crate::semantics::function_control_flow::FunctionControlGraph;
-use crate::semantics::function_table::{FunctionTable, FunctionTableInfo};
+use crate::semantics::function_table::{FunctionTable, FunctionTableInfo, OverloadResolution, overload_arg_compatible};
 use crate::semantics::symbol_table::SymbolTable;
 use crate::semantics::struct_table::StructTable;
 use crate::driver::diagnostics::DiagnosticBag;
@@ -105,6 +105,22 @@ impl<'a> Analyzer<'a> {
         };
         Ok(())
     }
+    /// Resolves an overloaded base name against the concrete `arg_types`, returning the selected
+    /// signature or a human-readable error (no match / ambiguous). Used by both free-function and
+    /// method call analysis (methods prepend the receiver type as the implicit `this` argument).
+    pub(super) fn select_function_overload(&self, base: &str, arg_types: &[String]) -> Result<FunctionTableInfo, String> {
+        let compat = |param: &str, arg: &str| overload_arg_compatible(param, arg, |t| self.enum_table.contains_key(t));
+        match self.function_table.select_overload(base, arg_types, compat) {
+            OverloadResolution::Unique(key) => Ok(self.function_table.get_function(&key).unwrap()),
+            OverloadResolution::None => Err(format!(
+                "No overload of '{}' matches argument types ({})", base, arg_types.join(", ")
+            )),
+            OverloadResolution::Ambiguous(keys) => Err(format!(
+                "Ambiguous call to '{}' with argument types ({}); candidates: {}", base, arg_types.join(", "), keys.join(", ")
+            )),
+        }
+    }
+
     pub(super) fn analyze_function_call(&mut self,name:&SyntaxToken,generic_args: &Option<Vec<Type>>,params:&Vec<ExpressionNode<'a>>,
                                    parent_function:&FunctionNode<'a>,
                                    symbol_table:&Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag)->Result<Type,()> {
@@ -181,6 +197,7 @@ impl<'a> Analyzer<'a> {
         // when no free function (concrete or generic) shadows the name, so prelude factory
         // functions such as `List<T>()` keep their behaviour.
         if self.function_table.get_function(&function_name).is_err()
+            && !self.function_table.is_overloaded(&function_name)
             && !self.generic_functions.contains_key(&function_name)
             && (self.struct_table.get_struct(&function_name).is_some()
                 || self.generic_structs.contains_key(&function_name)) {
@@ -218,11 +235,23 @@ impl<'a> Analyzer<'a> {
             function_name = mangled_name;
         }
 
-        let store_sig = match self.function_table.get_function(&function_name) {
-            Ok(sig) => sig,
-            Err(e) => {
-                diagnostics.report_error(e.to_string(), Some(name.position.clone()));
-                return Ok(Type::Void);
+        // Overloaded free functions resolve by argument types; non-overloaded names keep the
+        // direct single-signature lookup (and its precise per-argument diagnostics below).
+        let store_sig = if self.function_table.is_overloaded(&function_name) {
+            match self.select_function_overload(&function_name, &params_types) {
+                Ok(sig) => sig,
+                Err(message) => {
+                    diagnostics.report_error(message, Some(name.position.clone()));
+                    return Ok(Type::Void);
+                }
+            }
+        } else {
+            match self.function_table.get_function(&function_name) {
+                Ok(sig) => sig,
+                Err(e) => {
+                    diagnostics.report_error(e.to_string(), Some(name.position.clone()));
+                    return Ok(Type::Void);
+                }
             }
         };
 
@@ -340,24 +369,46 @@ impl<'a> Analyzer<'a> {
             }
         }
 
-        let (base_name, generic_args) = match Self::resolve_struct_parts(&obj_type) {
-            Some(parts) => parts,
-            None => {
-                diagnostics.report_error(format!("Cannot call method on non-struct type {}", obj_type.get_type()), Some(method.position.clone()));
-                return Ok(Type::Void);
+        // Struct receivers are monomorphized to their concrete type name; primitive/`object`
+        // receivers (which can carry methods via `extend`) use their canonical type name directly.
+        let struct_name = match Self::resolve_struct_parts(&obj_type) {
+            Some((base_name, generic_args)) => {
+                self.ensure_struct_instantiated(&base_name, &generic_args, &method.position, diagnostics);
+                mangle_generic(&base_name, &generic_args)
             }
+            None => strip_nullable(&obj_type.get_type()).to_string(),
         };
 
-        self.ensure_struct_instantiated(&base_name, &generic_args, &method.position, diagnostics);
-        let struct_name = mangle_generic(&base_name, &generic_args);
-        
         let mangled_name = format!("{}_{}", struct_name, method.text);
-        
-        let store_sig = match self.function_table.get_function(&mangled_name) {
-            Ok(s) => s.clone(),
-            Err(e) => {
-                diagnostics.report_error(e.to_string(), Some(method.position.clone()));
-                return Ok(Type::Void);
+
+        // Analyze the explicit arguments once, then resolve the method (overloaded methods select
+        // by argument types, with the receiver supplied as the implicit `this` argument).
+        let mut arg_types = Vec::new();
+        for param in params.iter() {
+            arg_types.push(self.analyze_expression(param, parent_function, symbol_table, diagnostics)?.get_type());
+        }
+
+        let store_sig = if self.function_table.is_overloaded(&mangled_name) {
+            let mut selection_args = Vec::with_capacity(arg_types.len() + 1);
+            selection_args.push(struct_name.clone());
+            selection_args.extend(arg_types.iter().cloned());
+            match self.select_function_overload(&mangled_name, &selection_args) {
+                Ok(sig) => sig,
+                Err(message) => {
+                    diagnostics.report_error(message, Some(method.position.clone()));
+                    return Ok(Type::Void);
+                }
+            }
+        } else {
+            match self.function_table.get_function(&mangled_name) {
+                Ok(s) => s.clone(),
+                Err(_) => {
+                    diagnostics.report_error(
+                        format!("Type '{}' has no method '{}'", struct_name, method.text),
+                        Some(method.position.clone()),
+                    );
+                    return Ok(Type::Void);
+                }
             }
         };
 
@@ -368,25 +419,24 @@ impl<'a> Analyzer<'a> {
             expected_params.remove(0);
         }
 
-        if expected_params.len() != params.len() {
-            diagnostics.report_error(format!("function {} expects {} parameters, got {}", mangled_name, expected_params.len(), params.len()), Some(method.position.clone()));
+        if expected_params.len() != arg_types.len() {
+            diagnostics.report_error(format!("function {} expects {} parameters, got {}", mangled_name, expected_params.len(), arg_types.len()), Some(method.position.clone()));
             return Ok(store_sig.return_type.unwrap_or(Type::Void));
         }
 
-        for (i, param) in params.iter().enumerate() {
-            let param_type = self.analyze_expression(param, parent_function, symbol_table, diagnostics)?;
+        for (i, given_type) in arg_types.iter().enumerate() {
             let expected_type_str = &expected_params[i];
 
             if expected_type_str == "object" {
                 continue;
             }
 
-            if expected_type_str == "int" && param_type.get_type() == "float" || expected_type_str == "float" && param_type.get_type() == "int" || expected_type_str == "double" && param_type.get_type() == "int" || expected_type_str == "int" && param_type.get_type() == "double" || expected_type_str == "float" && param_type.get_type() == "double" || expected_type_str == "double" && param_type.get_type() == "float" {
+            if expected_type_str == "int" && given_type == "float" || expected_type_str == "float" && given_type == "int" || expected_type_str == "double" && given_type == "int" || expected_type_str == "int" && given_type == "double" || expected_type_str == "float" && given_type == "double" || expected_type_str == "double" && given_type == "float" {
                 continue;
             }
 
-            if param_type.get_type() != *expected_type_str {
-                diagnostics.report_error(format!("function {} expects parameter {} to be {}, got {}", mangled_name, i + 1, expected_type_str, param_type.get_type()), Some(method.position.clone()));
+            if given_type != expected_type_str {
+                diagnostics.report_error(format!("function {} expects parameter {} to be {}, got {}", mangled_name, i + 1, expected_type_str, given_type), Some(method.position.clone()));
             }
         }
 
@@ -565,6 +615,8 @@ impl<'a> Analyzer<'a> {
         const RESERVED_NAMES: &[&str] = &[
             "print", "println", "to_string", "hash_code", "array_new", "Math",
             "int", "float", "double", "string", "bool", "char", "object", "void",
+            // C#/.NET-style aliases for the primitives (see `canonical_type_name`).
+            "String", "Int32", "Int64", "Single", "Double", "Boolean", "Char", "Object", "Void",
             "true", "false", "null",
         ];
         if RESERVED_NAMES.contains(&token.text.as_str()) {

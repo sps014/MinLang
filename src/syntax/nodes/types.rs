@@ -25,6 +25,25 @@ pub fn mangle_generic(base: &str, args: &[Type]) -> String {
     mangle_with_suffixes(base, args.iter().map(|arg| arg.get_type()))
 }
 
+/// Maps a C#/.NET-style type name to its canonical Dream primitive spelling, or returns
+/// `None` if `name` is not a recognized alias. `String`/`Int32`/... become
+/// `string`/`int`/..., so the two spellings are fully interchangeable while every
+/// downstream stage continues to see the lowercase canonical names.
+pub fn canonical_type_name(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "String" => "string",
+        "Int32" => "int",
+        "Int64" => "int",
+        "Single" => "float",
+        "Double" => "double",
+        "Boolean" => "bool",
+        "Char" => "char",
+        "Object" => "object",
+        "Void" => "void",
+        _ => return None,
+    })
+}
+
 /// Constructs the primitive `Type` named by `name`, backed by `token`, or returns `None`
 /// if `name` does not denote a primitive. Single source of truth for primitive construction.
 pub fn primitive_type(name: &str, token: SyntaxToken) -> Option<Type> {
@@ -163,7 +182,12 @@ impl Type {
     }
 
     /// Parses a Type from a given SyntaxToken
-    pub fn from_token(token: SyntaxToken) -> Result<Type, Error> {
+    pub fn from_token(mut token: SyntaxToken) -> Result<Type, Error> {
+        // Normalize C#/.NET-style type names (String, Int32, ...) to their canonical Dream
+        // primitive spelling before any further classification, so the two are interchangeable.
+        if let Some(canonical) = canonical_type_name(&token.text) {
+            token.text = canonical.to_string();
+        }
         if let Some(primitive) = primitive_type(&token.text, token.clone()) {
             return Ok(primitive);
         }

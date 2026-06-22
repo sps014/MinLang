@@ -141,6 +141,62 @@ impl<'a, 'b> Parser<'a, 'b> {
         Ok(crate::syntax::nodes::struct_node::StructDeclarationNode::new(struct_name, generic_parameters, fields, methods, is_exported))
     }
     
+    /// Parses an `extend Type { ... }` block: a set of methods attached to an existing type
+    /// (a primitive, `object`, or a struct). The body holds method declarations only (no
+    /// fields, no `init`/`drop`). The target name is normalized to its canonical primitive
+    /// spelling (e.g. `String` -> `string`).
+    pub(super) fn parse_extend_declaration(&mut self) -> Result<crate::syntax::nodes::ExtendNode<'a>, Error> {
+        self.match_token(TokenKind::ExtendToken);
+
+        let mut target = if self.current_token().kind == TokenKind::DataTypeToken {
+            self.match_token(TokenKind::DataTypeToken)
+        } else {
+            self.match_token(TokenKind::IdentifierToken)
+        };
+        if let Some(canonical) = crate::syntax::nodes::types::canonical_type_name(&target.text) {
+            target.text = canonical.to_string();
+        }
+
+        let mut generic_parameters = None;
+        if self.current_token().kind == TokenKind::SmallerThanToken {
+            self.match_token(TokenKind::SmallerThanToken);
+            let mut params = Vec::new();
+            while self.current_token().kind != TokenKind::GreaterThanToken && self.current_token().kind != TokenKind::EndOfFileToken {
+                let iter = self.current_token_index;
+                params.push(self.match_token(TokenKind::IdentifierToken));
+                if self.current_token().kind == TokenKind::CommaToken {
+                    self.match_token(TokenKind::CommaToken);
+                }
+                self.ensure_progress(iter);
+            }
+            self.match_token(TokenKind::GreaterThanToken);
+            generic_parameters = Some(params);
+        }
+
+        self.match_token(TokenKind::CurlyOpenBracketToken);
+
+        let mut methods = Vec::new();
+        while self.current_token().kind != TokenKind::CurlyCloseBracketToken && self.current_token().kind != TokenKind::EndOfFileToken {
+            let iter = self.current_token_index;
+            if self.current_token().kind == TokenKind::FunToken
+                || self.current_token().kind == TokenKind::PubToken
+                || self.current_token().kind == TokenKind::AtToken {
+                methods.push(self.parse_function()?);
+            } else {
+                let cur = self.current_token();
+                self.diagnostics.report_error(
+                    format!("'extend' blocks may only contain methods, but found {:?}", cur.kind),
+                    Some(cur.position.clone()),
+                );
+                self.next_token();
+            }
+            self.ensure_progress(iter);
+        }
+
+        self.match_token(TokenKind::CurlyCloseBracketToken);
+        Ok(crate::syntax::nodes::ExtendNode::new(target, generic_parameters, methods))
+    }
+
     /// Parses an import statement
     pub(super) fn parse_import(&mut self)->Result<ImportNode,Error>
     {

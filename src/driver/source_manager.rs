@@ -14,13 +14,16 @@ pub(crate) fn merge_prelude<'a>(
     arena: &'a Bump,
     all_functions: &mut Vec<crate::syntax::nodes::FunctionNode<'a>>,
     all_structs: &mut Vec<crate::syntax::nodes::struct_node::StructDeclarationNode<'a>>,
+    all_extends: &mut Vec<crate::syntax::nodes::ExtendNode<'a>>,
     diagnostics: &mut DiagnosticBag,
     file_contents: &mut HashMap<String, String>,
 ) -> Result<(), Error> {
-    // Each standard-collection type lives in its own prelude file.
-    const PRELUDE_FILES: [(&str, &str); 2] = [
+    // Each standard-collection type lives in its own prelude file. `primitives.dream` defines
+    // the methods that make the built-in types (int, string, ...) real, extensible classes.
+    const PRELUDE_FILES: [(&str, &str); 3] = [
         ("<std>/list.dream", include_str!("../stdlib/list.dream")),
         ("<std>/map.dream", include_str!("../stdlib/map.dream")),
+        ("<std>/primitives.dream", include_str!("../stdlib/primitives.dream")),
     ];
 
     for (prelude_name, prelude_src) in PRELUDE_FILES {
@@ -54,6 +57,14 @@ pub(crate) fn merge_prelude<'a>(
             }
             all_structs.push(struct_decl);
         }
+        for extend_decl in program.extends.iter().cloned() {
+            let mut extend_decl = extend_decl;
+            extend_decl.file_path = Some(file_tag.clone());
+            for method in extend_decl.methods.iter_mut() {
+                method.file_path = Some(file_tag.clone());
+            }
+            all_extends.push(extend_decl);
+        }
     }
 
     Ok(())
@@ -68,6 +79,7 @@ pub(crate) fn parse_file_recursive<'a>(
     all_functions: &mut Vec<crate::syntax::nodes::FunctionNode<'a>>,
     all_structs: &mut Vec<crate::syntax::nodes::struct_node::StructDeclarationNode<'a>>,
     all_enums: &mut Vec<crate::syntax::nodes::EnumDeclarationNode>,
+    all_extends: &mut Vec<crate::syntax::nodes::ExtendNode<'a>>,
     arena: &'a Bump,
     diagnostics: &mut DiagnosticBag,
     file_contents: &mut HashMap<String, String>,
@@ -128,7 +140,7 @@ pub(crate) fn parse_file_recursive<'a>(
             continue;
         }
 
-        parse_file_recursive(&import_path_str, visited, all_functions, all_structs, all_enums, arena, diagnostics, file_contents)?;
+        parse_file_recursive(&import_path_str, visited, all_functions, all_structs, all_enums, all_extends, arena, diagnostics, file_contents)?;
     }
 
     // Tag every declaration with its source file so semantic diagnostics (which run on the
@@ -149,6 +161,14 @@ pub(crate) fn parse_file_recursive<'a>(
     }
     for enum_decl in program.enums.iter().cloned() {
         all_enums.push(enum_decl);
+    }
+    for extend_decl in program.extends.iter().cloned() {
+        let mut extend_decl = extend_decl;
+        extend_decl.file_path = Some(file_tag.clone());
+        for method in extend_decl.methods.iter_mut() {
+            method.file_path = Some(file_tag.clone());
+        }
+        all_extends.push(extend_decl);
     }
 
     Ok(())

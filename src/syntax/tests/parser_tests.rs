@@ -6,7 +6,7 @@ fn parse_code<'a>(code: &str, arena: &'a bumpalo::Bump) -> (ProgramNode<'a>, Dia
     let mut diagnostics = DiagnosticBag::new(None);
     let lexer = Lexer::new(code.to_string());
     let mut parser = Parser::new(lexer, arena, &mut diagnostics);
-    let tree = parser.parse().unwrap_or_else(|_| crate::syntax::syntax_tree::SyntaxTree::new(ProgramNode::new(vec![], vec![], vec![], vec![])));
+    let tree = parser.parse().unwrap_or_else(|_| crate::syntax::syntax_tree::SyntaxTree::new(ProgramNode::new(vec![], vec![], vec![], vec![], vec![])));
     (tree.get_root().clone(), diagnostics)
 }
 

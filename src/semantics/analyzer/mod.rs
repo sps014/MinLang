@@ -188,6 +188,7 @@ impl<'a> Analyzer<'a> {
 
         self.register_enums(node, diagnostics);
         self.register_structs(node, diagnostics);
+        self.register_extensions(node, diagnostics);
         self.register_functions(node, diagnostics);
         self.analyze_function_bodies(node, &mut symbol_table_map, diagnostics)?;
         self.analyze_instantiated_generics(&mut symbol_table_map, diagnostics)?;

@@ -93,8 +93,11 @@ impl<'a> Analyzer<'a> {
     }
 
     /// Builds the implicit `this` parameter injected as the first argument of every method.
+    /// For an extension method on a primitive, `this` is the primitive's value type (e.g.
+    /// `int` -> `Type::Integer`, a stack value); for a struct it is the struct reference type.
     pub(super) fn make_this_param(struct_type_str: &str) -> ParameterNode {
-        let this_type = Type::Struct(synthetic_token(TokenKind::IdentifierToken, struct_type_str), None);
+        let token = synthetic_token(TokenKind::IdentifierToken, struct_type_str);
+        let this_type = Type::from_token(token.clone()).unwrap_or(Type::Struct(token, None));
         ParameterNode::new(synthetic_token(TokenKind::IdentifierToken, "this"), this_type)
     }
 }

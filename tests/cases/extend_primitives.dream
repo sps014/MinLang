@@ -1,0 +1,12 @@
+extend int {
+    pub fun doubled(): int { return this * 2; }
+}
+
+fun main(): void {
+    let n: Int32 = -7;
+    println(n.abs());        // 7  (prelude extend)
+    println(n.doubled());    // -14 (user extend)
+
+    let s: String = "hello";
+    println(s.length());     // 5  (prelude extend)
+}

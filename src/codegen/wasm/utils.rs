@@ -6,6 +6,7 @@ use crate::syntax::nodes::{FunctionNode, Type};
 use crate::syntax::nodes::types::{mangle_generic, mangle_with_suffixes, release_func_suffix, strip_nullable};
 use crate::syntax::text::indented_text_writer::IndentedTextWriter;
 use crate::semantics::symbol_table::SymbolTable;
+use crate::semantics::function_table::{OverloadResolution, overload_arg_compatible};
 use super::WasmGenerator;
 
 impl<'a> WasmGenerator<'a> {
@@ -18,17 +19,38 @@ impl<'a> WasmGenerator<'a> {
                 return mangle_generic(name, generics);
             }
         }
-        if self.function_table.get_function(&name.to_string()).is_err() {
-            if let Some(first_arg) = args.first() {
-                if let Ok(inferred_type) = self.infer_expression_type(first_arg, function) {
-                    let mangled = format!("{}_{}", name, inferred_type);
-                    if self.function_table.get_function(&mangled).is_ok() {
-                        return mangled;
-                    }
-                }
+        // Overloaded free functions: pick the emitted variant whose signature matches the argument
+        // types, mirroring the analyzer's selection so both agree on the callee.
+        if self.function_table.is_overloaded(name) {
+            let arg_types: Vec<String> = args.iter()
+                .map(|arg| self.infer_expression_type(arg, function).unwrap_or_default())
+                .collect();
+            let compat = |param: &str, arg: &str| overload_arg_compatible(param, arg, |t| self.enums.contains_key(t));
+            if let OverloadResolution::Unique(key) = self.function_table.select_overload(name, &arg_types, compat) {
+                return key;
             }
         }
         name.to_string()
+    }
+
+    /// Resolves a method call `obj.method(params)` to the emitted function name, selecting among
+    /// overloads by argument types (the receiver is supplied as the implicit `this` argument).
+    /// Returns the bare `{struct}_{method}` base when the method is not overloaded.
+    pub fn resolve_method_key(&self, struct_name: &str, method: &str, params: &[crate::syntax::nodes::ExpressionNode<'a>], function: &FunctionNode<'a>) -> String {
+        let base = format!("{}_{}", struct_name, method);
+        if !self.function_table.is_overloaded(&base) {
+            return base;
+        }
+        let mut arg_types = Vec::with_capacity(params.len() + 1);
+        arg_types.push(struct_name.to_string());
+        for param in params {
+            arg_types.push(self.infer_expression_type(param, function).unwrap_or_default());
+        }
+        let compat = |p: &str, a: &str| overload_arg_compatible(p, a, |t| self.enums.contains_key(t));
+        match self.function_table.select_overload(&base, &arg_types, compat) {
+            OverloadResolution::Unique(key) => key,
+            _ => base,
+        }
     }
 
     /// The monomorphized struct name a constructor call `Name(...)` / `Name<T>(...)` targets,
@@ -148,7 +170,7 @@ impl<'a> WasmGenerator<'a> {
 
     /// Returns true if the method invoked as `obj.method(...)` yields a non-void value
     /// (used to decide whether a statement-level invocation must `drop` the result).
-    pub fn method_returns_value(&self, obj: &crate::syntax::nodes::ExpressionNode<'a>, method: &crate::syntax::token::syntax_token::SyntaxToken, function: &FunctionNode<'a>) -> Result<bool, Error> {
+    pub fn method_returns_value(&self, obj: &crate::syntax::nodes::ExpressionNode<'a>, method: &crate::syntax::token::syntax_token::SyntaxToken, params: &[crate::syntax::nodes::ExpressionNode<'a>], function: &FunctionNode<'a>) -> Result<bool, Error> {
         // `Math.<fn>(...)` always yields a float.
         if let crate::syntax::nodes::ExpressionNode::Identifier(id) = obj {
             if id.text == "Math" {
@@ -156,11 +178,11 @@ impl<'a> WasmGenerator<'a> {
             }
         }
         let obj_type = self.infer_expression_type(obj, function)?;
-        let struct_name = strip_nullable(&obj_type);
+        let struct_name = strip_nullable(&obj_type).to_string();
         if method.text == "len" && (struct_name.ends_with("[]") || struct_name == "string") {
             return Ok(true);
         }
-        let mangled_name = format!("{}_{}", struct_name, method.text);
+        let mangled_name = self.resolve_method_key(&struct_name, &method.text, params, function);
         let returns_value = self.function_table.get_function(&mangled_name)
             .ok()
             .and_then(|info| info.return_type)
@@ -172,21 +194,21 @@ impl<'a> WasmGenerator<'a> {
     /// The return type name of `obj.method(...)`, or `None` for `void`/unknown. Used to decide
     /// whether a discarded statement-level method result should be released (owned reference),
     /// dropped (non-reference value), or ignored (void).
-    pub fn method_return_type(&self, obj: &crate::syntax::nodes::ExpressionNode<'a>, method: &crate::syntax::token::syntax_token::SyntaxToken, function: &FunctionNode<'a>) -> Result<Option<String>, Error> {
+    pub fn method_return_type(&self, obj: &crate::syntax::nodes::ExpressionNode<'a>, method: &crate::syntax::token::syntax_token::SyntaxToken, params: &[crate::syntax::nodes::ExpressionNode<'a>], function: &FunctionNode<'a>) -> Result<Option<String>, Error> {
         if let crate::syntax::nodes::ExpressionNode::Identifier(id) = obj {
             if id.text == "Math" {
                 return Ok(Some("float".to_string()));
             }
         }
         let obj_type = self.infer_expression_type(obj, function)?;
-        let struct_name = strip_nullable(&obj_type);
+        let struct_name = strip_nullable(&obj_type).to_string();
         if method.text == "len" && (struct_name.ends_with("[]") || struct_name == "string") {
             return Ok(Some("int".to_string()));
         }
-        if method.text == "name" && self.enums.contains_key(struct_name) {
+        if method.text == "name" && self.enums.contains_key(&struct_name) {
             return Ok(Some("string".to_string()));
         }
-        let mangled_name = format!("{}_{}", struct_name, method.text);
+        let mangled_name = self.resolve_method_key(&struct_name, &method.text, params, function);
         Ok(self.function_table.get_function(&mangled_name)
             .ok()
             .and_then(|info| info.return_type)
@@ -460,23 +482,23 @@ impl<'a> WasmGenerator<'a> {
             },
             ExpressionNode::IsExpression(_, _) => Ok("bool".to_string()),
             ExpressionNode::Ternary(_, then_e, _) => self.infer_expression_type(then_e, function),
-            ExpressionNode::MethodCall(obj, method, _, _) => {
+            ExpressionNode::MethodCall(obj, method, _, params) => {
                 if let ExpressionNode::Identifier(id) = obj {
                     if id.text == "Math" {
                         return Ok("float".to_string());
                     }
                 }
                 let obj_type = self.infer_expression_type(obj, function)?;
-                let struct_name = strip_nullable(&obj_type);
+                let struct_name = strip_nullable(&obj_type).to_string();
                 // `arr.len()` / `str.len()` always yield int.
                 if method.text == "len" && (struct_name.ends_with("[]") || struct_name == "string") {
                     return Ok("int".to_string());
                 }
                 // `EnumValue.name()` yields the variant name as a string.
-                if method.text == "name" && self.enums.contains_key(struct_name) {
+                if method.text == "name" && self.enums.contains_key(&struct_name) {
                     return Ok("string".to_string());
                 }
-                let mangled_name = format!("{}_{}", struct_name, method.text);
+                let mangled_name = self.resolve_method_key(&struct_name, &method.text, params, function);
                 if let Ok(func_info) = self.function_table.get_function(&mangled_name) {
                     if let Some(ret) = &func_info.return_type {
                         return Ok(ret.get_type());

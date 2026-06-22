@@ -84,9 +84,13 @@ impl<'a> Analyzer<'a> {
             if function.is_exported {
                 self.check_export_visibility(function, diagnostics);
             }
-            if let Err(e) = self.function_table.add_function(function.name.text.clone(), FunctionTableInfo::from(function)) {
+            if let Err(e) = self.function_table.add_overload(&function.name.text, FunctionTableInfo::from(function)) {
                 diagnostics.report_error(e.to_string(), Some(function.name.position.clone()));
             }
+        }
+        // The entry point is exported under the fixed name `main`, so it cannot be overloaded.
+        if self.function_table.is_overloaded("main") {
+            diagnostics.report_error("'main' cannot be overloaded".to_string(), None);
         }
     }
 
@@ -119,7 +123,12 @@ impl<'a> Analyzer<'a> {
             }
             diagnostics.file_path = file_path_string(&function.file_path);
             let table = self.analyze_function(function, diagnostics)?;
-            symbol_table_map.insert(function.name.text.clone(), table);
+            // Key the symbol table by the emitted name so overloaded functions (which share a
+            // base name but emit distinct mangled names) each get their own entry, matching the
+            // name codegen uses.
+            let param_types: Vec<String> = function.parameters.iter().map(|p| p.type_.get_type()).collect();
+            let key = self.function_table.resolve_emitted_name(&function.name.text, &param_types);
+            symbol_table_map.insert(key, table);
         }
         Ok(())
     }
@@ -150,7 +159,11 @@ impl<'a> Analyzer<'a> {
             self.current_generic_bindings = bindings;
             let table = self.analyze_function(method, diagnostics)?;
             self.current_generic_bindings = Vec::new();
-            symbol_table_map.insert(method.name.text.clone(), table);
+            // Key by the emitted name so overloaded methods each get a distinct entry (the
+            // parameter list includes the implicit `this`).
+            let param_types: Vec<String> = method.parameters.iter().map(|p| p.type_.get_type()).collect();
+            let key = self.function_table.resolve_emitted_name(&method.name.text, &param_types);
+            symbol_table_map.insert(key, table);
         }
         Ok(())
     }
@@ -199,12 +212,21 @@ impl<'a> Analyzer<'a> {
     }
 
     pub(super) fn register_struct_methods(&mut self, struct_decl: &StructDeclarationNode<'a>, struct_type_str: &str, bindings: &[(String, String)], diagnostics: &mut DiagnosticBag) {
-        for method in &struct_decl.methods {
+        self.register_methods_for(struct_type_str, &struct_decl.methods, bindings, diagnostics);
+    }
+
+    /// Registers a list of methods against `target_type_str` (a struct, a monomorphized generic
+    /// struct, or a primitive/`object` extended via an `extend` block). Each method is renamed to
+    /// `{target}_{method}`, given an implicit `this` parameter of the target type, queued for
+    /// codegen, and recorded in the function table. Shared by struct declarations and `extend`
+    /// blocks so they lower identically.
+    pub(super) fn register_methods_for(&mut self, target_type_str: &str, methods: &[FunctionNode<'a>], bindings: &[(String, String)], diagnostics: &mut DiagnosticBag) {
+        for method in methods {
             // Validate object-protocol overrides once (on the non-monomorphized declaration).
             if bindings.is_empty() {
                 self.validate_protocol_override(method, diagnostics);
             }
-            let mangled_name = format!("{}_{}", struct_type_str, method.name.text);
+            let mangled_name = format!("{}_{}", target_type_str, method.name.text);
 
             let mut new_method = method.clone();
             new_method.name = synthetic_token(TokenKind::IdentifierToken, &mangled_name);
@@ -213,14 +235,49 @@ impl<'a> Analyzer<'a> {
                 Self::substitute_generic_signature(&mut new_method, bindings);
             }
 
-            new_method.parameters.insert(0, Self::make_this_param(struct_type_str));
+            new_method.parameters.insert(0, Self::make_this_param(target_type_str));
 
             let method_ref = self.arena.alloc(new_method);
             self.struct_methods.push((method_ref, bindings.to_vec()));
 
-            if let Err(e) = self.function_table.add_function(mangled_name.clone(), FunctionTableInfo::from(method_ref)) {
+            if let Err(e) = self.function_table.add_overload(&mangled_name, FunctionTableInfo::from(method_ref)) {
                 diagnostics.report_error(e.to_string(), Some(method.name.position.clone()));
             }
+        }
+    }
+
+    /// Returns true if `name` is a type that an `extend` block may attach methods to: a
+    /// primitive, `object`, a registered struct, a generic struct template, or an enum.
+    pub(super) fn is_extendable_target(&self, name: &str) -> bool {
+        matches!(name, "int" | "float" | "double" | "string" | "bool" | "char" | "object")
+            || self.struct_table.get_struct(name).is_some()
+            || self.generic_structs.contains_key(name)
+            || self.enum_table.contains_key(name)
+    }
+
+    /// Pass: register every `extend Type { ... }` block's methods. Extension methods are lowered
+    /// exactly like struct methods (`{target}_{method}` + implicit `this`) but the target's
+    /// runtime representation is untouched (it is NOT added to the struct table), so primitives
+    /// keep their value/reference semantics.
+    pub(super) fn register_extensions(&mut self, node: &'a ProgramNode<'a>, diagnostics: &mut DiagnosticBag) {
+        for ext in node.extends.iter() {
+            diagnostics.file_path = file_path_string(&ext.file_path);
+            let target = ext.target.text.clone();
+            if ext.generic_parameters.is_some() {
+                diagnostics.report_error(
+                    format!("Generic 'extend' blocks are not supported yet (extending '{}')", target),
+                    Some(ext.target.position.clone()),
+                );
+                continue;
+            }
+            if !self.is_extendable_target(&target) {
+                diagnostics.report_error(
+                    format!("Cannot extend unknown type '{}'", target),
+                    Some(ext.target.position.clone()),
+                );
+                continue;
+            }
+            self.register_methods_for(&target, &ext.methods, &[], diagnostics);
         }
     }
 

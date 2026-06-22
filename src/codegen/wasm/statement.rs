@@ -88,7 +88,7 @@ impl<'a> WasmGenerator<'a> {
                 // Called purely for side effects: reclaim/discard any returned value so the WASM
                 // stack stays balanced. A user method returns an owned +1 (release it); builtin
                 // `.name()` returns a borrowed interned string and `.len()` an int (just drop).
-                let ret = self.method_return_type(obj, method, function)?;
+                let ret = self.method_return_type(obj, method, params, function)?;
                 self.build_method_call(obj, method, generic_args, params, &"void".to_string(), function, writer)?;
                 match ret {
                     Some(t) if self.is_reference_type(strip_nullable(&t)) && method.text != "name" => self.emit_release(&t, writer),

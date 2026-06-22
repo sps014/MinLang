@@ -138,6 +138,8 @@ pub enum TokenKind
     ExternToken,
     #[token("struct")]
     StructToken,
+    #[token("extend")]
+    ExtendToken,
     #[token("null")]
     NullToken,
     #[token("is")]

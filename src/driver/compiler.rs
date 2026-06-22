@@ -35,24 +35,25 @@ impl Compiler {
         let mut all_functions = vec![];
         let mut all_structs = vec![];
         let mut all_enums = vec![];
+        let mut all_extends = vec![];
         let mut file_contents = std::collections::HashMap::new();
 
         let arena = Bump::new();
         let mut diagnostics = DiagnosticBag::new(None);
 
-        parse_file_recursive(main_file_path, &mut visited_files, &mut all_functions, &mut all_structs, &mut all_enums, &arena, &mut diagnostics, &mut file_contents)?;
+        parse_file_recursive(main_file_path, &mut visited_files, &mut all_functions, &mut all_structs, &mut all_enums, &mut all_extends, &arena, &mut diagnostics, &mut file_contents)?;
 
         // The standard collections (List<T>, Map<K, V>) are embedded in the compiler and merged
         // into every program as a prelude. They are generic templates, so they emit no code unless
         // the program actually instantiates them.
-        merge_prelude(&arena, &mut all_functions, &mut all_structs, &mut diagnostics, &mut file_contents)?;
+        merge_prelude(&arena, &mut all_functions, &mut all_structs, &mut all_extends, &mut diagnostics, &mut file_contents)?;
 
         if diagnostics.has_errors() {
             diagnostics::render(&diagnostics, &file_contents);
             return Err(Error::new(ErrorKind::Other, "Syntax errors found during parsing"));
         }
 
-        let combined_program = ProgramNode::new(vec![], all_structs, all_functions, all_enums);
+        let combined_program = ProgramNode::new(vec![], all_structs, all_functions, all_enums, all_extends);
         let ast = SyntaxTree::new(combined_program);
 
         info!("finished parsing");
