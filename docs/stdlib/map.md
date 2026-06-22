@@ -1,6 +1,6 @@
-# Map\<K, V\>
+# Map<K, V>
 
-`Map<K, V>` is part of the standard library and is available in every program — no import needed. It is a hash map with average O(1) `put`, `get`, `contains`, and `remove`, and grows automatically as it fills.
+`Map<K, V>` is part of the standard library and is available in every program — no import needed. It is an open-addressing hash map with average O(1) `put`, `get`, `contains`, and `remove`, and grows automatically as it fills.
 
 ## Creating a map
 
@@ -63,6 +63,39 @@ Number of key-value pairs currently in the map.
 println(scores.size());   // 1
 ```
 
+### is_empty
+
+Returns `true` when the map holds no key-value pairs.
+
+```c
+println(scores.is_empty());   // false
+```
+
+### clear
+
+Removes every entry and resets the map to its initial empty capacity.
+
+```c
+scores.clear();
+println(scores.size());   // 0
+```
+
+### keys
+
+Returns a freshly allocated array of every stored key, in unspecified order.
+
+```c
+let ks = scores.keys();   // string[]
+```
+
+### values
+
+Returns a freshly allocated array of every stored value, in unspecified order (key-aligned with `keys()` when the map is not mutated between calls).
+
+```c
+let vs = scores.values();   // int[]
+```
+
 ## Example
 
 ```c
@@ -77,6 +110,7 @@ fun main() {
     }
     println(freq.get("the"));   // 2
     println(freq.get("cat"));   // 1
+    println(freq.size());       // 5
 }
 ```
 
@@ -86,4 +120,4 @@ Any type can be a key as long as `hash_code` and `==` work correctly for it:
 
 - **Primitives** (`int`, `float`, `bool`, `char`) — value equality, deterministic hash.
 - **`string`** — content equality (not pointer equality), stable hash.
-- **Structs** — identity equality unless `hash_code` and `to_string` are overridden; see [The object type](../language/objects.md).
+- **Structs** — identity equality and default hash unless `hash_code` and `==` are customized; see [The object type](../language/objects.md).

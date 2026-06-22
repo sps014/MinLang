@@ -50,17 +50,18 @@ Used internally by `Map<K, V>` to find buckets.
 
 ## Math
 
-Math functions live in the `Math` namespace and are called with `Math.<name>(x)`.
+Math functions live in the `Math` namespace and are called with `Math.<name>(x)`. Each function accepts one numeric argument (`int`, `float`, or `double`) and always returns `float`.
 
-| Function     | Signature          | Description     |
-|--------------|--------------------|-----------------|
-| `Math.sin`   | `(float) -> float` | Sine (radians)  |
-| `Math.cos`   | `(float) -> float` | Cosine (radians)|
-| `Math.sqrt`  | `(float) -> float` | Square root     |
-| `Math.abs`   | `(float) -> float` | Absolute value  |
+| Function    | Description      |
+|-------------|------------------|
+| `Math.sin`  | Sine (radians)   |
+| `Math.cos`  | Cosine (radians) |
+| `Math.sqrt` | Square root      |
+| `Math.abs`  | Absolute value   |
 
 ```c
 let hyp = Math.sqrt(3.0f * 3.0f + 4.0f * 4.0f);   // 5.0
+let s = Math.sin(0);                                // 0.0 (int argument coerced to float)
 ```
 
 ## len

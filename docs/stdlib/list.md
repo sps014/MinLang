@@ -1,4 +1,4 @@
-# List\<T\>
+# List<T>
 
 `List<T>` is part of the standard library and is available in every program — no import needed. It is a growable sequence of values of type `T` with O(1) random access and amortized O(1) `push`.
 
