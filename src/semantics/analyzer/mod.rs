@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use crate::syntax::nodes::{FunctionNode, Type, ProgramNode};
-use crate::syntax::nodes::types::mangle_with_suffixes;
+use crate::syntax::nodes::types::{mangle_with_suffixes, primitive_type};
 use crate::syntax::syntax_tree::SyntaxTree;
 use crate::syntax::text::line_text::LineText;
 use crate::syntax::text::text_span::TextSpan;
@@ -190,14 +190,7 @@ impl<'a> Analyzer<'a> {
     /// parameter `T` with the concrete type chosen at the call/instantiation site.
     fn concrete_type_from_str(name: &str) -> Type {
         let token = synthetic_token(TokenKind::DataTypeToken, name);
-        match name {
-            "int" => Type::Integer(token),
-            "float" => Type::Float(token),
-            "double" => Type::Double(token),
-            "string" => Type::String(token),
-            "bool" => Type::Boolean(token),
-            _ => Type::Struct(token, None),
-        }
+        primitive_type(name, token.clone()).unwrap_or(Type::Struct(token, None))
     }
 
     /// If `ty` is a struct (or nullable struct), returns its base name and the list of

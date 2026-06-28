@@ -3,6 +3,20 @@ use crate::syntax::nodes::{ProgramNode, FunctionNode, ParameterNode};
 use crate::syntax::text::indented_text_writer::IndentedTextWriter;
 use super::WasmGenerator;
 
+/// The reference count stamped into a heap block's header when it is created. Statically
+/// allocated blocks (e.g. string literals) start "live" with a single owning reference.
+const INITIAL_REF_COUNT: i32 = 1;
+
+/// Formats a 32-bit value as the four little-endian bytes of a WAT data-segment string literal
+/// (e.g. `5` -> `\05\00\00\00`), so numeric header fields can be written without hand-encoding.
+fn le_i32_bytes(value: i32) -> String {
+    value
+        .to_le_bytes()
+        .iter()
+        .map(|b| format!("\\{:02x}", b))
+        .collect()
+}
+
 impl<'a> WasmGenerator<'a> {
     /// Builds the entire WebAssembly module
     pub fn build(&mut self) -> Result<IndentedTextWriter, Error> {
@@ -339,11 +353,15 @@ impl<'a> WasmGenerator<'a> {
     /// (`size = 0`, `tag = string`, `ref_count = 1`) followed by the null-terminated bytes.
     fn write_string_data(&self, offset: usize, content: &str, writer: &mut IndentedTextWriter) {
         let header_offset = offset - super::HEAP_HEADER_SIZE;
-        // size=0, tag=5 (string), ref_count=1, all little-endian i32.
-        writer.write_line(&format!(
-            "(data (i32.const {}) \"\\00\\00\\00\\00\\05\\00\\00\\00\\01\\00\\00\\00\")",
-            header_offset
-        ));
+        // Block header: size=0, tag=string, ref_count=1, each a little-endian i32. The tag is
+        // sourced from `object::TAG_STRING` so it can never drift from the runtime's view.
+        let header = format!(
+            "{}{}{}",
+            le_i32_bytes(0),
+            le_i32_bytes(super::object::TAG_STRING),
+            le_i32_bytes(INITIAL_REF_COUNT),
+        );
+        writer.write_line(&format!("(data (i32.const {}) \"{}\")", header_offset, header));
         writer.write_line(&format!("(data (i32.const {}) \"{}\\00\")", offset, content));
     }
 

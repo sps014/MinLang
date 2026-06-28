@@ -3,7 +3,7 @@ use std::io::Error;
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::syntax::nodes::{FunctionNode, Type};
-use crate::syntax::nodes::types::{canonical_type_name, mangle_generic, mangle_with_suffixes, release_func_suffix, strip_nullable};
+use crate::syntax::nodes::types::{canonical_type_name, mangle_generic, mangle_with_suffixes, method_fn, release_func_suffix, strip_nullable, value_size_align};
 use crate::syntax::text::indented_text_writer::IndentedTextWriter;
 use crate::semantics::symbol_table::SymbolTable;
 use crate::semantics::function_table::{OverloadResolution, overload_arg_compatible};
@@ -37,7 +37,7 @@ impl<'a> WasmGenerator<'a> {
     /// overloads by argument types (the receiver is supplied as the implicit `this` argument).
     /// Returns the bare `{struct}_{method}` base when the method is not overloaded.
     pub fn resolve_method_key(&self, struct_name: &str, method: &str, params: &[crate::syntax::nodes::ExpressionNode<'a>], function: &FunctionNode<'a>) -> String {
-        let base = format!("{}_{}", struct_name, method);
+        let base = method_fn(struct_name, method);
         if !self.function_table.is_overloaded(&base) {
             return base;
         }
@@ -70,7 +70,7 @@ impl<'a> WasmGenerator<'a> {
             return None;
         }
         let type_name = canonical_type_name(&id.text).unwrap_or(id.text.as_str()).to_string();
-        let base = format!("{}_{}", type_name, method);
+        let base = method_fn(&type_name, method);
         if !(self.function_table.is_overloaded(&base) || self.function_table.get_function(&base).is_ok()) {
             return None;
         }
@@ -256,11 +256,7 @@ impl<'a> WasmGenerator<'a> {
     /// The byte size of a single element of the given (non-pointer) type.
     /// Pointers (arrays, structs, strings) and `int`/`float` are 4 bytes.
     pub fn element_size_of(type_name: &str) -> usize {
-        match type_name {
-            "bool" | "char" => 1,
-            "double" => 8,
-            _ => 4,
-        }
+        value_size_align(type_name).0
     }
 
     /// Emits a store instruction appropriate for a value of `type_name` already on the stack

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use crate::syntax::nodes::{FunctionNode, Type, ProgramNode};
 use crate::syntax::nodes::struct_node::{StructDeclarationNode, StructFieldNode};
-use crate::syntax::nodes::types::{mangle_generic, strip_array, strip_nullable};
+use crate::syntax::nodes::types::{mangle_generic, method_fn, strip_array, strip_nullable};
 use crate::syntax::text::text_span::TextSpan;
 use crate::syntax::token::token_kind::TokenKind;
 use crate::semantics::function_table::FunctionTableInfo;
@@ -261,7 +261,7 @@ impl<'a> Analyzer<'a> {
             if bindings.is_empty() {
                 self.validate_protocol_override(method, diagnostics);
             }
-            let mangled_name = format!("{}_{}", target_type_str, method.name.text);
+            let mangled_name = method_fn(target_type_str, &method.name.text);
 
             let mut new_method = method.clone();
             new_method.name = synthetic_token(TokenKind::IdentifierToken, &mangled_name);

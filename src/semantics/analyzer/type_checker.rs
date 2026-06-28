@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, Type, StatementNode};
-use crate::syntax::nodes::types::{canonical_type_name, mangle_generic, strip_nullable};
+use crate::syntax::nodes::types::{canonical_type_name, constructor_fn, json_from_json_fn, json_to_json_fn, mangle_generic, method_fn, strip_nullable};
 use crate::syntax::text::text_span::TextSpan;
 use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
@@ -241,7 +241,7 @@ impl<'a> Analyzer<'a> {
     pub(super) fn analyze_static_call(&mut self, type_name: &str, method: &SyntaxToken, params: &Vec<ExpressionNode<'a>>,
                                       parent_function: &FunctionNode<'a>, symbol_table: &Rc<RefCell<SymbolTable>>,
                                       diagnostics: &mut DiagnosticBag) -> Result<Type, ()> {
-        let base = format!("{}_{}", type_name, method.text);
+        let base = method_fn(type_name, &method.text);
 
         let mut arg_types = Vec::new();
         for param in params.iter() {
@@ -562,7 +562,7 @@ impl<'a> Analyzer<'a> {
             }
             let arg_type = self.analyze_expression(&params[0], parent_function, symbol_table, diagnostics)?;
             let struct_name = strip_nullable(&arg_type.get_type()).to_string();
-            if self.function_table.get_function(&format!("{}_to_json", struct_name)).is_err() {
+            if self.function_table.get_function(&json_to_json_fn(&struct_name)).is_err() {
                 diagnostics.report_error(
                     format!("'JSON.{}' requires a @json class, but '{}' has no derived converter", method.text, struct_name),
                     params[0].position(),
@@ -594,7 +594,7 @@ impl<'a> Analyzer<'a> {
             diagnostics.report_error(format!("'JSON.deserialize' expects a string argument, got {}", arg_type.get_type()), params[0].position());
         }
         let struct_name = strip_nullable(&target.get_type()).to_string();
-        if self.function_table.get_function(&format!("{}_from_json", struct_name)).is_err() {
+        if self.function_table.get_function(&json_from_json_fn(&struct_name)).is_err() {
             diagnostics.report_error(
                 format!("'JSON.deserialize' requires a @json class, but '{}' has no derived converter", struct_name),
                 Some(method.position.clone()),
@@ -623,7 +623,7 @@ impl<'a> Analyzer<'a> {
             }
         };
 
-        let init_name = format!("{}_constructor", struct_name);
+        let init_name = constructor_fn(&struct_name);
         let expected: Vec<String> = if let Ok(sig) = self.function_table.get_function(&init_name) {
             // `constructor` is registered as a method, so parameter 0 is the implicit `this`.
             sig.parameters.iter().skip(1).cloned().collect()
@@ -687,7 +687,7 @@ impl<'a> Analyzer<'a> {
             let is_local = (*symbol_table).as_ref().borrow().get_symbol(id).is_ok();
             if !is_local {
                 let type_name = canonical_type_name(&id.text).unwrap_or(id.text.as_str()).to_string();
-                let base = format!("{}_{}", type_name, method.text);
+                let base = method_fn(&type_name, &method.text);
                 if self.function_table.is_overloaded(&base) || self.function_table.get_function(&base).is_ok() {
                     return self.analyze_static_call(&type_name, method, params, parent_function, symbol_table, diagnostics);
                 }
@@ -742,7 +742,7 @@ impl<'a> Analyzer<'a> {
             None => strip_nullable(&obj_type.get_type()).to_string(),
         };
 
-        let mangled_name = format!("{}_{}", struct_name, method.text);
+        let mangled_name = method_fn(&struct_name, &method.text);
 
         // Analyze the explicit arguments once, then resolve the method (overloaded methods select
         // by argument types, with the receiver supplied as the implicit `this` argument).

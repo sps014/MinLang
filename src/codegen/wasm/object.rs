@@ -1,6 +1,6 @@
 use std::io::Error;
 use crate::syntax::nodes::{ExpressionNode, FunctionNode};
-use crate::syntax::nodes::types::strip_nullable;
+use crate::syntax::nodes::types::{strip_nullable, is_boxable_primitive, method_fn, PRIMITIVE_TYPE_NAMES};
 use crate::syntax::text::indented_text_writer::IndentedTextWriter;
 use crate::semantics::struct_table::StructInfo;
 use super::WasmGenerator;
@@ -18,7 +18,7 @@ pub const TAG_CHAR: i32 = 7;
 pub const TAG_STRUCT_BASE: i32 = 8;
 
 /// Element types for which array `to_string`/`hash_code` helpers are generated.
-const PRIMITIVE_ARRAY_ELEMENTS: [&str; 6] = ["int", "float", "double", "bool", "char", "string"];
+const PRIMITIVE_ARRAY_ELEMENTS: [&str; 6] = PRIMITIVE_TYPE_NAMES;
 
 /// The fixed object-protocol runtime that does not depend on the user program: boxing /
 /// unboxing of primitives, primitive hashers, and `$int_to_string` (digit extraction).
@@ -296,7 +296,7 @@ const OBJECT_RUNTIME_FIXED: &str = r#"(func $box_int (param $v i32) (result i32)
 impl<'a> WasmGenerator<'a> {
     /// Returns true for the boxable scalar primitives.
     pub fn is_primitive_name(name: &str) -> bool {
-        matches!(name, "int" | "float" | "double" | "bool" | "char")
+        is_boxable_primitive(name)
     }
 
     /// Normalizes a type name for value rendering: enum types are `i32`s at runtime, so they
@@ -404,7 +404,7 @@ impl<'a> WasmGenerator<'a> {
     /// True if the struct provides its own `@override` implementation of `method`
     /// (`to_string` / `hash_code`); otherwise a default is generated.
     fn has_protocol_override(&self, struct_name: &str, method: &str) -> bool {
-        self.function_table.get_function(&format!("{}_{}", struct_name, method)).is_ok()
+        self.function_table.get_function(&method_fn(struct_name, method)).is_ok()
     }
 
     /// Emits one `$enum_name_<Enum>(i32) -> i32` lookup per declared enum, returning the

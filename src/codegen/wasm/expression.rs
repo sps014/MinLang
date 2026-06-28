@@ -1,6 +1,6 @@
 use std::io::{Error, ErrorKind};
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, Type};
-use crate::syntax::nodes::types::{mangle_with_suffixes, strip_nullable};
+use crate::syntax::nodes::types::{constructor_fn, json_from_json_fn, json_to_json_fn, mangle_with_suffixes, strip_nullable};
 use crate::syntax::text::indented_text_writer::IndentedTextWriter;
 use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
@@ -259,7 +259,7 @@ impl<'a> WasmGenerator<'a> {
         let struct_info = self.struct_table.get_struct(struct_name)
             .ok_or_else(|| Error::new(ErrorKind::Other, format!("unknown class '{}' in constructor", struct_name)))?
             .clone();
-        let init_name = format!("{}_constructor", struct_name);
+        let init_name = constructor_fn(struct_name);
         let has_init = self.function_table.get_function(&init_name).is_ok();
 
         // Allocate, tagging the block with this struct's runtime tag, into a depth-specific local.
@@ -667,7 +667,7 @@ impl<'a> WasmGenerator<'a> {
                 let arg_type = self.infer_expression_type(&params[0], function)?;
                 let struct_name = strip_nullable(&arg_type).to_string();
                 self.build_expression(&params[0], &arg_type, function, writer)?;
-                writer.write_line(&format!("call ${}_to_json", struct_name));
+                writer.write_line(&format!("call ${}", json_to_json_fn(&struct_name)));
                 writer.write_line("call $JSON_stringify");
                 return Ok(());
             }
@@ -677,7 +677,7 @@ impl<'a> WasmGenerator<'a> {
                 let arg_type = self.infer_expression_type(&params[0], function)?;
                 let struct_name = strip_nullable(&arg_type).to_string();
                 self.build_expression(&params[0], &arg_type, function, writer)?;
-                writer.write_line(&format!("call ${}_to_json", struct_name));
+                writer.write_line(&format!("call ${}", json_to_json_fn(&struct_name)));
                 self.build_expression(&params[1], &"int".to_string(), function, writer)?;
                 writer.write_line("call $JSON_stringify_pretty");
                 return Ok(());
@@ -693,7 +693,7 @@ impl<'a> WasmGenerator<'a> {
                     .unwrap_or_default();
                 self.build_expression(&params[0], &"string".to_string(), function, writer)?;
                 writer.write_line("call $JSON_parse");
-                writer.write_line(&format!("call ${}_from_json", struct_name));
+                writer.write_line(&format!("call ${}", json_from_json_fn(&struct_name)));
                 return Ok(());
             }
         }

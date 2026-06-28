@@ -58,9 +58,64 @@ pub fn primitive_type(name: &str, token: SyntaxToken) -> Option<Type> {
     })
 }
 
+/// The scalar primitive type names that own runtime metadata (boxing, array helpers, tags).
+/// `string` is included here because it is a first-class value type even though it is a heap
+/// reference; it is excluded from [`is_boxable_primitive`]. Single source of truth for the
+/// repeated `"int" | "float" | ...` lists that were previously copied across codegen modules.
+pub const PRIMITIVE_TYPE_NAMES: [&str; 6] = ["int", "float", "double", "bool", "char", "string"];
+
+/// True for the scalar primitives that are boxed into a small tagged heap block when widened to
+/// `object` (everything except `string`, which is already a heap reference).
+pub fn is_boxable_primitive(name: &str) -> bool {
+    matches!(name, "int" | "float" | "double" | "bool" | "char")
+}
+
+/// True for the numeric primitives that participate in implicit widening (`int` -> `float` ->
+/// `double`). The single predicate behind overload viability and assignment/cast compatibility.
+pub fn is_numeric_primitive(name: &str) -> bool {
+    matches!(name, "int" | "float" | "double")
+}
+
+/// Byte size and alignment of a value of `type_name` when stored inline (array element or struct
+/// field). `bool`/`char` occupy a single byte; `double` is 8 bytes; everything else - `int`,
+/// `float`, and all heap references (strings, arrays, structs) - is a 4-byte word/pointer.
+pub fn value_size_align(type_name: &str) -> (usize, usize) {
+    match type_name {
+        "bool" | "char" => (1, 1),
+        "double" => (8, 8),
+        _ => (4, 4),
+    }
+}
+
 /// Returns the given type name with a single trailing array (`[]`) suffix removed.
 pub fn strip_array(type_name: &str) -> &str {
     type_name.strip_suffix("[]").unwrap_or(type_name)
+}
+
+/// The internal name under which a struct method is registered in the function table and
+/// emitted in codegen: the struct name and method name joined with `_` (e.g. `User_greet`).
+/// Single source of truth for method-name mangling; the derived-method helpers below build on it.
+pub fn method_fn(struct_name: &str, method_name: &str) -> String {
+    format!("{}_{}", struct_name, method_name)
+}
+
+/// The name of the compiler-derived `to_json` converter for a `@json` struct (e.g.
+/// `User_to_json`). Single source of truth for the implicit naming contract shared by the
+/// `@json` source generator, the type checker, and the codegen backend.
+pub fn json_to_json_fn(struct_name: &str) -> String {
+    method_fn(struct_name, "to_json")
+}
+
+/// The name of the compiler-derived `from_json` converter for a `@json` struct (e.g.
+/// `User_from_json`). See [`json_to_json_fn`].
+pub fn json_from_json_fn(struct_name: &str) -> String {
+    method_fn(struct_name, "from_json")
+}
+
+/// The internal name under which a struct's user-defined constructor is registered/emitted
+/// (e.g. `User_constructor`). Single source of truth for the constructor naming convention.
+pub fn constructor_fn(struct_name: &str) -> String {
+    method_fn(struct_name, "constructor")
 }
 
 /// The canonical type-name string for a `Future<T>` whose inner type is `inner`

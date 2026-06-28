@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use crate::syntax::nodes::Type;
 use crate::syntax::nodes::struct_node::StructDeclarationNode;
+use crate::syntax::nodes::types::value_size_align;
 
 #[derive(Debug, Clone)]
 pub struct StructFieldInfo {
@@ -47,11 +48,7 @@ impl StructTable {
             // (e.g. `List<JsonValue>`, `Map<string, V>`) that the flat token text would lose.
             let field_type = field.field_type.clone();
 
-            let (size, alignment) = match field_type.get_type().as_str() {
-                "bool" | "char" => (1, 1),
-                "double" => (8, 8),
-                _ => (4, 4), // int, float, and pointers (arrays, structs, strings)
-            };
+            let (size, alignment) = value_size_align(field_type.get_type().as_str());
 
             // Align current_offset
             let remainder = current_offset % alignment;
@@ -67,13 +64,9 @@ impl StructTable {
         }
 
         // Align total size to the largest alignment (usually 8 if double is present, else 4)
-        let max_alignment = fields.values().map(|f| {
-            match f.type_.get_type().as_str() {
-                "double" => 8,
-                "bool" | "char" => 1,
-                _ => 4,
-            }
-        }).max().unwrap_or(4);
+        let max_alignment = fields.values()
+            .map(|f| value_size_align(f.type_.get_type().as_str()).1)
+            .max().unwrap_or(4);
 
         let remainder = current_offset % max_alignment;
         if remainder != 0 {

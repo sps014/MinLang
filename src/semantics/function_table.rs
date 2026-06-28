@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use crate::semantics::errors::SymbolError;
 use crate::syntax::nodes::{FunctionNode, Type};
-use crate::syntax::nodes::types::strip_nullable;
+use crate::syntax::nodes::types::{is_numeric_primitive, strip_nullable};
 use crate::stdlib::StdlibFunction;
 
 /// Whether an argument of type `arg` may bind to a parameter of type `param` for the purpose of
@@ -19,8 +19,7 @@ pub fn overload_arg_compatible(param: &str, arg: &str, is_enum: impl Fn(&str) ->
     if (is_enum(param) && arg == "int") || (is_enum(arg) && param == "int") {
         return true;
     }
-    let numeric = |t: &str| matches!(t, "int" | "float" | "double");
-    if numeric(param) && numeric(arg) {
+    if is_numeric_primitive(param) && is_numeric_primitive(arg) {
         return true;
     }
     strip_nullable(param) == strip_nullable(arg)
