@@ -13,6 +13,13 @@ impl<'a> WasmGenerator<'a> {
                 self.collect_strings_from_body(method.body);
             }
         }
+        // `extend Type { ... }` blocks (including stdlib extensions like `string`/`JsRef`) also
+        // hold method bodies with their own string literals.
+        for extend_decl in &program.extends {
+            for method in &extend_decl.methods {
+                self.collect_strings_from_body(method.body);
+            }
+        }
     }
 
     /// Collects all string literals from a body of statements
@@ -159,6 +166,9 @@ impl<'a> WasmGenerator<'a> {
                 self.collect_strings_from_expr(cond);
                 self.collect_strings_from_expr(then_e);
                 self.collect_strings_from_expr(else_e);
+            }
+            ExpressionNode::Await(inner) => {
+                self.collect_strings_from_expr(inner);
             }
             _ => {}
         }

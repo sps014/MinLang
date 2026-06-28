@@ -1,0 +1,52 @@
+// `Regex` - regular expressions exposed via JS interop. Dream ships no regex engine of its own;
+// instead the host (`runtime/dream.js`) backs these helpers with JavaScript's `RegExp`, so the
+// full ECMAScript syntax and flags are available. The string-in/string-out helpers cover the
+// common cases; `compile()` hands back a live `RegExp` as a `JsRef` for stateful use
+// (`lastIndex`, `exec`, ...).
+//
+// Because this leans on the `Dream` host module, regex only runs under the JS runtime
+// (`runtime/dream.js`), not the standalone wasmtime test harness.
+
+@js("Dream", "regexTest")
+extern fun __regex_test(pattern: string, flags: string, input: string): bool;
+
+@js("Dream", "regexReplace")
+extern fun __regex_replace(pattern: string, flags: string, input: string, replacement: string): string;
+
+@js("Dream", "regexMatchJoined")
+extern fun __regex_match_joined(pattern: string, flags: string, input: string, sep: string): string;
+
+@js("Dream", "regexCompile")
+extern fun __regex_compile(pattern: string, flags: string): JsRef;
+
+class Regex {
+    pattern: string;
+    flags: string;
+
+    // True if `input` contains a match for this pattern.
+    fun test(input: string): bool {
+        return __regex_test(this.pattern, this.flags, input);
+    }
+
+    // Returns `input` with every match replaced by `replacement` (use the `g` flag for all).
+    // `replacement` supports JS `$1`/`$<name>` group references.
+    fun replace(input: string, replacement: string): string {
+        return __regex_replace(this.pattern, this.flags, input, replacement);
+    }
+
+    // Returns the matches in `input` as an array. With the `g` flag this is every match; without
+    // it, the full match followed by any capture groups. Empty when there is no match.
+    fun match(input: string): string[] {
+        let joined = __regex_match_joined(this.pattern, this.flags, input, "\n");
+        if (joined.len() == 0) {
+            return array_new<string>(0);
+        }
+        return joined.split('\n');
+    }
+
+    // Returns a live JS `RegExp` handle for stateful operations (`exec`, `lastIndex`). Remember to
+    // call `.release()` on the handle when finished.
+    fun compile(): JsRef {
+        return __regex_compile(this.pattern, this.flags);
+    }
+}

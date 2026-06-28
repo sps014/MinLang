@@ -1,0 +1,19 @@
+fun main(): void {
+    let user = JsonValue.dict();
+    user.set("name", JsonValue.from_string("Ada"));
+    user.set("age", JsonValue.from_int(36));
+    let tags = JsonValue.array();
+    tags.push(JsonValue.from_string("dev"));
+    tags.push(JsonValue.from_string("math"));
+    user.set("tags", tags);
+    user.set("active", JsonValue.boolean(true));
+
+    println(JSON.stringify(user));
+
+    let parsed = JSON.parse(JSON.stringify(user));
+    println(parsed.get("name").as_string());
+    println(to_string(parsed.get("age").as_int()));
+    println(parsed.get("tags").at(1).as_string());
+    println(to_string(parsed.get("active").as_bool()));
+    println(to_string(parsed.get("tags").size()));
+}

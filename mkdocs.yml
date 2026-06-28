@@ -70,6 +70,11 @@ nav:
     - The object Type: language/objects.md
     - Async/Await: language/async.md
     - JS Interop: language/interop.md
+    - JS References: language/references.md
+    - Callbacks: language/callbacks.md
+    - JSON: language/json.md
+    - Regex: language/regex.md
+    - Fetch: language/fetch.md
   - Standard Library:
     - Builtins: stdlib/builtins.md
     - List: stdlib/list.md

@@ -311,6 +311,12 @@ impl<'a> Analyzer<'a> {
             }
         }
 
+        // An async static method (e.g. `Fetch.get`) eagerly starts a task; the call yields a
+        // `Future<T>` that must be `await`ed, just like an async instance method or free function.
+        if store_sig.is_async {
+            return Ok(Self::future_type(store_sig.return_type.unwrap_or(Type::Void)));
+        }
+
         Ok(store_sig.return_type.unwrap_or(Type::Void))
     }
 
@@ -351,9 +357,10 @@ impl<'a> Analyzer<'a> {
             });
         }
 
-        // Async intrinsics: `sleep`, `all`, `any`, `race`. These are compiler-known (not in the
-        // function table) because their signatures are generic over `Future<T>`.
-        if matches!(name.text.as_str(), "sleep" | "all" | "any" | "race") {
+        // The async timer intrinsic `sleep` is compiler-known (not in the function table) because
+        // its signature is generic over `Future<T>`. The combinators live on the `Promise` static
+        // class (`Promise.all/any/race`), handled in `analyze_method_call`.
+        if name.text == "sleep" {
             return self.analyze_async_intrinsic(name, params, parent_function, symbol_table, diagnostics);
         }
 
@@ -547,6 +554,54 @@ impl<'a> Analyzer<'a> {
         }
     }
 
+    /// Type-checks the `@json` auto-derive entry points `JSON.serialize(x)` and
+    /// `JSON.deserialize<T>(text)`. These are compiler intrinsics: the actual conversion runs
+    /// through the per-class `to_json`/`from_json` methods generated for every `@json` class.
+    pub(super) fn analyze_json_derive_call(&mut self, method: &SyntaxToken, generic_args: &Option<Vec<Type>>,
+                                           params: &Vec<ExpressionNode<'a>>, parent_function: &FunctionNode<'a>,
+                                           symbol_table: &Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag) -> Result<Type, ()> {
+        if method.text == "serialize" {
+            if params.len() != 1 {
+                diagnostics.report_error(format!("'JSON.serialize' expects exactly 1 argument, got {}", params.len()), Some(method.position.clone()));
+                return Ok(Type::String(synthetic_token(TokenKind::DataTypeToken, "string")));
+            }
+            let arg_type = self.analyze_expression(&params[0], parent_function, symbol_table, diagnostics)?;
+            let struct_name = strip_nullable(&arg_type.get_type()).to_string();
+            if self.function_table.get_function(&format!("{}_to_json", struct_name)).is_err() {
+                diagnostics.report_error(
+                    format!("'JSON.serialize' requires a @json class, but '{}' has no derived converter", struct_name),
+                    params[0].position(),
+                );
+            }
+            return Ok(Type::String(synthetic_token(TokenKind::DataTypeToken, "string")));
+        }
+
+        // deserialize<T>(text: string): T
+        let target = match generic_args.as_ref().and_then(|g| g.first()) {
+            Some(t) => t.clone(),
+            None => {
+                diagnostics.report_error("'JSON.deserialize' requires an explicit type argument, e.g. JSON.deserialize<User>(text)".to_string(), Some(method.position.clone()));
+                return Ok(Type::Object(synthetic_token(TokenKind::DataTypeToken, "object")));
+            }
+        };
+        if params.len() != 1 {
+            diagnostics.report_error(format!("'JSON.deserialize' expects exactly 1 argument, got {}", params.len()), Some(method.position.clone()));
+            return Ok(target);
+        }
+        let arg_type = self.analyze_expression(&params[0], parent_function, symbol_table, diagnostics)?;
+        if strip_nullable(&arg_type.get_type()) != "string" {
+            diagnostics.report_error(format!("'JSON.deserialize' expects a string argument, got {}", arg_type.get_type()), params[0].position());
+        }
+        let struct_name = strip_nullable(&target.get_type()).to_string();
+        if self.function_table.get_function(&format!("{}_from_json", struct_name)).is_err() {
+            diagnostics.report_error(
+                format!("'JSON.deserialize' requires a @json class, but '{}' has no derived converter", struct_name),
+                Some(method.position.clone()),
+            );
+        }
+        Ok(target)
+    }
+
     /// Type-checks a constructor call `Struct(args)`. When the struct defines a custom `constructor`
     /// the call is checked against `init`'s parameters; otherwise it is checked positionally
     /// against the struct's fields in declaration order (the auto-generated constructor).
@@ -608,6 +663,22 @@ impl<'a> Analyzer<'a> {
         if let ExpressionNode::Identifier(id) = obj {
             if id.text == "Math" {
                 return self.analyze_math_call(method, params, parent_function, symbol_table, diagnostics);
+            }
+
+            // `Promise.all/any/race(...)`: the async combinators as static methods.
+            if id.text == "Promise" && matches!(method.text.as_str(), "all" | "any" | "race") {
+                let is_local = (*symbol_table).as_ref().borrow().get_symbol(id).is_ok();
+                if !is_local {
+                    return self.analyze_async_intrinsic(method, params, parent_function, symbol_table, diagnostics);
+                }
+            }
+
+            // `JSON.serialize(x)` / `JSON.deserialize<T>(text)`: auto-derive entry points. They are
+            // compiler intrinsics (no real signature in `json.dream`), backed by per-class
+            // `to_json`/`from_json` converters generated for every `@json` class.
+            if id.text == "JSON" && (method.text == "serialize" || method.text == "deserialize")
+                && (*symbol_table).as_ref().borrow().get_symbol(id).is_err() {
+                return self.analyze_json_derive_call(method, _generic_args, params, parent_function, symbol_table, diagnostics);
             }
 
             // `Type.method(args)`: a static-method call. The receiver names a type (not a local
@@ -731,6 +802,11 @@ impl<'a> Analyzer<'a> {
             }
         }
 
+        // Calling an `async` method is eager and yields a `Future<T>` handle (like free async
+        // functions); `await` retrieves the `T`.
+        if store_sig.is_async {
+            return Ok(Self::future_type(store_sig.return_type.unwrap_or(Type::Void)));
+        }
         Ok(store_sig.return_type.unwrap_or(Type::Void))
     }
 

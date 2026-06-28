@@ -1,0 +1,21 @@
+// Regex via JS interop. The `Regex` class (stdlib prelude) wraps JavaScript's RegExp, so the
+// full ECMAScript pattern syntax is available without Dream shipping its own engine.
+//
+//   cargo run -- sample/interop/regex.dream
+//   node sample/interop/regex.mjs sample/interop/regex.wasm
+
+fun main(): void {
+    let digits = Regex { pattern: "\\d+", flags: "g" };
+
+    if (digits.test("abc123")) {
+        println("has digits");
+    }
+
+    let cleaned = digits.replace("a1b2c3", "#");
+    println(cleaned);                          // a#b#c#
+
+    let parts = digits.match("a1b2c3");
+    println(to_string(parts.len()));           // 3
+    println(parts[0]);                         // 1
+    println(parts[2]);                         // 3
+}

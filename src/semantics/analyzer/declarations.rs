@@ -62,6 +62,16 @@ impl<'a> Analyzer<'a> {
         for struct_decl in node.structs.iter() {
             diagnostics.file_path = file_path_string(&struct_decl.file_path);
             if struct_decl.generic_parameters.is_some() {
+                // v1 restriction: async methods on generic classes are not supported (the async
+                // state machine would have to be re-generated per monomorphization).
+                for method in struct_decl.methods.iter() {
+                    if method.is_async {
+                        diagnostics.report_error(
+                            format!("Async methods are not supported on generic class '{}' (method '{}')", struct_decl.name.text, method.name.text),
+                            Some(method.name.position.clone()),
+                        );
+                    }
+                }
                 self.generic_structs.insert(struct_decl.name.text.clone(), struct_decl);
                 continue;
             }
@@ -262,7 +272,7 @@ impl<'a> Analyzer<'a> {
     /// Returns true if `name` is a type that an `extend` block may attach methods to: a
     /// primitive, `object`, a registered struct, a generic struct template, or an enum.
     pub(super) fn is_extendable_target(&self, name: &str) -> bool {
-        matches!(name, "int" | "float" | "double" | "string" | "bool" | "char" | "object")
+        matches!(name, "int" | "float" | "double" | "string" | "bool" | "char" | "object" | "JsRef")
             || self.struct_table.get_struct(name).is_some()
             || self.generic_structs.contains_key(name)
             || self.enum_table.contains_key(name)

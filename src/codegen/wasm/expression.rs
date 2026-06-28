@@ -38,8 +38,9 @@ impl<'a> WasmGenerator<'a> {
                     "to_string" if args.len() == 1 => self.build_to_string(&args[0], function, writer)?,
                     "hash_code" if args.len() == 1 => self.build_hash_code(&args[0], function, writer)?,
                     "array_new" if args.len() == 1 => self.build_array_new(generic_args, &args[0], function, writer)?,
-                    // Async intrinsics produce a `Future` handle directly.
-                    "sleep" | "all" | "any" | "race" => self.build_async_intrinsic_call(n.text.as_str(), args, function, writer)?,
+                    // The `sleep` async intrinsic produces a `Future` handle directly. The
+                    // combinators are invoked as `Promise.all/any/race` (see build_method_call).
+                    "sleep" => self.build_async_intrinsic_call(n.text.as_str(), args, function, writer)?,
                     _ => {
                         if let Some((params_decl, ret)) = self.function_typed_local(&n.text, function) {
                             self.build_indirect_call(&n.text, &params_decl, &ret, args, function, writer)?;
@@ -651,6 +652,37 @@ impl<'a> WasmGenerator<'a> {
                     }
                 }
                 writer.write_line(&format!("call ${}", method.text));
+                return Ok(());
+            }
+
+            // `Promise.all/any/race([...])`: the async combinators, lowered to the same scheduler
+            // intrinsics as the (legacy) free-function forms.
+            if id.text == "Promise" && matches!(method.text.as_str(), "all" | "any" | "race") {
+                return self.build_async_intrinsic_call(method.text.as_str(), params, function, writer);
+            }
+
+            // `JSON.serialize(x)`: `JSON.stringify(x.to_json())` for any `@json` class. Lower to a
+            // call to the auto-derived `<Struct>_to_json` instance method followed by `JSON_stringify`.
+            if id.text == "JSON" && method.text == "serialize" && params.len() == 1 {
+                let arg_type = self.infer_expression_type(&params[0], function)?;
+                let struct_name = strip_nullable(&arg_type).to_string();
+                self.build_expression(&params[0], &arg_type, function, writer)?;
+                writer.write_line(&format!("call ${}_to_json", struct_name));
+                writer.write_line("call $JSON_stringify");
+                return Ok(());
+            }
+
+            // `JSON.deserialize<T>(text)`: `T.from_json(JSON.parse(text))`. Lower to `JSON_parse`
+            // followed by the auto-derived `<T>_from_json` static method.
+            if id.text == "JSON" && method.text == "deserialize" && params.len() == 1 {
+                let struct_name = _generic_args
+                    .as_ref()
+                    .and_then(|g| g.first())
+                    .map(|t| strip_nullable(&t.get_type()).to_string())
+                    .unwrap_or_default();
+                self.build_expression(&params[0], &"string".to_string(), function, writer)?;
+                writer.write_line("call $JSON_parse");
+                writer.write_line(&format!("call ${}_from_json", struct_name));
                 return Ok(());
             }
         }

@@ -25,4 +25,92 @@ extend double {
         }
         return other;
     }
+
+    // Parses a decimal double from `text`, supporting an optional sign, a fractional part, and a
+    // `e`/`E` exponent (e.g. "-3.14", "1.5e-3"). Parsing stops at the first character that does not
+    // fit the grammar; an empty or non-numeric string yields 0.0.
+    static fun parse(text: string): double {
+        let n = text.len();
+        let i = 0;
+        let neg = false;
+        if (i < n) {
+            let c0 = char_at(text, i);
+            if (c0 == '-') {
+                neg = true;
+                i = i + 1;
+            }
+            if (c0 == '+') {
+                i = i + 1;
+            }
+        }
+        let result = 0.0d;
+        // Integer part.
+        while (i < n) {
+            let c = char_at(text, i);
+            if ((c < '0') || (c > '9')) {
+                break;
+            }
+            result = result * 10.0d + (double)((int)c - 48);
+            i = i + 1;
+        }
+        // Fractional part.
+        if (i < n) {
+            if (char_at(text, i) == '.') {
+                i = i + 1;
+                let scale = 1.0d;
+                while (i < n) {
+                    let c = char_at(text, i);
+                    if ((c < '0') || (c > '9')) {
+                        break;
+                    }
+                    scale = scale / 10.0d;
+                    result = result + (double)((int)c - 48) * scale;
+                    i = i + 1;
+                }
+            }
+        }
+        // Exponent.
+        if (i < n) {
+            let ce = char_at(text, i);
+            if ((ce == 'e') || (ce == 'E')) {
+                i = i + 1;
+                let eneg = false;
+                if (i < n) {
+                    let cs = char_at(text, i);
+                    if (cs == '-') {
+                        eneg = true;
+                        i = i + 1;
+                    }
+                    if (cs == '+') {
+                        i = i + 1;
+                    }
+                }
+                let exp = 0;
+                while (i < n) {
+                    let c = char_at(text, i);
+                    if ((c < '0') || (c > '9')) {
+                        break;
+                    }
+                    exp = exp * 10 + ((int)c - 48);
+                    i = i + 1;
+                }
+                let factor = 1.0d;
+                let k = 0;
+                while (k < exp) {
+                    factor = factor * 10.0d;
+                    k = k + 1;
+                }
+                if (eneg == true) {
+                    result = result / factor;
+                }
+                if (eneg == false) {
+                    result = result * factor;
+                }
+            }
+        }
+        if (neg == true) {
+            return 0.0d - result;
+        }
+        return result;
+    }
 }

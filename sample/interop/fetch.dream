@@ -1,0 +1,19 @@
+// JS-like fetch over Dream's extern async Promise bridge. `Fetch` and `Response` (stdlib prelude)
+// wrap the platform fetch; `await` turns the JS Promise into a Dream value.
+//
+//   cargo run -- sample/interop/fetch.dream
+//   node sample/interop/fetch.mjs sample/interop/fetch.wasm
+
+async fun main(): void {
+    // Simple text body.
+    let body = await Fetch.text("https://example.com/hello");
+    println(body);
+
+    // Richer response: status + JSON body.
+    let res = await Fetch.get("https://example.com/user");
+    println(to_string(res.status()));
+
+    let data = await res.json();
+    println(data.get("name").as_string());
+    res.release();
+}

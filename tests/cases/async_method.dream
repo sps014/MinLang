@@ -1,0 +1,22 @@
+class Worker {
+    base: int;
+
+    async fun compute(n: int): int {
+        await sleep(10);
+        return this.base + n;
+    }
+
+    async fun twice(n: int): int {
+        let once = await this.compute(n);
+        return once + once;
+    }
+}
+
+async fun main(): void {
+    let w = Worker { base: 100 };
+    let r = await w.compute(5);
+    println(to_string(r));
+
+    let t = await w.twice(1);
+    println(to_string(t));
+}

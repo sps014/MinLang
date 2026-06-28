@@ -1,0 +1,14 @@
+class Box<T> {
+    value: T;
+
+    async fun get(): T {
+        await sleep(10);
+        return this.value;
+    }
+}
+
+async fun main(): void {
+    let b = Box<int> { value: 7 };
+    let v = await b.get();
+    println(to_string(v));
+}

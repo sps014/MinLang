@@ -1,0 +1,488 @@
+// Native JSON for Dream: a kind-tagged `JsonValue` tree plus a hand-written stringifier and
+// recursive-descent parser, exposed through the `JSON` static class (`JSON.parse` /
+// `JSON.stringify`). Auto-imported into every program.
+//
+// Dream has no tagged unions, so `JsonValue` carries an `int kind` tag and a field per shape;
+// only the field matching the active kind is meaningful. Containers (`arr_val` / `obj_val`) are
+// allocated lazily and stay null for scalars.
+//
+//   let v = JSON.parse("{\"name\":\"Ada\",\"age\":36}");
+//   println(v.get("name").as_string());        // Ada
+//   println(to_string(v.get("age").as_int()));  // 36
+//   println(JSON.stringify(v));
+
+// JsonValue.kind values:
+//   0 = null, 1 = bool, 2 = number, 3 = string, 4 = array, 5 = object
+
+// Backed by plain dynamic arrays (no generic `List`/`Map` fields) so the value tree stays
+// self-contained: `items`/`count` hold array elements; `obj_keys`/`obj_vals`/`obj_count` hold
+// object entries (an insertion-ordered association list, so stringify is deterministic).
+class JsonValue {
+    kind: int;
+    bool_val: bool;
+    num_val: double;
+    str_val: string;
+    items: JsonValue[];
+    count: int;
+    obj_keys: string[];
+    obj_vals: JsonValue[];
+    obj_count: int;
+
+    // --- builders ---------------------------------------------------------------------------
+
+    static fun none(): JsonValue {
+        return _json_new(0);
+    }
+    static fun boolean(b: bool): JsonValue {
+        let v = _json_new(1);
+        v.bool_val = b;
+        return v;
+    }
+    static fun number(n: double): JsonValue {
+        let v = _json_new(2);
+        v.num_val = n;
+        return v;
+    }
+    static fun from_int(n: int): JsonValue {
+        return JsonValue.number((double)n);
+    }
+    static fun from_string(s: string): JsonValue {
+        let v = _json_new(3);
+        v.str_val = s;
+        return v;
+    }
+    // A new, empty JSON array. (`object`/`string` are reserved type names, so the object builder
+    // is named `dict`.)
+    static fun array(): JsonValue {
+        return _json_new(4);
+    }
+    static fun dict(): JsonValue {
+        return _json_new(5);
+    }
+
+    // --- inspection -------------------------------------------------------------------------
+
+    fun kind_of(): int {
+        return this.kind;
+    }
+    fun is_null(): bool {
+        return this.kind == 0;
+    }
+    fun is_array(): bool {
+        return this.kind == 4;
+    }
+    fun is_object(): bool {
+        return this.kind == 5;
+    }
+
+    // --- scalar accessors -------------------------------------------------------------------
+
+    fun as_bool(): bool {
+        return this.bool_val;
+    }
+    fun as_double(): double {
+        return this.num_val;
+    }
+    fun as_int(): int {
+        return (int)this.num_val;
+    }
+    fun as_string(): string {
+        return this.str_val;
+    }
+
+    // --- object accessors -------------------------------------------------------------------
+
+    fun _find_key(key: string): int {
+        let i = 0;
+        while (i < this.obj_count) {
+            if (this.obj_keys[i] == key) {
+                return i;
+            }
+            i = i + 1;
+        }
+        return 0 - 1;
+    }
+
+    fun has(key: string): bool {
+        return this._find_key(key) >= 0;
+    }
+    fun get(key: string): JsonValue {
+        let idx = this._find_key(key);
+        if (idx >= 0) {
+            return this.obj_vals[idx];
+        }
+        return JsonValue.none();
+    }
+    fun set(key: string, value: JsonValue): void {
+        let idx = this._find_key(key);
+        if (idx >= 0) {
+            this.obj_vals[idx] = value;
+        } else {
+            if (this.obj_count == this.obj_keys.len()) {
+                let cap = this.obj_keys.len() * 2;
+                if (cap < 4) {
+                    cap = 4;
+                }
+                let bk = array_new<string>(cap);
+                let bv = array_new<JsonValue>(cap);
+                let i = 0;
+                while (i < this.obj_count) {
+                    bk[i] = this.obj_keys[i];
+                    bv[i] = this.obj_vals[i];
+                    i = i + 1;
+                }
+                this.obj_keys = bk;
+                this.obj_vals = bv;
+            }
+            this.obj_keys[this.obj_count] = key;
+            this.obj_vals[this.obj_count] = value;
+            this.obj_count = this.obj_count + 1;
+        }
+    }
+    fun key_at(index: int): string {
+        return this.obj_keys[index];
+    }
+    fun keys(): string[] {
+        let result = array_new<string>(this.obj_count);
+        let i = 0;
+        while (i < this.obj_count) {
+            result[i] = this.obj_keys[i];
+            i = i + 1;
+        }
+        return result;
+    }
+
+    // --- array accessors --------------------------------------------------------------------
+
+    fun at(index: int): JsonValue {
+        return this.items[index];
+    }
+    fun push(value: JsonValue): void {
+        if (this.count == this.items.len()) {
+            let cap = this.items.len() * 2;
+            if (cap < 4) {
+                cap = 4;
+            }
+            let bigger = array_new<JsonValue>(cap);
+            let i = 0;
+            while (i < this.count) {
+                bigger[i] = this.items[i];
+                i = i + 1;
+            }
+            this.items = bigger;
+        }
+        this.items[this.count] = value;
+        this.count = this.count + 1;
+    }
+
+    // Element count for arrays/objects (0 for scalars).
+    fun size(): int {
+        if (this.kind == 5) {
+            return this.obj_count;
+        }
+        return this.count;
+    }
+}
+
+// Allocates a fresh JsonValue of kind `k` with empty backing arrays.
+fun _json_new(k: int): JsonValue {
+    return JsonValue {
+        kind: k,
+        bool_val: false,
+        num_val: 0.0d,
+        str_val: "",
+        items: array_new<JsonValue>(0),
+        count: 0,
+        obj_keys: array_new<string>(0),
+        obj_vals: array_new<JsonValue>(0),
+        obj_count: 0
+    };
+}
+
+// A single-character string from a char code (the runtime has no char->string builtin).
+fun _char_str(c: char): string {
+    let s = string_alloc(1);
+    string_set(s, 0, c);
+    return s;
+}
+
+// Wraps `s` in quotes, escaping the characters JSON requires.
+fun _json_escape(s: string): string {
+    let n = s.len();
+    let result = "\"";
+    let i = 0;
+    while (i < n) {
+        let c = char_at(s, i);
+        if (c == '"') {
+            result = result + "\\\"";
+        } else if (c == '\\') {
+            result = result + "\\\\";
+        } else if (c == '\n') {
+            result = result + "\\n";
+        } else if (c == '\t') {
+            result = result + "\\t";
+        } else if (c == '\r') {
+            result = result + "\\r";
+        } else {
+            result = result + _char_str(c);
+        }
+        i = i + 1;
+    }
+    result = result + "\"";
+    return result;
+}
+
+// Formats a JSON number: integral values print without a decimal point, others fall back to the
+// default double formatting.
+fun _json_number(n: double): string {
+    let i = (int)n;
+    if ((double)i == n) {
+        return to_string(i);
+    }
+    return to_string(n);
+}
+
+// Recursively serializes a JsonValue to compact JSON text.
+fun _json_stringify(v: JsonValue): string {
+    let k = v.kind;
+    if (k == 0) {
+        return "null";
+    }
+    if (k == 1) {
+        if (v.bool_val == true) {
+            return "true";
+        }
+        return "false";
+    }
+    if (k == 2) {
+        return _json_number(v.num_val);
+    }
+    if (k == 3) {
+        return _json_escape(v.str_val);
+    }
+    if (k == 4) {
+        let result = "[";
+        let i = 0;
+        while (i < v.count) {
+            if (i > 0) {
+                result = result + ",";
+            }
+            result = result + _json_stringify(v.items[i]);
+            i = i + 1;
+        }
+        result = result + "]";
+        return result;
+    }
+    if (k == 5) {
+        let result = "{";
+        let i = 0;
+        while (i < v.obj_count) {
+            if (i > 0) {
+                result = result + ",";
+            }
+            result = result + _json_escape(v.obj_keys[i]);
+            result = result + ":";
+            result = result + _json_stringify(v.obj_vals[i]);
+            i = i + 1;
+        }
+        result = result + "}";
+        return result;
+    }
+    return "null";
+}
+
+// A cursor over the input text used by the recursive-descent parser.
+class JsonParser {
+    src: string;
+    pos: int;
+    n: int;
+
+    fun skip_ws(): void {
+        let going = true;
+        while (going == true) {
+            if (this.pos >= this.n) {
+                going = false;
+            } else {
+                let c = char_at(this.src, this.pos);
+                if ((c == ' ') || (c == '\n') || (c == '\t') || (c == '\r')) {
+                    this.pos = this.pos + 1;
+                } else {
+                    going = false;
+                }
+            }
+        }
+    }
+
+    // Consumes a literal keyword (`true`/`false`/`null`) of the given length, returning `value`.
+    fun keyword(length: int, value: JsonValue): JsonValue {
+        this.pos = this.pos + length;
+        return value;
+    }
+
+    fun parse_string(): string {
+        this.pos = this.pos + 1; // opening quote
+        let result = "";
+        let going = true;
+        while (going == true) {
+            if (this.pos >= this.n) {
+                going = false;
+            } else {
+                let c = char_at(this.src, this.pos);
+                if (c == '"') {
+                    this.pos = this.pos + 1;
+                    going = false;
+                } else if (c == '\\') {
+                    this.pos = this.pos + 1;
+                    let e = char_at(this.src, this.pos);
+                    if (e == 'n') {
+                        result = result + _char_str('\n');
+                    } else if (e == 't') {
+                        result = result + _char_str('\t');
+                    } else if (e == 'r') {
+                        result = result + _char_str('\r');
+                    } else if (e == '"') {
+                        result = result + _char_str('"');
+                    } else if (e == '\\') {
+                        result = result + _char_str('\\');
+                    } else if (e == '/') {
+                        result = result + _char_str('/');
+                    } else {
+                        result = result + _char_str(e);
+                    }
+                    this.pos = this.pos + 1;
+                } else {
+                    result = result + _char_str(c);
+                    this.pos = this.pos + 1;
+                }
+            }
+        }
+        return result;
+    }
+
+    fun parse_number(): JsonValue {
+        let start = this.pos;
+        let going = true;
+        while (going == true) {
+            if (this.pos >= this.n) {
+                going = false;
+            } else {
+                let c = char_at(this.src, this.pos);
+                if (((c >= '0') && (c <= '9')) || (c == '-') || (c == '+') || (c == '.') || (c == 'e') || (c == 'E')) {
+                    this.pos = this.pos + 1;
+                } else {
+                    going = false;
+                }
+            }
+        }
+        let text = this.src.substring(start, this.pos);
+        return JsonValue.number(double.parse(text));
+    }
+
+    fun parse_array(): JsonValue {
+        let result = JsonValue.array();
+        this.pos = this.pos + 1; // '['
+        this.skip_ws();
+        if (this.pos < this.n) {
+            if (char_at(this.src, this.pos) == ']') {
+                this.pos = this.pos + 1;
+                return result;
+            }
+        }
+        let going = true;
+        while (going == true) {
+            let element = this.parse_value();
+            result.push(element);
+            this.skip_ws();
+            if (this.pos >= this.n) {
+                going = false;
+            } else {
+                let c = char_at(this.src, this.pos);
+                if (c == ',') {
+                    this.pos = this.pos + 1;
+                } else {
+                    this.pos = this.pos + 1; // ']' (or stray char)
+                    going = false;
+                }
+            }
+        }
+        return result;
+    }
+
+    fun parse_object(): JsonValue {
+        let result = JsonValue.dict();
+        this.pos = this.pos + 1; // '{'
+        this.skip_ws();
+        if (this.pos < this.n) {
+            if (char_at(this.src, this.pos) == '}') {
+                this.pos = this.pos + 1;
+                return result;
+            }
+        }
+        let going = true;
+        while (going == true) {
+            this.skip_ws();
+            let key = this.parse_string();
+            this.skip_ws();
+            if (this.pos < this.n) {
+                if (char_at(this.src, this.pos) == ':') {
+                    this.pos = this.pos + 1;
+                }
+            }
+            let value = this.parse_value();
+            result.set(key, value);
+            this.skip_ws();
+            if (this.pos >= this.n) {
+                going = false;
+            } else {
+                let c = char_at(this.src, this.pos);
+                if (c == ',') {
+                    this.pos = this.pos + 1;
+                } else {
+                    this.pos = this.pos + 1; // '}' (or stray char)
+                    going = false;
+                }
+            }
+        }
+        return result;
+    }
+
+    fun parse_value(): JsonValue {
+        this.skip_ws();
+        if (this.pos >= this.n) {
+            return JsonValue.none();
+        }
+        let c = char_at(this.src, this.pos);
+        if (c == '{') {
+            return this.parse_object();
+        }
+        if (c == '[') {
+            return this.parse_array();
+        }
+        if (c == '"') {
+            return JsonValue.from_string(this.parse_string());
+        }
+        if (c == 't') {
+            return this.keyword(4, JsonValue.boolean(true));
+        }
+        if (c == 'f') {
+            return this.keyword(5, JsonValue.boolean(false));
+        }
+        if (c == 'n') {
+            return this.keyword(4, JsonValue.none());
+        }
+        return this.parse_number();
+    }
+}
+
+// The public JSON API. `serialize`/`deserialize<T>` (the @json auto-derive surface) are recognized
+// directly by the compiler; `parse`/`stringify` are ordinary static methods defined here.
+class JSON {
+    static fun stringify(value: JsonValue): string {
+        return _json_stringify(value);
+    }
+
+    static fun parse(text: string): JsonValue {
+        let parser = JsonParser { src: text, pos: 0, n: text.len() };
+        return parser.parse_value();
+    }
+}

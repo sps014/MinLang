@@ -56,26 +56,51 @@ async fun work(id: int): int {
 }
 
 async fun main(): void {
-    let a = work(2);                 // a : Future<int>, started now
-    let b = work(3);                 // b : Future<int>, started now
-    let results = await all([a, b]); // both ran concurrently -> [4, 9]
+    let a = work(2);                         // a : Future<int>, started now
+    let b = work(3);                         // b : Future<int>, started now
+    let results = await Promise.all([a, b]); // both ran concurrently -> [4, 9]
     println(to_string(results[0]) + ", " + to_string(results[1]));
 }
 ```
 
-## Combinators
+## Combinators (`Promise`)
 
-The combinators are free functions over `Future<T>[]`:
+The combinators are static methods on the built-in `Promise` class, over `Future<T>[]`:
 
-| Function | Signature | Resolves when |
+| Method | Signature | Resolves when |
 | --- | --- | --- |
-| `all`  | `all(xs: Future<T>[]): Future<T[]>` | every future has resolved (results in order) |
-| `any`  | `any(xs: Future<T>[]): Future<T>`   | the first future resolves |
-| `race` | `race(xs: Future<T>[]): Future<T>`  | the first future settles |
+| `Promise.all`  | `Promise.all(xs: Future<T>[]): Future<T[]>` | every future has resolved (results in order) |
+| `Promise.any`  | `Promise.any(xs: Future<T>[]): Future<T>`   | the first future resolves |
+| `Promise.race` | `Promise.race(xs: Future<T>[]): Future<T>`  | the first future settles |
 
 ```ts
-let first = await any([work(10), work(20)]);
+let first = await Promise.any([work(10), work(20)]);
 ```
+
+`sleep` stays a top-level function (`sleep(ms: int): Future<void>`); only the combinators moved onto `Promise`.
+
+## Async methods
+
+`async` is not limited to free functions — class methods (instance and `static`) can be `async` too, so a type can own its own asynchronous behavior. An async method call types as `Future<T>` just like a free async call:
+
+```ts
+class Downloader {
+    url: string;
+    async fun fetch(): string {
+        let body = await Fetch.text(this.url);  // await inside a method body
+        return body;
+    }
+}
+
+async fun main(): void {
+    let d = Downloader { url: "https://example.com" };
+    let body = await d.fetch();   // d.fetch() : Future<string>
+    println(body);
+}
+```
+
+!!! note "v1 restriction"
+    Async methods are not allowed on **generic** classes (the `Future<T>` machinery is itself generic). Non-generic classes, including `static async` methods, are fully supported.
 
 ## The built-in `sleep`
 
@@ -132,7 +157,5 @@ A complete runnable example lives in [`sample/interop/async_fetch.dream`](https:
 
 ## Limitations (v1)
 
-- `await` is restricted to top-level statement positions (see above).
-- Generic `async` functions are not yet supported (the `Future<T>` type itself is generic).
 - There is no `.then()`/callback chaining and no `spawn`/channels yet.
 - References created inside an async function may leak across suspension points (a deliberate v1 simplification).

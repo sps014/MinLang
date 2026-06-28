@@ -1,0 +1,22 @@
+// Bidirectional JS callbacks.
+//
+//   cargo run -- sample/interop/callbacks.dream
+//   node sample/interop/callbacks.mjs sample/interop/callbacks.wasm
+
+// Dream -> JS: a Dream function is passed to a JS host, which calls it back N times. The runtime
+// wraps the function index (into the exported funcref table) as a JS callable automatically.
+fun on_tick(n: int): void {
+    println("tick " + to_string(n));
+}
+
+extern fun run_callback(cb: fun(int): void, times: int): void;
+
+// JS -> Dream: a JS function handed to Dream arrives as a JsRef; Dream invokes it via `.invoke1`.
+// (`js_global` and `js_string` come from the stdlib `jsref` prelude.)
+
+fun main(): void {
+    run_callback(on_tick, 3);
+
+    let logger = js_global("logger");
+    logger.invoke1(js_string("hello from Dream"));
+}

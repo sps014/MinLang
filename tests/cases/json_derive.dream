@@ -1,0 +1,40 @@
+@json
+class Address {
+    city: string;
+    zip: string;
+}
+
+@json
+class User {
+    name: string;
+    age: int;
+    active: bool;
+    address: Address;
+    tags: string[];
+    scores: int[];
+}
+
+fun main(): void {
+    let u = User {
+        name: "Ada",
+        age: 36,
+        active: true,
+        address: Address { city: "London", zip: "NW1" },
+        tags: ["dev", "math"],
+        scores: [10, 20, 30],
+    };
+
+    let text = JSON.serialize(u);
+    println(text);
+
+    let back = JSON.deserialize<User>(text);
+    println(back.name);
+    println(to_string(back.age));
+    println(to_string(back.active));
+    println(back.address.city);
+    println(back.address.zip);
+    println(back.tags[0]);
+    println(back.tags[1]);
+    println(to_string(back.scores[2]));
+    println(JSON.serialize(back));
+}

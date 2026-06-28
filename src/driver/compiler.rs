@@ -9,7 +9,7 @@ use crate::syntax::syntax_tree::SyntaxTree;
 use crate::codegen::wasm::WasmGenerator;
 use crate::codegen::CodeGenerator;
 use crate::driver::diagnostics::{self, DiagnosticBag};
-use crate::driver::source_manager::{merge_prelude, parse_file_recursive};
+use crate::driver::source_manager::{generate_json_derives, merge_prelude, parse_file_recursive};
 use crate::driver::abi::emit_wasm_and_abi;
 use crate::semantics::analyzer::Analyzer;
 
@@ -47,6 +47,10 @@ impl Compiler {
         // into every program as a prelude. They are generic templates, so they emit no code unless
         // the program actually instantiates them.
         merge_prelude(&arena, &mut all_functions, &mut all_structs, &mut all_extends, &mut diagnostics, &mut file_contents)?;
+
+        // Auto-derive `to_json`/`from_json` converters for every `@json` class (must run after
+        // all classes are collected so `@json` field cross-references resolve).
+        generate_json_derives(&arena, &all_structs, &mut all_extends, &mut diagnostics, &mut file_contents)?;
 
         if diagnostics.has_errors() {
             diagnostics::render(&diagnostics, &file_contents);

@@ -45,7 +45,7 @@ impl<'a> WasmGenerator<'a> {
             },
             StatementNode::FunctionInvocation(n, generic_args, p) => {
                 match n.text.as_str() {
-                    "sleep" | "all" | "any" | "race" => {
+                    "sleep" => {
                         // A discarded async intrinsic call: build the future and drop the handle.
                         self.build_async_intrinsic_call(n.text.as_str(), p, function, writer)?;
                         writer.write_line("drop");

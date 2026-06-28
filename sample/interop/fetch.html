@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dream Fetch Interop Demo</title>
+    <style>
+      body {
+        font-family: "Inter", system-ui, sans-serif;
+        background: #0e0e12;
+        color: #e7e7ea;
+        max-width: 720px;
+        margin: 3rem auto;
+        padding: 0 1.25rem;
+      }
+      h1 { font-weight: 700; }
+      #log {
+        background: #17171d;
+        border: 1px solid #2a2a33;
+        border-radius: 10px;
+        padding: 1rem 1.25rem;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 0.9rem;
+        white-space: pre-wrap;
+        min-height: 4rem;
+      }
+      .muted { color: #8a8a96; }
+    </style>
+  </head>
+  <body>
+    <h1>Dream <code>Fetch</code> over the Promise bridge</h1>
+    <p class="muted">
+      A Dream program that <code>await</code>s <code>Fetch.text</code> / <code>Fetch.get</code>,
+      which wrap the browser's <code>fetch</code> via the <code>Dream</code> host module. Serve this
+      folder over HTTP (e.g. <code>npx serve</code>) and open the page. Uses the real
+      <code>fetch</code>, so point the URLs at endpoints that exist (and allow CORS).
+    </p>
+    <div id="log"></div>
+
+    <script type="module">
+      import { run } from "../../runtime/dream.js";
+
+      const logEl = document.getElementById("log");
+      const append = (line) => {
+        logEl.textContent += line + "\n";
+      };
+      const origLog = console.log.bind(console);
+      console.log = (...a) => {
+        append(a.join(" "));
+        origLog(...a);
+      };
+
+      // Fetch helpers are built in to dream.js (they call the page's global `fetch`).
+      await run("fetch.wasm");
+    </script>
+  </body>
+</html>

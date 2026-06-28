@@ -124,6 +124,10 @@ fn run_test_case(ml_file: &Path) {
     }).unwrap();
 
     // 5. Instantiate and Run
+    // JS-interop externs (the `Dream` host module behind `JsRef`/regex/fetch, plus any user
+    // `@js(...)` imports) are merged in via the prelude but have no native host here. Stub every
+    // unresolved import as a trap so pure-Dream cases still instantiate; they never call them.
+    linker.define_unknown_imports_as_traps(&module).expect("Failed to stub unknown imports");
     let instance = linker.instantiate(&mut store, &module).expect("Failed to instantiate");
     let main_func = instance.get_typed_func::<(), ()>(&mut store, "main")
         .expect("Failed to get main function");

@@ -1,0 +1,10 @@
+{"name":"Ada","age":36,"active":true,"address":{"city":"London","zip":"NW1"},"tags":["dev","math"],"scores":[10,20,30]}
+Ada
+36
+true
+London
+NW1
+dev
+math
+30
+{"name":"Ada","age":36,"active":true,"address":{"city":"London","zip":"NW1"},"tags":["dev","math"],"scores":[10,20,30]}

@@ -48,6 +48,39 @@ function stripSuffix(typeName) {
 
 const isPrimitive = (t) => t === "int" || t === "float" || t === "double" || t === "bool";
 
+/** True for a Dream function type string like `fun(int,string):void`. */
+const isFunType = (t) => typeof t === "string" && t.startsWith("fun(");
+
+/** Parses `fun(p1,p2):ret` into `{ params: [...], result }`. */
+function parseFunType(typeStr) {
+  const open = typeStr.indexOf("(");
+  const close = typeStr.lastIndexOf(")");
+  const inner = typeStr.slice(open + 1, close).trim();
+  const result = typeStr.slice(close + 1).replace(/^:/, "").trim() || "void";
+  const params = inner.length ? inner.split(",").map((s) => s.trim()) : [];
+  return { params, result };
+}
+
+/** Marshals a JS value into the raw WASM value for Dream type `t` (used for callback args/results). */
+function jsToWasm(inst, t, value) {
+  const base = stripSuffix(t);
+  if (base === "string") return inst.writeString(value == null ? "" : String(value));
+  if (base === "bool") return value ? 1 : 0;
+  if (base === "JsRef") return inst.registerHandle(value);
+  if (base === "void") return 0;
+  return value == null ? 0 : value; // numeric primitive or opaque pointer
+}
+
+/** Marshals a raw WASM value back into a JS value for Dream type `t`. */
+function wasmToJs(inst, t, raw) {
+  const base = stripSuffix(t);
+  if (base === "string") return inst.readString(raw);
+  if (base === "bool") return raw !== 0;
+  if (base === "JsRef") return inst.derefHandle(raw);
+  if (base === "void") return undefined;
+  return raw;
+}
+
 /**
  * A loaded Dream module instance. Exposes the raw WASM exports plus helpers that understand
  * Dream's heap layout so you can read/write strings, arrays, lists, and structs.
@@ -57,6 +90,39 @@ export class DreamInstance {
     this.instance = instance;
     this.exports = instance.exports;
     this.memory = instance.exports.memory;
+    // JS-object handle registry backing the Dream `JsRef` type. A `JsRef` crosses the boundary
+    // as a small i32 id; the host keeps the real JS value here. Id 0 is reserved for null.
+    this._jsHandles = new Map(); // id -> JS value
+    this._jsIds = new Map(); // JS value -> id (identity for objects, value for primitives)
+    this._jsNextId = 1;
+    this._jsFreeIds = [];
+  }
+
+  /** Registers a JS value, returning its `JsRef` id (0 for null/undefined). Idempotent per value. */
+  registerHandle(value) {
+    if (value === null || value === undefined) return 0;
+    const existing = this._jsIds.get(value);
+    if (existing !== undefined) return existing;
+    const id = this._jsFreeIds.length ? this._jsFreeIds.pop() : this._jsNextId++;
+    this._jsHandles.set(id, value);
+    this._jsIds.set(value, id);
+    return id;
+  }
+
+  /** Resolves a `JsRef` id back to its JS value (null for id 0 / unknown). */
+  derefHandle(id) {
+    if (!id) return null;
+    return this._jsHandles.has(id) ? this._jsHandles.get(id) : null;
+  }
+
+  /** Releases the handle for `value` so its id can be reused and the JS value can be collected. */
+  releaseValue(value) {
+    if (value === null || value === undefined) return;
+    const id = this._jsIds.get(value);
+    if (id === undefined) return;
+    this._jsHandles.delete(id);
+    this._jsIds.delete(value);
+    this._jsFreeIds.push(id);
   }
 
   /** A fresh DataView over current memory (memory may grow, so do not cache the buffer). */
@@ -171,14 +237,25 @@ export class DreamInstance {
   }
 
   /**
-   * Reserved for JS -> Dream callbacks (phase 2). Passing a Dream function to JS so JS can
-   * invoke it requires a WASM funcref table + `call_indirect` and an exported indirect function
-   * table, which the compiler does not yet emit. Calling this today throws.
+   * Wraps a Dream function value (an `i32` index into the exported `__indirect_function_table`)
+   * as a JS callable, so a Dream function passed to a `fun(...)`-typed extern parameter can be
+   * invoked by the host. `typeStr` is the Dream function type (e.g. `fun(int):void`) used to
+   * marshal arguments in and the result out.
    */
-  callback(_handle) {
-    throw new Error(
-      "Dream -> JS callbacks are not yet supported (phase 2: requires an exported funcref table)"
-    );
+  callback(index, typeStr = "fun():void") {
+    if (index < 0) return null;
+    const table = this.exports.__indirect_function_table;
+    if (!table) throw new Error("module does not export its function table; cannot build a callback");
+    const fn = table.get(index);
+    if (typeof fn !== "function") {
+      throw new Error(`no Dream function at table index ${index}`);
+    }
+    const { params, result } = parseFunType(typeStr);
+    return (...jsArgs) => {
+      const raw = params.map((p, i) => jsToWasm(this, p, jsArgs[i]));
+      const out = fn(...raw);
+      return wasmToJs(this, result, out);
+    };
   }
 
   /** Calls the exported `main`, if present. Returns its result (if any). */
@@ -194,8 +271,11 @@ export class DreamInstance {
 function marshalArgs(inst, params, rawArgs) {
   if (!params) return rawArgs;
   return rawArgs.map((arg, i) => {
-    const t = params[i] ? stripSuffix(params[i]) : "int";
+    const rawType = params[i] || "int";
+    if (isFunType(rawType)) return inst.callback(arg, rawType); // Dream fn index -> JS callable
+    const t = stripSuffix(rawType);
     if (t === "string") return inst.readString(arg);
+    if (t === "JsRef") return inst.derefHandle(arg); // i32 handle id -> live JS value
     if (t.endsWith("[]")) return inst.readArray(arg, t.slice(0, -2));
     if (t === "bool") return arg !== 0;
     return arg; // numeric primitive or opaque pointer
@@ -206,6 +286,7 @@ function marshalArgs(inst, params, rawArgs) {
 function marshalResult(inst, result, ret) {
   if (result === "string") return inst.writeString(ret == null ? "" : String(ret));
   if (result === "bool") return ret ? 1 : 0;
+  if (result === "JsRef") return inst.registerHandle(ret); // live JS value -> i32 handle id
   if (result === "void" || result == null) return ret == null ? 0 : ret;
   return ret;
 }
@@ -267,6 +348,57 @@ function resolveGlobal(module, field) {
   const owner = globalThis[module];
   const fn = owner && owner[field];
   return typeof fn === "function" ? fn.bind(owner) : undefined;
+}
+
+/**
+ * The built-in `Dream` host module backing the stdlib interop layer (`JsRef`, regex, fetch).
+ * These run *after* argument marshaling, so a `JsRef` parameter arrives as the live JS value and
+ * a `JsRef`/`string`/number result is marshaled back automatically. Only `jsRelease` needs the
+ * instance, to drop the handle for the value it was given.
+ */
+function defaultDreamModule(getInstance) {
+  const prop = (target, name) => (target == null ? undefined : target[name]);
+  return {
+    // Value/handle constructors.
+    jsGlobal: (name) => globalThis[name],
+    jsString: (value) => value,
+    jsInt: (value) => value,
+    jsDouble: (value) => value,
+    jsBool: (value) => value,
+    // Property reads (coerced to the requested primitive, or another handle).
+    jsGetProp: (target, name) => prop(target, name),
+    jsGetString: (target, name) => { const v = prop(target, name); return v == null ? "" : String(v); },
+    jsGetInt: (target, name) => { const v = prop(target, name); return v == null ? 0 : (Number(v) | 0); },
+    jsGetDouble: (target, name) => { const v = prop(target, name); return v == null ? 0 : Number(v); },
+    jsGetBool: (target, name) => !!prop(target, name),
+    jsSetProp: (target, name, value) => { if (target != null) target[name] = value; },
+    // Method invocation with 0/1/2 reference arguments.
+    jsCall0: (target, name) => target[name](),
+    jsCall1: (target, name, a) => target[name](a),
+    jsCall2: (target, name, a, b) => target[name](a, b),
+    // Misc.
+    jsToString: (target) => (target == null ? "null" : String(target)),
+    jsIsNull: (target) => target === null || target === undefined,
+    jsRelease: (target) => getInstance().releaseValue(target),
+    // Invoke a JS function held as a JsRef (a JS -> Dream callback that Dream calls back).
+    jsInvoke0: (fn) => fn(),
+    jsInvoke1: (fn, a) => fn(a),
+    jsInvoke2: (fn, a, b) => fn(a, b),
+    // Regex helpers (string-in/string-out; see src/stdlib/regex.dream).
+    regexTest: (pattern, flags, input) => new RegExp(pattern, flags).test(input),
+    regexReplace: (pattern, flags, input, replacement) =>
+      input.replace(new RegExp(pattern, flags), replacement),
+    regexMatchJoined: (pattern, flags, input, sep) => {
+      const m = input.match(new RegExp(pattern, flags));
+      return m ? Array.from(m).join(sep) : "";
+    },
+    regexCompile: (pattern, flags) => new RegExp(pattern, flags),
+    // Fetch helpers (see src/stdlib/fetch.dream). Return Promises; bridged via extern async.
+    fetchText: (url) => fetch(url).then((r) => r.text()),
+    fetch: (url) => fetch(url),
+    // Reads the body of a `Response` handle as text (Promise; bridged via extern async).
+    responseText: (res) => res.text(),
+  };
 }
 
 /** Default `env` builtins every Dream module imports (mirrors src/.../wasm_runner.rs). */
@@ -344,6 +476,9 @@ export async function load(source, options = {}) {
   const sigByName = new Map();
   if (abi) for (const e of abi.externs) sigByName.set(e.name, e);
 
+  // Built-in `Dream` host module (JsRef / regex / fetch helpers). User-supplied imports still win.
+  const builtinDream = defaultDreamModule(getInstance);
+
   const wrapFor = (fn, sig) =>
     sig && sig.async ? wrapAsyncImport(getInstance, fn, sig) : wrapImport(getInstance, fn, sig);
 
@@ -362,7 +497,9 @@ export async function load(source, options = {}) {
     for (const e of abi.externs) {
       const bucket = (importObject[e.module] ||= {});
       if (bucket[e.field]) continue; // already provided by the user
-      const resolved = resolveGlobal(e.module, e.field);
+      const resolved = (e.module === "Dream" && builtinDream[e.field])
+        ? builtinDream[e.field]
+        : resolveGlobal(e.module, e.field);
       bucket[e.field] = resolved
         ? wrapFor(resolved, e)
         : () => {

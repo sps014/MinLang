@@ -105,29 +105,22 @@ impl<'a, 'b> Parser<'a, 'b> {
             let is_ctor_dtor = self.current_token().kind == TokenKind::IdentifierToken
                 && matches!(self.current_token().text.as_str(), "constructor" | "del")
                 && self.peek_token(1).kind == TokenKind::OpenParenthesisToken;
-            if self.current_token().kind == TokenKind::FunToken || self.current_token().kind == TokenKind::ExportToken || self.current_token().kind == TokenKind::AtToken || self.current_token().kind == TokenKind::StaticToken || is_ctor_dtor {
+            if self.current_token().kind == TokenKind::FunToken || self.current_token().kind == TokenKind::ExportToken || self.current_token().kind == TokenKind::AtToken || self.current_token().kind == TokenKind::StaticToken || self.current_token().kind == TokenKind::AsyncToken || is_ctor_dtor {
                 methods.push(self.parse_function()?);
             } else {
                 let field_name = self.match_token(TokenKind::IdentifierToken);
                 self.match_token(TokenKind::ColonToken);
-                
-                let mut field_type_token = if self.current_token().kind == TokenKind::DataTypeToken {
-                    self.match_token(TokenKind::DataTypeToken)
-                } else {
-                    self.match_token(TokenKind::IdentifierToken)
-                };
-                
-                while self.current_token().kind == TokenKind::OpenBracketToken {
-                    self.match_token(TokenKind::OpenBracketToken);
-                    self.match_token(TokenKind::CloseBracketToken);
-                    field_type_token.text.push_str("[]");
-                }
-                
-                if self.current_token().kind == TokenKind::QuestionMarkToken {
-                    self.match_token(TokenKind::QuestionMarkToken);
-                    field_type_token.text.push_str("?");
-                }
-                
+
+                // Parse the full type (supporting generic args like `Map<string, JsonValue>`,
+                // arrays, and nullable suffixes) and store its canonical spelling on the field.
+                let type_position = self.current_token().position.clone();
+                let parsed_type = self.parse_type()?;
+                let field_type_token = crate::syntax::token::syntax_token::SyntaxToken::new(
+                    TokenKind::IdentifierToken,
+                    type_position,
+                    parsed_type.get_type(),
+                );
+
                 self.match_token(TokenKind::SemicolonToken);
                 fields.push(crate::syntax::nodes::struct_node::StructFieldNode {
                     name: field_name,
@@ -181,7 +174,8 @@ impl<'a, 'b> Parser<'a, 'b> {
             if self.current_token().kind == TokenKind::FunToken
                 || self.current_token().kind == TokenKind::ExportToken
                 || self.current_token().kind == TokenKind::AtToken
-                || self.current_token().kind == TokenKind::StaticToken {
+                || self.current_token().kind == TokenKind::StaticToken
+                || self.current_token().kind == TokenKind::AsyncToken {
                 methods.push(self.parse_function()?);
             } else {
                 let cur = self.current_token();
@@ -343,6 +337,12 @@ impl<'a, 'b> Parser<'a, 'b> {
         if self.current_token().kind == TokenKind::StaticToken {
             self.match_token(TokenKind::StaticToken);
             is_static = true;
+        }
+
+        // `static async fun ...`: allow `async` to follow `static` as well as precede it.
+        if self.current_token().kind == TokenKind::AsyncToken {
+            self.match_token(TokenKind::AsyncToken);
+            is_async = true;
         }
 
         // Constructor (`constructor`) / destructor (`del`) declarations omit the `fun` keyword and

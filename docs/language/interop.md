@@ -16,6 +16,24 @@ fun main(): void {
 
 By default the import comes from the `env` module under the function's own name. You call it like any other function.
 
+## `extern` vs. "JS interop"
+
+There is exactly **one** interop mechanism in Dream, so the distinction is conceptual, not two competing features:
+
+- **`extern fun`** is the *language-side declaration*: a function with a signature but no body. The compiler lowers it to a WebAssembly `(import "module" "field" ...)` and records it in the auto-generated `*.abi.json`.
+- **`@js("module", "field")`** is just an *attribute on an `extern`* that remaps the import module/field. Without it, the import defaults to module `env`, field = the function name.
+- **The runtime** (`runtime/dream.js`) is the *host-side wiring*: it reads the ABI, marshals values, auto-binds externs to JS globals, and adds a Promise bridge for `extern async fun`.
+
+So `extern` = "this function lives in JS", `@js` = "here's exactly which JS field", and `dream.js` = "here's how values cross the boundary." There is no separate `js`/`eval`/inline-JS path.
+
+```mermaid
+flowchart LR
+  ext["extern fun + @js(...)"] --> imp["WASM (import mod field)"]
+  imp --> abi["*.abi.json entry"]
+  abi --> rt["runtime/dream.js marshals + binds"]
+  rt --> jsfn["JS implementation / global"]
+```
+
 ## Remapping the import name
 
 Use the `@js(module, name)` attribute to control which import module and field the extern binds to:
@@ -96,11 +114,18 @@ mod.readStruct(ptr, [         // class by field schema (declaration order)
 
 To hand a string back to Dream from a JS implementation, the runtime calls the exported `malloc` for you (or you can call `mod.writeString(str)` directly).
 
-## References and callbacks (planned)
+## JavaScript object references
 
-Reference types cross the boundary as opaque `i32` pointers and are read with the helpers above; there is no general "JavaScript object into Dream" path yet, since Dream's only dynamic type is `object` (a boxed primitive or class).
+A real JavaScript object (a `RegExp`, a fetch `Response`, a DOM node, ...) can now cross into Dream as an opaque [`JsRef`](references.md) handle, instead of being flattened to a string. See **[References](references.md)** for the full `JsRef` API.
 
-Passing a function as an argument is also not supported yet:
+## Callbacks
 
-- A Dream function handed to JavaScript so JS can call it back requires an exported WebAssembly `funcref` table and `call_indirect`. The runtime reserves `mod.callback(handle)` for this and throws until the feature lands.
-- A JavaScript function passed into a Dream `extern` parameter cannot be expressed today, because Dream has no function/closure type.
+Functions cross the boundary in both directions — pass a Dream `fun(...)` to JavaScript, or hand a JS function into a Dream `extern` parameter. See **[Callbacks](callbacks.md)**.
+
+## Built on interop
+
+Three standard-library features are pure interop wrappers built on the pieces above, so they are good worked examples:
+
+- **[JSON](json.md)** — native parse/stringify plus `@json` auto-derive (no interop needed, but pairs with fetch).
+- **[Regex](regex.md)** — JavaScript `RegExp` exposed through the `Regex` class.
+- **[Fetch](fetch.md)** — a JS-like HTTP client over `extern async fun` + the Promise bridge.

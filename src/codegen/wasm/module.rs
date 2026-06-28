@@ -108,6 +108,21 @@ impl<'a> WasmGenerator<'a> {
             poll_refs.push(format!("$poll_{}", emitted));
             self.ctx.has_async = true;
         }
+        // Async class/extension methods also need a poll slot (resolved under their mangled
+        // `Type_method` key, parameter list including the implicit `this`).
+        for (method, _bindings) in self.struct_methods.iter() {
+            if !method.is_async || method.is_extern {
+                continue;
+            }
+            let emitted = self.function_table.resolve_emitted_name(&method.name.text, &Self::func_param_types(method));
+            if self.ctx.poll_indices.contains_key(&emitted) {
+                continue;
+            }
+            let idx = indexed_functions.len() + poll_refs.len();
+            self.ctx.poll_indices.insert(emitted.clone(), idx);
+            poll_refs.push(format!("$poll_{}", emitted));
+            self.ctx.has_async = true;
+        }
         let total_table = indexed_functions.len() + poll_refs.len();
         if total_table > 0 {
             writer.write_line(&format!("(table $fn_table {} funcref)", total_table));
@@ -161,7 +176,11 @@ impl<'a> WasmGenerator<'a> {
             // Overloaded methods are emitted under their signature-mangled key (the parameter
             // list includes the implicit `this`, matching how they were registered).
             self.ctx.current_mangled_name = Some(self.function_table.resolve_emitted_name(&method.name.text, &Self::func_param_types(method)));
-            self.build_function(method, writer)?;
+            if method.is_async {
+                self.build_async_function(method, writer)?;
+            } else {
+                self.build_function(method, writer)?;
+            }
             self.ctx.current_mangled_name = None;
             self.ctx.current_generic_bindings.clear();
         }
@@ -231,6 +250,11 @@ impl<'a> WasmGenerator<'a> {
             writer.write_line("(export \"__dream_run_loop\" (func $dream_run_loop))");
             writer.write_line("(export \"__dream_resolve\" (func $dream_resolve))");
             writer.write_line("(export \"__dream_new_future\" (func $dream_new_future))");
+        }
+        // Export the indirect function table so the JS runtime can invoke a Dream function passed
+        // to a `fun(...)`-typed extern parameter (a Dream -> JS callback), via `table.get(idx)`.
+        if !self.ctx.function_indices.is_empty() || !self.ctx.poll_indices.is_empty() {
+            writer.write_line("(export \"__indirect_function_table\" (table $fn_table))");
         }
         for i in program.functions.iter() {
             if i.is_extern {

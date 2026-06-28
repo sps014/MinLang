@@ -1,0 +1,9 @@
+fun main(): void {
+    let v = JSON.parse("{\"a\":{\"b\":[1,2,3]},\"s\":\"hi\\nthere\",\"n\":-2.5,\"ok\":false}");
+    println(to_string(v.get("a").get("b").at(2).as_int()));
+    println(to_string(v.get("a").get("b").size()));
+    println(to_string(v.get("n").as_double()));
+    println(to_string(v.get("ok").as_bool()));
+    println(to_string(v.get("missing").is_null()));
+    println(JSON.stringify(v.get("s")));
+}

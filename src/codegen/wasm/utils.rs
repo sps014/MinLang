@@ -524,10 +524,20 @@ impl<'a> WasmGenerator<'a> {
             },
             ExpressionNode::IsExpression(_, _) => Ok("bool".to_string()),
             ExpressionNode::Ternary(_, then_e, _) => self.infer_expression_type(then_e, function),
-            ExpressionNode::MethodCall(obj, method, _, params) => {
+            ExpressionNode::MethodCall(obj, method, generic_args, params) => {
                 if let ExpressionNode::Identifier(id) = obj {
                     if id.text == "Math" {
                         return Ok("float".to_string());
+                    }
+                    // `JSON.serialize(x): string` and `JSON.deserialize<T>(text): T` intrinsics.
+                    if id.text == "JSON" && method.text == "serialize" {
+                        return Ok("string".to_string());
+                    }
+                    if id.text == "JSON" && method.text == "deserialize" {
+                        return Ok(generic_args.as_ref()
+                            .and_then(|g| g.first())
+                            .map(|t| self.resolve_type(&t.get_type()))
+                            .unwrap_or_else(|| "object".to_string()));
                     }
                 }
                 if let Some(key) = self.resolve_static_call(obj, &method.text, params, function) {
