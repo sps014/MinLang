@@ -22,7 +22,7 @@ const PRIMITIVE_ARRAY_ELEMENTS: [&str; 6] = PRIMITIVE_TYPE_NAMES;
 
 /// The fixed object-protocol runtime that does not depend on the user program: boxing /
 /// unboxing of primitives, primitive hashers, and `$int_to_string` (digit extraction).
-const OBJECT_RUNTIME_FIXED: &str = include_str!("runtime/object_fixed.wat");
+const OBJECT_RUNTIME_FIXED: &str = include_str!("runtime/object.wat");
 
 impl<'a> WasmGenerator<'a> {
     /// Returns true for the boxable scalar primitives.
