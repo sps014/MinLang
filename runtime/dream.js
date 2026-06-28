@@ -290,11 +290,16 @@ function defaultEnv(getInstance, options) {
   };
 }
 
+/** True when running under Node (vs. a browser), used to pick the byte-loading strategy. */
+const isNode = typeof process !== "undefined" && !!(process.versions && process.versions.node);
+
 /** Fetches `.wasm`/`.abi.json` bytes from a URL or local file path, in browser or Node. */
 async function fetchBytes(source) {
   if (source instanceof ArrayBuffer) return new Uint8Array(source);
   if (source instanceof Uint8Array) return source;
-  if (typeof fetch === "function" && /^(https?:|file:|\/|\.)/.test(source) && typeof window !== "undefined") {
+  // In a browser, always go through `fetch` - a bare relative path like "app.wasm" is a valid
+  // URL there and must not fall through to the Node-only `fs` branch.
+  if (!isNode && typeof fetch === "function") {
     const res = await fetch(source);
     if (!res.ok) throw new Error(`failed to fetch ${source}: ${res.status}`);
     return new Uint8Array(await res.arrayBuffer());
