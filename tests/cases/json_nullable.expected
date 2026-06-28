@@ -1,0 +1,8 @@
+{"name":"Ada","nickname":"Countess","address":{"city":"London","zip":"NW1"},"age":36}
+Countess
+false
+{"name":"Bob","nickname":null,"address":null,"age":20}
+<none>
+true
+<none>
+true

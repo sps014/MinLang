@@ -32,6 +32,7 @@ user.set("tags", tags);
 | `at(index): JsonValue` | array element by index |
 | `set(key, v) / push(v)` | mutate an object / array |
 | `size(): int` | array length |
+| `is_null(): bool` | true for `null` (and for missing keys, since `get` returns `null`) |
 
 ## `JSON.parse` / `JSON.stringify`
 
@@ -45,11 +46,25 @@ println(v.get("name").as_string());          // Ada
 println(to_string(v.get("age").as_int()));   // 36
 ```
 
-`JSON.parse` is a recursive-descent parser; `JSON.stringify` walks the value and escapes strings.
+`JSON.parse` is a recursive-descent parser; `JSON.stringify` walks the value and escapes strings. JSON `null` parses to a `JsonValue` whose `is_null()` is `true`; a missing object key also reads back as `null` (`get` never returns a dangling reference).
+
+### Pretty-printing
+
+`JSON.stringify` is compact. To configure the output formatting, use `JSON.stringify_pretty(value, indent)`, which inserts newlines and `indent` spaces per nesting level. Passing `0` falls back to compact output.
+
+```ts
+println(JSON.stringify_pretty(v, 2));
+// {
+//   "name": "Ada",
+//   "tags": [
+//     "dev"
+//   ]
+// }
+```
 
 ## Auto-derive with `@json`
 
-Marking a class `@json` makes the compiler generate `to_json` / `from_json` converters for it, so the class round-trips with no boilerplate. Fields may be primitives, `string`, other `@json` classes, and arrays of those.
+Marking a class `@json` makes the compiler generate `to_json` / `from_json` converters for it, so the class round-trips with no boilerplate. Fields may be primitives, `string`, other `@json` classes, arrays of those, and **nullable `string?` / nullable `@json` classes**.
 
 ```ts
 @json
@@ -72,7 +87,23 @@ fun main(): void {
 ```
 
 - `JSON.serialize(x): string` — stringifies any `@json` value.
+- `JSON.serialize_pretty(x, indent): string` — like `serialize`, but pretty-printed with `indent` spaces per level.
 - `JSON.deserialize<T>(text): T` — parses `text` and reconstructs a `T`.
 
+### Nullable fields
+
+A nullable field (`string?` or a nullable `@json` class) maps directly to JSON `null`:
+
+```ts
+@json
+class Profile { name: string; nickname: string?; address: Address?; }
+
+// nickname == null  ->  "nickname":null
+// "nickname":null   ->  nickname == null
+// a missing key     ->  the field is null too
+```
+
+On serialize, a `null` field is written as `null`; otherwise the inner value is converted as usual. On deserialize, a JSON `null` *or* a missing key produces a `null` field.
+
 !!! note "v1 limits"
-    `@json` classes must be non-generic, and their fields are limited to primitives, `string`, arrays of those, and other `@json` classes. Calling `JSON.serialize`/`deserialize` on a type without a derived converter is a compile-time error.
+    `@json` classes must be non-generic. Their fields are limited to primitives, `string`, arrays of those, other `@json` classes, and nullable `string?` / nullable `@json` classes (nullable arrays are not supported). Calling `JSON.serialize`/`deserialize` on a type without a derived converter is a compile-time error.

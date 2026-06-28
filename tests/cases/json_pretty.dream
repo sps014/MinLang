@@ -1,0 +1,21 @@
+@json
+class Address { city: string; zip: string; }
+
+@json
+class User { name: string; age: int; address: Address; tags: string[]; }
+
+fun main(): void {
+    let u = User {
+        name: "Ada", age: 36,
+        address: Address { city: "London", zip: "NW1" },
+        tags: ["dev", "math"],
+    };
+
+    println(JSON.serialize_pretty(u, 2));
+
+    let v = JSON.parse("{\"a\":[1,2],\"b\":{\"c\":true},\"d\":[]}");
+    println(JSON.stringify_pretty(v, 4));
+
+    // indent 0 falls back to compact output.
+    println(JSON.stringify_pretty(v, 0));
+}

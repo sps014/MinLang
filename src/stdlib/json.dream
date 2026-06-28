@@ -250,6 +250,61 @@ fun _json_stringify(v: JsonValue): string {
     return "null";
 }
 
+// A string of `n` spaces, used to indent pretty-printed output.
+fun _json_spaces(n: int): string {
+    let s = "";
+    let i = 0;
+    while (i < n) {
+        s = s + " ";
+        i = i + 1;
+    }
+    return s;
+}
+
+// Recursively serializes a JsonValue with newlines and `indent` spaces of nesting per level.
+// `depth` is the current nesting level (0 at the root). Scalars render exactly as in compact mode;
+// empty arrays/objects stay on one line (`[]` / `{}`).
+fun _json_stringify_pretty(v: JsonValue, indent: int, depth: int): string {
+    let k = v.kind;
+    if (k == 4) {
+        if (v.items.size() == 0) {
+            return "[]";
+        }
+        let pad = _json_spaces(indent * (depth + 1));
+        let pad_end = _json_spaces(indent * depth);
+        let result = "[\n";
+        let i = 0;
+        while (i < v.items.size()) {
+            if (i > 0) {
+                result = result + ",\n";
+            }
+            result = result + pad + _json_stringify_pretty(v.items.get(i), indent, depth + 1);
+            i = i + 1;
+        }
+        result = result + "\n" + pad_end + "]";
+        return result;
+    }
+    if (k == 5) {
+        if (v.obj_keys.size() == 0) {
+            return "{}";
+        }
+        let pad = _json_spaces(indent * (depth + 1));
+        let pad_end = _json_spaces(indent * depth);
+        let result = "{\n";
+        let i = 0;
+        while (i < v.obj_keys.size()) {
+            if (i > 0) {
+                result = result + ",\n";
+            }
+            result = result + pad + _json_escape(v.obj_keys.get(i)) + ": " + _json_stringify_pretty(v.obj_vals.get(i), indent, depth + 1);
+            i = i + 1;
+        }
+        result = result + "\n" + pad_end + "}";
+        return result;
+    }
+    return _json_stringify(v);
+}
+
 // A cursor over the input text used by the recursive-descent parser.
 class JsonParser {
     src: string;
@@ -438,6 +493,15 @@ class JsonParser {
 class JSON {
     static fun stringify(value: JsonValue): string {
         return _json_stringify(value);
+    }
+
+    // Pretty-prints `value` with newlines and `indent` spaces per nesting level (e.g. 2 or 4).
+    // Pass 0 to fall back to compact output.
+    static fun stringify_pretty(value: JsonValue, indent: int): string {
+        if (indent <= 0) {
+            return _json_stringify(value);
+        }
+        return _json_stringify_pretty(value, indent, 0);
     }
 
     static fun parse(text: string): JsonValue {

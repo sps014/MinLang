@@ -530,7 +530,7 @@ impl<'a> WasmGenerator<'a> {
                         return Ok("float".to_string());
                     }
                     // `JSON.serialize(x): string` and `JSON.deserialize<T>(text): T` intrinsics.
-                    if id.text == "JSON" && method.text == "serialize" {
+                    if id.text == "JSON" && (method.text == "serialize" || method.text == "serialize_pretty") {
                         return Ok("string".to_string());
                     }
                     if id.text == "JSON" && method.text == "deserialize" {

@@ -672,6 +672,17 @@ impl<'a> WasmGenerator<'a> {
                 return Ok(());
             }
 
+            // `JSON.serialize_pretty(x, indent)`: like `serialize`, then pretty-print with `indent`.
+            if id.text == "JSON" && method.text == "serialize_pretty" && params.len() == 2 {
+                let arg_type = self.infer_expression_type(&params[0], function)?;
+                let struct_name = strip_nullable(&arg_type).to_string();
+                self.build_expression(&params[0], &arg_type, function, writer)?;
+                writer.write_line(&format!("call ${}_to_json", struct_name));
+                self.build_expression(&params[1], &"int".to_string(), function, writer)?;
+                writer.write_line("call $JSON_stringify_pretty");
+                return Ok(());
+            }
+
             // `JSON.deserialize<T>(text)`: `T.from_json(JSON.parse(text))`. Lower to `JSON_parse`
             // followed by the auto-derived `<T>_from_json` static method.
             if id.text == "JSON" && method.text == "deserialize" && params.len() == 1 {

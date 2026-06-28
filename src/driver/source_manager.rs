@@ -122,6 +122,35 @@ fn generate_json_extend(
         let fname = &field.name.text;
         let ftype = field.type_token.text.as_str();
 
+        // Nullable field (`T?`): a JSON `null` maps to/from the Dream `null`, otherwise the inner
+        // value is converted as usual. Only reference types can be nullable in Dream, so the inner
+        // type is `string` or another `@json` class (nullable arrays are out of scope).
+        if let Some(base) = ftype.strip_suffix('?') {
+            let (to_inner, from_inner) = if base == "string" {
+                (format!("JsonValue.from_string(this.{f} ?? \"\")", f = fname),
+                 format!("__src_{f}.as_string()", f = fname))
+            } else if json_names.contains(base) {
+                (format!("this.{f}.to_json()", f = fname),
+                 format!("{c}.from_json(__src_{f})", c = base, f = fname))
+            } else {
+                diagnostics.report_error(
+                    format!("@json class '{}' field '{}' has unsupported nullable type '{}' (only `string?` and nullable @json classes are supported)", name, fname, ftype),
+                    Some(field.name.position.clone()),
+                );
+                return None;
+            };
+            to_body.push_str(&format!(
+                "        if (this.{f} == null) {{\n            __o.set(\"{f}\", JsonValue.none());\n        }} else {{\n            __o.set(\"{f}\", {to_inner});\n        }}\n",
+                f = fname, to_inner = to_inner
+            ));
+            from_prelude.push_str(&format!(
+                "        let __{f}: {ty} = null;\n        let __src_{f} = v.get(\"{f}\");\n        if (__src_{f}.is_null() == false) {{\n            __{f} = {from_inner};\n        }}\n",
+                f = fname, ty = ftype, from_inner = from_inner
+            ));
+            from_fields.push(format!("{f}: __{f}", f = fname));
+            continue;
+        }
+
         if let Some(elem) = ftype.strip_suffix("[]") {
             // Array field: serialize/deserialize element-wise. Loop variables are suffixed with the
             // field name because Dream scopes locals per-function (not per-block).

@@ -560,18 +560,26 @@ impl<'a> Analyzer<'a> {
     pub(super) fn analyze_json_derive_call(&mut self, method: &SyntaxToken, generic_args: &Option<Vec<Type>>,
                                            params: &Vec<ExpressionNode<'a>>, parent_function: &FunctionNode<'a>,
                                            symbol_table: &Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag) -> Result<Type, ()> {
-        if method.text == "serialize" {
-            if params.len() != 1 {
-                diagnostics.report_error(format!("'JSON.serialize' expects exactly 1 argument, got {}", params.len()), Some(method.position.clone()));
+        if method.text == "serialize" || method.text == "serialize_pretty" {
+            // `serialize(x)` takes the value; `serialize_pretty(x, indent)` also takes the indent.
+            let expected_args = if method.text == "serialize_pretty" { 2 } else { 1 };
+            if params.len() != expected_args {
+                diagnostics.report_error(format!("'JSON.{}' expects exactly {} argument(s), got {}", method.text, expected_args, params.len()), Some(method.position.clone()));
                 return Ok(Type::String(synthetic_token(TokenKind::DataTypeToken, "string")));
             }
             let arg_type = self.analyze_expression(&params[0], parent_function, symbol_table, diagnostics)?;
             let struct_name = strip_nullable(&arg_type.get_type()).to_string();
             if self.function_table.get_function(&format!("{}_to_json", struct_name)).is_err() {
                 diagnostics.report_error(
-                    format!("'JSON.serialize' requires a @json class, but '{}' has no derived converter", struct_name),
+                    format!("'JSON.{}' requires a @json class, but '{}' has no derived converter", method.text, struct_name),
                     params[0].position(),
                 );
+            }
+            if method.text == "serialize_pretty" {
+                let indent_type = self.analyze_expression(&params[1], parent_function, symbol_table, diagnostics)?;
+                if strip_nullable(&indent_type.get_type()) != "int" {
+                    diagnostics.report_error(format!("'JSON.serialize_pretty' expects an int indent, got {}", indent_type.get_type()), params[1].position());
+                }
             }
             return Ok(Type::String(synthetic_token(TokenKind::DataTypeToken, "string")));
         }
@@ -676,7 +684,7 @@ impl<'a> Analyzer<'a> {
             // `JSON.serialize(x)` / `JSON.deserialize<T>(text)`: auto-derive entry points. They are
             // compiler intrinsics (no real signature in `json.dream`), backed by per-class
             // `to_json`/`from_json` converters generated for every `@json` class.
-            if id.text == "JSON" && (method.text == "serialize" || method.text == "deserialize")
+            if id.text == "JSON" && matches!(method.text.as_str(), "serialize" | "serialize_pretty" | "deserialize")
                 && (*symbol_table).as_ref().borrow().get_symbol(id).is_err() {
                 return self.analyze_json_derive_call(method, _generic_args, params, parent_function, symbol_table, diagnostics);
             }

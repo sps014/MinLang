@@ -1,0 +1,23 @@
+{
+  "name": "Ada",
+  "age": 36,
+  "address": {
+    "city": "London",
+    "zip": "NW1"
+  },
+  "tags": [
+    "dev",
+    "math"
+  ]
+}
+{
+    "a": [
+        1,
+        2
+    ],
+    "b": {
+        "c": true
+    },
+    "d": []
+}
+{"a":[1,2],"b":{"c":true},"d":[]}
