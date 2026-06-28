@@ -18,7 +18,12 @@ impl<'a, 'b> Parser<'a, 'b> {
     {
         let mut left;
         let unary_precedence = self.current_token().kind.get_unary_precedence();
-        if unary_precedence != 0 && unary_precedence >= parent_precedence {
+        if self.current_token().kind == TokenKind::AwaitToken {
+            // `await <primary>` binds tightly to its operand so `await f() + 1` is `(await f()) + 1`.
+            self.match_token(TokenKind::AwaitToken);
+            let operand = self.parse_primary_expression()?;
+            left = ExpressionNode::Await(self.arena.alloc(operand));
+        } else if unary_precedence != 0 && unary_precedence >= parent_precedence {
             let operator_token = self.next_token();
             let operand = self.parse_expression(unary_precedence)?;
             left = ExpressionNode::Unary(operator_token, self.arena.alloc(operand));

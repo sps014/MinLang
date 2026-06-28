@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dream Async Interop Demo</title>
+    <style>
+      body {
+        font-family: "Inter", system-ui, sans-serif;
+        background: #0e0e12;
+        color: #e7e7ea;
+        max-width: 720px;
+        margin: 3rem auto;
+        padding: 0 1.25rem;
+      }
+      h1 { font-weight: 700; }
+      #log {
+        background: #17171d;
+        border: 1px solid #2a2a33;
+        border-radius: 10px;
+        padding: 1rem 1.25rem;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 0.9rem;
+        white-space: pre-wrap;
+        min-height: 4rem;
+      }
+      .muted { color: #8a8a96; }
+    </style>
+  </head>
+  <body>
+    <h1>Dream &rarr; JS Async Interop</h1>
+    <p class="muted">
+      A Dream program that <code>await</code>s a JavaScript <code>fetch</code> via
+      <code>extern async fun</code>. Serve this folder over HTTP (e.g. <code>npx serve</code>) and
+      open the page. The <code>.then</code> bridge lives entirely in <code>dream.js</code>.
+    </p>
+    <div id="log"></div>
+
+    <script type="module">
+      import { run } from "../../runtime/dream.js";
+
+      const logEl = document.getElementById("log");
+      const append = (line) => {
+        logEl.textContent += line + "\n";
+      };
+      const origLog = console.log.bind(console);
+      console.log = (...a) => {
+        append(a.join(" "));
+        origLog(...a);
+      };
+
+      // `getUser` returns a Promise: dream.js suspends the awaiting Dream task until it resolves.
+      // Swap the stub for a real call, e.g. fetch(`/api/user/${id}`).then((r) => r.text()).
+      await run("async_fetch.wasm", {
+        imports: {
+          getUser: (id) =>
+            new Promise((resolve) => setTimeout(() => resolve("user#" + id), 200)),
+        },
+      });
+    </script>
+  </body>
+</html>

@@ -68,6 +68,7 @@ nav:
     - Classes: language/classes.md
     - Generics: language/generics.md
     - The object Type: language/objects.md
+    - Async/Await: language/async.md
     - JS Interop: language/interop.md
   - Standard Library:
     - Builtins: stdlib/builtins.md

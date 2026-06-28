@@ -1,0 +1,23 @@
+// Async JS interop demo: `await` a host Promise without any `.then()` in Dream source.
+//
+// Compile with:  cargo run -- sample/interop/async_fetch.dream
+// Run (Node):    node sample/interop/async_runner.mjs sample/interop/async_fetch.wasm
+//
+// `getUser` is an `extern async` import: the JS side returns a Promise (e.g. a `fetch`), and the
+// Dream runtime suspends the awaiting task until it resolves. The `.then` bridge lives entirely in
+// dream.js - Dream code only ever sees the resolved value.
+
+@js("api", "getUser")
+extern async fun getUser(id: int): string;
+
+async fun main(): void {
+    println("fetching...");
+    let name = await getUser(42);
+    println("user = " + name);
+
+    // `sleep` is a built-in awaitable timer; combinators compose stored futures.
+    let a = getUser(1);
+    let b = getUser(2);
+    let both = await all([a, b]);
+    println("all = " + both[0] + ", " + both[1]);
+}

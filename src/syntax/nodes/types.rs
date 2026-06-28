@@ -63,6 +63,18 @@ pub fn strip_array(type_name: &str) -> &str {
     type_name.strip_suffix("[]").unwrap_or(type_name)
 }
 
+/// The canonical type-name string for a `Future<T>` whose inner type is `inner`
+/// (e.g. `Future_int`). `Future` is the storable, ref-light handle returned by async calls.
+pub fn future_type_name(inner: &str) -> String {
+    format!("Future_{}", inner)
+}
+
+/// If `type_name` denotes a `Future<T>` (i.e. `Future_<inner>`), returns the inner type name,
+/// otherwise `None`. Used to type `await` (unwrap) and async-call results (wrap).
+pub fn future_inner(type_name: &str) -> Option<&str> {
+    type_name.strip_prefix("Future_")
+}
+
 /// Maps a type name to the suffix used in its generated `$release_*` runtime helper.
 /// Arrays become `_array` and nullable markers are dropped (e.g. `Node[]?` -> `Node_array`).
 pub fn release_func_suffix(type_name: &str) -> String {

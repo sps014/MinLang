@@ -17,6 +17,7 @@ pub mod strings;
 pub mod utils;
 pub mod memory;
 pub mod object;
+pub mod async_support;
 
 /// Byte size of the universal heap-block header: `[size:i32][tag:i32][ref_count:i32]`.
 /// Allocated pointers point at `data` (block_start + HEAP_HEADER_SIZE).
@@ -56,6 +57,16 @@ pub struct CodegenContext {
     /// `local.tee`'d into the next free `$tmp{n}` so they can be released after the call; the
     /// counter advances while a slot is held and is restored once the call's temps are released.
     pub tmp_depth: usize,
+    /// Function-table index assigned to each `async fun`'s `$poll_<name>` state-machine function
+    /// (keyed by the constructor's emitted name). Stored in the `Future`'s `poll` field so the
+    /// scheduler can dispatch resumes via `call_indirect`.
+    pub poll_indices: HashMap<String, usize>,
+    /// While emitting an `async` poll body, the name of the `Future` self local (`"self"`). When
+    /// set, `build_return` completes the future instead of returning a plain value.
+    pub current_async_self: Option<String>,
+    /// True when the program contains at least one (non-extern) `async fun`, so the scheduler
+    /// runtime, queue globals, and poll-dispatch table type are emitted.
+    pub has_async: bool,
 }
 
 impl CodegenContext {
@@ -74,6 +85,9 @@ impl CodegenContext {
             function_indices: HashMap::new(),
             alloc_depth: 0,
             tmp_depth: 0,
+            poll_indices: HashMap::new(),
+            current_async_self: None,
+            has_async: false,
         }
     }
 }

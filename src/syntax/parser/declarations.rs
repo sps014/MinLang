@@ -301,10 +301,23 @@ impl<'a, 'b> Parser<'a, 'b> {
             }
         }
 
+        // `async` may appear before or after `export` (e.g. `async fun`, `export async fun`,
+        // `async export fun`). Calling such a function eagerly starts a task and yields `Future<T>`.
+        let mut is_async = false;
+        if self.current_token().kind == TokenKind::AsyncToken {
+            self.match_token(TokenKind::AsyncToken);
+            is_async = true;
+        }
+
         let mut is_exported = false;
         if self.current_token().kind == TokenKind::ExportToken {
             self.match_token(TokenKind::ExportToken);
             is_exported = true;
+        }
+
+        if self.current_token().kind == TokenKind::AsyncToken {
+            self.match_token(TokenKind::AsyncToken);
+            is_async = true;
         }
 
         let mut is_extern = false;
@@ -317,6 +330,12 @@ impl<'a, 'b> Parser<'a, 'b> {
                     Some(self.current_token().position.clone())
                 );
             }
+        }
+
+        // `extern async fun ...`: the host import returns a Promise the runtime awaits.
+        if self.current_token().kind == TokenKind::AsyncToken {
+            self.match_token(TokenKind::AsyncToken);
+            is_async = true;
         }
 
         // `static fun ...`: a method with no implicit `this`, called as `Type.method(...)`.
@@ -386,6 +405,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             let mut node = FunctionNode::new(function_name.clone(), generic_parameters, return_type, params, empty, false);
             node.is_extern = true;
             node.is_static = is_static;
+            node.is_async = is_async;
             node.import_module = import_module.or_else(|| Some("env".to_string()));
             node.import_name = import_name.or_else(|| Some(function_name.text.clone()));
             return Ok(node);
@@ -395,6 +415,7 @@ impl<'a, 'b> Parser<'a, 'b> {
         let mut node = FunctionNode::new(function_name,generic_parameters,return_type,params,block,is_exported);
         node.is_override = is_override;
         node.is_static = is_static;
+        node.is_async = is_async;
         Ok(node)
     }
 

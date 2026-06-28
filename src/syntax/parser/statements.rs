@@ -109,6 +109,15 @@ impl<'a, 'b> Parser<'a, 'b> {
             TokenKind::SwitchToken => Ok(self.parse_switch()?),
             TokenKind::BreakToken => Ok(self.parse_break()?),
             TokenKind::ContinueToken => Ok(self.parse_continue()?),
+            // `await <future-expr>;` as a statement, discarding the resolved value.
+            TokenKind::AwaitToken => {
+                let expr = self.parse_expression(0)?;
+                self.match_token(TokenKind::SemicolonToken);
+                match expr {
+                    ExpressionNode::Await(inner) => Ok(StatementNode::AwaitStmt(inner.clone())),
+                    other => Ok(StatementNode::AwaitStmt(other)),
+                }
+            },
             // A loop label: `name: while (...) { ... }` (also `for`/`do`).
             TokenKind::IdentifierToken if self.peek_token(1).kind == TokenKind::ColonToken => {
                 let label = self.match_token(TokenKind::IdentifierToken);

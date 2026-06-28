@@ -128,10 +128,26 @@ pub struct Analyzer<'a> {
     /// Stack of loop labels currently in scope, so `break label;`/`continue label;` can be
     /// validated against an enclosing labeled loop.
     loop_labels: Vec<String>,
+    /// True while analyzing the body of an `async fun`. Gates the use of `await`.
+    current_function_is_async: bool,
 }
 impl<'a> Analyzer<'a> {
     pub fn new(tree: &'a SyntaxTree<'a>, arena: &'a Bump) -> Self {
-        Self { syntax_tree:tree, function_table: FunctionTable::new(), struct_table: StructTable::new(), arena, generic_functions: HashMap::new(), instantiated_generics: HashMap::new(), generic_structs: HashMap::new(), struct_methods: Vec::new(), enum_table: HashMap::new(), current_generic_bindings: Vec::new(), loop_labels: Vec::new() }
+        Self { syntax_tree:tree, function_table: FunctionTable::new(), struct_table: StructTable::new(), arena, generic_functions: HashMap::new(), instantiated_generics: HashMap::new(), generic_structs: HashMap::new(), struct_methods: Vec::new(), enum_table: HashMap::new(), current_generic_bindings: Vec::new(), loop_labels: Vec::new(), current_function_is_async: false }
+    }
+
+    /// Builds the `Future<T>` type carrying inner type `inner`. Async-call results are this type,
+    /// and `await` unwraps it back to `inner`.
+    pub(super) fn future_type(inner: Type) -> Type {
+        Type::Struct(synthetic_token(TokenKind::IdentifierToken, "Future"), Some(vec![inner]))
+    }
+
+    /// If `ty` is a `Future<T>`, returns the inner `T`; otherwise `None`.
+    pub(super) fn future_inner_type(ty: &Type) -> Option<Type> {
+        match ty {
+            Type::Struct(token, Some(args)) if token.text == "Future" && args.len() == 1 => Some(args[0].clone()),
+            _ => None,
+        }
     }
     pub fn analyze(&mut self, diagnostics: &mut DiagnosticBag) -> Result<SemanticInfo<'_>, ()> {
         let pgm= self.syntax_tree.get_root();

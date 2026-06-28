@@ -36,8 +36,20 @@ impl<'a> WasmGenerator<'a> {
             StatementNode::Break(label) => self.build_break(label, writer)?,
             StatementNode::Continue(label) => self.build_continue(label, writer)?,
             StatementNode::IfElse(c, b, else_if, else_b) => self.build_if_else(c, b, else_if, else_b, function, writer)?,
+            StatementNode::AwaitStmt(child) => {
+                // A bare `await e;` outside the async statement splitter is unreachable for valid
+                // v1 programs (the splitter rewrites top-level awaits). Defensively evaluate the
+                // future for its eager side effects and discard it.
+                self.build_expression(child, &"int".to_string(), function, writer)?;
+                writer.write_line("drop");
+            },
             StatementNode::FunctionInvocation(n, generic_args, p) => {
                 match n.text.as_str() {
+                    "sleep" | "all" | "any" | "race" => {
+                        // A discarded async intrinsic call: build the future and drop the handle.
+                        self.build_async_intrinsic_call(n.text.as_str(), p, function, writer)?;
+                        writer.write_line("drop");
+                    }
                     "print" if p.len() == 1 => self.build_print(&p[0], function, writer)?,
                     "println" if p.len() == 1 => self.build_println(&p[0], function, writer)?,
                     "to_string" if p.len() == 1 => {
@@ -238,6 +250,21 @@ impl<'a> WasmGenerator<'a> {
 
     /// Builds a return statement
     pub fn build_return(&mut self, expression: &Option<ExpressionNode<'a>>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        // Inside an async poll body a `return` completes the task's `Future` and yields `Pending`
+        // (the poll's wasm result is unused). Saved locals are intentionally not released in v1.
+        if let Some(self_local) = self.ctx.current_async_self.clone() {
+            writer.write_line(&format!("local.get ${}", self_local));
+            if let Some(expr) = expression {
+                let ret_type_str = function.return_type.as_ref().map(|t| t.get_type()).unwrap_or_else(|| "int".to_string());
+                self.build_expression(expr, &ret_type_str, function, writer)?;
+            } else {
+                writer.write_line("i32.const 0");
+            }
+            writer.write_line("call $dream_complete");
+            writer.write_line("i32.const 0");
+            writer.write_line("return");
+            return Ok(());
+        }
         if let Some(expr) = expression {
             let return_type = function.return_type.as_ref()
                 .ok_or_else(|| Error::new(ErrorKind::Other, format!("function '{}' returns a value but has no declared return type", function.name.text)))?;

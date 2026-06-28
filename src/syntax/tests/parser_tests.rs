@@ -262,3 +262,31 @@ fn test_parse_struct_constructor_and_destructor() {
 
     assert!(s.methods.iter().any(|m| m.name.text == "sum"));
 }
+
+#[test]
+fn test_parse_async_function_and_await() {
+    // `async fun` sets `is_async`; `await e;` is an `AwaitStmt` and `let x = await e;` carries an
+    // `Await` initializer.
+    let code = "async fun f(): int { await sleep(1); let x = await f(); return x; }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    let func = &program.functions[0];
+    assert!(func.is_async);
+    assert!(matches!(&func.body[0], StatementNode::AwaitStmt(_)));
+    assert!(matches!(&func.body[1], StatementNode::Declaration(_, _, ExpressionNode::Await(_), _)));
+}
+
+#[test]
+fn test_parse_extern_async_either_order() {
+    // Both `extern async fun` and `async extern fun` parse to an async extern import.
+    for code in ["extern async fun g(id: int): string;", "async extern fun g(id: int): string;"] {
+        let arena = bumpalo::Bump::new();
+        let (program, diagnostics) = parse_code(code, &arena);
+        assert_eq!(diagnostics.has_errors(), false, "code: {}", code);
+        let func = &program.functions[0];
+        assert!(func.is_extern, "code: {}", code);
+        assert!(func.is_async, "code: {}", code);
+    }
+}

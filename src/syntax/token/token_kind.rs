@@ -130,6 +130,10 @@ pub enum TokenKind
     ConstToken,
     #[token("fun")]
     FunToken,
+    #[token("async")]
+    AsyncToken,
+    #[token("await")]
+    AwaitToken,
     #[token("static")]
     StaticToken,
     #[token("import")]

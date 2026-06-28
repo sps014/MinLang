@@ -477,6 +477,10 @@ impl<'a> WasmGenerator<'a> {
                 }
             },
             ExpressionNode::Unary(_, right) => self.infer_expression_type(right, function),
+            // `await e` unwraps a `Future<T>` to `T`. In codegen, async functions are registered
+            // in the function table under their declared return type `T`, so the awaited call's
+            // inferred type is already `T`.
+            ExpressionNode::Await(inner) => self.infer_expression_type(inner, function),
             ExpressionNode::Binary(left, opr, _) => {
                 use crate::syntax::token::token_kind::TokenKind;
                 match opr.kind {

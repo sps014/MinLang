@@ -35,6 +35,9 @@ pub enum StatementNode<'a> {
     /// `break` / `continue`, optionally targeting an enclosing labeled loop.
     Break(Option<String>),
     Continue(Option<String>),
+    /// `await <future-expr>;` used as a statement, discarding the resolved value. The inner
+    /// expression produces the `Future` to await (it is NOT wrapped in `ExpressionNode::Await`).
+    AwaitStmt(ExpressionNode<'a>),
     /// `for (let element in iterable) { body }`. Iterates the elements of an array. The two
     /// `String` fields are unique synthetic local names (index counter and array temp) generated
     /// by the parser so codegen can lower this to an index loop without re-evaluating `iterable`.

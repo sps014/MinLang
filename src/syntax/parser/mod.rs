@@ -214,7 +214,7 @@ impl<'a, 'b> Parser<'a, 'b>
                 extends.push(self.parse_extend_declaration()?);
             } else if self.current_token().kind == TokenKind::TypeToken {
                 self.parse_type_alias()?;
-            } else if self.current_token().kind == TokenKind::FunToken || self.current_token().kind == TokenKind::AtToken || self.current_token().kind == TokenKind::ExternToken || (self.current_token().kind == TokenKind::ExportToken && self.peek_token(1).kind == TokenKind::FunToken) {
+            } else if self.current_token().kind == TokenKind::FunToken || self.current_token().kind == TokenKind::AtToken || self.current_token().kind == TokenKind::ExternToken || self.current_token().kind == TokenKind::AsyncToken || (self.current_token().kind == TokenKind::ExportToken && (self.peek_token(1).kind == TokenKind::FunToken || self.peek_token(1).kind == TokenKind::AsyncToken)) {
                 let function=self.parse_function()?;
                 functions.push(function);
             } else {

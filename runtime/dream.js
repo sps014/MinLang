@@ -190,6 +190,26 @@ export class DreamInstance {
   }
 }
 
+/** Marshals raw WASM argument values into JS values per the parameter type names. */
+function marshalArgs(inst, params, rawArgs) {
+  if (!params) return rawArgs;
+  return rawArgs.map((arg, i) => {
+    const t = params[i] ? stripSuffix(params[i]) : "int";
+    if (t === "string") return inst.readString(arg);
+    if (t.endsWith("[]")) return inst.readArray(arg, t.slice(0, -2));
+    if (t === "bool") return arg !== 0;
+    return arg; // numeric primitive or opaque pointer
+  });
+}
+
+/** Marshals a JS return value back into the raw WASM value for the declared result type. */
+function marshalResult(inst, result, ret) {
+  if (result === "string") return inst.writeString(ret == null ? "" : String(ret));
+  if (result === "bool") return ret ? 1 : 0;
+  if (result === "void" || result == null) return ret == null ? 0 : ret;
+  return ret;
+}
+
 /** Wraps a user-provided import implementation so its args/return are marshaled per the ABI. */
 function wrapImport(getInstance, fn, signature) {
   const params = signature ? signature.params : null;
@@ -197,22 +217,39 @@ function wrapImport(getInstance, fn, signature) {
 
   return (...rawArgs) => {
     const inst = getInstance();
-    const args = params
-      ? rawArgs.map((arg, i) => {
-          const t = params[i] ? stripSuffix(params[i]) : "int";
-          if (t === "string") return inst.readString(arg);
-          if (t.endsWith("[]")) return inst.readArray(arg, t.slice(0, -2));
-          if (t === "bool") return arg !== 0;
-          return arg; // numeric primitive or opaque pointer
-        })
-      : rawArgs;
-
+    const args = marshalArgs(inst, params, rawArgs);
     const ret = fn(...args);
+    return marshalResult(inst, result, ret);
+  };
+}
 
-    if (result === "string") return inst.writeString(ret == null ? "" : String(ret));
-    if (result === "bool") return ret ? 1 : 0;
-    if (result === "void" || result == null) return ret;
-    return ret;
+// Future heap kinds/sizes (mirrors src/codegen/wasm/async_support.rs).
+const FUTURE_KIND_HOST = 1;
+const FUTURE_SLOTS_SIZE = 56; // F_SLOTS: a host future has no saved-locals region.
+
+/**
+ * Wraps an `extern async` import. The JS implementation returns a Promise; the wrapper
+ * synchronously allocates a host `Future` and hands its pointer back to Dream, then resolves it
+ * (and re-pumps the scheduler) once the Promise settles. This is the only place the JS `.then`
+ * bridge lives - Dream source never sees a Promise.
+ */
+function wrapAsyncImport(getInstance, fn, signature) {
+  const params = signature ? signature.params : null;
+  const result = signature ? signature.result : null;
+
+  return (...rawArgs) => {
+    const inst = getInstance();
+    const exports = inst.exports;
+    if (typeof exports.__dream_new_future !== "function") {
+      throw new Error("module does not export the async runtime; cannot bridge an extern async import");
+    }
+    const args = marshalArgs(inst, params, rawArgs);
+    const future = exports.__dream_new_future(FUTURE_SLOTS_SIZE, -1, FUTURE_KIND_HOST);
+    Promise.resolve(fn(...args)).then((value) => {
+      exports.__dream_resolve(future, marshalResult(inst, result, value));
+      exports.__dream_run_loop();
+    });
+    return future;
   };
 }
 
@@ -302,12 +339,15 @@ export async function load(source, options = {}) {
   const sigByName = new Map();
   if (abi) for (const e of abi.externs) sigByName.set(e.name, e);
 
+  const wrapFor = (fn, sig) =>
+    sig && sig.async ? wrapAsyncImport(getInstance, fn, sig) : wrapImport(getInstance, fn, sig);
+
   // 1. User-supplied implementations win, keyed by extern (Dream function) name.
   for (const name of Object.keys(userImports)) {
     const sig = sigByName.get(name);
     const module = sig ? sig.module : "env";
     const field = sig ? sig.field : name;
-    (importObject[module] ||= {})[field] = wrapImport(getInstance, userImports[name], sig);
+    (importObject[module] ||= {})[field] = wrapFor(userImports[name], sig);
   }
 
   // 2. Auto-bind any remaining externs to matching JS globals so built-in APIs need no glue
@@ -319,7 +359,7 @@ export async function load(source, options = {}) {
       if (bucket[e.field]) continue; // already provided by the user
       const resolved = resolveGlobal(e.module, e.field);
       bucket[e.field] = resolved
-        ? wrapImport(getInstance, resolved, e)
+        ? wrapFor(resolved, e)
         : () => {
             throw new Error(`no JS implementation for extern '${e.name}' (${e.module}.${e.field})`);
           };

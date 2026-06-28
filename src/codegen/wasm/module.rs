@@ -95,10 +95,28 @@ impl<'a> WasmGenerator<'a> {
                 indexed_functions.push(name);
             }
         }
-        if !indexed_functions.is_empty() {
-            writer.write_line(&format!("(table $fn_table {} funcref)", indexed_functions.len()));
-            let refs = indexed_functions.iter().map(|n| format!("${}", n)).collect::<Vec<_>>().join(" ");
-            writer.write_line(&format!("(elem (i32.const 0) {})", refs));
+        // Async poll functions share `$fn_table`: each `async fun` gets a slot after the
+        // first-class function slots so the scheduler can resume it via `call_indirect`.
+        let mut poll_refs: Vec<String> = Vec::new();
+        for func in program.functions.iter() {
+            if !func.is_async || func.is_extern || func.generic_parameters.is_some() {
+                continue;
+            }
+            let emitted = self.function_table.resolve_emitted_name(&func.name.text, &Self::func_param_types(func));
+            let idx = indexed_functions.len() + poll_refs.len();
+            self.ctx.poll_indices.insert(emitted.clone(), idx);
+            poll_refs.push(format!("$poll_{}", emitted));
+            self.ctx.has_async = true;
+        }
+        let total_table = indexed_functions.len() + poll_refs.len();
+        if total_table > 0 {
+            writer.write_line(&format!("(table $fn_table {} funcref)", total_table));
+            let mut all_refs: Vec<String> = indexed_functions.iter().map(|n| format!("${}", n)).collect();
+            all_refs.extend(poll_refs);
+            writer.write_line(&format!("(elem (i32.const 0) {})", all_refs.join(" ")));
+        }
+        if self.ctx.has_async {
+            self.build_async_runtime(writer);
         }
 
         writer.write_line("(memory 10)");
@@ -124,7 +142,11 @@ impl<'a> WasmGenerator<'a> {
             }
             // Overloaded functions are emitted under their signature-mangled key.
             self.ctx.current_mangled_name = Some(self.function_table.resolve_emitted_name(&i.name.text, &Self::func_param_types(i)));
-            self.build_function(i, writer)?;
+            if i.is_async {
+                self.build_async_function(i, writer)?;
+            } else {
+                self.build_function(i, writer)?;
+            }
             self.ctx.current_mangled_name = None;
         }
         for (mangled_name, (bindings, template)) in self.instantiated_generics {
@@ -203,12 +225,44 @@ impl<'a> WasmGenerator<'a> {
         // to pass back into Dream from extern function implementations.
         writer.write_line("(export \"malloc\" (func $malloc))");
         writer.write_line("(export \"free\" (func $free))");
+        // Scheduler entry points for hosts (dream.js) to pump the loop, resolve host promises
+        // created by `extern async` imports, and allocate those host futures.
+        if self.ctx.has_async {
+            writer.write_line("(export \"__dream_run_loop\" (func $dream_run_loop))");
+            writer.write_line("(export \"__dream_resolve\" (func $dream_resolve))");
+            writer.write_line("(export \"__dream_new_future\" (func $dream_new_future))");
+        }
         for i in program.functions.iter() {
             if i.is_extern {
                 continue;
             }
             if i.is_exported || i.name.text == "main" {
                 let emitted = self.function_table.resolve_emitted_name(&i.name.text, &Self::func_param_types(i));
+
+                // An async `main` is invoked as `() -> ()`: spawn the top-level task (the
+                // constructor eagerly enqueues it) and pump the scheduler to completion. Any
+                // declared `args: string[]` is forwarded as an empty array.
+                if i.name.text == "main" && i.is_async {
+                    writer.write_line("(func (export \"main\")");
+                    writer.indent();
+                    if !i.parameters.is_empty() {
+                        writer.write_line("(local $args i32)");
+                        writer.write_line("i32.const 4");
+                        writer.write_line(&format!("i32.const {}", super::object::TAG_ARRAY));
+                        writer.write_line("call $malloc");
+                        writer.write_line("local.set $args");
+                        writer.write_line("local.get $args");
+                        writer.write_line("i32.const 0");
+                        writer.write_line("i32.store");
+                        writer.write_line("local.get $args");
+                    }
+                    writer.write_line(&format!("call ${}", emitted));
+                    writer.write_line("drop");
+                    writer.write_line("call $dream_run_loop");
+                    writer.unindent();
+                    writer.write_line(")");
+                    continue;
+                }
 
                 // `main(args: string[])`: the host runner invokes `main` as `() -> ()`, so instead
                 // of exporting the user `$main` (which takes an array pointer) we export a synthetic

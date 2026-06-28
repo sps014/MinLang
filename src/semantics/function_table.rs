@@ -208,6 +208,9 @@ pub  struct FunctionTableInfo
     pub name: String,
     pub return_type: Option<Type>,
     pub parameters: Vec<String>,
+    /// True when the declaration is `async fun`: calling it eagerly starts a task and yields
+    /// `Future<T>` (where `T` is `return_type`). Awaiting a call to it produces `T`.
+    pub is_async: bool,
 }
 
 impl FunctionTableInfo {
@@ -216,6 +219,7 @@ impl FunctionTableInfo {
             name,
             return_type,
             parameters,
+            is_async: false,
         }
     }
     pub fn from(func:&FunctionNode)->Self
@@ -228,6 +232,8 @@ impl FunctionTableInfo {
             let j=i.clone();
             parameters.push(j.type_.get_type());
         }
-        FunctionTableInfo::new(name.text, return_type, parameters)
+        let mut info = FunctionTableInfo::new(name.text, return_type, parameters);
+        info.is_async = func.is_async;
+        info
     }
 }

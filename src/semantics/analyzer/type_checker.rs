@@ -21,13 +21,125 @@ use super::*;
 impl<'a> Analyzer<'a> {
     pub(super) fn analyze_function(&mut self,function:&FunctionNode<'a>, diagnostics: &mut DiagnosticBag) -> Result<Rc<RefCell<SymbolTable>>, ()> {
         let param_table=Rc::new(RefCell::new(self.add_function_param_table(function, diagnostics)?));
+        self.current_function_is_async = function.is_async;
         self.analyze_body(function.body,function,Some(&param_table),false, diagnostics)?;
+        // Enforce the v1 `await` placement rules (only in async functions, only at statement
+        // position) and that non-async functions contain no `await` at all.
+        self.check_await_positions(function, diagnostics);
+        self.current_function_is_async = false;
         // check return
         let mut graph=FunctionControlGraph::new(function);
         if let Err(e) = graph.build() {
             diagnostics.report_error(e.to_string(), Some(function.name.position.clone()));
         }
         Ok(param_table.clone())
+    }
+
+    /// Validates the v1 `await` placement rules. `await` may only appear inside an `async fun`,
+    /// and only as a whole top-level statement: `await e;`, `let x = await e;`, or `return await e;`.
+    /// Awaits nested in sub-expressions, loops, branches, or non-async functions are rejected.
+    pub(super) fn check_await_positions(&self, function: &FunctionNode<'a>, diagnostics: &mut DiagnosticBag) {
+        if !function.is_async {
+            for stmt in function.body.iter() {
+                self.forbid_await_in_stmt(stmt, "'await' can only be used inside an 'async' function", diagnostics);
+            }
+            return;
+        }
+        for stmt in function.body.iter() {
+            match stmt {
+                StatementNode::Declaration(_, _, ExpressionNode::Await(inner), _) => {
+                    self.forbid_await_in_expr(inner, diagnostics);
+                }
+                StatementNode::Return(Some(ExpressionNode::Await(inner))) => {
+                    self.forbid_await_in_expr(inner, diagnostics);
+                }
+                StatementNode::AwaitStmt(inner) => {
+                    self.forbid_await_in_expr(inner, diagnostics);
+                }
+                other => self.forbid_await_in_stmt(other,
+                    "'await' must appear as a top-level statement (e.g. `let x = await e;` or `await e;`); awaiting inside loops, branches, or sub-expressions is not supported yet",
+                    diagnostics),
+            }
+        }
+    }
+
+    /// Reports `message` at every `await` found anywhere inside `stmt` (including nested bodies).
+    fn forbid_await_in_stmt(&self, stmt: &StatementNode<'a>, message: &str, diagnostics: &mut DiagnosticBag) {
+        match stmt {
+            StatementNode::AwaitStmt(inner) => {
+                diagnostics.report_error(message.to_string(), inner.position());
+                self.scan_expr_await(inner, message, diagnostics);
+            }
+            StatementNode::Declaration(_, _, e, _) | StatementNode::Assignment(_, e)
+            | StatementNode::IndexAssignment(_, _, e) | StatementNode::MemberAssignment(_, _, e) => {
+                self.scan_expr_await(e, message, diagnostics);
+            }
+            StatementNode::Return(Some(e)) => self.scan_expr_await(e, message, diagnostics),
+            StatementNode::FunctionInvocation(_, _, args) => {
+                for a in args { self.scan_expr_await(a, message, diagnostics); }
+            }
+            StatementNode::MethodInvocation(_, _, _, args) => {
+                for a in args { self.scan_expr_await(a, message, diagnostics); }
+            }
+            StatementNode::IfElse(c, b, elifs, eb) => {
+                self.scan_expr_await(c, message, diagnostics);
+                for s in b.iter() { self.forbid_await_in_stmt(s, message, diagnostics); }
+                for (ec, eb2) in elifs.iter() {
+                    self.scan_expr_await(ec, message, diagnostics);
+                    for s in eb2.iter() { self.forbid_await_in_stmt(s, message, diagnostics); }
+                }
+                if let Some(eb) = eb { for s in eb.iter() { self.forbid_await_in_stmt(s, message, diagnostics); } }
+            }
+            StatementNode::While(c, b) | StatementNode::DoWhile(b, c) => {
+                self.scan_expr_await(c, message, diagnostics);
+                for s in b.iter() { self.forbid_await_in_stmt(s, message, diagnostics); }
+            }
+            StatementNode::For(init, cond, inc, body) => {
+                if let Some(i) = init { self.forbid_await_in_stmt(i, message, diagnostics); }
+                if let Some(c) = cond { self.scan_expr_await(c, message, diagnostics); }
+                if let Some(i) = inc { self.forbid_await_in_stmt(i, message, diagnostics); }
+                for s in body.iter() { self.forbid_await_in_stmt(s, message, diagnostics); }
+            }
+            StatementNode::ForEach(_, iterable, _, _, body) => {
+                self.scan_expr_await(iterable, message, diagnostics);
+                for s in body.iter() { self.forbid_await_in_stmt(s, message, diagnostics); }
+            }
+            StatementNode::Switch(subject, cases, default_body) => {
+                self.scan_expr_await(subject, message, diagnostics);
+                for (_, body) in cases.iter() { for s in body.iter() { self.forbid_await_in_stmt(s, message, diagnostics); } }
+                if let Some(db) = default_body { for s in db.iter() { self.forbid_await_in_stmt(s, message, diagnostics); } }
+            }
+            StatementNode::Labeled(_, inner) => self.forbid_await_in_stmt(inner, message, diagnostics),
+            _ => {}
+        }
+    }
+
+    /// Reports `message` if `expr` contains any `await` (used to forbid awaits in sub-expressions).
+    fn forbid_await_in_expr(&self, expr: &ExpressionNode<'a>, diagnostics: &mut DiagnosticBag) {
+        self.scan_expr_await(expr,
+            "'await' cannot appear inside another expression; bind it first (e.g. `let x = await e;`)",
+            diagnostics);
+    }
+
+    /// Recursively reports `message` at every nested `await` expression within `expr`.
+    fn scan_expr_await(&self, expr: &ExpressionNode<'a>, message: &str, diagnostics: &mut DiagnosticBag) {
+        match expr {
+            ExpressionNode::Await(inner) => {
+                diagnostics.report_error(message.to_string(), inner.position());
+                self.scan_expr_await(inner, message, diagnostics);
+            }
+            ExpressionNode::Binary(l, _, r) => { self.scan_expr_await(l, message, diagnostics); self.scan_expr_await(r, message, diagnostics); }
+            ExpressionNode::Unary(_, e) | ExpressionNode::Parenthesized(e) | ExpressionNode::Cast(_, e)
+            | ExpressionNode::IsExpression(e, _) => self.scan_expr_await(e, message, diagnostics),
+            ExpressionNode::FunctionCall(_, _, args) => { for a in args { self.scan_expr_await(a, message, diagnostics); } }
+            ExpressionNode::MethodCall(obj, _, _, args) => { self.scan_expr_await(obj, message, diagnostics); for a in args { self.scan_expr_await(a, message, diagnostics); } }
+            ExpressionNode::ArrayLiteral(elems) => { for e in elems { self.scan_expr_await(e, message, diagnostics); } }
+            ExpressionNode::IndexAccess(a, i) => { self.scan_expr_await(a, message, diagnostics); self.scan_expr_await(i, message, diagnostics); }
+            ExpressionNode::MemberAccess(o, _) => self.scan_expr_await(o, message, diagnostics),
+            ExpressionNode::StructInstantiation(_, _, fields) => { for (_, e) in fields { self.scan_expr_await(e, message, diagnostics); } }
+            ExpressionNode::Ternary(c, t, e) => { self.scan_expr_await(c, message, diagnostics); self.scan_expr_await(t, message, diagnostics); self.scan_expr_await(e, message, diagnostics); }
+            _ => {}
+        }
     }
     pub(super) fn add_function_param_table(&mut self,function:&FunctionNode<'a>, diagnostics: &mut DiagnosticBag) -> Result<SymbolTable, ()> {
         let mut param_table=SymbolTable::new(None);
@@ -102,6 +214,15 @@ impl<'a> Analyzer<'a> {
                 {self.analyze_function_call(name, generic_args, params,parent_function,symbol_table, diagnostics)?;},
             StatementNode::MethodInvocation(obj, method, generic_args, params) =>
                 {self.analyze_method_call(obj, method, generic_args, params, parent_function, symbol_table, diagnostics)?;},
+            StatementNode::AwaitStmt(future_expr) => {
+                let fut = self.analyze_expression(future_expr, parent_function, symbol_table, diagnostics)?;
+                if Self::future_inner_type(&fut).is_none() {
+                    diagnostics.report_error(
+                        format!("'await' expects a Future value, got {}", fut.get_type()),
+                        future_expr.position(),
+                    );
+                }
+            },
         };
         Ok(())
     }
@@ -230,6 +351,12 @@ impl<'a> Analyzer<'a> {
             });
         }
 
+        // Async intrinsics: `sleep`, `all`, `any`, `race`. These are compiler-known (not in the
+        // function table) because their signatures are generic over `Future<T>`.
+        if matches!(name.text.as_str(), "sleep" | "all" | "any" | "race") {
+            return self.analyze_async_intrinsic(name, params, parent_function, symbol_table, diagnostics);
+        }
+
         // `array_new<T>(n)`: allocates a fresh, zero-initialized array of `n` elements of type `T`.
         // The element type is read from the explicit type argument (resolved through the active
         // monomorphization bindings so `array_new<T>` inside a `List<int>` method yields `int[]`).
@@ -316,6 +443,7 @@ impl<'a> Analyzer<'a> {
                         .collect(),
                     return_type: template.return_type.as_ref()
                         .map(|ret| Self::monomorphize_type(ret, &bindings)),
+                    is_async: template.is_async,
                 };
 
                 let _ = self.function_table.add_function(mangled_name.clone(), info);
@@ -366,7 +494,57 @@ impl<'a> Analyzer<'a> {
         }
 
         //let r_type=&store_sig.return_type;
+        // Calling an `async fun` is eager and yields a `Future<T>` handle (where `T` is the
+        // declared return type). It is NOT auto-awaited; `await` retrieves the `T`.
+        if store_sig.is_async {
+            return Ok(Self::future_type(store_sig.return_type.unwrap_or(Type::Void)));
+        }
         Ok(store_sig.return_type.unwrap_or(Type::Void))
+    }
+
+    /// Types the async intrinsics: `sleep(ms: int): Future<void>`, `all(xs: Future<T>[]):
+    /// Future<T[]>`, `any`/`race(xs: Future<T>[]): Future<T>`.
+    pub(super) fn analyze_async_intrinsic(&mut self, name: &SyntaxToken, params: &Vec<ExpressionNode<'a>>,
+                                          parent_function: &FunctionNode<'a>, symbol_table: &Rc<RefCell<SymbolTable>>,
+                                          diagnostics: &mut DiagnosticBag) -> Result<Type, ()> {
+        if name.text == "sleep" {
+            if params.len() != 1 {
+                diagnostics.report_error(format!("'sleep' expects exactly 1 argument (milliseconds), got {}", params.len()), Some(name.position.clone()));
+            }
+            for p in params { let pt = self.analyze_expression(p, parent_function, symbol_table, diagnostics)?;
+                if pt.get_type() != "int" {
+                    diagnostics.report_error(format!("'sleep' expects an int argument, got {}", pt.get_type()), p.position());
+                }
+            }
+            return Ok(Self::future_type(Type::Void));
+        }
+
+        // all/any/race take a single `Future<T>[]` argument.
+        if params.len() != 1 {
+            diagnostics.report_error(format!("'{}' expects exactly 1 argument (a Future array), got {}", name.text, params.len()), Some(name.position.clone()));
+            return Ok(Self::future_type(Type::Void));
+        }
+        let arg_type = self.analyze_expression(&params[0], parent_function, symbol_table, diagnostics)?;
+        let inner_t = match &arg_type {
+            Type::Array(inner) => match Self::future_inner_type(inner) {
+                Some(t) => t,
+                None => {
+                    diagnostics.report_error(format!("'{}' expects an array of Future values, got {}", name.text, arg_type.get_type()), params[0].position());
+                    Type::Void
+                }
+            },
+            _ => {
+                diagnostics.report_error(format!("'{}' expects an array of Future values, got {}", name.text, arg_type.get_type()), params[0].position());
+                Type::Void
+            }
+        };
+        if name.text == "all" {
+            // Future<T[]>
+            Ok(Self::future_type(Type::Array(Box::new(inner_t))))
+        } else {
+            // any / race -> Future<T>
+            Ok(Self::future_type(inner_t))
+        }
     }
 
     /// Type-checks a constructor call `Struct(args)`. When the struct defines a custom `constructor`
@@ -1102,6 +1280,19 @@ impl<'a> Analyzer<'a> {
                 }
             },
             ExpressionNode::MethodCall(obj, method, generic_args, params) => self.analyze_method_call(obj, method, generic_args, params, parent_function, symbol_table, diagnostics),
+            ExpressionNode::Await(inner) => {
+                let fut = self.analyze_expression(inner, parent_function, symbol_table, diagnostics)?;
+                match Self::future_inner_type(&fut) {
+                    Some(t) => Ok(t),
+                    None => {
+                        diagnostics.report_error(
+                            format!("'await' expects a Future value, got {}", fut.get_type()),
+                            inner.position(),
+                        );
+                        Ok(Type::Void)
+                    }
+                }
+            },
         }
     }
     pub(super) fn analyze_binary_expression(&mut self,left:&ExpressionNode<'a>,opr:&SyntaxToken,right:&ExpressionNode<'a>,parent_function:&FunctionNode<'a>,

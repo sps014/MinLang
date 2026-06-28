@@ -64,12 +64,13 @@ pub(crate) fn build_abi_json(program: &ProgramNode) -> String {
             .map(|p| format!("\"{}\"", json_escape(&p.type_.get_type())))
             .collect();
         externs.push(format!(
-            "    {{ \"name\": \"{}\", \"module\": \"{}\", \"field\": \"{}\", \"params\": [{}], \"result\": \"{}\" }}",
+            "    {{ \"name\": \"{}\", \"module\": \"{}\", \"field\": \"{}\", \"params\": [{}], \"result\": \"{}\", \"async\": {} }}",
             json_escape(&func.name.text),
             json_escape(&module),
             json_escape(&field),
             params.join(", "),
             json_escape(&type_name(func.return_type.as_ref())),
+            func.is_async,
         ));
     }
 

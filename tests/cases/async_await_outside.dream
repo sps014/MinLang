@@ -1,0 +1,7 @@
+fun notAsync(): void {
+    let x = await sleep(10);
+}
+
+fun main(): void {
+    notAsync();
+}

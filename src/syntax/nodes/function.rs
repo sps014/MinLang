@@ -35,6 +35,9 @@ pub struct FunctionNode<'a> {
     /// True for `static fun` methods declared inside a `struct`/`extend` block: the method has no
     /// implicit `this` parameter and is dispatched via `Type.method(...)` instead of `value.method(...)`.
     pub is_static: bool,
+    /// True for `async fun` declarations: calling the function eagerly starts a task and yields a
+    /// `Future<T>` handle. The body is lowered to a resumable state machine driven by the scheduler.
+    pub is_async: bool,
     /// WASM import module for an `extern` function. Defaults to `"env"` when unspecified.
     pub import_module: Option<String>,
     /// WASM import field name for an `extern` function. Defaults to the function name.
@@ -64,6 +67,7 @@ impl<'a> FunctionNode<'a> {
             is_override: false,
             is_extern: false,
             is_static: false,
+            is_async: false,
             import_module: None,
             import_name: None,
             file_path: None,

@@ -1,0 +1,12 @@
+async fun delayedDouble(n: int): int {
+    await sleep(100);
+    return n * 2;
+}
+
+async fun main(): void {
+    println("start");
+    let a = await delayedDouble(10);
+    let b = await delayedDouble(a);
+    println("result = " + to_string(b));
+    println("done");
+}

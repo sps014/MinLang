@@ -69,3 +69,45 @@ fn test_analyze_invalid_array_operations() {
     assert!(diagnostics.diagnostics.iter().any(|d| d.message.contains("Array index must be of type int")));
     assert!(diagnostics.diagnostics.iter().any(|d| d.message.contains("Cannot index into non-array type int")));
 }
+
+#[test]
+fn test_analyze_async_await_valid() {
+    // Calling an async fun yields `Future<T>`; awaiting it (at a statement position) yields `T`.
+    let code = "
+        async fun work(n: int): int { await sleep(1); return n * 2; }
+        async fun main(): void {
+            let h = work(3);
+            let v = await h;
+            let w = await work(4);
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), false);
+}
+
+#[test]
+fn test_analyze_await_outside_async() {
+    let code = "fun main(): void { let x = await sleep(1); }";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+    assert!(diagnostics.diagnostics.iter().any(|d| d.message.contains("can only be used inside an 'async' function")));
+}
+
+#[test]
+fn test_analyze_await_in_subexpression_rejected() {
+    // v1 restricts `await` to top-level statement positions.
+    let code = "
+        async fun work(n: int): int { await sleep(1); return n; }
+        async fun main(): void { let x = await work(1) + 1; }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+    assert!(diagnostics.diagnostics.iter().any(|d| d.message.contains("top-level statement")));
+}
+
+#[test]
+fn test_analyze_await_non_future_rejected() {
+    let code = "async fun main(): void { let x = await 5; }";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+}

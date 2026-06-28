@@ -38,6 +38,8 @@ impl<'a> WasmGenerator<'a> {
                     "to_string" if args.len() == 1 => self.build_to_string(&args[0], function, writer)?,
                     "hash_code" if args.len() == 1 => self.build_hash_code(&args[0], function, writer)?,
                     "array_new" if args.len() == 1 => self.build_array_new(generic_args, &args[0], function, writer)?,
+                    // Async intrinsics produce a `Future` handle directly.
+                    "sleep" | "all" | "any" | "race" => self.build_async_intrinsic_call(n.text.as_str(), args, function, writer)?,
                     _ => {
                         if let Some((params_decl, ret)) = self.function_typed_local(&n.text, function) {
                             self.build_indirect_call(&n.text, &params_decl, &ret, args, function, writer)?;
@@ -74,6 +76,9 @@ impl<'a> WasmGenerator<'a> {
             },
             ExpressionNode::MethodCall(obj, method, generic_args, params) => self.build_method_call(obj, method, generic_args, params, left_side, function, writer)?,
             ExpressionNode::Ternary(cond, then_e, else_e) => self.build_ternary(cond, then_e, else_e, left_side, function, writer)?,
+            // `await` only ever appears at allowed statement positions in v1, which the async
+            // statement splitter lowers directly (it never calls `build_expression` on an `Await`).
+            ExpressionNode::Await(_) => return Err(Error::new(ErrorKind::Other, "`await` is only supported at statement position (let x = await e; / await e; / return await e;)")),
         }
         Ok(())
     }
