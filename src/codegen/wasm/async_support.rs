@@ -96,7 +96,7 @@ impl<'a> WasmGenerator<'a> {
 
     /// Collects the saved-frame slots (params + locals) of an async function as
     /// `(name, wasm_type)`, sorted by name for a stable layout, plus a name -> byte offset map.
-    fn async_slots(&self, function: &FunctionNode<'a>, func_name: &str) -> Result<(Vec<(String, String)>, HashMap<String, i32>), Error> {
+    fn async_slots(&self, _function: &FunctionNode<'a>, func_name: &str) -> Result<(Vec<(String, String)>, HashMap<String, i32>), Error> {
         let locals = self.get_local_variables(self.symbol_map.get(func_name).unwrap())?;
         let mut entries: Vec<(String, String)> = locals.into_iter()
             .map(|(name, ty)| (name, WasmGenerator::get_wasm_type_from(self.resolve_type(&ty.get_type())).unwrap_or_else(|_| "i32".to_string())))
@@ -231,7 +231,7 @@ impl<'a> WasmGenerator<'a> {
         let labels: Vec<String> = (0..n).map(|k| format!("$async_seg{}", k)).collect();
         writer.write_line(&format!("br_table {}", labels.join(" ")));
         // Close each block and emit its segment body.
-        for (k, seg) in segments.iter().enumerate() {
+        for (_k, seg) in segments.iter().enumerate() {
             writer.unindent();
             writer.write_line(")");
             self.emit_one_segment(seg, slots, offsets, function, writer)?;

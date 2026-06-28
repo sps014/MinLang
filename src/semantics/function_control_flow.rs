@@ -3,45 +3,28 @@ use std::io::{Error, ErrorKind};
 use std::rc::Rc;
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, StatementNode, Type};
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct FlowNode
 {
     child_nodes: Vec<Rc<RefCell<FlowNode>>>,
-    name: String,
     has_return: bool,
 }
 impl FlowNode
 {
-    fn new(name:String) -> Self
+    fn new() -> Self
     {
         FlowNode
         {
             child_nodes: Vec::new(),
             has_return: false,
-            name,
         }
     }
-    fn from(has_return: bool,name:String) -> Self
+    fn from(has_return: bool) -> Self
     {
         FlowNode
         {
             child_nodes: Vec::new(),
             has_return,
-            name,
-        }
-    }
-    #[allow(dead_code)]
-    pub fn print(&self,indent: usize)
-    {
-        for _ in 0..indent
-        {
-            print!(" ");
-        }
-        println!("|____{}: {}", self.name,self.has_return);
-        for child in &self.child_nodes
-        {
-            child.as_ref().borrow().print(indent + 8);
         }
     }
 }
@@ -68,7 +51,6 @@ impl<'a> FunctionControlGraph<'a>
             return Ok(());
         }
         self.create_graph()?;
-        //(*self.root_node.as_ref().unwrap()).as_ref().borrow().print(0);
 
         // do not check for non void as it is checked in the analyzer already
         self.check_non_void_return()?;
@@ -123,7 +105,7 @@ impl<'a> FunctionControlGraph<'a>
     }
     fn create_graph(&mut self)->Result<(),Error>
     {
-        self.root_node = Some(Rc::new(RefCell::new(FlowNode::from(false,"root".to_string()))));
+        self.root_node = Some(Rc::new(RefCell::new(FlowNode::from(false))));
         self.visit_block(self.function.body, &self.root_node.clone().unwrap())?;
         Ok(())
     }
@@ -159,7 +141,7 @@ impl<'a> FunctionControlGraph<'a>
         ->Result<(),Error>
     {
         //if body
-        let mut if_body_node = Rc::new(RefCell::new(FlowNode::new("if".to_string())));
+        let mut if_body_node = Rc::new(RefCell::new(FlowNode::new()));
         // add current to parent
         (*parent).as_ref().borrow_mut().child_nodes.push(if_body_node.clone());
         //visit it's body for sub nodes
@@ -168,7 +150,7 @@ impl<'a> FunctionControlGraph<'a>
         //check same for else if blocks
         for i in else_if.iter()
         {
-            if_body_node = Rc::new(RefCell::new(FlowNode::new("else if".to_string())));
+            if_body_node = Rc::new(RefCell::new(FlowNode::new()));
             //add to parent
             (*parent).as_ref().borrow_mut().child_nodes.push(if_body_node.clone());
             //visit it's body for sub nodes
@@ -178,14 +160,14 @@ impl<'a> FunctionControlGraph<'a>
             //if we have else body add it to the graph
             Some(else_body)=>
             {
-                if_body_node = Rc::new(RefCell::new(FlowNode::new("else".to_string())));
+                if_body_node = Rc::new(RefCell::new(FlowNode::new()));
                 (*parent).as_ref().borrow_mut().child_nodes.push(if_body_node.clone());
                 self.visit_block(else_body, &mut if_body_node)?;
             },
             //if we dont have else body then we need to add an artificial body less else block
             None=>
                 {
-                    if_body_node = Rc::new(RefCell::new(FlowNode::new("else".to_string())));
+                    if_body_node = Rc::new(RefCell::new(FlowNode::new()));
                     (*parent).as_ref().borrow_mut().child_nodes.push(if_body_node.clone());
                 }
         };
@@ -196,7 +178,7 @@ impl<'a> FunctionControlGraph<'a>
     //add return node to parent block and mark: has return
     fn visit_return(&mut self,parent:&Rc<RefCell<FlowNode>>)->Result<(),Error>
     {
-        let return_flow = Rc::new(RefCell::new(FlowNode::from(true,"return".to_string())));
+        let return_flow = Rc::new(RefCell::new(FlowNode::from(true)));
         (*parent).as_ref().borrow_mut().child_nodes.push(return_flow.clone());
         Ok(())
     }

@@ -31,30 +31,30 @@ fn read_string_from_memory(memory: &Memory, store: impl AsContext, ptr: i32) -> 
     String::from_utf8_lossy(&data[ptr as usize..end]).into_owned()
 }
 
-fn run_test_case(ml_file: &Path) {
-    let expected_file = ml_file.with_extension("expected");
-    let expected_error_file = ml_file.with_extension("expected_error");
+fn run_test_case(dream_file: &Path) {
+    let expected_file = dream_file.with_extension("expected");
+    let expected_error_file = dream_file.with_extension("expected_error");
     
     let compiler = Compiler::new(Target::Wasm);
-    let wat_path = ml_file.with_extension("wat");
+    let wat_path = dream_file.with_extension("wat");
     
-    let ml_file_str = ml_file.to_str().unwrap().to_string();
+    let dream_file_str = dream_file.to_str().unwrap().to_string();
     let wat_path_str = wat_path.to_str().unwrap().to_string();
     
-    let compile_result = compiler.compile(&ml_file_str, &wat_path_str);
+    let compile_result = compiler.compile(&dream_file_str, &wat_path_str);
     
     if expected_error_file.exists() {
         let _expected_error = fs::read_to_string(&expected_error_file).unwrap();
-        assert!(compile_result.is_err(), "Expected compilation to fail for {:?}", ml_file);
+        assert!(compile_result.is_err(), "Expected compilation to fail for {:?}", dream_file);
         // We could check the exact error message if we exposed it from Compiler, 
         // but for now just ensuring it fails is good.
         return;
     }
     
-    compile_result.expect(&format!("Compilation failed for {:?}", ml_file));
+    compile_result.expect(&format!("Compilation failed for {:?}", dream_file));
 
     let expected_output = fs::read_to_string(&expected_file)
-        .unwrap_or_else(|_| panic!("Missing .expected file for {:?}", ml_file));
+        .unwrap_or_else(|_| panic!("Missing .expected file for {:?}", dream_file));
 
     let wat_content = fs::read_to_string(&wat_path).unwrap();
     
@@ -139,7 +139,7 @@ fn run_test_case(ml_file: &Path) {
     assert_eq!(
         actual_output.trim(),
         expected_output.trim(),
-        "Output mismatch for {:?}", ml_file
+        "Output mismatch for {:?}", dream_file
     );
     
     // Cleanup generated WAT

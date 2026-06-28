@@ -1,15 +1,7 @@
-use std::collections::HashMap;
 use std::io::Error;
-use bumpalo::Bump;
-use crate::syntax::nodes::{ExpressionNode, FunctionNode, Type, ParameterNode, ProgramNode, StatementNode, ImportNode};
-use crate::syntax::syntax_tree::SyntaxTree;
-use crate::syntax::text::line_text::LineText;
-use crate::syntax::text::text_span::TextSpan;
+use crate::syntax::nodes::{ExpressionNode, Type, StatementNode};
 use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
-use crate::syntax::token::token_kind::TokenKind::{EndOfFileToken, IdentifierToken};
-use crate::syntax::lexer::Lexer;
-use crate::driver::diagnostics::DiagnosticBag;
 use super::Parser;
 
 impl<'a, 'b> Parser<'a, 'b> {

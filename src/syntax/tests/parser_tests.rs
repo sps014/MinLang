@@ -1,5 +1,6 @@
 use super::*;
 use crate::syntax::lexer::Lexer;
+use crate::syntax::nodes::{ExpressionNode, StatementNode};
 use pretty_assertions::assert_eq;
 
 fn parse_code<'a>(code: &str, arena: &'a bumpalo::Bump) -> (ProgramNode<'a>, DiagnosticBag) {

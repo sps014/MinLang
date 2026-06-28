@@ -1,20 +1,13 @@
-use bumpalo::Bump;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use crate::syntax::nodes::{ExpressionNode, FunctionNode, Type, ProgramNode, StatementNode};
+use crate::syntax::nodes::{FunctionNode, Type, ProgramNode};
 use crate::syntax::nodes::struct_node::{StructDeclarationNode, StructFieldNode};
-use crate::syntax::nodes::function::ParameterNode;
-use crate::syntax::nodes::types::{mangle_generic, mangle_with_suffixes, strip_array, strip_nullable};
-use crate::syntax::syntax_tree::SyntaxTree;
-use crate::syntax::text::line_text::LineText;
+use crate::syntax::nodes::types::{mangle_generic, strip_array, strip_nullable};
 use crate::syntax::text::text_span::TextSpan;
-use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
-use crate::semantics::function_control_flow::FunctionControlGraph;
-use crate::semantics::function_table::{FunctionTable, FunctionTableInfo};
+use crate::semantics::function_table::FunctionTableInfo;
 use crate::semantics::symbol_table::SymbolTable;
-use crate::semantics::struct_table::StructTable;
 use crate::driver::diagnostics::DiagnosticBag;
 use super::*;
 

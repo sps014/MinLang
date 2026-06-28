@@ -2,17 +2,14 @@ use bumpalo::Bump;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use crate::syntax::nodes::{ExpressionNode, FunctionNode, Type, ProgramNode, StatementNode};
-use crate::syntax::nodes::struct_node::{StructDeclarationNode, StructFieldNode};
-use crate::syntax::nodes::function::ParameterNode;
-use crate::syntax::nodes::types::{mangle_generic, mangle_with_suffixes, strip_array, strip_nullable};
+use crate::syntax::nodes::{FunctionNode, Type, ProgramNode};
+use crate::syntax::nodes::types::mangle_with_suffixes;
 use crate::syntax::syntax_tree::SyntaxTree;
 use crate::syntax::text::line_text::LineText;
 use crate::syntax::text::text_span::TextSpan;
 use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
-use crate::semantics::function_control_flow::FunctionControlGraph;
-use crate::semantics::function_table::{FunctionTable, FunctionTableInfo};
+use crate::semantics::function_table::FunctionTable;
 use crate::semantics::symbol_table::SymbolTable;
 use crate::semantics::struct_table::StructTable;
 use crate::driver::diagnostics::DiagnosticBag;
@@ -213,12 +210,6 @@ impl<'a> Analyzer<'a> {
             Type::Nullable(inner) => Self::resolve_struct_parts(inner),
             _ => None,
         }
-    }
-
-    /// If `ty` is a struct (or nullable struct), returns its mangled type name
-    /// (e.g. `Node`, `Box_int`, `Pair_int_string`). Returns `None` for any non-struct type.
-    fn resolve_struct_name(ty: &Type) -> Option<String> {
-        Self::resolve_struct_parts(ty).map(|(base, args)| mangle_generic(&base, &args))
     }
 
     /// Splits a mangled generic struct name (e.g. `Box_int`) into its base name and

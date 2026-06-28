@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::path::Path;
 use tracing::{info, error, Level};
 use tracing_subscriber::FmtSubscriber;

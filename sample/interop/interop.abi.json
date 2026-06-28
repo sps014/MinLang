@@ -1,8 +1,0 @@
-{
-  "externs": [
-    { "name": "alert", "module": "env", "field": "alert", "params": ["string"], "result": "void" },
-    { "name": "log", "module": "console", "field": "log", "params": ["string"], "result": "void" },
-    { "name": "square", "module": "math", "field": "square", "params": ["int"], "result": "int" }
-  ],
-  "exports": ["main"]
-}
