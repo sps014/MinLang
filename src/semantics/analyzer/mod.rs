@@ -15,8 +15,11 @@ use crate::semantics::struct_table::StructTable;
 use crate::driver::diagnostics::DiagnosticBag;
 
 mod await_rules;
+mod calls;
 mod declarations;
+mod expressions;
 mod generics;
+mod statements;
 mod type_checker;
 
 /// Converts an AST node's `Rc<str>` source-file tag into the `String` form stored on the
