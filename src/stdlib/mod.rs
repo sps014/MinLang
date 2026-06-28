@@ -28,6 +28,10 @@ pub struct StdlibFunction {
     pub name: String,
     pub parameters: Vec<String>,
     pub return_type: Option<Type>,
+    /// When `true`, codegen emits this function's body inline (see `RUNTIME_STRINGS` / the object
+    /// runtime) instead of importing it from the host. This is the single source of truth for the
+    /// import-vs-inline decision; the module import emitter consults it rather than a parallel list.
+    pub inline: bool,
 }
 
 impl StdlibFunction {
@@ -37,84 +41,59 @@ impl StdlibFunction {
         crate::syntax::nodes::types::primitive_type(type_str, token).unwrap_or(Type::Void)
     }
 
+    /// A host-imported stdlib function (lowered to a WASM `(import "env" ...)`).
+    fn imported(name: &str, parameters: &[&str], return_type: Option<Type>) -> Self {
+        Self {
+            name: name.to_string(),
+            parameters: parameters.iter().map(|s| s.to_string()).collect(),
+            return_type,
+            inline: false,
+        }
+    }
+
+    /// A stdlib function whose body codegen emits inline rather than importing.
+    fn inlined(name: &str, parameters: &[&str], return_type: Option<Type>) -> Self {
+        Self {
+            name: name.to_string(),
+            parameters: parameters.iter().map(|s| s.to_string()).collect(),
+            return_type,
+            inline: true,
+        }
+    }
+
     /// Host functions that are always imported into every module but are NOT user-callable.
     /// The `print`/`println` builtins lower to these; users never name them directly.
     pub fn host_imports() -> Vec<StdlibFunction> {
         let mut imports = vec![
-            StdlibFunction {
-                name: "print_string".to_string(),
-                parameters: vec!["string".to_string()],
-                return_type: None, // void
-            },
-            StdlibFunction {
-                name: "print_int".to_string(),
-                parameters: vec!["int".to_string()],
-                return_type: None,
-            },
-            StdlibFunction {
-                name: "print_float".to_string(),
-                parameters: vec!["float".to_string()],
-                return_type: None,
-            },
-            StdlibFunction {
-                name: "print_double".to_string(),
-                parameters: vec!["double".to_string()],
-                return_type: None,
-            },
-            StdlibFunction {
-                name: "print_char".to_string(),
-                parameters: vec!["char".to_string()],
-                return_type: None,
-            },
+            Self::imported("print_string", &["string"], None),
+            Self::imported("print_int", &["int"], None),
+            Self::imported("print_float", &["float"], None),
+            Self::imported("print_double", &["double"], None),
+            Self::imported("print_char", &["char"], None),
         ];
         // Math host functions, reachable only through the `Math.*` namespace. Their names come
         // from the intrinsic registry so the import set never drifts from the recognized set;
         // each takes one `float` and returns a `float`.
-        imports.extend(crate::intrinsics::MATH_FUNCTIONS.iter().map(|name| StdlibFunction {
-            name: name.to_string(),
-            parameters: vec!["float".to_string()],
-            return_type: Some(Self::create_type("float")),
+        imports.extend(crate::intrinsics::MATH_FUNCTIONS.iter().map(|name| {
+            Self::imported(name, &["float"], Some(Self::create_type("float")))
         }));
         imports
     }
 
-    /// User-callable stdlib functions registered in the function table. `concat`/`strlen`/
-    /// `debug_get_free_list_head` are compiled inline; the math functions are real imports.
+    /// User-callable stdlib functions registered in the function table. All of these are compiled
+    /// inline (`inline: true`); their bodies live in `RUNTIME_STRINGS` / the object runtime, so the
+    /// module emitter skips emitting host imports for them.
     pub fn get_all() -> Vec<StdlibFunction> {
         vec![
             // String
-            StdlibFunction {
-                name: "concat".to_string(),
-                parameters: vec!["string".to_string(), "string".to_string()],
-                return_type: Some(Self::create_type("string")),
-            },
-            StdlibFunction {
-                name: "strlen".to_string(),
-                parameters: vec!["string".to_string()],
-                return_type: Some(Self::create_type("int")),
-            },
+            Self::inlined("concat", &["string", "string"], Some(Self::create_type("string"))),
+            Self::inlined("strlen", &["string"], Some(Self::create_type("int"))),
             // Low-level string/char primitives that the primitive "class" prelude (int/char/string
             // .dream) builds on. Their bodies live in `RUNTIME_STRINGS` (see codegen/wasm/memory.rs).
-            StdlibFunction {
-                name: "char_at".to_string(),
-                parameters: vec!["string".to_string(), "int".to_string()],
-                return_type: Some(Self::create_type("char")),
-            },
-            StdlibFunction {
-                name: "string_alloc".to_string(),
-                parameters: vec!["int".to_string()],
-                return_type: Some(Self::create_type("string")),
-            },
-            StdlibFunction {
-                name: "string_set".to_string(),
-                parameters: vec!["string".to_string(), "int".to_string(), "char".to_string()],
-                return_type: None,
-            },
-            StdlibFunction {
-                name: "debug_get_free_list_head".to_string(),
-                parameters: vec![],
-                return_type: Some(Self::create_type("int")),
-            },
+            Self::inlined("char_at", &["string", "int"], Some(Self::create_type("char"))),
+            Self::inlined("string_alloc", &["int"], Some(Self::create_type("string"))),
+            Self::inlined("string_set", &["string", "int", "char"], None),
+            Self::inlined("debug_get_free_list_head", &[], Some(Self::create_type("int"))),
         ]
     }
 }

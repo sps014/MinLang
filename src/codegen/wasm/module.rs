@@ -32,14 +32,14 @@ impl<'a> WasmGenerator<'a> {
         writer.write_line("(module");
         writer.indent();
         
-        // Import the host I/O functions (print_*) plus the importable stdlib functions.
-        // The string/char runtime helpers below are compiled inline (see RUNTIME_STRINGS), not imported.
-        const INLINE_STDLIB: [&str; 6] = ["concat", "strlen", "debug_get_free_list_head", "char_at", "string_alloc", "string_set"];
+        // Import the host I/O functions (print_*) plus the importable stdlib functions. Functions
+        // flagged `inline` (the string/char runtime helpers, compiled into RUNTIME_STRINGS) are not
+        // imported - the `inline` field on StdlibFunction is the single source of truth for that.
         let imports = crate::stdlib::StdlibFunction::host_imports()
             .into_iter()
             .chain(crate::stdlib::StdlibFunction::get_all());
         for std_func in imports {
-            if INLINE_STDLIB.contains(&std_func.name.as_str()) { continue; } // handled internally
+            if std_func.inline { continue; } // body emitted internally, not imported
             
             let mut params_str = String::new();
             for p in &std_func.parameters {
