@@ -9,11 +9,18 @@ async fun main(): void {
     let body = await Fetch.text("https://example.com/hello");
     println(body);
 
-    // Richer response: status + JSON body.
+    // Richer GET response: status + JSON body.
     let res = await Fetch.get("https://example.com/user");
     println(to_string(res.status()));
 
     let data = await res.json();
     println(data.get("name").as_string());
     res.release();
+
+    // POST a JSON body (any verb is available: get/post/put/patch/delete/head, or `request`).
+    let created = await Fetch.post("https://example.com/user", "{\"name\":\"Grace\"}");
+    println(to_string(created.status()));
+    let echoed = await created.text();
+    println(echoed);
+    created.release();
 }

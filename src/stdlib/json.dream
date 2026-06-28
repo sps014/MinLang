@@ -14,19 +14,17 @@
 // JsonValue.kind values:
 //   0 = null, 1 = bool, 2 = number, 3 = string, 4 = array, 5 = object
 
-// Backed by plain dynamic arrays (no generic `List`/`Map` fields) so the value tree stays
-// self-contained: `items`/`count` hold array elements; `obj_keys`/`obj_vals`/`obj_count` hold
-// object entries (an insertion-ordered association list, so stringify is deterministic).
+// Backed by the standard generic `List`: `items` holds array elements, while `obj_keys` and the
+// parallel `obj_vals` hold object entries as an insertion-ordered association list (so stringify
+// is deterministic). Using `List<T>` fields keeps the value tree free of raw-array bookkeeping.
 class JsonValue {
     kind: int;
     bool_val: bool;
     num_val: double;
     str_val: string;
-    items: JsonValue[];
-    count: int;
-    obj_keys: string[];
-    obj_vals: JsonValue[];
-    obj_count: int;
+    items: List<JsonValue>;
+    obj_keys: List<string>;
+    obj_vals: List<JsonValue>;
 
     // --- builders ---------------------------------------------------------------------------
 
@@ -94,8 +92,8 @@ class JsonValue {
 
     fun _find_key(key: string): int {
         let i = 0;
-        while (i < this.obj_count) {
-            if (this.obj_keys[i] == key) {
+        while (i < this.obj_keys.size()) {
+            if (this.obj_keys.get(i) == key) {
                 return i;
             }
             i = i + 1;
@@ -109,93 +107,54 @@ class JsonValue {
     fun get(key: string): JsonValue {
         let idx = this._find_key(key);
         if (idx >= 0) {
-            return this.obj_vals[idx];
+            return this.obj_vals.get(idx);
         }
         return JsonValue.none();
     }
     fun set(key: string, value: JsonValue): void {
         let idx = this._find_key(key);
         if (idx >= 0) {
-            this.obj_vals[idx] = value;
+            this.obj_vals.set(idx, value);
         } else {
-            if (this.obj_count == this.obj_keys.len()) {
-                let cap = this.obj_keys.len() * 2;
-                if (cap < 4) {
-                    cap = 4;
-                }
-                let bk = array_new<string>(cap);
-                let bv = array_new<JsonValue>(cap);
-                let i = 0;
-                while (i < this.obj_count) {
-                    bk[i] = this.obj_keys[i];
-                    bv[i] = this.obj_vals[i];
-                    i = i + 1;
-                }
-                this.obj_keys = bk;
-                this.obj_vals = bv;
-            }
-            this.obj_keys[this.obj_count] = key;
-            this.obj_vals[this.obj_count] = value;
-            this.obj_count = this.obj_count + 1;
+            this.obj_keys.push(key);
+            this.obj_vals.push(value);
         }
     }
     fun key_at(index: int): string {
-        return this.obj_keys[index];
+        return this.obj_keys.get(index);
     }
-    fun keys(): string[] {
-        let result = array_new<string>(this.obj_count);
-        let i = 0;
-        while (i < this.obj_count) {
-            result[i] = this.obj_keys[i];
-            i = i + 1;
-        }
-        return result;
+    fun keys(): List<string> {
+        return this.obj_keys;
     }
 
     // --- array accessors --------------------------------------------------------------------
 
     fun at(index: int): JsonValue {
-        return this.items[index];
+        return this.items.get(index);
     }
     fun push(value: JsonValue): void {
-        if (this.count == this.items.len()) {
-            let cap = this.items.len() * 2;
-            if (cap < 4) {
-                cap = 4;
-            }
-            let bigger = array_new<JsonValue>(cap);
-            let i = 0;
-            while (i < this.count) {
-                bigger[i] = this.items[i];
-                i = i + 1;
-            }
-            this.items = bigger;
-        }
-        this.items[this.count] = value;
-        this.count = this.count + 1;
+        this.items.push(value);
     }
 
     // Element count for arrays/objects (0 for scalars).
     fun size(): int {
         if (this.kind == 5) {
-            return this.obj_count;
+            return this.obj_keys.size();
         }
-        return this.count;
+        return this.items.size();
     }
 }
 
-// Allocates a fresh JsonValue of kind `k` with empty backing arrays.
+// Allocates a fresh JsonValue of kind `k` with empty backing lists.
 fun _json_new(k: int): JsonValue {
     return JsonValue {
         kind: k,
         bool_val: false,
         num_val: 0.0d,
         str_val: "",
-        items: array_new<JsonValue>(0),
-        count: 0,
-        obj_keys: array_new<string>(0),
-        obj_vals: array_new<JsonValue>(0),
-        obj_count: 0
+        items: List<JsonValue>(),
+        obj_keys: List<string>(),
+        obj_vals: List<JsonValue>()
     };
 }
 
@@ -263,11 +222,11 @@ fun _json_stringify(v: JsonValue): string {
     if (k == 4) {
         let result = "[";
         let i = 0;
-        while (i < v.count) {
+        while (i < v.items.size()) {
             if (i > 0) {
                 result = result + ",";
             }
-            result = result + _json_stringify(v.items[i]);
+            result = result + _json_stringify(v.items.get(i));
             i = i + 1;
         }
         result = result + "]";
@@ -276,13 +235,13 @@ fun _json_stringify(v: JsonValue): string {
     if (k == 5) {
         let result = "{";
         let i = 0;
-        while (i < v.obj_count) {
+        while (i < v.obj_keys.size()) {
             if (i > 0) {
                 result = result + ",";
             }
-            result = result + _json_escape(v.obj_keys[i]);
+            result = result + _json_escape(v.obj_keys.get(i));
             result = result + ":";
-            result = result + _json_stringify(v.obj_vals[i]);
+            result = result + _json_stringify(v.obj_vals.get(i));
             i = i + 1;
         }
         result = result + "}";

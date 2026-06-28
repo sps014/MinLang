@@ -396,6 +396,20 @@ function defaultDreamModule(getInstance) {
     // Fetch helpers (see src/stdlib/fetch.dream). Return Promises; bridged via extern async.
     fetchText: (url) => fetch(url).then((r) => r.text()),
     fetch: (url) => fetch(url),
+    // Generic request: `method` is GET/POST/PUT/PATCH/DELETE/..., `headersJson` is a JSON object of
+    // header name/value pairs ("" for none), and `body` is the request body ("" for none, omitted
+    // on GET/HEAD). Returns the live Response as a handle.
+    fetchRequest: (url, method, headersJson, body) => {
+      const init = { method: method || "GET" };
+      if (headersJson && headersJson !== "") {
+        try { init.headers = JSON.parse(headersJson); } catch (_) { /* ignore bad header json */ }
+      }
+      const m = (method || "GET").toUpperCase();
+      if (body !== "" && m !== "GET" && m !== "HEAD") {
+        init.body = body;
+      }
+      return fetch(url, init);
+    },
     // Reads the body of a `Response` handle as text (Promise; bridged via extern async).
     responseText: (res) => res.text(),
   };

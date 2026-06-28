@@ -25,7 +25,7 @@
     { "name": "__regex_match_joined", "module": "Dream", "field": "regexMatchJoined", "params": ["string", "string", "string", "string"], "result": "string", "async": false },
     { "name": "__regex_compile", "module": "Dream", "field": "regexCompile", "params": ["string", "string"], "result": "JsRef", "async": false },
     { "name": "__fetch_text", "module": "Dream", "field": "fetchText", "params": ["string"], "result": "string", "async": true },
-    { "name": "__fetch", "module": "Dream", "field": "fetch", "params": ["string"], "result": "JsRef", "async": true },
+    { "name": "__fetch_request", "module": "Dream", "field": "fetchRequest", "params": ["string", "string", "string", "string"], "result": "JsRef", "async": true },
     { "name": "__response_text", "module": "Dream", "field": "responseText", "params": ["JsRef"], "result": "string", "async": true }
   ],
   "exports": ["main"]

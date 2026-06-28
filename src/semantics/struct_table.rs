@@ -43,10 +43,9 @@ impl StructTable {
                 return Err(format!("Field '{}' is already defined in class '{}'", field_name, name));
             }
 
-            let field_type = match Type::from_token(field.type_token.clone()) {
-                Ok(t) => t,
-                Err(_) => return Err(format!("Invalid type for field '{}'", field_name)),
-            };
+            // Use the structured type parsed by the parser, which preserves generic arguments
+            // (e.g. `List<JsonValue>`, `Map<string, V>`) that the flat token text would lose.
+            let field_type = field.field_type.clone();
 
             let (size, alignment) = match field_type.get_type().as_str() {
                 "bool" | "char" => (1, 1),

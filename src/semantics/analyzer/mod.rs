@@ -79,6 +79,41 @@ fn substitute_generic_token(token: &SyntaxToken, bindings: &[(String, String)]) 
     result
 }
 
+/// Rewrites a structured field type, substituting any generic parameter that appears in it with
+/// its bound concrete type. Unlike `substitute_generic_token` (which only understands `T`, `T[]`,
+/// `T?` on a flat token), this recurses through arrays, nullables, generic arguments, and function
+/// types, so a field like `List<T>` becomes `List<JsonValue>` rather than being flattened.
+fn substitute_generic_type(ty: &Type, bindings: &[(String, String)]) -> Type {
+    match ty {
+        Type::Array(inner) => Type::Array(Box::new(substitute_generic_type(inner, bindings))),
+        Type::Nullable(inner) => Type::Nullable(Box::new(substitute_generic_type(inner, bindings))),
+        Type::Function(params, ret) => Type::Function(
+            params.iter().map(|p| substitute_generic_type(p, bindings)).collect(),
+            Box::new(substitute_generic_type(ret, bindings)),
+        ),
+        Type::Generic(name) => bind_concrete(name, bindings).unwrap_or_else(|| ty.clone()),
+        Type::Struct(token, args) => {
+            // A bare struct whose name is itself a generic parameter (the common `T` case, since
+            // unknown identifiers parse as `Type::Struct`).
+            if args.is_none() {
+                if let Some(concrete) = bind_concrete(&token.text, bindings) {
+                    return concrete;
+                }
+            }
+            let new_args = args.as_ref().map(|a| a.iter().map(|x| substitute_generic_type(x, bindings)).collect());
+            Type::Struct(token.clone(), new_args)
+        }
+        other => other.clone(),
+    }
+}
+
+/// Resolves a generic parameter name to its bound concrete `Type` (parsing the stored type-name
+/// string back into a `Type`), or `None` if `name` is not a bound generic parameter.
+fn bind_concrete(name: &str, bindings: &[(String, String)]) -> Option<Type> {
+    let concrete = lookup_binding(bindings, name)?;
+    Type::from_token(synthetic_token(TokenKind::IdentifierToken, &concrete)).ok()
+}
+
 /// Maps each generic parameter name to the concrete type bound to it for one monomorphization.
 pub type GenericBindings = Vec<(String, String)>;
 
@@ -207,8 +242,7 @@ impl<'a> Analyzer<'a> {
         self.register_extensions(node, diagnostics);
         self.register_functions(node, diagnostics);
         self.analyze_function_bodies(node, &mut symbol_table_map, diagnostics)?;
-        self.analyze_instantiated_generics(&mut symbol_table_map, diagnostics)?;
-        self.analyze_struct_method_bodies(&mut symbol_table_map, diagnostics)?;
+        self.analyze_pending_instantiations(&mut symbol_table_map, diagnostics)?;
 
         Ok(SemanticInfo::new(symbol_table_map, &self.function_table, &self.struct_table, self.instantiated_generics.clone(), self.struct_methods.clone(), self.enum_table.clone()))
     }

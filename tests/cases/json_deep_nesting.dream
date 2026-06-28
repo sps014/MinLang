@@ -1,0 +1,75 @@
+@json
+class Geo {
+    lat: double;
+    lng: double;
+}
+
+@json
+class Address {
+    city: string;
+    zip: string;
+    geo: Geo;
+}
+
+@json
+class Company {
+    name: string;
+    address: Address;
+}
+
+@json
+class User {
+    name: string;
+    age: int;
+    company: Company;
+    tags: string[];
+}
+
+@json
+class Team {
+    title: string;
+    lead: User;
+    members: User[];
+}
+
+fun mk_user(name: string, age: int, city: string): User {
+    return User {
+        name: name,
+        age: age,
+        company: Company {
+            name: city + " Corp",
+            address: Address {
+                city: city,
+                zip: "00000",
+                geo: Geo { lat: 1.5d, lng: 2.5d },
+            },
+        },
+        tags: [name, city],
+    };
+}
+
+fun main(): void {
+    let team = Team {
+        title: "Core",
+        lead: mk_user("Ada", 36, "London"),
+        members: [mk_user("Bob", 30, "Paris"), mk_user("Cee", 41, "Berlin")],
+    };
+
+    let text = JSON.serialize(team);
+    println(text);
+
+    let back = JSON.deserialize<Team>(text);
+    println(back.title);
+    println(back.lead.name);
+    println(back.lead.company.name);
+    println(back.lead.company.address.city);
+    println(to_string(back.lead.company.address.geo.lat));
+    println(back.lead.tags[1]);
+    println(to_string(back.members.len()));
+    println(back.members[0].name);
+    println(to_string(back.members[1].company.address.geo.lng));
+    println(to_string(back.members[1].age));
+
+    // Round-trips identically.
+    println(to_string(JSON.serialize(back) == text));
+}

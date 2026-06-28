@@ -153,37 +153,58 @@ impl<'a> Analyzer<'a> {
         Ok(())
     }
 
-    /// Pass 3: analyze each monomorphized generic instance so concrete-type errors surface.
-    pub(super) fn analyze_instantiated_generics(&mut self, symbol_table_map: &mut HashMap<String, Rc<RefCell<SymbolTable>>>, diagnostics: &mut DiagnosticBag) -> Result<(), ()> {
-        let generics_to_analyze: Vec<(String, &'a FunctionNode<'a>)> = self.instantiated_generics.iter()
-            .map(|(mangled, (_bindings, template))| (mangled.clone(), *template))
-            .collect();
-        let bindings_by_name: HashMap<String, GenericBindings> = self.instantiated_generics.iter()
-            .map(|(mangled, (bindings, _))| (mangled.clone(), bindings.clone()))
-            .collect();
-        for (mangled_name, template) in generics_to_analyze {
-            diagnostics.file_path = file_path_string(&template.file_path);
-            self.current_generic_bindings = bindings_by_name.get(&mangled_name).cloned().unwrap_or_default();
-            let table = self.analyze_function(template, diagnostics)?;
-            self.current_generic_bindings = Vec::new();
-            symbol_table_map.insert(mangled_name, table);
-        }
-        Ok(())
-    }
+    /// Passes 3 & 4 (combined fixpoint): analyze the bodies of every monomorphized generic
+    /// function instance and every (de-sugared) struct method.
+    ///
+    /// Analyzing one body can lazily instantiate *more* generics — a struct method that uses
+    /// `List<JsonValue>` queues new struct methods, and a builder that calls `List<JsonValue>()`
+    /// queues a new generic function instance. The two feed each other, so we loop until neither
+    /// the generic-function set nor the struct-method list grows. Both instantiation paths are
+    /// idempotent (guarded by the struct/function tables), so this terminates.
+    pub(super) fn analyze_pending_instantiations(&mut self, symbol_table_map: &mut HashMap<String, Rc<RefCell<SymbolTable>>>, diagnostics: &mut DiagnosticBag) -> Result<(), ()> {
+        let mut processed_generics: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut method_index = 0;
+        loop {
+            let mut progressed = false;
 
-    /// Pass 4: analyze the body of every (de-sugared) struct method.
-    pub(super) fn analyze_struct_method_bodies(&mut self, symbol_table_map: &mut HashMap<String, Rc<RefCell<SymbolTable>>>, diagnostics: &mut DiagnosticBag) -> Result<(), ()> {
-        let methods_to_analyze = self.struct_methods.clone();
-        for (method, bindings) in methods_to_analyze {
-            diagnostics.file_path = file_path_string(&method.file_path);
-            self.current_generic_bindings = bindings;
-            let table = self.analyze_function(method, diagnostics)?;
-            self.current_generic_bindings = Vec::new();
-            // Key by the emitted name so overloaded methods each get a distinct entry (the
-            // parameter list includes the implicit `this`).
-            let param_types: Vec<String> = method.parameters.iter().map(|p| p.type_.get_type()).collect();
-            let key = self.function_table.resolve_emitted_name(&method.name.text, &param_types);
-            symbol_table_map.insert(key, table);
+            // Monomorphized generic function instances (e.g. `List<JsonValue>`, `swap_int_string`).
+            let pending: Vec<String> = self.instantiated_generics.keys()
+                .filter(|k| !processed_generics.contains(*k))
+                .cloned()
+                .collect();
+            for mangled_name in pending {
+                processed_generics.insert(mangled_name.clone());
+                let (bindings, template) = match self.instantiated_generics.get(&mangled_name) {
+                    Some((b, t)) => (b.clone(), *t),
+                    None => continue,
+                };
+                diagnostics.file_path = file_path_string(&template.file_path);
+                self.current_generic_bindings = bindings;
+                let table = self.analyze_function(template, diagnostics)?;
+                self.current_generic_bindings = Vec::new();
+                symbol_table_map.insert(mangled_name, table);
+                progressed = true;
+            }
+
+            // De-sugared struct methods, including those for newly instantiated generic structs.
+            while method_index < self.struct_methods.len() {
+                let (method, bindings) = self.struct_methods[method_index].clone();
+                method_index += 1;
+                diagnostics.file_path = file_path_string(&method.file_path);
+                self.current_generic_bindings = bindings;
+                let table = self.analyze_function(method, diagnostics)?;
+                self.current_generic_bindings = Vec::new();
+                // Key by the emitted name so overloaded methods each get a distinct entry (the
+                // parameter list includes the implicit `this`).
+                let param_types: Vec<String> = method.parameters.iter().map(|p| p.type_.get_type()).collect();
+                let key = self.function_table.resolve_emitted_name(&method.name.text, &param_types);
+                symbol_table_map.insert(key, table);
+                progressed = true;
+            }
+
+            if !progressed {
+                break;
+            }
         }
         Ok(())
     }
@@ -211,6 +232,7 @@ impl<'a> Analyzer<'a> {
             .map(|field| StructFieldNode {
                 name: field.name.clone(),
                 type_token: substitute_generic_token(&field.type_token, &bindings),
+                field_type: substitute_generic_type(&field.field_type, &bindings),
             })
             .collect();
 

@@ -12,7 +12,16 @@ import { fileURLToPath } from "node:url";
 const here = fileURLToPath(new URL(".", import.meta.url));
 const wasmPath = process.argv[2] || here + "fetch.wasm";
 
-globalThis.fetch = (url) => {
+globalThis.fetch = (url, init = {}) => {
+  const method = (init.method || "GET").toUpperCase();
+  if (method === "POST") {
+    // Echo the posted body back with a 201.
+    return Promise.resolve({
+      status: 201,
+      ok: true,
+      text: () => Promise.resolve(`created: ${init.body || ""}`),
+    });
+  }
   if (String(url).endsWith("/user")) {
     return Promise.resolve({
       status: 200,

@@ -1,10 +1,18 @@
 use std::rc::Rc;
 use crate::syntax::token::syntax_token::SyntaxToken;
+use crate::syntax::nodes::Type;
 
 #[derive(Debug, Clone)]
 pub struct StructFieldNode {
     pub name: SyntaxToken,
+    /// The field type's canonical spelling as a token (carries the source position and a flat
+    /// display name like `List_JsonValue`). For the structured type (which preserves generic
+    /// arguments such as `List<JsonValue>`), use `field_type`.
     pub type_token: SyntaxToken,
+    /// The fully parsed field type, preserving generic arguments, arrays, and nullability so
+    /// generic field types (e.g. `List<JsonValue>`, `Map<string, V>`) can be instantiated and
+    /// have their methods resolved.
+    pub field_type: Type,
 }
 
 #[derive(Debug, Clone)]

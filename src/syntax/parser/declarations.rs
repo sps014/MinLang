@@ -125,6 +125,7 @@ impl<'a, 'b> Parser<'a, 'b> {
                 fields.push(crate::syntax::nodes::struct_node::StructFieldNode {
                     name: field_name,
                     type_token: field_type_token,
+                    field_type: parsed_type,
                 });
             }
             self.ensure_progress(iter);

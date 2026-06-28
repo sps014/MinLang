@@ -31,10 +31,30 @@ async fun main(): void {
 }
 ```
 
+## HTTP methods
+
+Every verb is available. `get`/`delete`/`head` take just a URL; `post`/`put`/`patch` also take a request body; and `request` gives full control including custom headers (passed as a JSON-object string):
+
+```ts
+async fun main(): void {
+    let created = await Fetch.post("https://api.example.com/users", "{\"name\":\"Grace\"}");
+    println(to_string(created.status()));
+
+    // Full control: method, url, body, and a JSON string of headers.
+    let res = await Fetch.request("PUT", "https://api.example.com/users/1",
+                                  "{\"name\":\"Ada\"}",
+                                  "{\"Content-Type\":\"application/json\"}");
+    let updated = await res.json();
+}
+```
+
 | Member | Description |
 | --- | --- |
 | `Fetch.text(url): Future<string>` | GET and return the body as text |
 | `Fetch.get(url): Future<Response>` | GET and return a `Response` |
+| `Fetch.post/put/patch(url, body): Future<Response>` | send `body` with the given verb |
+| `Fetch.delete/head(url): Future<Response>` | DELETE / HEAD request |
+| `Fetch.request(method, url, body, headers): Future<Response>` | arbitrary verb; `headers` is a JSON-object string ("" for none) |
 | `Response.status(): int` | HTTP status code |
 | `Response.ok(): bool` | true for a 2xx status |
 | `Response.text(): Future<string>` | body as text (async) |
