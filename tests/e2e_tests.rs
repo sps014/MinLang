@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use wasmtime::*;
 use dream::driver::compiler::{Compiler, Target};
+use dream::execution::host::{link_math_functions, read_string_from_memory};
 use pretty_assertions::assert_eq;
 
 #[derive(Clone)]
@@ -20,15 +21,6 @@ impl TestEnv {
     fn print(&self, s: &str) {
         self.output.lock().unwrap().push_str(s);
     }
-}
-
-fn read_string_from_memory(memory: &Memory, store: impl AsContext, ptr: i32) -> String {
-    let data = memory.data(&store);
-    let mut end = ptr as usize;
-    while end < data.len() && data[end] != 0 {
-        end += 1;
-    }
-    String::from_utf8_lossy(&data[ptr as usize..end]).into_owned()
 }
 
 fn run_test_case(dream_file: &Path) {
@@ -107,10 +99,7 @@ fn run_test_case(dream_file: &Path) {
         0 // Dummy implementation for now, full stdlib needs actual memory management
     }).unwrap();
 
-    linker.func_wrap("env", "sin", |v: f32| -> f32 { v.sin() }).unwrap();
-    linker.func_wrap("env", "cos", |v: f32| -> f32 { v.cos() }).unwrap();
-    linker.func_wrap("env", "abs", |v: f32| -> f32 { v.abs() }).unwrap();
-    linker.func_wrap("env", "sqrt", |v: f32| -> f32 { v.sqrt() }).unwrap();
+    link_math_functions(&mut linker).unwrap();
     linker.func_wrap("env", "strlen", |_: i32| -> i32 { 0 }).unwrap();
     linker.func_wrap("env", "malloc", |_: i32| -> i32 { 0 }).unwrap();
     linker.func_wrap("env", "free", |_: i32| {}).unwrap();

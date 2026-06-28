@@ -1,14 +1,6 @@
+use super::host::{link_math_functions, read_string_from_memory};
 use std::fs;
 use wasmtime::*;
-
-fn read_string_from_memory(memory: &Memory, store: impl AsContext, ptr: i32) -> String {
-    let data = memory.data(&store);
-    let mut end = ptr as usize;
-    while end < data.len() && data[end] != 0 {
-        end += 1;
-    }
-    String::from_utf8_lossy(&data[ptr as usize..end]).into_owned()
-}
 
 pub fn execute_wasm(wat_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let wat_content = fs::read_to_string(wat_path)?;
@@ -50,10 +42,7 @@ pub fn execute_wasm(wat_path: &str) -> Result<(), Box<dyn std::error::Error>> {
         println!("{}", s);
     })?;
 
-    linker.func_wrap("env", "sin", |v: f32| -> f32 { v.sin() })?;
-    linker.func_wrap("env", "cos", |v: f32| -> f32 { v.cos() })?;
-    linker.func_wrap("env", "abs", |v: f32| -> f32 { v.abs() })?;
-    linker.func_wrap("env", "sqrt", |v: f32| -> f32 { v.sqrt() })?;
+    link_math_functions(&mut linker)?;
     linker.func_wrap("env", "strlen", |_: i32| -> i32 { 0 })?;
     linker.func_wrap("env", "debug_get_free_list_head", || -> i32 { 0 })?;
 

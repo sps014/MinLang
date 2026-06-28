@@ -19,23 +19,9 @@ pub(crate) fn merge_prelude<'a>(
     file_contents: &mut HashMap<String, String>,
 ) -> Result<(), Error> {
     // Each standard type lives in its own prelude file. The primitive files (int/char/string/...)
-    // make the built-in types real, extensible classes via `extend` blocks.
-    const PRELUDE_FILES: [(&str, &str); 12] = [
-        ("<std>/list.dream", include_str!("../stdlib/list.dream")),
-        ("<std>/map.dream", include_str!("../stdlib/map.dream")),
-        ("<std>/int.dream", include_str!("../stdlib/int.dream")),
-        ("<std>/char.dream", include_str!("../stdlib/char.dream")),
-        ("<std>/string.dream", include_str!("../stdlib/string.dream")),
-        ("<std>/bool.dream", include_str!("../stdlib/bool.dream")),
-        ("<std>/float.dream", include_str!("../stdlib/float.dream")),
-        ("<std>/double.dream", include_str!("../stdlib/double.dream")),
-        ("<std>/jsref.dream", include_str!("../stdlib/jsref.dream")),
-        ("<std>/json.dream", include_str!("../stdlib/json.dream")),
-        ("<std>/regex.dream", include_str!("../stdlib/regex.dream")),
-        ("<std>/fetch.dream", include_str!("../stdlib/fetch.dream")),
-    ];
-
-    for (prelude_name, prelude_src) in PRELUDE_FILES {
+    // make the built-in types real, extensible classes via `extend` blocks. The list itself lives
+    // in `crate::stdlib::PRELUDE_FILES` so the analyzer language service shares the same manifest.
+    for &(prelude_name, prelude_src) in crate::stdlib::PRELUDE_FILES {
         let prelude_name = prelude_name.to_string();
         file_contents.insert(prelude_name.clone(), prelude_src.to_string());
 

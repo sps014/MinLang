@@ -5,6 +5,25 @@ use crate::syntax::text::text_span::TextSpan;
 use std::rc::Rc;
 use crate::syntax::text::line_text::LineText;
 
+/// The embedded standard-library prelude, in the exact order it must be merged. This is the
+/// single source of truth shared by the compiler's source manager and the `dream-analyzer`
+/// language service, so the two can never drift. The primitive files (int/char/string/...)
+/// only attach methods to built-in types, so their relative order does not matter.
+pub const PRELUDE_FILES: &[(&str, &str)] = &[
+    ("<std>/list.dream", include_str!("list.dream")),
+    ("<std>/map.dream", include_str!("map.dream")),
+    ("<std>/int.dream", include_str!("int.dream")),
+    ("<std>/char.dream", include_str!("char.dream")),
+    ("<std>/string.dream", include_str!("string.dream")),
+    ("<std>/bool.dream", include_str!("bool.dream")),
+    ("<std>/float.dream", include_str!("float.dream")),
+    ("<std>/double.dream", include_str!("double.dream")),
+    ("<std>/jsref.dream", include_str!("jsref.dream")),
+    ("<std>/json.dream", include_str!("json.dream")),
+    ("<std>/regex.dream", include_str!("regex.dream")),
+    ("<std>/fetch.dream", include_str!("fetch.dream")),
+];
+
 pub struct StdlibFunction {
     pub name: String,
     pub parameters: Vec<String>,

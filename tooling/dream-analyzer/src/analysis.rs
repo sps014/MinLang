@@ -21,19 +21,9 @@ use crate::position::LineIndex;
 /// diagnostics are filtered out so library-internal spans never map onto the user's text.
 pub const MAIN_FILE: &str = "main.dream";
 
-/// The embedded standard-library prelude, in the same order the compiler merges it
-/// (see `src/driver/source_manager.rs`). Primitive "classes" depend on `list`/`map` being
-/// registered first.
-const PRELUDE_FILES: [(&str, &str); 8] = [
-    ("<std>/list.dream", include_str!("../../../src/stdlib/list.dream")),
-    ("<std>/map.dream", include_str!("../../../src/stdlib/map.dream")),
-    ("<std>/int.dream", include_str!("../../../src/stdlib/int.dream")),
-    ("<std>/char.dream", include_str!("../../../src/stdlib/char.dream")),
-    ("<std>/string.dream", include_str!("../../../src/stdlib/string.dream")),
-    ("<std>/bool.dream", include_str!("../../../src/stdlib/bool.dream")),
-    ("<std>/float.dream", include_str!("../../../src/stdlib/float.dream")),
-    ("<std>/double.dream", include_str!("../../../src/stdlib/double.dream")),
-];
+/// The embedded standard-library prelude. Re-exported from the compiler crate so the language
+/// service and the compiler can never drift (see `dream::stdlib::PRELUDE_FILES`).
+use dream::stdlib::PRELUDE_FILES;
 
 /// Runs the full front-end over `text` and returns the diagnostics that belong to the user's
 /// document, with byte spans converted to LSP ranges.
@@ -111,7 +101,7 @@ fn merge_prelude<'a>(
     all_structs: &mut Vec<StructDeclarationNode<'a>>,
     all_extends: &mut Vec<ExtendNode<'a>>,
 ) {
-    for (name, src) in PRELUDE_FILES {
+    for &(name, src) in PRELUDE_FILES {
         let mut prelude_bag = DiagnosticBag::new(Some(name.to_string()));
         let lexer = Lexer::new(src.to_string());
         let mut parser = Parser::new(lexer, arena, &mut prelude_bag);
