@@ -1,7 +1,11 @@
 use std::io::Error;
-use crate::syntax::nodes::types::release_func_suffix;
+use crate::syntax::nodes::types::{method_fn, release_func_suffix, PRIMITIVE_TYPE_NAMES};
 use crate::syntax::text::indented_text_writer::IndentedTextWriter;
 use super::WasmGenerator;
+
+/// The minimum heap base address. The heap starts above all string/runtime data, but never below
+/// this historical floor, so small programs stay byte-for-byte unchanged.
+const MIN_HEAP_BASE: usize = 1024;
 
 /// The fixed WebAssembly runtime emitted into every module: memory globals plus the
 /// `$malloc`/`$free`/`$retain` allocator built on a freelist + bump pointer.
@@ -9,397 +13,19 @@ use super::WasmGenerator;
 /// Block layout while allocated: `[size: i32][tag: i32][ref_count: i32][data...]`; while free:
 /// `[size: i32][next_free_ptr: i32]`. Returned pointers refer to `data` (block_start + 12), so
 /// `ref_count` lives at `ptr - 4`, `tag` at `ptr - 8`, and `size` at `ptr - 12`.
-const RUNTIME_ALLOCATOR: &str = r#"(func $malloc (param $size i32) (param $tag i32) (result i32)
-    (local $curr i32)
-    (local $prev i32)
-    (local $next i32)
-    (local $block_size i32)
-    (local $new_ptr i32)
-    ;; round size up to a multiple of 4, then reserve 12 bytes for the header
-    local.get $size
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $size
-    local.get $size
-    i32.const 12
-    i32.add
-    local.set $size
-    ;; scan the freelist for a large-enough block
-    global.get $free_list_head
-    local.set $curr
-    i32.const 0
-    local.set $prev
-    (block $alloc_done
-        (loop $scan_freelist
-            local.get $curr
-            i32.eqz
-            br_if $alloc_done
-            local.get $curr
-            i32.load
-            local.set $block_size
-            local.get $block_size
-            local.get $size
-            i32.ge_s
-            (if
-                (then
-                    ;; unlink this block from the freelist
-                    local.get $curr
-                    i32.const 4
-                    i32.add
-                    i32.load
-                    local.set $next
-                    local.get $prev
-                    i32.eqz
-                    (if
-                        (then
-                            local.get $next
-                            global.set $free_list_head
-                        )
-                        (else
-                            local.get $prev
-                            i32.const 4
-                            i32.add
-                            local.get $next
-                            i32.store
-                        )
-                    )
-                    ;; tag at block+4
-                    local.get $curr
-                    i32.const 4
-                    i32.add
-                    local.get $tag
-                    i32.store
-                    ;; ref_count = 1 at block+8
-                    local.get $curr
-                    i32.const 8
-                    i32.add
-                    i32.const 1
-                    i32.store
-                    ;; return data pointer (block + 12)
-                    local.get $curr
-                    i32.const 12
-                    i32.add
-                    return
-                )
-            )
-            local.get $curr
-            local.set $prev
-            local.get $curr
-            i32.const 4
-            i32.add
-            i32.load
-            local.set $curr
-            br $scan_freelist
-        )
-    )
-    ;; no free block fit: bump-allocate fresh memory
-    global.get $heap_ptr
-    local.set $new_ptr
-    global.get $heap_ptr
-    local.get $size
-    i32.add
-    global.set $heap_ptr
-    local.get $new_ptr
-    local.get $size
-    i32.store
-    local.get $new_ptr
-    i32.const 4
-    i32.add
-    local.get $tag
-    i32.store
-    local.get $new_ptr
-    i32.const 8
-    i32.add
-    i32.const 1
-    i32.store
-    local.get $new_ptr
-    i32.const 12
-    i32.add
-)
-
-(func $free (param $ptr i32)
-    (local $block_start i32)
-    local.get $ptr
-    i32.eqz
-    br_if 0
-    local.get $ptr
-    i32.const 12
-    i32.sub
-    local.set $block_start
-    local.get $block_start
-    i32.const 4
-    i32.add
-    global.get $free_list_head
-    i32.store
-    local.get $block_start
-    global.set $free_list_head
-)
-
-(func $retain (param $ptr i32)
-    (local $ref_count_ptr i32)
-    local.get $ptr
-    i32.eqz
-    br_if 0
-    local.get $ptr
-    i32.const 4
-    i32.sub
-    local.set $ref_count_ptr
-    local.get $ref_count_ptr
-    local.get $ref_count_ptr
-    i32.load
-    i32.const 1
-    i32.add
-    i32.store
-)
-
-(func $object_tag (param $ptr i32) (result i32)
-    local.get $ptr
-    i32.eqz
-    (if (result i32)
-        (then i32.const 0)
-        (else
-            local.get $ptr
-            i32.const 8
-            i32.sub
-            i32.load
-        )
-    )
-)
-
-(func $release_generic (param $ptr i32)
-    (local $ref_count_ptr i32)
-    (local $new_count i32)
-    local.get $ptr
-    i32.eqz
-    br_if 0
-    local.get $ptr
-    i32.const 4
-    i32.sub
-    local.set $ref_count_ptr
-    local.get $ref_count_ptr
-    i32.load
-    i32.const 1
-    i32.sub
-    local.set $new_count
-    local.get $ref_count_ptr
-    local.get $new_count
-    i32.store
-    local.get $new_count
-    i32.eqz
-    (if (then
-        local.get $ptr
-        call $free
-    ))
-)
-"#;
+const RUNTIME_ALLOCATOR: &str = include_str!("runtime/allocator.wat");
 
 /// The fixed string runtime: `$strlen`, `$concat_strings`, and the `$debug_get_free_list_head`
 /// helper used by tests. These are emitted after the type-specific `$release_*` functions.
-const RUNTIME_STRINGS: &str = r#"(func $strlen (param $ptr i32) (result i32)
-    (local $len i32)
-    i32.const 0
-    local.set $len
-    (block $end
-        (loop $start
-            local.get $ptr
-            local.get $len
-            i32.add
-            i32.load8_u
-            i32.eqz
-            br_if $end
-            local.get $len
-            i32.const 1
-            i32.add
-            local.set $len
-            br $start
-        )
-    )
-    local.get $len
-)
-
-(func $concat_strings (param $str1 i32) (param $str2 i32) (result i32)
-    (local $len1 i32)
-    (local $len2 i32)
-    (local $new_ptr i32)
-    (local $i i32)
-    local.get $str1
-    call $strlen
-    local.set $len1
-    local.get $str2
-    call $strlen
-    local.set $len2
-    local.get $len1
-    local.get $len2
-    i32.add
-    i32.const 1
-    i32.add
-    i32.const 5
-    call $malloc
-    local.set $new_ptr
-    i32.const 0
-    local.set $i
-    (block $end1
-        (loop $start1
-            local.get $i
-            local.get $len1
-            i32.eq
-            br_if $end1
-            local.get $new_ptr
-            local.get $i
-            i32.add
-            local.get $str1
-            local.get $i
-            i32.add
-            i32.load8_u
-            i32.store8
-            local.get $i
-            i32.const 1
-            i32.add
-            local.set $i
-            br $start1
-        )
-    )
-    i32.const 0
-    local.set $i
-    (block $end2
-        (loop $start2
-            local.get $i
-            local.get $len2
-            i32.eq
-            br_if $end2
-            local.get $new_ptr
-            local.get $len1
-            i32.add
-            local.get $i
-            i32.add
-            local.get $str2
-            local.get $i
-            i32.add
-            i32.load8_u
-            i32.store8
-            local.get $i
-            i32.const 1
-            i32.add
-            local.set $i
-            br $start2
-        )
-    )
-    local.get $new_ptr
-    local.get $len1
-    local.get $len2
-    i32.add
-    i32.add
-    i32.const 0
-    i32.store8
-    local.get $new_ptr
-)
-
-(func $debug_get_free_list_head (result i32)
-    global.get $free_list_head
-)
-
-(func $string_eq (param $a i32) (param $b i32) (result i32)
-    (local $ca i32)
-    (local $cb i32)
-    ;; identical pointers (covers the both-null case) are trivially equal
-    local.get $a
-    local.get $b
-    i32.eq
-    if
-        i32.const 1
-        return
-    end
-    ;; a null pointer can only equal another null pointer (handled above)
-    local.get $a
-    i32.eqz
-    if
-        i32.const 0
-        return
-    end
-    local.get $b
-    i32.eqz
-    if
-        i32.const 0
-        return
-    end
-    (block $done
-        (loop $cmp
-            local.get $a
-            i32.load8_u
-            local.set $ca
-            local.get $b
-            i32.load8_u
-            local.set $cb
-            local.get $ca
-            local.get $cb
-            i32.ne
-            if
-                i32.const 0
-                return
-            end
-            local.get $ca
-            i32.eqz
-            if
-                i32.const 1
-                return
-            end
-            local.get $a
-            i32.const 1
-            i32.add
-            local.set $a
-            local.get $b
-            i32.const 1
-            i32.add
-            local.set $b
-            br $cmp
-        )
-    )
-    i32.const 0
-)
-
-(func $char_at (param $ptr i32) (param $i i32) (result i32)
-    local.get $ptr
-    local.get $i
-    i32.add
-    i32.load8_u
-)
-
-(func $string_alloc (param $n i32) (result i32)
-    (local $p i32)
-    ;; n data bytes + 1 null terminator
-    local.get $n
-    i32.const 1
-    i32.add
-    i32.const 5
-    call $malloc
-    local.set $p
-    ;; write the null terminator at [n]; the n data bytes are filled by the caller via $string_set
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 0
-    i32.store8
-    local.get $p
-)
-
-(func $string_set (param $ptr i32) (param $i i32) (param $c i32)
-    local.get $ptr
-    local.get $i
-    i32.add
-    local.get $c
-    i32.store8
-)
-"#;
+const RUNTIME_STRINGS: &str = include_str!("runtime/strings.wat");
 
 impl<'a> WasmGenerator<'a> {
     /// Builds the memory management runtime: the fixed allocator/string helpers (emitted from
     /// templates) plus the per-type `$release_*` functions generated from the struct table.
     pub fn build_memory_management(&self, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         // Place the heap above all string/runtime-string data (8-byte aligned), never below the
-        // historical 1024-byte base so small programs are byte-for-byte unchanged.
-        let heap_base = std::cmp::max(1024, (self.ctx.next_string_offset + 7) & !7);
+        // historical floor so small programs are byte-for-byte unchanged.
+        let heap_base = std::cmp::max(MIN_HEAP_BASE, (self.ctx.next_string_offset + 7) & !7);
         writer.write_line(&format!("(global $heap_ptr (mut i32) (i32.const {}))", heap_base));
         writer.write_line("(global $free_list_head (mut i32) (i32.const 0))");
         writer.write_line("");
@@ -423,7 +49,7 @@ impl<'a> WasmGenerator<'a> {
         // `int_array_array` and `int_array`). The primitive and struct arrays are always
         // included so simple programs and the object protocol's dispatch keep working.
         let mut array_types: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-        for prim in ["int", "float", "double", "bool", "char", "string"] {
+        for prim in PRIMITIVE_TYPE_NAMES {
             array_types.insert(format!("{}[]", prim));
         }
         for name in self.struct_table.structs.keys() {
@@ -474,7 +100,8 @@ impl<'a> WasmGenerator<'a> {
             return;
         }
         let base = cur.trim_end_matches("[]");
-        let is_emittable = matches!(base, "int" | "float" | "double" | "bool" | "char" | "string" | "object")
+        let is_emittable = PRIMITIVE_TYPE_NAMES.contains(&base)
+            || base == "object"
             || self.struct_table.get_struct(base).is_some();
         if !is_emittable {
             return;
@@ -536,7 +163,7 @@ impl<'a> WasmGenerator<'a> {
         // refcount is first pinned to 1; this keeps that internal release from dropping the
         // count back to 0 and re-entering this release function.
         if struct_info.is_some() {
-            let drop_name = format!("{}_del", type_name);
+            let drop_name = method_fn(type_name, "del");
             if self.function_table.get_function(&drop_name).is_ok() {
                 writer.write_line("local.get $ref_count_ptr");
                 writer.write_line("i32.const 1");

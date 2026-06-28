@@ -14,6 +14,7 @@ use crate::semantics::symbol_table::SymbolTable;
 use crate::semantics::struct_table::StructTable;
 use crate::driver::diagnostics::DiagnosticBag;
 
+mod await_rules;
 mod declarations;
 mod generics;
 mod type_checker;
