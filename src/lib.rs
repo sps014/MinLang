@@ -1,3 +1,4 @@
+pub mod intrinsics;
 pub mod syntax;
 pub mod semantics;
 pub mod codegen;

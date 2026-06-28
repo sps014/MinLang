@@ -118,10 +118,14 @@ pub fn constructor_fn(struct_name: &str) -> String {
     method_fn(struct_name, "constructor")
 }
 
+/// The base type name of the async handle `Future<T>`. Single source of truth for the identifier
+/// the async machinery keys on (the structured `Future<T>` type and its `Future_<inner>` mangling).
+pub const FUTURE_TYPE: &str = "Future";
+
 /// The canonical type-name string for a `Future<T>` whose inner type is `inner`
 /// (e.g. `Future_int`). `Future` is the storable, ref-light handle returned by async calls.
 pub fn future_type_name(inner: &str) -> String {
-    format!("Future_{}", inner)
+    format!("{}_{}", FUTURE_TYPE, inner)
 }
 
 /// If `type_name` denotes a `Future<T>` (i.e. `Future_<inner>`), returns the inner type name,

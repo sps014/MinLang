@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, Type, StatementNode};
 use crate::syntax::nodes::types::{canonical_type_name, constructor_fn, json_from_json_fn, json_to_json_fn, mangle_generic, method_fn, strip_nullable};
+use crate::intrinsics;
 use crate::syntax::text::text_span::TextSpan;
 use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
@@ -333,7 +334,7 @@ impl<'a> Analyzer<'a> {
                                    parent_function:&FunctionNode<'a>,
                                    symbol_table:&Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag)->Result<Type,()> {
         // Object-protocol builtins: accept exactly one argument of any type.
-        if matches!(name.text.as_str(), "print" | "println" | "to_string" | "hash_code") {
+        if intrinsics::is_object_builtin(&name.text) {
             if params.len() != 1 {
                 diagnostics.report_error(
                     format!("'{}' expects exactly 1 argument, got {}", name.text, params.len()),
@@ -344,8 +345,8 @@ impl<'a> Analyzer<'a> {
                 self.analyze_expression(param, parent_function, symbol_table, diagnostics)?;
             }
             return Ok(match name.text.as_str() {
-                "to_string" => Type::String(synthetic_token(TokenKind::DataTypeToken, "string")),
-                "hash_code" => Type::Integer(synthetic_token(TokenKind::DataTypeToken, "int")),
+                intrinsics::TO_STRING => Type::String(synthetic_token(TokenKind::DataTypeToken, "string")),
+                intrinsics::HASH_CODE => Type::Integer(synthetic_token(TokenKind::DataTypeToken, "int")),
                 _ => Type::Void,
             });
         }
@@ -353,14 +354,14 @@ impl<'a> Analyzer<'a> {
         // The async timer intrinsic `sleep` is compiler-known (not in the function table) because
         // its signature is generic over `Future<T>`. The combinators live on the `Promise` static
         // class (`Promise.all/any/race`), handled in `analyze_method_call`.
-        if name.text == "sleep" {
+        if name.text == intrinsics::SLEEP {
             return self.analyze_async_intrinsic(name, params, parent_function, symbol_table, diagnostics);
         }
 
         // `array_new<T>(n)`: allocates a fresh, zero-initialized array of `n` elements of type `T`.
         // The element type is read from the explicit type argument (resolved through the active
         // monomorphization bindings so `array_new<T>` inside a `List<int>` method yields `int[]`).
-        if name.text == "array_new" {
+        if name.text == intrinsics::ARRAY_NEW {
             let element = match generic_args.as_ref().and_then(|g| g.first()) {
                 Some(t) => Self::monomorphize_type(t, &self.current_generic_bindings),
                 None => {
@@ -507,7 +508,7 @@ impl<'a> Analyzer<'a> {
     pub(super) fn analyze_async_intrinsic(&mut self, name: &SyntaxToken, params: &Vec<ExpressionNode<'a>>,
                                           parent_function: &FunctionNode<'a>, symbol_table: &Rc<RefCell<SymbolTable>>,
                                           diagnostics: &mut DiagnosticBag) -> Result<Type, ()> {
-        if name.text == "sleep" {
+        if name.text == intrinsics::SLEEP {
             if params.len() != 1 {
                 diagnostics.report_error(format!("'sleep' expects exactly 1 argument (milliseconds), got {}", params.len()), Some(name.position.clone()));
             }
@@ -538,7 +539,7 @@ impl<'a> Analyzer<'a> {
                 Type::Void
             }
         };
-        if name.text == "all" {
+        if name.text == intrinsics::PROMISE_ALL {
             // Future<T[]>
             Ok(Self::future_type(Type::Array(Box::new(inner_t))))
         } else {
@@ -553,9 +554,9 @@ impl<'a> Analyzer<'a> {
     pub(super) fn analyze_json_derive_call(&mut self, method: &SyntaxToken, generic_args: &Option<Vec<Type>>,
                                            params: &Vec<ExpressionNode<'a>>, parent_function: &FunctionNode<'a>,
                                            symbol_table: &Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag) -> Result<Type, ()> {
-        if method.text == "serialize" || method.text == "serialize_pretty" {
+        if method.text == intrinsics::JSON_SERIALIZE || method.text == intrinsics::JSON_SERIALIZE_PRETTY {
             // `serialize(x)` takes the value; `serialize_pretty(x, indent)` also takes the indent.
-            let expected_args = if method.text == "serialize_pretty" { 2 } else { 1 };
+            let expected_args = if method.text == intrinsics::JSON_SERIALIZE_PRETTY { 2 } else { 1 };
             if params.len() != expected_args {
                 diagnostics.report_error(format!("'JSON.{}' expects exactly {} argument(s), got {}", method.text, expected_args, params.len()), Some(method.position.clone()));
                 return Ok(Type::String(synthetic_token(TokenKind::DataTypeToken, "string")));
@@ -662,12 +663,12 @@ impl<'a> Analyzer<'a> {
         // `Math.<fn>(...)`: the math namespace. `Math` is not a value, so intercept before
         // trying to analyze it as an expression.
         if let ExpressionNode::Identifier(id) = obj {
-            if id.text == "Math" {
+            if id.text == intrinsics::MATH {
                 return self.analyze_math_call(method, params, parent_function, symbol_table, diagnostics);
             }
 
             // `Promise.all/any/race(...)`: the async combinators as static methods.
-            if id.text == "Promise" && matches!(method.text.as_str(), "all" | "any" | "race") {
+            if id.text == intrinsics::PROMISE && intrinsics::is_promise_combinator(&method.text) {
                 let is_local = (*symbol_table).as_ref().borrow().get_symbol(id).is_ok();
                 if !is_local {
                     return self.analyze_async_intrinsic(method, params, parent_function, symbol_table, diagnostics);
@@ -677,7 +678,7 @@ impl<'a> Analyzer<'a> {
             // `JSON.serialize(x)` / `JSON.deserialize<T>(text)`: auto-derive entry points. They are
             // compiler intrinsics (no real signature in `json.dream`), backed by per-class
             // `to_json`/`from_json` converters generated for every `@json` class.
-            if id.text == "JSON" && matches!(method.text.as_str(), "serialize" | "serialize_pretty" | "deserialize")
+            if id.text == intrinsics::JSON && intrinsics::is_json_derive_method(&method.text)
                 && (*symbol_table).as_ref().borrow().get_symbol(id).is_err() {
                 return self.analyze_json_derive_call(method, _generic_args, params, parent_function, symbol_table, diagnostics);
             }
@@ -711,7 +712,7 @@ impl<'a> Analyzer<'a> {
         }
 
         // `EnumValue.name()`: built-in accessor returning the variant name as a string.
-        if method.text == "name" {
+        if method.text == intrinsics::ENUM_NAME {
             let base = strip_nullable(&obj_type.get_type()).to_string();
             if self.enum_table.contains_key(&base) {
                 if !params.is_empty() {
@@ -722,7 +723,7 @@ impl<'a> Analyzer<'a> {
         }
 
         // `arr.len()` / `str.len()`: built-in length method on arrays and strings.
-        if method.text == "len" {
+        if method.text == intrinsics::LEN {
             let base = strip_nullable(&obj_type.get_type()).to_string();
             if base.ends_with("[]") || base == "string" {
                 if !params.is_empty() {
@@ -813,7 +814,7 @@ impl<'a> Analyzer<'a> {
 
     /// `Math.sin/cos/abs/sqrt(x)`: each takes one numeric argument and yields a `float`.
     pub(super) fn analyze_math_call(&mut self, method: &SyntaxToken, params: &Vec<ExpressionNode<'a>>, parent_function: &FunctionNode<'a>, symbol_table: &Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag) -> Result<Type, ()> {
-        if !matches!(method.text.as_str(), "sin" | "cos" | "abs" | "sqrt") {
+        if !intrinsics::is_math_function(&method.text) {
             diagnostics.report_error(format!("Unknown math function 'Math.{}'", method.text), Some(method.position.clone()));
             return Ok(Type::Float(synthetic_token(TokenKind::DataTypeToken, "float")));
         }
@@ -980,14 +981,19 @@ impl<'a> Analyzer<'a> {
     /// used where a user-chosen identifier is expected (`role` is e.g. "variable"/"function").
     pub(super) fn check_reserved_name(&self, token: &SyntaxToken, role: &str, diagnostics: &mut DiagnosticBag) {
         // bare callable, so it is a legal ordinary identifier.
-        const RESERVED_NAMES: &[&str] = &[
-            "print", "println", "to_string", "hash_code", "array_new", "Math",
+        const RESERVED_TYPE_AND_LITERAL_NAMES: &[&str] = &[
             "int", "float", "double", "string", "bool", "char", "object", "void",
             // C#/.NET-style aliases for the primitives (see `canonical_type_name`).
             "String", "Int32", "Int64", "Single", "Double", "Boolean", "Char", "Object", "Void",
             "true", "false", "null",
         ];
-        if RESERVED_NAMES.contains(&token.text.as_str()) {
+        // The builtin callables are reserved too; sourced from the intrinsic registry so this list
+        // never drifts from the set of names the compiler special-cases.
+        let is_reserved = RESERVED_TYPE_AND_LITERAL_NAMES.contains(&token.text.as_str())
+            || intrinsics::is_object_builtin(&token.text)
+            || token.text == intrinsics::ARRAY_NEW
+            || token.text == intrinsics::MATH;
+        if is_reserved {
             diagnostics.report_error(
                 format!("'{}' is a reserved word and cannot be used as a {} name", token.text, role),
                 Some(token.position.clone()),

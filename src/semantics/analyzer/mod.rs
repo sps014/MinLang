@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use crate::syntax::nodes::{FunctionNode, Type, ProgramNode};
-use crate::syntax::nodes::types::{mangle_with_suffixes, primitive_type};
+use crate::syntax::nodes::types::{mangle_with_suffixes, primitive_type, FUTURE_TYPE};
 use crate::syntax::syntax_tree::SyntaxTree;
 use crate::syntax::text::line_text::LineText;
 use crate::syntax::text::text_span::TextSpan;
@@ -171,13 +171,13 @@ impl<'a> Analyzer<'a> {
     /// Builds the `Future<T>` type carrying inner type `inner`. Async-call results are this type,
     /// and `await` unwraps it back to `inner`.
     pub(super) fn future_type(inner: Type) -> Type {
-        Type::Struct(synthetic_token(TokenKind::IdentifierToken, "Future"), Some(vec![inner]))
+        Type::Struct(synthetic_token(TokenKind::IdentifierToken, FUTURE_TYPE), Some(vec![inner]))
     }
 
     /// If `ty` is a `Future<T>`, returns the inner `T`; otherwise `None`.
     pub(super) fn future_inner_type(ty: &Type) -> Option<Type> {
         match ty {
-            Type::Struct(token, Some(args)) if token.text == "Future" && args.len() == 1 => Some(args[0].clone()),
+            Type::Struct(token, Some(args)) if token.text == FUTURE_TYPE && args.len() == 1 => Some(args[0].clone()),
             _ => None,
         }
     }

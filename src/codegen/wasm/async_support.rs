@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::io::Error;
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, StatementNode};
 use crate::syntax::text::indented_text_writer::IndentedTextWriter;
+use crate::intrinsics;
 use super::WasmGenerator;
 
 // `Future` heap-block field offsets (relative to the data pointer). The block is allocated via
@@ -312,7 +313,7 @@ impl<'a> WasmGenerator<'a> {
     /// the stack. These are compiler-known because their signatures are generic over `Future<T>`.
     pub fn build_async_intrinsic_call(&mut self, name: &str, args: &Vec<ExpressionNode<'a>>, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         match name {
-            "sleep" => {
+            intrinsics::SLEEP => {
                 // sleep(ms): allocate a host future and arm a virtual-clock timer.
                 self.build_expression(&args[0], &"int".to_string(), function, writer)?;
                 writer.write_line("local.set $scratch_len");
@@ -325,10 +326,10 @@ impl<'a> WasmGenerator<'a> {
                 writer.write_line("call $dream_set_timer");
                 writer.write_line("local.get $scratch_arr");
             }
-            "all" | "any" | "race" => {
+            intrinsics::PROMISE_ALL | intrinsics::PROMISE_ANY | intrinsics::PROMISE_RACE => {
                 let arg_type = self.infer_expression_type(&args[0], function)?;
                 self.build_expression(&args[0], &arg_type, function, writer)?;
-                let runtime = if name == "all" { "$dream_all" } else { "$dream_any" };
+                let runtime = if name == intrinsics::PROMISE_ALL { "$dream_all" } else { "$dream_any" };
                 writer.write_line(&format!("call {}", runtime));
             }
             _ => {}

@@ -3,6 +3,7 @@ use crate::syntax::nodes::{StatementNode, FunctionNode, ExpressionNode, Type};
 use crate::syntax::nodes::types::strip_nullable;
 use crate::syntax::text::indented_text_writer::IndentedTextWriter;
 use crate::syntax::token::syntax_token::SyntaxToken;
+use crate::intrinsics;
 use super::WasmGenerator;
 
 impl<'a> WasmGenerator<'a> {
@@ -45,18 +46,18 @@ impl<'a> WasmGenerator<'a> {
             },
             StatementNode::FunctionInvocation(n, generic_args, p) => {
                 match n.text.as_str() {
-                    "sleep" => {
+                    intrinsics::SLEEP => {
                         // A discarded async intrinsic call: build the future and drop the handle.
                         self.build_async_intrinsic_call(n.text.as_str(), p, function, writer)?;
                         writer.write_line("drop");
                     }
-                    "print" if p.len() == 1 => self.build_print(&p[0], function, writer)?,
-                    "println" if p.len() == 1 => self.build_println(&p[0], function, writer)?,
-                    "to_string" if p.len() == 1 => {
+                    intrinsics::PRINT if p.len() == 1 => self.build_print(&p[0], function, writer)?,
+                    intrinsics::PRINTLN if p.len() == 1 => self.build_println(&p[0], function, writer)?,
+                    intrinsics::TO_STRING if p.len() == 1 => {
                         self.build_to_string(&p[0], function, writer)?;
                         writer.write_line("drop");
                     }
-                    "hash_code" if p.len() == 1 => {
+                    intrinsics::HASH_CODE if p.len() == 1 => {
                         self.build_hash_code(&p[0], function, writer)?;
                         writer.write_line("drop");
                     }
@@ -103,7 +104,7 @@ impl<'a> WasmGenerator<'a> {
                 let ret = self.method_return_type(obj, method, params, function)?;
                 self.build_method_call(obj, method, generic_args, params, &"void".to_string(), function, writer)?;
                 match ret {
-                    Some(t) if self.is_reference_type(strip_nullable(&t)) && method.text != "name" => self.emit_release(&t, writer),
+                    Some(t) if self.is_reference_type(strip_nullable(&t)) && method.text != intrinsics::ENUM_NAME => self.emit_release(&t, writer),
                     Some(t) if t != "void" => writer.write_line("drop"),
                     _ => {}
                 }

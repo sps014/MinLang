@@ -7,6 +7,7 @@ use crate::syntax::nodes::types::{canonical_type_name, mangle_generic, mangle_wi
 use crate::syntax::text::indented_text_writer::IndentedTextWriter;
 use crate::semantics::symbol_table::SymbolTable;
 use crate::semantics::function_table::{OverloadResolution, overload_arg_compatible};
+use crate::intrinsics;
 use super::WasmGenerator;
 
 impl<'a> WasmGenerator<'a> {
@@ -66,7 +67,7 @@ impl<'a> WasmGenerator<'a> {
     /// (overload-resolved over the explicit arguments, which carry no implicit `this`).
     pub fn resolve_static_call(&self, obj: &crate::syntax::nodes::ExpressionNode<'a>, method: &str, params: &[crate::syntax::nodes::ExpressionNode<'a>], function: &FunctionNode<'a>) -> Option<String> {
         let crate::syntax::nodes::ExpressionNode::Identifier(id) = obj else { return None; };
-        if id.text == "Math" || self.is_local_var(&id.text, function) {
+        if id.text == intrinsics::MATH || self.is_local_var(&id.text, function) {
             return None;
         }
         let type_name = canonical_type_name(&id.text).unwrap_or(id.text.as_str()).to_string();
@@ -197,7 +198,7 @@ impl<'a> WasmGenerator<'a> {
     pub fn method_returns_value(&self, obj: &crate::syntax::nodes::ExpressionNode<'a>, method: &crate::syntax::token::syntax_token::SyntaxToken, params: &[crate::syntax::nodes::ExpressionNode<'a>], function: &FunctionNode<'a>) -> Result<bool, Error> {
         // `Math.<fn>(...)` always yields a float.
         if let crate::syntax::nodes::ExpressionNode::Identifier(id) = obj {
-            if id.text == "Math" {
+            if id.text == intrinsics::MATH {
                 return Ok(true);
             }
         }
@@ -211,7 +212,7 @@ impl<'a> WasmGenerator<'a> {
         }
         let obj_type = self.infer_expression_type(obj, function)?;
         let struct_name = strip_nullable(&obj_type).to_string();
-        if method.text == "len" && (struct_name.ends_with("[]") || struct_name == "string") {
+        if method.text == intrinsics::LEN && (struct_name.ends_with("[]") || struct_name == "string") {
             return Ok(true);
         }
         let mangled_name = self.resolve_method_key(&struct_name, &method.text, params, function);
@@ -228,7 +229,7 @@ impl<'a> WasmGenerator<'a> {
     /// dropped (non-reference value), or ignored (void).
     pub fn method_return_type(&self, obj: &crate::syntax::nodes::ExpressionNode<'a>, method: &crate::syntax::token::syntax_token::SyntaxToken, params: &[crate::syntax::nodes::ExpressionNode<'a>], function: &FunctionNode<'a>) -> Result<Option<String>, Error> {
         if let crate::syntax::nodes::ExpressionNode::Identifier(id) = obj {
-            if id.text == "Math" {
+            if id.text == intrinsics::MATH {
                 return Ok(Some("float".to_string()));
             }
         }
@@ -240,10 +241,10 @@ impl<'a> WasmGenerator<'a> {
         }
         let obj_type = self.infer_expression_type(obj, function)?;
         let struct_name = strip_nullable(&obj_type).to_string();
-        if method.text == "len" && (struct_name.ends_with("[]") || struct_name == "string") {
+        if method.text == intrinsics::LEN && (struct_name.ends_with("[]") || struct_name == "string") {
             return Ok(Some("int".to_string()));
         }
-        if method.text == "name" && self.enums.contains_key(&struct_name) {
+        if method.text == intrinsics::ENUM_NAME && self.enums.contains_key(&struct_name) {
             return Ok(Some("string".to_string()));
         }
         let mangled_name = self.resolve_method_key(&struct_name, &method.text, params, function);
@@ -432,10 +433,10 @@ impl<'a> WasmGenerator<'a> {
             },
             ExpressionNode::FunctionCall(name, generic_args, args) => {
                 match name.text.as_str() {
-                    "to_string" => return Ok("string".to_string()),
-                    "hash_code" => return Ok("int".to_string()),
-                    "print" | "println" => return Ok("void".to_string()),
-                    "array_new" => {
+                    intrinsics::TO_STRING => return Ok("string".to_string()),
+                    intrinsics::HASH_CODE => return Ok("int".to_string()),
+                    intrinsics::PRINT | intrinsics::PRINTLN => return Ok("void".to_string()),
+                    intrinsics::ARRAY_NEW => {
                         let element = generic_args.as_ref()
                             .and_then(|g| g.first())
                             .map(|t| self.resolve_type(&t.get_type()))
@@ -522,14 +523,14 @@ impl<'a> WasmGenerator<'a> {
             ExpressionNode::Ternary(_, then_e, _) => self.infer_expression_type(then_e, function),
             ExpressionNode::MethodCall(obj, method, generic_args, params) => {
                 if let ExpressionNode::Identifier(id) = obj {
-                    if id.text == "Math" {
+                    if id.text == intrinsics::MATH {
                         return Ok("float".to_string());
                     }
                     // `JSON.serialize(x): string` and `JSON.deserialize<T>(text): T` intrinsics.
-                    if id.text == "JSON" && (method.text == "serialize" || method.text == "serialize_pretty") {
+                    if id.text == intrinsics::JSON && (method.text == intrinsics::JSON_SERIALIZE || method.text == intrinsics::JSON_SERIALIZE_PRETTY) {
                         return Ok("string".to_string());
                     }
-                    if id.text == "JSON" && method.text == "deserialize" {
+                    if id.text == intrinsics::JSON && method.text == intrinsics::JSON_DESERIALIZE {
                         return Ok(generic_args.as_ref()
                             .and_then(|g| g.first())
                             .map(|t| self.resolve_type(&t.get_type()))
@@ -544,11 +545,11 @@ impl<'a> WasmGenerator<'a> {
                 let obj_type = self.infer_expression_type(obj, function)?;
                 let struct_name = strip_nullable(&obj_type).to_string();
                 // `arr.len()` / `str.len()` always yield int.
-                if method.text == "len" && (struct_name.ends_with("[]") || struct_name == "string") {
+                if method.text == intrinsics::LEN && (struct_name.ends_with("[]") || struct_name == "string") {
                     return Ok("int".to_string());
                 }
                 // `EnumValue.name()` yields the variant name as a string.
-                if method.text == "name" && self.enums.contains_key(&struct_name) {
+                if method.text == intrinsics::ENUM_NAME && self.enums.contains_key(&struct_name) {
                     return Ok("string".to_string());
                 }
                 let mangled_name = self.resolve_method_key(&struct_name, &method.text, params, function);

@@ -4,6 +4,7 @@ use crate::syntax::nodes::types::{constructor_fn, json_from_json_fn, json_to_jso
 use crate::syntax::text::indented_text_writer::IndentedTextWriter;
 use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
+use crate::intrinsics;
 use super::WasmGenerator;
 
 impl<'a> WasmGenerator<'a> {
@@ -33,14 +34,14 @@ impl<'a> WasmGenerator<'a> {
             ExpressionNode::Literal(literal) => self.build_literal(literal, writer)?,
             ExpressionNode::FunctionCall(n, generic_args, args) => {
                 match n.text.as_str() {
-                    "print" if args.len() == 1 => self.build_print(&args[0], function, writer)?,
-                    "println" if args.len() == 1 => self.build_println(&args[0], function, writer)?,
-                    "to_string" if args.len() == 1 => self.build_to_string(&args[0], function, writer)?,
-                    "hash_code" if args.len() == 1 => self.build_hash_code(&args[0], function, writer)?,
-                    "array_new" if args.len() == 1 => self.build_array_new(generic_args, &args[0], function, writer)?,
+                    intrinsics::PRINT if args.len() == 1 => self.build_print(&args[0], function, writer)?,
+                    intrinsics::PRINTLN if args.len() == 1 => self.build_println(&args[0], function, writer)?,
+                    intrinsics::TO_STRING if args.len() == 1 => self.build_to_string(&args[0], function, writer)?,
+                    intrinsics::HASH_CODE if args.len() == 1 => self.build_hash_code(&args[0], function, writer)?,
+                    intrinsics::ARRAY_NEW if args.len() == 1 => self.build_array_new(generic_args, &args[0], function, writer)?,
                     // The `sleep` async intrinsic produces a `Future` handle directly. The
                     // combinators are invoked as `Promise.all/any/race` (see build_method_call).
-                    "sleep" => self.build_async_intrinsic_call(n.text.as_str(), args, function, writer)?,
+                    intrinsics::SLEEP => self.build_async_intrinsic_call(n.text.as_str(), args, function, writer)?,
                     _ => {
                         if let Some((params_decl, ret)) = self.function_typed_local(&n.text, function) {
                             self.build_indirect_call(&n.text, &params_decl, &ret, args, function, writer)?;
@@ -641,7 +642,7 @@ impl<'a> WasmGenerator<'a> {
     pub fn build_method_call(&mut self, obj: &ExpressionNode<'a>, method: &SyntaxToken, _generic_args: &Option<Vec<Type>>, params: &Vec<ExpressionNode<'a>>, _left_side: &String, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         // `Math.<fn>(x)`: evaluate the argument, coerce to f32, and call the host math import.
         if let ExpressionNode::Identifier(id) = obj {
-            if id.text == "Math" {
+            if id.text == intrinsics::MATH {
                 if let Some(arg) = params.first() {
                     let arg_type = self.infer_expression_type(arg, function)?;
                     self.build_expression(arg, &arg_type, function, writer)?;
@@ -657,13 +658,13 @@ impl<'a> WasmGenerator<'a> {
 
             // `Promise.all/any/race([...])`: the async combinators, lowered to the same scheduler
             // intrinsics as the (legacy) free-function forms.
-            if id.text == "Promise" && matches!(method.text.as_str(), "all" | "any" | "race") {
+            if id.text == intrinsics::PROMISE && intrinsics::is_promise_combinator(&method.text) {
                 return self.build_async_intrinsic_call(method.text.as_str(), params, function, writer);
             }
 
             // `JSON.serialize(x)`: `JSON.stringify(x.to_json())` for any `@json` class. Lower to a
             // call to the auto-derived `<Struct>_to_json` instance method followed by `JSON_stringify`.
-            if id.text == "JSON" && method.text == "serialize" && params.len() == 1 {
+            if id.text == intrinsics::JSON && method.text == intrinsics::JSON_SERIALIZE && params.len() == 1 {
                 let arg_type = self.infer_expression_type(&params[0], function)?;
                 let struct_name = strip_nullable(&arg_type).to_string();
                 self.build_expression(&params[0], &arg_type, function, writer)?;
@@ -673,7 +674,7 @@ impl<'a> WasmGenerator<'a> {
             }
 
             // `JSON.serialize_pretty(x, indent)`: like `serialize`, then pretty-print with `indent`.
-            if id.text == "JSON" && method.text == "serialize_pretty" && params.len() == 2 {
+            if id.text == intrinsics::JSON && method.text == intrinsics::JSON_SERIALIZE_PRETTY && params.len() == 2 {
                 let arg_type = self.infer_expression_type(&params[0], function)?;
                 let struct_name = strip_nullable(&arg_type).to_string();
                 self.build_expression(&params[0], &arg_type, function, writer)?;
@@ -685,7 +686,7 @@ impl<'a> WasmGenerator<'a> {
 
             // `JSON.deserialize<T>(text)`: `T.from_json(JSON.parse(text))`. Lower to `JSON_parse`
             // followed by the auto-derived `<T>_from_json` static method.
-            if id.text == "JSON" && method.text == "deserialize" && params.len() == 1 {
+            if id.text == intrinsics::JSON && method.text == intrinsics::JSON_DESERIALIZE && params.len() == 1 {
                 let struct_name = _generic_args
                     .as_ref()
                     .and_then(|g| g.first())
@@ -716,7 +717,7 @@ impl<'a> WasmGenerator<'a> {
 
         // `EnumValue.name()`: map an enum's integer value to its variant-name string via the
         // per-enum `$enum_name_*` lookup function.
-        if method.text == "name" {
+        if method.text == intrinsics::ENUM_NAME {
             let base = strip_nullable(&obj_type).to_string();
             if self.enums.contains_key(&base) {
                 self.build_expression(obj, &obj_type, function, writer)?;
@@ -726,7 +727,7 @@ impl<'a> WasmGenerator<'a> {
         }
 
         // `arr.len()` / `str.len()`: length of an array (stored count) or string (`$strlen`).
-        if method.text == "len" {
+        if method.text == intrinsics::LEN {
             let base = strip_nullable(&obj_type).to_string();
             if base.ends_with("[]") {
                 self.build_len(obj, function, writer)?;

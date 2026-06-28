@@ -21,7 +21,7 @@ impl StdlibFunction {
     /// Host functions that are always imported into every module but are NOT user-callable.
     /// The `print`/`println` builtins lower to these; users never name them directly.
     pub fn host_imports() -> Vec<StdlibFunction> {
-        vec![
+        let mut imports = vec![
             StdlibFunction {
                 name: "print_string".to_string(),
                 parameters: vec!["string".to_string()],
@@ -47,28 +47,16 @@ impl StdlibFunction {
                 parameters: vec!["char".to_string()],
                 return_type: None,
             },
-            // Math host functions, reachable only through the `Math.*` namespace.
-            StdlibFunction {
-                name: "sin".to_string(),
-                parameters: vec!["float".to_string()],
-                return_type: Some(Self::create_type("float")),
-            },
-            StdlibFunction {
-                name: "cos".to_string(),
-                parameters: vec!["float".to_string()],
-                return_type: Some(Self::create_type("float")),
-            },
-            StdlibFunction {
-                name: "abs".to_string(),
-                parameters: vec!["float".to_string()],
-                return_type: Some(Self::create_type("float")),
-            },
-            StdlibFunction {
-                name: "sqrt".to_string(),
-                parameters: vec!["float".to_string()],
-                return_type: Some(Self::create_type("float")),
-            },
-        ]
+        ];
+        // Math host functions, reachable only through the `Math.*` namespace. Their names come
+        // from the intrinsic registry so the import set never drifts from the recognized set;
+        // each takes one `float` and returns a `float`.
+        imports.extend(crate::intrinsics::MATH_FUNCTIONS.iter().map(|name| StdlibFunction {
+            name: name.to_string(),
+            parameters: vec!["float".to_string()],
+            return_type: Some(Self::create_type("float")),
+        }));
+        imports
     }
 
     /// User-callable stdlib functions registered in the function table. `concat`/`strlen`/
