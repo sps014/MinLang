@@ -205,6 +205,39 @@ impl Type {
         }
     }
 
+    /// Human-readable spelling of the type, the inverse of how it is written in source. Unlike
+    /// [`get_type`](Self::get_type), generic instantiations render with angle brackets
+    /// (`Box<int>`, `Pair<int, string>`, `Box<Box<int>>`) rather than the `_`-mangled monomorphized
+    /// name (`Box_int`). Use this anywhere a type is shown to a human (hovers, inlay hints,
+    /// signatures); use `get_type` for internal identity/mangling.
+    pub fn display_name(&self) -> String {
+        match self {
+            Type::Array(inner) => format!("{}[]", inner.display_name()),
+            Type::Struct(token, generic_args) => match generic_args {
+                Some(args) => {
+                    let args_str = args
+                        .iter()
+                        .map(|a| a.display_name())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("{}<{}>", token.text, args_str)
+                }
+                None => token.text.clone(),
+            },
+            Type::Nullable(inner) => format!("{}?", inner.display_name()),
+            Type::Function(params, ret) => {
+                let params_str = params
+                    .iter()
+                    .map(|p| p.display_name())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("fun({}): {}", params_str, ret.display_name())
+            }
+            // Primitives and bare generic parameters spell the same either way.
+            _ => self.get_type(),
+        }
+    }
+
     /// Returns true if this type is a nullable (`T?`) type.
     pub fn is_nullable(&self) -> bool {
         matches!(self, Type::Nullable(_))

@@ -455,3 +455,57 @@ fun main(): void {
         labels
     );
 }
+
+#[test]
+fn generic_type_inlay_hint_uses_angle_brackets() {
+    use dream_lsp::index::{Index, InlayKind};
+    let src = "
+class Box<T> {
+    public value: T;
+}
+fun main(): void {
+    let b = Box<int>(5);
+}
+";
+    let index = Index::build(None, src);
+    let labels: Vec<&str> = index
+        .inlay_hints
+        .iter()
+        .filter(|h| h.kind == InlayKind::Type)
+        .map(|h| h.label.as_str())
+        .collect();
+    assert!(
+        labels.contains(&": Box<int>"),
+        "generic type hint should read `Box<int>`, not the mangled `Box_int`; got {:?}",
+        labels
+    );
+    assert!(
+        !labels.iter().any(|l| l.contains("Box_int")),
+        "no inlay hint should expose the mangled `Box_int` form; got {:?}",
+        labels
+    );
+}
+
+#[test]
+fn hover_shows_doc_comment_above_attribute() {
+    let src = "
+class System {
+    /// Prints a value to standard output.
+    @intrinsic(\"print\")
+    static extern fun print<T>(value: T): void;
+}
+fun main(): void {
+    System.print(1);
+}
+";
+    let offset = src.find("print(1)").unwrap() + 1; // inside the `print` reference
+    let index = dream_lsp::index::Index::build(None, src);
+    let hover = index
+        .hover(offset, src)
+        .expect("expected hover on System.print");
+    assert!(
+        hover.contents.contains("Prints a value to standard output"),
+        "doc comment above an attribute should still appear in hover; got {}",
+        hover.contents
+    );
+}

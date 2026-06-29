@@ -225,15 +225,14 @@ impl Index {
     }
 
     fn substitute_generic(detail: &str, receiver_ty: &str) -> String {
-        // receiver_ty might be "List<int>" or "List_int" depending on how it was inferred.
-        // Let's extract the generic part between `<` and `>` or after `_`.
+        // `receiver_ty` is the human-readable type (e.g. `List<int>`); pull the generic argument
+        // out of the angle brackets. Types are never `_`-mangled at this layer, so there is no
+        // ambiguity with struct names that happen to contain underscores.
         let mut generic_arg = None;
         if let Some(start) = receiver_ty.find('<') {
             if let Some(end) = receiver_ty.rfind('>') {
                 generic_arg = Some(&receiver_ty[start + 1..end]);
             }
-        } else if let Some(start) = receiver_ty.find('_') {
-            generic_arg = Some(&receiver_ty[start + 1..]);
         }
 
         let Some(generic_arg) = generic_arg else {
@@ -561,7 +560,11 @@ impl Index {
         Vec::new()
     }
 
-    fn members_of_struct(&self, base: &str) -> Vec<(String, SymKind, String, Option<String>)> {
+    fn members_of_struct(&self, ty: &str) -> Vec<(String, SymKind, String, Option<String>)> {
+        // `ty` may carry generic arguments (`Box<int>`); members are registered under the bare
+        // struct name (`Box.value`), so match on that while keeping the full type for argument
+        // substitution in member signatures.
+        let base = ty.split('<').next().unwrap_or(ty).trim();
         let prefix = format!("{}.", base);
         self.decls
             .iter()
@@ -572,7 +575,7 @@ impl Index {
                     && d.name != "constructor"
             })
             .map(|d| {
-                let detail = Self::substitute_generic(&d.detail, base);
+                let detail = Self::substitute_generic(&d.detail, ty);
                 (
                     d.name.clone(),
                     d.kind,
@@ -644,8 +647,8 @@ impl Builder {
 
     fn infer_type_internal(&self, expr: &ExpressionNode, scope: usize) -> Option<String> {
         match expr {
-            ExpressionNode::Literal(t) => Some(t.get_type()),
-            ExpressionNode::Cast(ty, _) => Some(ty.get_type()),
+            ExpressionNode::Literal(t) => Some(t.display_name()),
+            ExpressionNode::Cast(ty, _) => Some(ty.display_name()),
             ExpressionNode::IsExpression(_, _) => Some("bool".to_string()),
             ExpressionNode::Binary(_, op, _) => {
                 match op.kind {
@@ -673,9 +676,17 @@ impl Builder {
             ExpressionNode::FunctionCall(name, generic_args, _) => {
                 self.resolve(&name.text, scope, name.position.start).and_then(|d| {
                     if d.kind == SymKind::Struct {
-                        // It's a constructor call (e.g. `Test("John", 20)`), so the type is the struct name itself.
+                        // It's a constructor call (e.g. `Test("John", 20)`), so the type is the struct
+                        // name itself, rendered with angle brackets when generic (`Box<int>`).
                         match generic_args {
-                            Some(args) => Some(dream::syntax::nodes::types::mangle_generic(&name.text, args)),
+                            Some(args) => {
+                                let args_str = args
+                                    .iter()
+                                    .map(|a| a.display_name())
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
+                                Some(format!("{}<{}>", name.text, args_str))
+                            }
                             None => Some(name.text.clone()),
                         }
                     } else {
@@ -684,9 +695,8 @@ impl Builder {
                             let mut ret_ty = d.detail[colon_idx + 1..].trim().to_string();
                             if let Some(args) = generic_args {
                                 if args.len() == 1 {
-                                    let arg_type = args[0].get_type();
-                                    ret_ty = ret_ty.replace("_T", &format!("_{}", arg_type))
-                                                   .replace("<T>", &format!("<{}>", arg_type))
+                                    let arg_type = args[0].display_name();
+                                    ret_ty = ret_ty.replace("<T>", &format!("<{}>", arg_type))
                                                    .replace(" T", &format!(" {}", arg_type))
                                                    .replace("T ", &format!("{} ", arg_type));
                                     if ret_ty == "T" {
@@ -759,17 +769,9 @@ impl Builder {
                 st.fields.iter().map(|f| f.name.text.clone()).collect(),
             );
             for field in &st.fields {
-                let detail = format!(
-                    "{}.{}: {}",
-                    st.name.text, field.name.text, field.type_token.text
-                );
-                self.push_decl(
-                    &field.name,
-                    SymKind::Field,
-                    detail,
-                    GLOBAL,
-                    Some(field.type_token.text.clone()),
-                );
+                let field_ty = field.field_type.display_name();
+                let detail = format!("{}.{}: {}", st.name.text, field.name.text, field_ty);
+                self.push_decl(&field.name, SymKind::Field, detail, GLOBAL, Some(field_ty));
             }
             for method in &st.methods {
                 let detail = format!("{}.{}", st.name.text, signature(method));
@@ -870,7 +872,7 @@ impl Builder {
 
     fn walk_params_and_body(&mut self, func: &FunctionNode, scope: usize) {
         for param in &func.parameters {
-            let ty = param.type_.get_type();
+            let ty = param.type_.display_name();
             let detail = format!("(parameter) {}: {}", param.name.text, ty);
             self.push_decl(&param.name, SymKind::Param, detail, scope, Some(ty));
             self.add_type_ref(&param.type_, scope);
@@ -889,11 +891,11 @@ impl Builder {
                 let inferred = self.infer_type(expr, scope);
                 let type_str = ty
                     .as_ref()
-                    .map(|t| t.get_type())
+                    .map(|t| t.display_name())
                     .or_else(|| inferred.clone())
                     .unwrap_or_else(|| "unknown".to_string());
                 let detail = type_str.clone();
-                let resolved_ty = ty.as_ref().map(|t| t.get_type()).or(inferred);
+                let resolved_ty = ty.as_ref().map(|t| t.display_name()).or(inferred);
                 self.push_decl(name, SymKind::Variable, detail, scope, resolved_ty.clone());
                 if let Some(t) = ty {
                     self.add_type_ref(t, scope);
@@ -1204,13 +1206,13 @@ fn signature(func: &FunctionNode) -> String {
     let params = func
         .parameters
         .iter()
-        .map(|p| format!("{}: {}", p.name.text, p.type_.get_type()))
+        .map(|p| format!("{}: {}", p.name.text, p.type_.display_name()))
         .collect::<Vec<_>>()
         .join(", ");
     let ret = func
         .return_type
         .as_ref()
-        .map(|t| t.get_type())
+        .map(|t| t.display_name())
         .unwrap_or_else(|| "void".to_string());
 
     let prefix = if func.is_async { "async fun " } else { "fun " };

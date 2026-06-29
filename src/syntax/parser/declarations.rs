@@ -329,8 +329,14 @@ impl<'a, 'b> Parser<'a, 'b> {
     pub(super) fn parse_attributes(&mut self) -> Vec<crate::syntax::nodes::AttributeNode> {
         let mut attributes = Vec::new();
         while self.current_token().kind == TokenKind::AtToken {
-            self.match_token(TokenKind::AtToken);
-            let name = self.match_token(TokenKind::IdentifierToken);
+            let at = self.match_token(TokenKind::AtToken);
+            let mut name = self.match_token(TokenKind::IdentifierToken);
+            // A doc comment preceding the declaration attaches to the `@` token (the first token of
+            // the declaration). Thread it onto the attribute name so tooling can recover it even
+            // when the attribute is parsed before the `fun`/`class` keyword.
+            if !at.leading_trivia.is_empty() {
+                name.leading_trivia.splice(0..0, at.leading_trivia);
+            }
             let mut args = Vec::new();
             if self.current_token().kind == TokenKind::OpenParenthesisToken {
                 self.match_token(TokenKind::OpenParenthesisToken);
@@ -354,9 +360,21 @@ impl<'a, 'b> Parser<'a, 'b> {
 
     /// Parses a function declaration
     pub(super) fn parse_function(&mut self, pre_parsed_attributes: Option<Vec<crate::syntax::nodes::AttributeNode>>) -> Result<FunctionNode<'a>, Error> {
-        let first_trivia = self.current_token().leading_trivia.clone();
-        
+        let mut first_trivia = self.current_token().leading_trivia.clone();
+
         let attributes = pre_parsed_attributes.unwrap_or_else(|| self.parse_attributes());
+
+        // When attributes were parsed by the caller (e.g. struct members), the doc comment that
+        // preceded the first attribute was consumed with it. Recover it from the attribute so the
+        // comment still reaches the function name token below. (Whitespace is not trivia, so an
+        // empty `first_trivia` reliably means "nothing but the attribute came before us".)
+        if first_trivia.is_empty() {
+            if let Some(first_attr) = attributes.first() {
+                if !first_attr.name.leading_trivia.is_empty() {
+                    first_trivia = first_attr.name.leading_trivia.clone();
+                }
+            }
+        }
 
         // `async` may appear before or after `public` (e.g. `async fun`, `public async fun`,
         // `async public fun`). Calling such a function eagerly starts a task and yields `Future<T>`.
