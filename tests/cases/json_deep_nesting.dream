@@ -33,27 +33,11 @@ class Team {
 }
 
 fun mk_user(name: string, age: int, city: string): User {
-    return User {
-        name: name,
-        age: age,
-        company: Company {
-            name: city + " Corp",
-            address: Address {
-                city: city,
-                zip: "00000",
-                geo: Geo { lat: 1.5d, lng: 2.5d },
-            },
-        },
-        tags: [name, city],
-    };
+    return User(name, age, Company(city + " Corp", Address(city, "00000", Geo(1.5d, 2.5d))), [name, city]);
 }
 
 fun main(): void {
-    let team = Team {
-        title: "Core",
-        lead: mk_user("Ada", 36, "London"),
-        members: [mk_user("Bob", 30, "Paris"), mk_user("Cee", 41, "Berlin")],
-    };
+    let team = Team("Core", mk_user("Ada", 36, "London"), [mk_user("Bob", 30, "Paris"), mk_user("Cee", 41, "Berlin")]);
 
     let text = JSON.serialize(team);
     System.println(text);

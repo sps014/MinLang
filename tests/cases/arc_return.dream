@@ -3,7 +3,7 @@ class Node {
 }
 
 fun create_node(v: int): Node {
-    let n = Node { val: v };
+    let n = Node(v);
     return n;
 }
 

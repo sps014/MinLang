@@ -4,7 +4,7 @@ class Node {
 }
 
 fun create_node(val: int): Node {
-    let n = Node { value: val, next: null };
+    let n = Node(val, null);
     return n;
 }
 

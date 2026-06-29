@@ -20,12 +20,12 @@ class Named {
 }
 
 fun main() {
-    let p = Point { x: 3, y: 7 };
+    let p = Point(3, 7);
     System.print(to_string(p));
     System.print("\n");
     System.println(hash_code(p));
 
-    let n = Named { id: 5, label: "hello" };
+    let n = Named(5, "hello");
     System.print(to_string(n));
     System.print("\n");
     System.println(hash_code(n));

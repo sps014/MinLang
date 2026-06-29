@@ -1,7 +1,7 @@
 use super::WasmGenerator;
 use crate::intrinsics;
 use crate::syntax::nodes::types::{
-    constructor_fn, json_from_json_fn, json_to_json_fn, mangle_with_suffixes, strip_nullable,
+    constructor_fn, json_from_json_fn, json_to_json_fn, strip_nullable,
 };
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, Type};
 use crate::syntax::text::indented_text_writer::IndentedTextWriter;
@@ -74,7 +74,6 @@ impl<'a> WasmGenerator<'a> {
             },
             ExpressionNode::Parenthesized(e) => self.build_expression(e, left_side, function, writer)?,
             ExpressionNode::Cast(target_type, expr) => self.build_cast(target_type, expr, left_side, function, writer)?,
-            ExpressionNode::StructInstantiation(name, generic_args, fields) => self.build_struct_instantiation(name, generic_args, fields, left_side, function, writer)?,
             ExpressionNode::MemberAccess(obj, member) => self.build_member_access(obj, member, left_side, function, writer)?,
             ExpressionNode::IsExpression(left, right_type) => {
                 let left_type = self.infer_expression_type(left, function)?;
@@ -236,80 +235,6 @@ impl<'a> WasmGenerator<'a> {
     ) -> Result<(), Error> {
         self.build_expression(array_expr, &"int[]".to_string(), function, writer)?;
         writer.write_line("i32.load");
-        Ok(())
-    }
-
-    /// Builds a struct instantiation
-    pub fn build_struct_instantiation(
-        &mut self,
-        name: &SyntaxToken,
-        generic_args: &Option<Vec<Type>>,
-        fields: &Vec<(SyntaxToken, ExpressionNode<'a>)>,
-        _left_side: &String,
-        function: &FunctionNode<'a>,
-        writer: &mut IndentedTextWriter,
-    ) -> Result<(), Error> {
-        let struct_name = match generic_args {
-            // Resolve each type argument through the active monomorphization bindings so a
-            // `List<T>{...}` inside a generic body targets the concrete `List_int` layout.
-            Some(args) => mangle_with_suffixes(
-                &name.text,
-                args.iter().map(|arg| self.resolve_type(&arg.get_type())),
-            ),
-            None => name.text.clone(),
-        };
-        let struct_info = self
-            .struct_table
-            .get_struct(&struct_name)
-            .ok_or_else(|| {
-                Error::other(format!("unknown class '{}' in instantiation", struct_name))
-            })?
-            .clone();
-
-        // 1. Allocate memory using $malloc, tagging the block with this struct's runtime tag.
-        // Hold the allocation pointer in a depth-specific local so evaluating field values
-        // (which may themselves allocate) cannot clobber it.
-        let base = self.ctor_base_local();
-        writer.write_line(&format!("i32.const {}", struct_info.size));
-        writer.write_line(&format!("i32.const {}", self.type_tag(&struct_name)));
-        writer.write_line("call $malloc");
-        writer.write_line(&format!("local.set {}", base));
-
-        // 2. Evaluate and store each field (one nesting level deeper so field values that
-        // allocate borrow a different base local).
-        self.ctx.alloc_depth += 1;
-        for (field_name, expr) in fields.iter() {
-            let field_info = struct_info.fields.get(&field_name.text).ok_or_else(|| {
-                Error::other(format!(
-                    "unknown field '{}' on class '{}'",
-                    field_name.text, struct_name
-                ))
-            })?;
-            let offset = field_info.offset;
-            let field_type = field_info.type_.get_type();
-
-            writer.write_line(&format!("local.get {}", base)); // ptr
-            if offset > 0 {
-                writer.write_line(&format!("i32.const {}", offset));
-                writer.write_line("i32.add"); // ptr + offset
-            }
-
-            // The struct owns its reference fields: a borrowed value is retained so it survives
-            // once the struct is freed; an owned value already carries the +1 the field takes over.
-            let retain_field = self.is_reference_type(&field_type)
-                && !self.stores_owned_ref(expr, &field_type, function)?;
-            self.build_expression(expr, &field_type, function, writer)?;
-            if retain_field {
-                writer.write_line("local.tee $scratch_ptr");
-                writer.write_line("local.get $scratch_ptr");
-                writer.write_line("call $retain");
-            }
-            WasmGenerator::emit_store(&field_type, writer)?;
-        }
-        self.ctx.alloc_depth -= 1;
-
-        // 3. Leave the pointer on the stack
-        writer.write_line(&format!("local.get {}", base));
         Ok(())
     }
 

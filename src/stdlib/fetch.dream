@@ -66,7 +66,7 @@ class Fetch {
     // helpers below cover the common cases.
     static async fun request(method: string, url: string, body: string, headers: string): Response {
         let raw = await __fetch_request(url, method, headers, body);
-        return Response { raw: raw };
+        return Response(raw);
     }
 
     // GETs `url` and returns a `Response` for richer access (status, headers, json()).

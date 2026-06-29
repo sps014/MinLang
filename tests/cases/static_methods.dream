@@ -3,11 +3,11 @@ class Vec2 {
     y: int;
 
     static fun origin(): Vec2 {
-        return Vec2 { x: 0, y: 0 };
+        return Vec2(0, 0);
     }
 
     static fun of(x: int, y: int): Vec2 {
-        return Vec2 { x: x, y: y };
+        return Vec2(x, y);
     }
 
     fun sum(): int {

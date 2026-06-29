@@ -40,7 +40,7 @@ class Pair<A, B> {
 }
 
 fun main(): void {
-    let p = Pair<int, string> { first: 1, second: "one" };
+    let p = Pair<int, string>(1, "one");
     println(p.first);
     println(p.second);
 }
@@ -49,10 +49,10 @@ fun main(): void {
 Type arguments can themselves be generic (or arrays), so generics nest freely:
 
 ```ts
-let nested = Pair<Box<int>, int> { first: Box<int> { v: 7 }, second: 5 };
+let nested = Pair<Box<int>, int>(Box<int>(7), 5);
 println(nested.first.v);   // 7
 
-let pts: Pair<int, int>[] = [Pair<int, int> { first: 1, second: 2 }];
+let pts: Pair<int, int>[] = [Pair<int, int>(1, 2)];
 println(pts[0].second);    // 2
 ```
 
@@ -74,7 +74,7 @@ class Box<T> {
 }
 
 fun main(): void {
-    let b = Box<int> { value: 42 };
+    let b = Box<int>(42);
     b.set(100);
     println(b.get());   // 100
 }

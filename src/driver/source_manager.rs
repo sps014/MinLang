@@ -144,7 +144,7 @@ fn generate_json_extend(
                 "        let __{f}: {ty} = null;\n        let __src_{f} = v.get(\"{k}\");\n        if (__src_{f}.is_null() == false) {{\n            __{f} = {from_inner};\n        }}\n",
                 f = fname, k = json_key, ty = ftype, from_inner = from_inner
             ));
-            from_fields.push(format!("{f}: __{f}", f = fname));
+            from_fields.push(format!("__{f}", f = fname));
             continue;
         }
 
@@ -167,7 +167,7 @@ fn generate_json_extend(
                         "        let __src_{f} = v.get(\"{k}\");\n        let __{f} = array_new<{elem}>(__src_{f}.size());\n        let __i_{f} = 0;\n        while (__i_{f} < __src_{f}.size()) {{\n            __{f}[__i_{f}] = {from_e};\n            __i_{f} = __i_{f} + 1;\n        }}\n",
                         f = fname, k = json_key, elem = elem, from_e = from_e
                     ));
-                    from_fields.push(format!("{f}: __{f}", f = fname));
+                    from_fields.push(format!("__{f}", f = fname));
                 }
                 _ => {
                     diagnostics.report_error(
@@ -190,7 +190,7 @@ fn generate_json_extend(
                         k = json_key,
                         to_e = to_e
                     ));
-                    from_fields.push(format!("{f}: {from_e}", f = fname, from_e = from_e));
+                    from_fields.push(from_e);
                 }
                 _ => {
                     diagnostics.report_error(
@@ -208,10 +208,10 @@ fn generate_json_extend(
     to_body.push_str("        return __o;\n");
 
     let from_body = format!(
-        "{prelude}        return {name} {{\n            {fields}\n        }};\n",
+        "{prelude}        return {name}({fields});\n",
         prelude = from_prelude,
         name = name,
-        fields = from_fields.join(",\n            ")
+        fields = from_fields.join(", ")
     );
 
     Some(format!(

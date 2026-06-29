@@ -4,9 +4,9 @@ class Node {
 }
 
 fun do_allocations() {
-    let n1 = Node { val: 1, next: null };
-    let n2 = Node { val: 2, next: n1 };
-    let n3 = Node { val: 3, next: n2 };
+    let n1 = Node(1, null);
+    let n2 = Node(2, n1);
+    let n3 = Node(3, n2);
     // n3 goes out of scope, releasing n2, releasing n1
 }
 

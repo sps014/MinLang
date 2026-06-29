@@ -17,6 +17,18 @@ class Map<K, V> {
     used: int;
     cap: int;
 
+    // Allocates an empty map with a small initial capacity, e.g. `let m = Map<string, int>();`.
+    // The backing arrays must be allocated up front, so construction always goes through here.
+    constructor() {
+        this.keys = array_new<K>(8);
+        this.values = array_new<V>(8);
+        this.states = array_new<int>(8);
+        this.defaults = array_new<V>(1);
+        this.count = 0;
+        this.used = 0;
+        this.cap = 8;
+    }
+
     // Number of key/value pairs currently stored.
     fun size(): int {
         return this.count;
@@ -210,17 +222,3 @@ class Map<K, V> {
     }
 }
 
-// Creates an empty `Map<K, V>` with a small initial capacity, e.g. `let m = Map<string, int>();`.
-// This factory is the canonical way to construct a map (the class's backing arrays must be
-// allocated, so a bare `Map<K, V> { ... }` literal is not used directly).
-fun Map<K, V>(): Map<K, V> {
-    return Map<K, V> {
-        keys: array_new<K>(8),
-        values: array_new<V>(8),
-        states: array_new<int>(8),
-        defaults: array_new<V>(1),
-        count: 0,
-        used: 0,
-        cap: 8
-    };
-}

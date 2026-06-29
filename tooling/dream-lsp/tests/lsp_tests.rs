@@ -95,7 +95,7 @@ class Point {
     fun mag(): int { return this.x; }
 }
 fun main(): void {
-    let origin: Point = Point { x: 0 };
+    let origin: Point = Point(0);
     origin.|
 }
 ";
@@ -162,7 +162,7 @@ class User {
     age: int;
 }
 fun main(): void {
-    let u: User = User { age: 20 };
+    let u: User = User(20);
     let a: int = u.|age;
 }
 ";
@@ -192,7 +192,7 @@ fun main(): void {
 fn inferred_type_member_completion_forward_reference() {
     let src = "
 fun main(): void {
-    let u = User { age: 20, name: \"Alice\" };
+    let u = User(20, \"Alice\");
     u.|
 }
 
@@ -214,7 +214,7 @@ class User {
 fn hover_inferred_variable() {
     let src = "
 fun main(): void {
-    let u = User { age: 20 };
+    let u = User(20);
     u|
 }
 class User { age: int; }
@@ -232,7 +232,7 @@ fn hover_inferred_variable_after_error() {
     let src = "
 fun main(): void {
     let x: int = 1 + ; // ERROR HERE
-    let u = User { age: 20 };
+    let u = User(20);
     u|
 }
 class User { age: int; }
@@ -256,7 +256,7 @@ class RemoteUser {
     fun get_id(): int { return this.id; }
 }
 fun fetch_user(): RemoteUser {
-    return RemoteUser { id: 42 };
+    return RemoteUser(42);
 }
 ").unwrap();
 
@@ -375,4 +375,83 @@ fun main(): void {
     let index = harness.index();
     let hover = index.hover(harness.offset, &src).expect("Expected hover info on Math.floor");
     println!("HOVER CONTENTS MATH.FLOOR: {}", hover.contents);
+}
+
+#[test]
+fn parameter_inlay_hints_on_function_and_constructor_calls() {
+    use dream_lsp::index::{Index, InlayKind};
+    let src = "
+class Point {
+    x: int;
+    y: int;
+}
+fun add(a: int, b: int): int {
+    return a + b;
+}
+fun main(): void {
+    let p = Point(3, 4);
+    let s = add(1, 2);
+}
+";
+    let index = Index::build(None, src);
+    let labels: Vec<&str> = index
+        .inlay_hints
+        .iter()
+        .filter(|h| h.kind == InlayKind::Parameter)
+        .map(|h| h.label.as_str())
+        .collect();
+    // Auto-generated constructor takes the struct's fields positionally.
+    assert!(labels.contains(&"x:"), "expected `x:` hint, got {:?}", labels);
+    assert!(labels.contains(&"y:"), "expected `y:` hint, got {:?}", labels);
+    // Free function parameters.
+    assert!(labels.contains(&"a:"), "expected `a:` hint, got {:?}", labels);
+    assert!(labels.contains(&"b:"), "expected `b:` hint, got {:?}", labels);
+}
+
+#[test]
+fn parameter_inlay_hints_suppressed_when_arg_matches_name() {
+    use dream_lsp::index::{Index, InlayKind};
+    let src = "
+fun add(a: int, b: int): int {
+    return a + b;
+}
+fun main(): void {
+    let a = 1;
+    let b = 2;
+    let s = add(a, b);
+}
+";
+    let index = Index::build(None, src);
+    let param_hints = index
+        .inlay_hints
+        .iter()
+        .filter(|h| h.kind == InlayKind::Parameter)
+        .count();
+    assert_eq!(
+        param_hints, 0,
+        "argument identifiers matching parameter names should not be annotated"
+    );
+}
+
+#[test]
+fn parameter_inlay_hints_on_method_calls() {
+    use dream_lsp::index::{Index, InlayKind};
+    let src = "
+fun main(): void {
+    let nums = List<int>();
+    nums.push(42);
+}
+";
+    let index = Index::build(None, src);
+    let labels: Vec<&str> = index
+        .inlay_hints
+        .iter()
+        .filter(|h| h.kind == InlayKind::Parameter)
+        .map(|h| h.label.as_str())
+        .collect();
+    assert!(
+        labels.contains(&"value:"),
+        "expected `value:` hint on List.push, got {:?}",
+        labels
+    );
 }

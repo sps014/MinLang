@@ -21,7 +21,7 @@ fun main(): void {
     arr[1] += 10;
     System.println(arr[1]);
 
-    let p = P { v: 5 };
+    let p = P(5);
     p.v += 7;
     System.println(p.v);
 }

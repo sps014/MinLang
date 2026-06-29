@@ -4,7 +4,7 @@
 
 use super::super::WasmGenerator;
 use crate::intrinsics;
-use crate::syntax::nodes::types::{mangle_with_suffixes, strip_nullable};
+use crate::syntax::nodes::types::strip_nullable;
 use crate::syntax::nodes::FunctionNode;
 use std::io::Error;
 
@@ -109,16 +109,6 @@ impl<'a> WasmGenerator<'a> {
             }
             ExpressionNode::Parenthesized(expr) => self.infer_expression_type(expr, function),
             ExpressionNode::Cast(target_type, _) => Ok(target_type.get_type()),
-            ExpressionNode::StructInstantiation(name, generic_args, _) => {
-                let struct_name = match generic_args {
-                    Some(args) => mangle_with_suffixes(
-                        &name.text,
-                        args.iter().map(|arg| self.resolve_type(&arg.get_type())),
-                    ),
-                    None => name.text.clone(),
-                };
-                Ok(struct_name)
-            }
             ExpressionNode::MemberAccess(obj, member) => {
                 // Enum member access yields the enum type (an i32 at runtime).
                 if let ExpressionNode::Identifier(id) = obj {

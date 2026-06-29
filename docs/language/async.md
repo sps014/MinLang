@@ -93,7 +93,7 @@ class Downloader {
 }
 
 async fun main(): void {
-    let d = Downloader { url: "https://example.com" };
+    let d = Downloader("https://example.com");
     let body = await d.fetch();   // d.fetch() : Future<string>
     println(body);
 }

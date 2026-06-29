@@ -10,6 +10,7 @@ use dream::syntax::nodes::struct_node::StructDeclarationNode;
 use dream::syntax::nodes::{ExpressionNode, FunctionNode, ProgramNode, StatementNode, Type};
 use dream::syntax::parser::Parser;
 use dream::syntax::token::syntax_token::SyntaxToken;
+use std::collections::HashMap;
 
 /// Sentinel scope id for declarations that live at file scope (functions, structs, enums).
 const GLOBAL: usize = usize::MAX;
@@ -55,11 +56,28 @@ pub struct Ref {
     pub is_main: bool,
 }
 
+/// Distinguishes an inferred-type hint (rendered after a `let` name, e.g. `: int`) from a
+/// parameter-name hint (rendered before a call argument, e.g. `x:`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InlayKind {
+    Type,
+    Parameter,
+}
+
+/// A single inlay hint: where to anchor it (byte offset), its label, and what kind it is (which
+/// drives padding/placement in the LSP layer).
+#[derive(Debug, Clone)]
+pub struct InlayHintOut {
+    pub offset: usize,
+    pub label: String,
+    pub kind: InlayKind,
+}
+
 /// The complete symbol model for one document. All positions are byte offsets into the source.
 pub struct Index {
     pub decls: Vec<Decl>,
     pub refs: Vec<Ref>,
-    pub inlay_hints: Vec<(usize, String)>,
+    pub inlay_hints: Vec<InlayHintOut>,
 }
 
 /// A located definition or reference (byte span + hover text).
@@ -84,6 +102,10 @@ impl Index {
             inlay_hints: Vec::new(),
             next_scope: 0,
             is_main: true,
+            fn_params: HashMap::new(),
+            method_params: HashMap::new(),
+            ctor_params: HashMap::new(),
+            struct_fields: HashMap::new(),
         };
         if let Ok(ast) = parser.parse() {
             let program = ast.get_root();
@@ -599,9 +621,18 @@ impl Index {
 struct Builder {
     decls: Vec<Decl>,
     refs: Vec<Ref>,
-    inlay_hints: Vec<(usize, String)>,
+    inlay_hints: Vec<InlayHintOut>,
     next_scope: usize,
     is_main: bool,
+    /// Parameter names per free function name, used to render parameter-name inlay hints at calls.
+    fn_params: HashMap<String, Vec<String>>,
+    /// Parameter names per method name (the implicit `this` is not a parsed parameter).
+    method_params: HashMap<String, Vec<String>>,
+    /// Constructor parameter names per struct name (only when a custom `constructor` is declared).
+    ctor_params: HashMap<String, Vec<String>>,
+    /// Field names per struct name, in declaration order. These are the positional arguments of a
+    /// struct's auto-generated constructor (when it has no custom `constructor`).
+    struct_fields: HashMap<String, Vec<String>>,
 }
 
 impl Builder {
@@ -613,10 +644,6 @@ impl Builder {
     fn infer_type_internal(&self, expr: &ExpressionNode, scope: usize) -> Option<String> {
         match expr {
             ExpressionNode::Literal(t) => Some(t.get_type()),
-            ExpressionNode::StructInstantiation(name, generic_args, _) => match generic_args {
-                Some(args) => Some(dream::syntax::nodes::types::mangle_generic(&name.text, args)),
-                None => Some(name.text.clone()),
-            },
             ExpressionNode::Cast(ty, _) => Some(ty.get_type()),
             ExpressionNode::IsExpression(_, _) => Some("bool".to_string()),
             ExpressionNode::Binary(_, op, _) => {
@@ -720,10 +747,16 @@ impl Builder {
         for func in &program.functions {
             let detail = signature(func);
             self.push_decl(&func.name, SymKind::Function, detail, GLOBAL, None);
+            self.fn_params
+                .insert(func.name.text.clone(), param_names(func));
         }
         for st in &program.structs {
             let detail = format!("class {}", st.name.text);
             self.push_decl(&st.name, SymKind::Struct, detail, GLOBAL, None);
+            self.struct_fields.insert(
+                st.name.text.clone(),
+                st.fields.iter().map(|f| f.name.text.clone()).collect(),
+            );
             for field in &st.fields {
                 let detail = format!(
                     "{}.{}: {}",
@@ -740,6 +773,13 @@ impl Builder {
             for method in &st.methods {
                 let detail = format!("{}.{}", st.name.text, signature(method));
                 self.push_decl(&method.name, SymKind::Method, detail, GLOBAL, None);
+                if method.name.text == "constructor" {
+                    self.ctor_params
+                        .insert(st.name.text.clone(), param_names(method));
+                } else {
+                    self.method_params
+                        .insert(method.name.text.clone(), param_names(method));
+                }
             }
         }
         for en in &program.enums {
@@ -754,6 +794,8 @@ impl Builder {
             for method in &ext.methods {
                 let detail = format!("{}.{}", ext.target.text, signature(method));
                 self.push_decl(&method.name, SymKind::Method, detail, GLOBAL, None);
+                self.method_params
+                    .insert(method.name.text.clone(), param_names(method));
             }
         }
     }
@@ -855,7 +897,11 @@ impl Builder {
                 if let Some(t) = ty {
                     self.add_type_ref(t, scope);
                 } else if let Some(t_str) = resolved_ty {
-                    self.inlay_hints.push((name.position.end, format!(": {}", t_str)));
+                    self.inlay_hints.push(InlayHintOut {
+                        offset: name.position.end,
+                        label: format!(": {}", t_str),
+                        kind: InlayKind::Type,
+                    });
                 }
                 self.walk_expr(expr, scope);
             }
@@ -877,6 +923,14 @@ impl Builder {
             StatementNode::Return(None) => {}
             StatementNode::FunctionInvocation(name, _, args) => {
                 self.add_ref(name, SymKind::Function, scope);
+                let params = self.fn_params.get(&name.text).or_else(|| {
+                    self.ctor_params
+                        .get(&name.text)
+                        .or_else(|| self.struct_fields.get(&name.text))
+                });
+                if let Some(params) = params {
+                    self.push_param_hints(&params.clone(), args);
+                }
                 for arg in args {
                     self.walk_expr(arg, scope);
                 }
@@ -887,6 +941,9 @@ impl Builder {
             StatementNode::MethodInvocation(recv, method, _, args) => {
                 self.walk_expr(recv, scope);
                 self.add_ref(method, SymKind::Method, scope);
+                if let Some(params) = self.method_params.get(&method.text) {
+                    self.push_param_hints(&params.clone(), args);
+                }
                 for arg in args {
                     self.walk_expr(arg, scope);
                 }
@@ -952,6 +1009,26 @@ impl Builder {
         }
     }
 
+    /// Emits a parameter-name inlay hint (`name:`) before each positional argument of a call. The
+    /// hint is suppressed when the argument is simply the identifier matching the parameter name,
+    /// which would be redundant. Extra arguments (more than parameters) are left unannotated.
+    fn push_param_hints(&mut self, params: &[String], args: &[ExpressionNode]) {
+        for (param, arg) in params.iter().zip(args.iter()) {
+            if let ExpressionNode::Identifier(tok) = arg {
+                if &tok.text == param {
+                    continue;
+                }
+            }
+            if let Some(span) = arg.position() {
+                self.inlay_hints.push(InlayHintOut {
+                    offset: span.start,
+                    label: format!("{}:", param),
+                    kind: InlayKind::Parameter,
+                });
+            }
+        }
+    }
+
     fn walk_expr(&mut self, expr: &ExpressionNode, scope: usize) {
         match expr {
             ExpressionNode::Identifier(token) => self.add_ref(token, SymKind::Variable, scope),
@@ -964,6 +1041,17 @@ impl Builder {
             }
             ExpressionNode::FunctionCall(name, _, args) => {
                 self.add_ref(name, SymKind::Function, scope);
+                // A name resolves to a free function if one exists; otherwise `Name(...)` is a
+                // constructor call, whose positional arguments are the custom `constructor`'s
+                // parameters (if any) or the struct's fields in declaration order.
+                let params = self.fn_params.get(&name.text).or_else(|| {
+                    self.ctor_params
+                        .get(&name.text)
+                        .or_else(|| self.struct_fields.get(&name.text))
+                });
+                if let Some(params) = params {
+                    self.push_param_hints(&params.clone(), args);
+                }
                 for arg in args {
                     self.walk_expr(arg, scope);
                 }
@@ -975,13 +1063,6 @@ impl Builder {
             ExpressionNode::Cast(ty, e) => {
                 self.add_type_ref(ty, scope);
                 self.walk_expr(e, scope);
-            }
-            ExpressionNode::StructInstantiation(name, _, fields) => {
-                self.add_ref(name, SymKind::Struct, scope);
-                for (field, value) in fields {
-                    self.add_ref(field, SymKind::Field, scope);
-                    self.walk_expr(value, scope);
-                }
             }
             ExpressionNode::MemberAccess(recv, member) => {
                 self.walk_expr(recv, scope);
@@ -995,6 +1076,9 @@ impl Builder {
             ExpressionNode::MethodCall(recv, method, _, args) => {
                 self.walk_expr(recv, scope);
                 self.add_ref(method, SymKind::Method, scope);
+                if let Some(params) = self.method_params.get(&method.text) {
+                    self.push_param_hints(&params.clone(), args);
+                }
                 for arg in args {
                     self.walk_expr(arg, scope);
                 }
@@ -1103,6 +1187,15 @@ fn base_struct(ty: &Type) -> &Type {
         Type::Array(inner) | Type::Nullable(inner) => base_struct(inner),
         other => other,
     }
+}
+
+/// The parameter names of a function/method in declaration order (the implicit method `this` is
+/// not a parsed parameter, so it never appears here).
+fn param_names(func: &FunctionNode) -> Vec<String> {
+    func.parameters
+        .iter()
+        .map(|p| p.name.text.clone())
+        .collect()
 }
 
 /// Renders a function declaration's signature, e.g. `fun add(a: int, b: int): int`.

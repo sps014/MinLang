@@ -13,7 +13,7 @@ class Worker {
 }
 
 async fun main(): void {
-    let w = Worker { base: 100 };
+    let w = Worker(100);
     let r = await w.compute(5);
     System.println(to_string(r));
 

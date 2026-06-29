@@ -13,7 +13,7 @@ class Greeter {
 }
 
 fun main() {
-    let g = Greeter { name: "ignored" };
+    let g = Greeter("ignored");
     g.greet();
     g.say("string passed to method\n");
 }

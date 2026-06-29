@@ -183,11 +183,6 @@ impl<'a> Analyzer<'a> {
                 self.scan_expr_await(i, message, diagnostics);
             }
             ExpressionNode::MemberAccess(o, _) => self.scan_expr_await(o, message, diagnostics),
-            ExpressionNode::StructInstantiation(_, _, fields) => {
-                for (_, e) in fields {
-                    self.scan_expr_await(e, message, diagnostics);
-                }
-            }
             ExpressionNode::Ternary(c, t, e) => {
                 self.scan_expr_await(c, message, diagnostics);
                 self.scan_expr_await(t, message, diagnostics);

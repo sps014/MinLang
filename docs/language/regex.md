@@ -10,7 +10,7 @@ Dream ships no regular-expression engine of its own. Instead the `Regex` class i
 Construct a `Regex` with a pattern and flags, then test, replace, or match:
 
 ```ts
-let re = Regex { pattern: "\\d+", flags: "g" };
+let re = Regex("\\d+", "g");
 
 if (re.test("abc123")) {
     println("has digits");
@@ -32,7 +32,7 @@ let parts = re.match("a1b2");              // ["1", "2"]
 When you need the stateful `RegExp` API, `compile()` hands back the real object as a [`JsRef`](references.md):
 
 ```ts
-let re = Regex { pattern: "\\w+", flags: "g" };
+let re = Regex("\\w+", "g");
 let rx = re.compile();      // a live JS RegExp
 // ... rx.call1("exec", js_string(input)), rx.get_int("lastIndex"), ...
 rx.release();               // drop the handle when done

@@ -33,16 +33,16 @@ class GenericBox<T> {
 }
 
 fun main() {
-    let c = Counter { count: 0 };
+    let c = Counter(0);
     c.increment();
     c.add(4);
     System.println(c.get());
 
-    let int_box = GenericBox<int> { val: 42 };
+    let int_box = GenericBox<int>(42);
     int_box.print_val();
     int_box.set_val(100);
     int_box.print_val();
 
-    let str_box = GenericBox<string> { val: "Hello Methods\n" };
+    let str_box = GenericBox<string>("Hello Methods\n");
     str_box.print_val();
 }

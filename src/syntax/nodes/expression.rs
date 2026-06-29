@@ -14,11 +14,6 @@ pub enum ExpressionNode<'a> {
     FunctionCall(SyntaxToken, Option<Vec<Type>>, Vec<ExpressionNode<'a>>),
     IndexAccess(&'a ExpressionNode<'a>, &'a ExpressionNode<'a>),
     Cast(Type, &'a ExpressionNode<'a>),
-    StructInstantiation(
-        SyntaxToken,
-        Option<Vec<Type>>,
-        Vec<(SyntaxToken, ExpressionNode<'a>)>,
-    ),
     MemberAccess(&'a ExpressionNode<'a>, SyntaxToken),
     IsExpression(&'a ExpressionNode<'a>, Type),
     MethodCall(
@@ -48,7 +43,6 @@ impl<'a> ExpressionNode<'a> {
             ExpressionNode::Literal(t) => t.get_span(),
             ExpressionNode::Identifier(token)
             | ExpressionNode::FunctionCall(token, _, _)
-            | ExpressionNode::StructInstantiation(token, _, _)
             | ExpressionNode::MemberAccess(_, token)
             | ExpressionNode::MethodCall(_, token, _, _)
             | ExpressionNode::Binary(_, token, _)

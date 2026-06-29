@@ -18,6 +18,6 @@ async fun main(): void {
     // `sleep` is a built-in awaitable timer; combinators compose stored futures.
     let a = getUser(1);
     let b = getUser(2);
-    let both = await all([a, b]);
+    let both = await Promise.all([a, b]);
     System.println("all = " + both[0] + ", " + both[1]);
 }

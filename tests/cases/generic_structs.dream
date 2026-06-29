@@ -16,15 +16,15 @@ fun print_box_float(b: Box<float>) {
 }
 
 fun main(): void {
-    let int_box = Box<int> { val: 42 };
-    let float_box = Box<float> { val: 3.14159f };
-    let str_box = Box<string> { val: "Hello Generic Structs!\n" };
+    let int_box = Box<int>(42);
+    let float_box = Box<float>(3.14159f);
+    let str_box = Box<string>("Hello Generic Structs!\n");
     
     print_box_int(int_box);
     print_box_float(float_box);
     System.print(str_box.val);
 
-    let p = Pair<int> { first: 10, second: 20 };
+    let p = Pair<int>(10, 20);
     System.println(p.first);
     System.println(p.second);
 }

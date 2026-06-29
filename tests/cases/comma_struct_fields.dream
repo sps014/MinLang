@@ -4,6 +4,6 @@ class Point {
 }
 
 fun main() {
-    let p = Point { x: 1, y: 2 };
+    let p = Point(1, 2);
     System.println(p.x);
 }

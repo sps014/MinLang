@@ -7,11 +7,11 @@ export class PublicData {
 }
 
 export fun get_internal(): InternalData {
-    return InternalData { value: 1 };
+    return InternalData(1);
 }
 
 export fun get_public(): PublicData {
-    return PublicData { val: 2 };
+    return PublicData(2);
 }
 
 fun main(): void {

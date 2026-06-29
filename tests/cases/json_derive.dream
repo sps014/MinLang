@@ -15,14 +15,7 @@ class User {
 }
 
 fun main(): void {
-    let u = User {
-        name: "Ada",
-        age: 36,
-        active: true,
-        address: Address { city: "London", zip: "NW1" },
-        tags: ["dev", "math"],
-        scores: [10, 20, 30],
-    };
+    let u = User("Ada", 36, true, Address("London", "NW1"), ["dev", "math"], [10, 20, 30]);
 
     let text = JSON.serialize(u);
     System.println(text);

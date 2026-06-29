@@ -61,8 +61,8 @@ println(xs.size());   // 2
 class Point { x: int; y: int; }
 
 let pts: Point[] = [
-    Point { x: 0, y: 0 },
-    Point { x: 1, y: 2 },
+    Point(0, 0),
+    Point(1, 2),
 ];
 println(pts[1].x);   // 1
 ```

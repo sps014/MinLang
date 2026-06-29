@@ -147,15 +147,7 @@ class JsonValue {
 
 // Allocates a fresh JsonValue of kind `k` with empty backing lists.
 fun _json_new(k: int): JsonValue {
-    return JsonValue {
-        kind: k,
-        bool_val: false,
-        num_val: 0.0d,
-        str_val: "",
-        items: List<JsonValue>(),
-        obj_keys: List<string>(),
-        obj_vals: List<JsonValue>()
-    };
+    return JsonValue(k, false, 0.0d, "", List<JsonValue>(), List<string>(), List<JsonValue>());
 }
 
 // A single-character string from a char code (the runtime has no char->string builtin).
@@ -511,7 +503,7 @@ class JSON {
     }
 
     static fun parse(text: string): JsonValue {
-        let parser = JsonParser { src: text, pos: 0, n: text.len() };
+        let parser = JsonParser(text, 0, text.len());
         return parser.parse_value();
     }
 }

@@ -8,6 +8,6 @@ class Foo {
 }
 
 fun main() {
-    let f = Foo { x: 1 };
+    let f = Foo(1);
     System.print(to_string(f));
 }

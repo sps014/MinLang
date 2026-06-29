@@ -190,57 +190,21 @@ impl<'a, 'b> Parser<'a, 'b> {
         //parse identifiers
         else if self.current_token().kind == IdentifierToken {
             let mut is_invocation = false;
-            let mut is_struct_instantiation = false;
 
             if self.peek_token(1).kind == TokenKind::OpenParenthesisToken {
                 is_invocation = true;
-            } else if self.peek_token(1).kind == TokenKind::CurlyOpenBracketToken {
-                is_struct_instantiation = true;
             } else if self.peek_token(1).kind == TokenKind::SmallerThanToken {
-                // Check if it's a generic invocation like `Test<int>(...)` or `Box<int> { ... }`,
-                // tracking generic nesting so `Pair<Box<int>, int> { ... }` is recognized.
+                // Generic invocation like `Test<int>(...)`, tracking generic nesting so
+                // `make<Pair<Box<int>, int>>(...)` is recognized as a call.
                 if let Some(after) = self.scan_generic_args(2) {
-                    match self.peek_token(after).kind {
-                        TokenKind::OpenParenthesisToken => is_invocation = true,
-                        TokenKind::CurlyOpenBracketToken => is_struct_instantiation = true,
-                        _ => {}
+                    if self.peek_token(after).kind == TokenKind::OpenParenthesisToken {
+                        is_invocation = true;
                     }
                 }
             }
 
             if is_invocation {
                 return self.parse_invocation_expression();
-            } else if is_struct_instantiation {
-                // Struct instantiation: Point { x: 10, y: 20 } or Box<int> { val: 42 }
-                let struct_name = self.match_token(TokenKind::IdentifierToken);
-
-                let mut generic_arguments = None;
-                if self.current_token().kind == TokenKind::SmallerThanToken {
-                    self.match_token(TokenKind::SmallerThanToken);
-                    generic_arguments = Some(self.parse_generic_args()?);
-                }
-
-                self.match_token(TokenKind::CurlyOpenBracketToken);
-                let mut fields = Vec::new();
-                while self.current_token().kind != TokenKind::CurlyCloseBracketToken
-                    && self.current_token().kind != TokenKind::EndOfFileToken
-                {
-                    let iter = self.current_token_index;
-                    let field_name = self.match_token(TokenKind::IdentifierToken);
-                    self.match_token(TokenKind::ColonToken);
-                    let field_value = self.parse_expression(0)?;
-                    fields.push((field_name, field_value));
-                    if self.current_token().kind == TokenKind::CommaToken {
-                        self.match_token(TokenKind::CommaToken);
-                    }
-                    self.ensure_progress(iter);
-                }
-                self.match_token(TokenKind::CurlyCloseBracketToken);
-                return Ok(ExpressionNode::StructInstantiation(
-                    struct_name,
-                    generic_arguments,
-                    fields,
-                ));
             } else {
                 let mut expr = ExpressionNode::Identifier(self.next_token());
 

@@ -11,7 +11,7 @@ class Profile {
 
 fun main(): void {
     // Present values round-trip.
-    let p1 = Profile { name: "Ada", nickname: "Countess", address: Address { city: "London", zip: "NW1" }, age: 36 };
+    let p1 = Profile("Ada", "Countess", Address("London", "NW1"), 36);
     let t1 = JSON.serialize(p1);
     System.println(t1);
     let b1 = JSON.deserialize<Profile>(t1);
@@ -20,7 +20,7 @@ fun main(): void {
     System.println(to_string(addr == null));
 
     // Null values serialize to JSON null and round-trip back to null.
-    let p2 = Profile { name: "Bob", nickname: null, address: null, age: 20 };
+    let p2 = Profile("Bob", null, null, 20);
     let t2 = JSON.serialize(p2);
     System.println(t2);
     let b2 = JSON.deserialize<Profile>(t2);

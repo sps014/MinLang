@@ -514,6 +514,31 @@ impl<'a> Analyzer<'a> {
         }
     }
 
+    /// String-level assignability check for argument vs. parameter/field types, mirroring the
+    /// rules in [`compare_data_type`] (which works on `Type`). An `expected` type accepts a `given`
+    /// when they are identical, the target is `object`, they are enum/int compatible, or the target
+    /// is nullable (`T?`) and the argument is `T`, `T?`, or the `null` literal (`void?`). Used by
+    /// constructor-call checking, which only has the type names (not structured `Type`s) available.
+    pub(super) fn type_str_assignable(&self, expected: &str, given: &str) -> bool {
+        if expected == given || expected == "object" {
+            return true;
+        }
+        if self.enum_int_compatible(expected, given) {
+            return true;
+        }
+        if let Some(inner) = expected.strip_suffix('?') {
+            if given == "void?" {
+                return true;
+            }
+            let given_inner = given.strip_suffix('?').unwrap_or(given);
+            if inner == given_inner {
+                return true;
+            }
+        }
+        // Any reference (or nullable) target accepts the `null` literal.
+        (expected.ends_with('?') || self.is_reference_type(expected)) && given == "void?"
+    }
+
     /// Type-checks a constructor call `Struct(args)`. When the struct defines a custom `constructor`
     /// the call is checked against `init`'s parameters; otherwise it is checked positionally
     /// against the struct's fields in declaration order (the auto-generated constructor).
@@ -570,7 +595,7 @@ impl<'a> Analyzer<'a> {
             for i in 0..expected.len() {
                 let e = expected[i].as_str();
                 let g = params_types[i].as_str();
-                if e == "object" || e == g || self.enum_int_compatible(e, g) {
+                if self.type_str_assignable(e, g) {
                     continue;
                 }
                 diagnostics.report_error(

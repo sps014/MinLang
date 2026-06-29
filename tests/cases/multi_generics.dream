@@ -20,13 +20,13 @@ fun second<A, B>(a: A, b: B): B {
 }
 
 fun main() {
-    let p = Pair<int, string> { key: 1, value: "one\n" };
+    let p = Pair<int, string>(1, "one\n");
     p.show();
 
-    let q = Pair<int, float> { key: 2, value: 2.5f };
+    let q = Pair<int, float>(2, 2.5f);
     System.println(q.value);
 
-    let r = Pair<int, double> { key: 3, value: 3.5d };
+    let r = Pair<int, double>(3, 3.5d);
     System.println(r.value);
 
     System.println(first<int, string>(10, "ten"));

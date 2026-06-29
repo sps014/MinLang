@@ -11,23 +11,17 @@ class Point {
 }
 ```
 
-Fields are declared as `name: type;` pairs. A class literal must provide every field; a custom `constructor` may leave fields unset, in which case they start at their zero value (see [Constructors](#constructors)).
+Fields are declared as `name: type;` pairs. A custom `constructor` may leave fields unset, in which case they start at their zero value (see [Constructors](#constructors)).
 
 ## Creating an instance
 
-There are two ways to create an instance.
-
-Using a class literal, naming each field (fields can be provided in any order):
-
-```ts
-let p = Point { x: 3, y: 4 };
-```
-
-Or using a constructor call, passing values positionally:
+Create an instance with a constructor call, passing values positionally in field declaration order:
 
 ```ts
 let p = Point(3, 4);
 ```
+
+Every class is constructed this way; there is no separate brace-literal (`Point { x: 3, y: 4 }`) syntax.
 
 ## Constructors
 
@@ -86,7 +80,7 @@ class Counter {
 }
 
 fun main(): void {
-    let c = Counter { count: 0 };
+    let c = Counter(0);
     c.increment();
     c.increment();
     println(c.get());   // 2
@@ -135,7 +129,7 @@ class Node {
 }
 
 let head: Node? = null;
-head = Node { value: 1, next: null };
+head = Node(1, null);
 ```
 
 ## Recursive classes

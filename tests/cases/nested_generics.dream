@@ -8,10 +8,10 @@ class Pair<A, B> {
 }
 
 fun main() {
-    let b = Box<Box<int>> { v: Box<int> { v: 7 } };
+    let b = Box<Box<int>>(Box<int>(7));
     System.println(b.v.v);
 
-    let p = Pair<Box<int>, int> { first: Box<int> { v: 99 }, second: 5 };
+    let p = Pair<Box<int>, int>(Box<int>(99), 5);
     System.println(p.first.v);
     System.println(p.second);
 }

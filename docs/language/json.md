@@ -74,11 +74,7 @@ class Address { city: string; zip: string; }
 class User { name: string; age: int; address: Address; tags: string[]; }
 
 fun main(): void {
-    let u = User {
-        name: "Ada", age: 36,
-        address: Address { city: "London", zip: "NW1" },
-        tags: ["dev", "math"],
-    };
+    let u = User("Ada", 36, Address("London", "NW1"), ["dev", "math"]);
 
     let text = JSON.serialize(u);              // compiler-generated to_json + stringify
     let back = JSON.deserialize<User>(text);   // parse + compiler-generated from_json

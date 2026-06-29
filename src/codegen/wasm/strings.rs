@@ -147,11 +147,6 @@ impl<'a> WasmGenerator<'a> {
                 self.collect_strings_from_expr(array_expr);
                 self.collect_strings_from_expr(index_expr);
             }
-            ExpressionNode::StructInstantiation(_, _, fields) => {
-                for (_, expr) in fields {
-                    self.collect_strings_from_expr(expr);
-                }
-            }
             ExpressionNode::MemberAccess(obj, _) => {
                 self.collect_strings_from_expr(obj);
             }

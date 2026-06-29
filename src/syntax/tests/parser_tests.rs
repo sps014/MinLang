@@ -240,10 +240,10 @@ fn test_parse_nested_generic_type_annotation() {
 
 #[test]
 fn test_parse_multi_arg_nested_generic_instantiation() {
-    // `Pair<Box<int>, int> { ... }` must be recognized as a class instantiation despite the
+    // `Pair<Box<int>, int>(...)` must be recognized as a (constructor) call despite the
     // nested generic in the first type argument.
     let code = "class Box<T> { v: T; } class Pair<A, B> { first: A; second: B; } \
-                fun main(): void { let p = Pair<Box<int>, int> { first: Box<int> { v: 1 }, second: 2 }; }";
+                fun main(): void { let p = Pair<Box<int>, int>(Box<int>(1), 2); }";
     let arena = bumpalo::Bump::new();
     let (_, diagnostics) = parse_code(code, &arena);
     assert_eq!(diagnostics.has_errors(), false);

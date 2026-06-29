@@ -5,7 +5,7 @@
 //   node sample/interop/regex.mjs sample/interop/regex.wasm
 
 fun main(): void {
-    let digits = Regex { pattern: "\\d+", flags: "g" };
+    let digits = Regex("\\d+", "g");
 
     if (digits.test("abc123")) {
         System.println("has digits");

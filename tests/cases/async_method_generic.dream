@@ -8,7 +8,7 @@ class Box<T> {
 }
 
 async fun main(): void {
-    let b = Box<int> { value: 7 };
+    let b = Box<int>(7);
     let v = await b.get();
     System.println(to_string(v));
 }

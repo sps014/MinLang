@@ -36,7 +36,7 @@ Any reference type can be marked nullable with `?`. A nullable variable may hold
 
 ```ts
 let node: Node? = null;
-node = Node { value: 5, next: null };
+node = Node(5, null);
 ```
 
 Primitive types (`int`, `float`, `double`, `bool`, `char`) cannot be nullable.

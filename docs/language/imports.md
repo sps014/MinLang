@@ -41,7 +41,7 @@ export class Point {
 }
 
 export fun origin(): Point {
-    return Point { x: 0, y: 0 };
+    return Point(0, 0);
 }
 ```
 

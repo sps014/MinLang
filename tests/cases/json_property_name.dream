@@ -13,12 +13,7 @@ class Product {
 }
 
 fun main(): void {
-    let p = Product {
-        product_id: 42,
-        name: "Widget",
-        price: 9.5,
-        tags: ["sale", "new"]
-    };
+    let p = Product(42, "Widget", 9.5, ["sale", "new"]);
 
     let serialized = JSON.serialize(p);
     System.println(serialized);

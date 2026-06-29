@@ -379,16 +379,22 @@ impl LanguageServer for Backend {
             let idx = index::Index::build(file_path.as_deref(), &text);
 
             let mut hints = Vec::new();
-            for (offset, label) in idx.inlay_hints {
-                let pos = line_index.position(offset);
+            for hint in idx.inlay_hints {
+                let pos = line_index.position(hint.offset);
+                // Type hints (`: int`) sit after the name with left padding; parameter-name hints
+                // (`x:`) sit before the argument with right padding.
+                let (kind, padding_left, padding_right) = match hint.kind {
+                    index::InlayKind::Type => (InlayHintKind::TYPE, Some(true), None),
+                    index::InlayKind::Parameter => (InlayHintKind::PARAMETER, None, Some(true)),
+                };
                 hints.push(InlayHint {
                     position: map_position(pos),
-                    label: InlayHintLabel::String(label),
-                    kind: Some(InlayHintKind::TYPE),
+                    label: InlayHintLabel::String(hint.label),
+                    kind: Some(kind),
                     text_edits: None,
                     tooltip: None,
-                    padding_left: Some(true),
-                    padding_right: None,
+                    padding_left,
+                    padding_right,
                     data: None,
                 });
             }

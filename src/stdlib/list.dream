@@ -10,6 +10,12 @@ class List<T> {
     items: T[];
     count: int;
 
+    // Allocates an empty list with a small initial backing buffer, e.g. `let xs = List<int>();`.
+    constructor() {
+        this.items = array_new<T>(8);
+        this.count = 0;
+    }
+
     // Number of elements currently stored.
     fun size(): int {
         return this.count;
@@ -99,8 +105,4 @@ class List<T> {
         }
         this.count = this.count - 1;
     }
-}
-
-fun List<T>(): List<T> {
-    return List<T> { items: array_new<T>(8), count: 0 };
 }

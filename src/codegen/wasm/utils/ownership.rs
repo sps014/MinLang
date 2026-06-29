@@ -27,7 +27,7 @@ impl<'a> WasmGenerator<'a> {
     ) -> bool {
         use crate::syntax::nodes::ExpressionNode;
         match expr {
-            ExpressionNode::StructInstantiation(_, _, _) | ExpressionNode::ArrayLiteral(_) => true,
+            ExpressionNode::ArrayLiteral(_) => true,
             // User struct methods hand back an owned +1 (via `build_return`). `EnumValue.name()`
             // is the exception: it returns an *interned* (borrowed) string that must never be
             // released, so it is treated as borrowed.
