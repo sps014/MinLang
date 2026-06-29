@@ -164,6 +164,9 @@ impl<'a> Analyzer<'a> {
                     diagnostics,
                 )?;
             }
+            StatementNode::ExpressionStatement(expr) => {
+                self.analyze_expression(expr, parent_function, symbol_table, diagnostics)?;
+            }
             StatementNode::MethodInvocation(obj, method, generic_args, params) => {
                 self.analyze_method_call(obj, method, generic_args, params, &ctx, diagnostics)?;
             }

@@ -57,6 +57,7 @@ impl<'a> Analyzer<'a> {
             StatementNode::Declaration(_, _, e, _)
             | StatementNode::Assignment(_, e)
             | StatementNode::IndexAssignment(_, _, e)
+            | StatementNode::ExpressionStatement(e)
             | StatementNode::MemberAssignment(_, _, e) => {
                 self.scan_expr_await(e, message, diagnostics);
             }

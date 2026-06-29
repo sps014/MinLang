@@ -1,0 +1,10 @@
+{
+  "iconDefinitions": {
+    "_dream": {
+      "iconPath": "./icons/dream.svg"
+    }
+  },
+  "fileExtensions": {
+    "dream": "_dream"
+  }
+}

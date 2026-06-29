@@ -1,16 +1,24 @@
 {
   "name": "dream-lang",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Dream language support for VS Code",
   "publisher": "dream-lang",
   "engines": {
     "vscode": "^1.80.0"
   },
+  "icon": "./icons/dream.png",
   "main": "./out/extension.js",
   "activationEvents": [
     "onLanguage:dream"
   ],
   "contributes": {
+    "iconThemes": [
+      {
+        "id": "dream-icons",
+        "label": "Dream File Icons",
+        "path": "./icon-theme.json"
+      }
+    ],
     "languages": [
       {
         "id": "dream",

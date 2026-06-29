@@ -187,7 +187,7 @@ impl<'a, 'b> Parser<'a, 'b> {
                                 "Expected function call but found expression".to_string(),
                                 Some(cur.position),
                             );
-                            Ok(StatementNode::Break(None))
+                            Ok(StatementNode::ExpressionStatement(expr))
                         }
                     }
                 } else {
@@ -198,8 +198,8 @@ impl<'a, 'b> Parser<'a, 'b> {
                         ),
                         Some(self.current_token().position),
                     );
-                    self.next_token(); // skip the token
-                    Ok(StatementNode::Break(None)) // dummy
+                    self.recover_to_next_statement();
+                    Ok(StatementNode::ExpressionStatement(expr))
                 }
             }
             _ => {
@@ -211,8 +211,60 @@ impl<'a, 'b> Parser<'a, 'b> {
                     ),
                     Some(cur.position),
                 );
-                self.next_token(); // skip the token
+                self.recover_to_next_statement();
                 Ok(StatementNode::Break(None)) // dummy
+            }
+        }
+    }
+
+    /// Recovers from an error by consuming tokens until a recognizable statement boundary.
+    fn recover_to_next_statement(&mut self) {
+        // If the current token is already a strong synchronization point, do not skip it.
+        // This prevents swallowing `}` or `class` when they unexpectedly terminate a statement.
+        match self.current_token().kind {
+            TokenKind::ClassToken
+            | TokenKind::FunToken
+            | TokenKind::LetToken
+            | TokenKind::ConstToken
+            | TokenKind::ForToken
+            | TokenKind::IfToken
+            | TokenKind::WhileToken
+            | TokenKind::DoToken
+            | TokenKind::ReturnToken
+            | TokenKind::SwitchToken
+            | TokenKind::CurlyCloseBracketToken
+            | TokenKind::EndOfFileToken => {
+                return;
+            }
+            _ => {}
+        }
+
+        self.next_token(); // skip the erroneous token
+
+        while self.current_token().kind != TokenKind::EndOfFileToken {
+            let kind = self.current_token().kind;
+            if kind == TokenKind::SemicolonToken {
+                self.next_token(); // consume semicolon
+                return;
+            }
+
+            match kind {
+                TokenKind::ClassToken
+                | TokenKind::FunToken
+                | TokenKind::LetToken
+                | TokenKind::ConstToken
+                | TokenKind::ForToken
+                | TokenKind::IfToken
+                | TokenKind::WhileToken
+                | TokenKind::DoToken
+                | TokenKind::ReturnToken
+                | TokenKind::SwitchToken
+                | TokenKind::CurlyCloseBracketToken => {
+                    return;
+                }
+                _ => {
+                    self.next_token();
+                }
             }
         }
     }

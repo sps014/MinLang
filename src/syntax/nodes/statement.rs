@@ -44,6 +44,8 @@ pub enum StatementNode<'a> {
     /// `break` / `continue`, optionally targeting an enclosing labeled loop.
     Break(Option<String>),
     Continue(Option<String>),
+    /// An expression used as a statement, typically missing an assignment or call.
+    ExpressionStatement(ExpressionNode<'a>),
     /// `await <future-expr>;` used as a statement, discarding the resolved value. The inner
     /// expression produces the `Future` to await (it is NOT wrapped in `ExpressionNode::Await`).
     AwaitStmt(ExpressionNode<'a>),

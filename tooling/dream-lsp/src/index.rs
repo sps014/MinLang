@@ -57,6 +57,7 @@ pub struct Ref {
 pub struct Index {
     pub decls: Vec<Decl>,
     pub refs: Vec<Ref>,
+    pub inlay_hints: Vec<(usize, String)>,
 }
 
 /// A located definition or reference (byte span + hover text).
@@ -78,11 +79,14 @@ impl Index {
         let mut builder = Builder {
             decls: Vec::new(),
             refs: Vec::new(),
+            inlay_hints: Vec::new(),
             next_scope: 0,
         };
         if let Ok(ast) = parser.parse() {
             let program = ast.get_root();
-            builder.walk_program(program);
+            
+            // Pass 1: Declare all file-level symbols for the main program
+            builder.walk_program_for_imports(program);
 
             if let Some(path_str) = file_path {
                 let parent_dir = std::path::Path::new(path_str)
@@ -116,12 +120,17 @@ impl Index {
                     acc.all_enums,
                     acc.all_extends,
                 );
+                // Pass 1.5: Declare all imported symbols
                 builder.walk_program_for_imports(&combined);
             }
+            
+            // Pass 2: Walk function/method bodies
+            builder.walk_program(program);
         }
         Index {
             decls: builder.decls,
             refs: builder.refs,
+            inlay_hints: builder.inlay_hints,
         }
     }
 
@@ -457,6 +466,7 @@ impl Index {
                 matches!(d.kind, SymKind::Field | SymKind::Method)
                     && d.scope == GLOBAL
                     && d.detail.starts_with(&prefix)
+                    && d.name != "constructor"
             })
             .map(|d| {
                 (
@@ -508,10 +518,95 @@ impl Index {
 struct Builder {
     decls: Vec<Decl>,
     refs: Vec<Ref>,
+    inlay_hints: Vec<(usize, String)>,
     next_scope: usize,
 }
 
 impl Builder {
+    fn infer_type(&self, expr: &ExpressionNode, scope: usize) -> Option<String> {
+        match expr {
+            ExpressionNode::Literal(t) => Some(t.get_type()),
+            ExpressionNode::StructInstantiation(name, generic_args, _) => match generic_args {
+                Some(args) => Some(dream::syntax::nodes::types::mangle_generic(&name.text, args)),
+                None => Some(name.text.clone()),
+            },
+            ExpressionNode::Cast(ty, _) => Some(ty.get_type()),
+            ExpressionNode::IsExpression(_, _) => Some("bool".to_string()),
+            ExpressionNode::Binary(_, op, _) => {
+                match op.kind {
+                    dream::syntax::token::token_kind::TokenKind::EqualEqualToken
+                    | dream::syntax::token::token_kind::TokenKind::NotEqualToken
+                    | dream::syntax::token::token_kind::TokenKind::GreaterThanToken
+                    | dream::syntax::token::token_kind::TokenKind::GreaterThanEqualToken
+                    | dream::syntax::token::token_kind::TokenKind::SmallerThanToken
+                    | dream::syntax::token::token_kind::TokenKind::SmallerThanEqualToken
+                    | dream::syntax::token::token_kind::TokenKind::AmpersandAmpersandToken
+                    | dream::syntax::token::token_kind::TokenKind::PipePipeToken => Some("bool".to_string()),
+                    _ => None,
+                }
+            }
+            ExpressionNode::Identifier(token) => {
+                self.resolve(&token.text, scope, token.position.start).and_then(|d| d.ty.clone())
+            }
+            ExpressionNode::MemberAccess(_recv, member) => {
+                // To properly type `obj.field`, we'd resolve `obj`'s type, then find the field in that struct.
+                // For a simple heuristic, just find *any* field with this name.
+                self.decls.iter()
+                    .find(|d| d.name == member.text && d.kind == SymKind::Field)
+                    .and_then(|d| d.ty.clone())
+            }
+            ExpressionNode::FunctionCall(name, _, _) => {
+                self.resolve(&name.text, scope, name.position.start).and_then(|d| {
+                    if d.kind == SymKind::Struct {
+                        // It's a constructor call (e.g. `Test("John", 20)`), so the type is the struct name itself.
+                        Some(name.text.clone())
+                    } else {
+                        // detail string usually looks like: fun(int, int): string
+                        if let Some(colon_idx) = d.detail.rfind(':') {
+                            Some(d.detail[colon_idx + 1..].trim().to_string())
+                        } else {
+                            None
+                        }
+                    }
+                })
+            }
+            ExpressionNode::MethodCall(_, method, _, _) => {
+                self.decls.iter()
+                    .find(|d| d.name == method.text && d.kind == SymKind::Method)
+                    .and_then(|d| {
+                        if let Some(colon_idx) = d.detail.rfind(':') {
+                            Some(d.detail[colon_idx + 1..].trim().to_string())
+                        } else {
+                            None
+                        }
+                    })
+            }
+            ExpressionNode::Parenthesized(inner) => self.infer_type(inner, scope),
+            _ => None,
+        }
+    }
+
+    fn resolve(&self, name: &str, scope: usize, before: usize) -> Option<&Decl> {
+        let local = self
+            .decls
+            .iter()
+            .filter(|d| {
+                d.name == name
+                    && d.scope == scope
+                    && matches!(d.kind, SymKind::Variable | SymKind::Param)
+                    && d.start <= before
+            })
+            .max_by_key(|d| d.start);
+        if local.is_some() {
+            return local;
+        }
+        self.decls.iter().find(|d| {
+            d.name == name
+                && d.scope == GLOBAL
+                && matches!(d.kind, SymKind::Function | SymKind::Struct | SymKind::Enum)
+        })
+    }
+
     fn walk_program_for_imports(&mut self, program: &ProgramNode) {
         for func in &program.functions {
             let detail = signature(func);
@@ -561,13 +656,8 @@ impl Builder {
         for st in &program.structs {
             self.walk_struct(st);
         }
-        for en in &program.enums {
-            let detail = format!("enum {}", en.name.text);
-            self.push_decl(&en.name, SymKind::Enum, detail, GLOBAL, None);
-            for (member, value) in &en.members {
-                let detail = format!("{}.{} = {}", en.name.text, member.text, value);
-                self.push_decl(member, SymKind::EnumMember, detail, GLOBAL, None);
-            }
+        for _en in &program.enums {
+            // Already declared in pass 1
         }
         for ext in &program.extends {
             for method in &ext.methods {
@@ -577,21 +667,6 @@ impl Builder {
     }
 
     fn walk_struct(&mut self, st: &StructDeclarationNode) {
-        let detail = format!("class {}", st.name.text);
-        self.push_decl(&st.name, SymKind::Struct, detail, GLOBAL, None);
-        for field in &st.fields {
-            let detail = format!(
-                "{}.{}: {}",
-                st.name.text, field.name.text, field.type_token.text
-            );
-            self.push_decl(
-                &field.name,
-                SymKind::Field,
-                detail,
-                GLOBAL,
-                Some(field.type_token.text.clone()),
-            );
-        }
         for method in &st.methods {
             self.walk_method(method, &st.name.text);
         }
@@ -599,8 +674,6 @@ impl Builder {
 
     fn walk_method(&mut self, func: &FunctionNode, owner: &str) {
         let scope = self.fresh_scope();
-        let detail = format!("{}.{}", owner, signature(func));
-        self.push_decl(&func.name, SymKind::Method, detail, GLOBAL, None);
         // Instance methods receive an implicit `this` bound to the owning type, so member
         // access on `this` can be resolved to the owner's fields/methods. Static methods do not.
         if !func.is_static {
@@ -620,8 +693,6 @@ impl Builder {
 
     fn walk_function(&mut self, func: &FunctionNode, _owner: Option<&str>) {
         let scope = self.fresh_scope();
-        let detail = signature(func);
-        self.push_decl(&func.name, SymKind::Function, detail, GLOBAL, None);
         self.walk_params_and_body(func, scope);
     }
 
@@ -642,17 +713,20 @@ impl Builder {
 
     fn walk_stmt(&mut self, stmt: &StatementNode, scope: usize) {
         match stmt {
-            StatementNode::Declaration(name, ty, expr, is_const) => {
+            StatementNode::Declaration(name, ty, expr, _is_const) => {
+                let inferred = self.infer_type(expr, scope);
                 let type_str = ty
                     .as_ref()
                     .map(|t| t.get_type())
-                    .unwrap_or_else(|| "var".to_string());
-                let keyword = if *is_const { "const" } else { "let" };
-                let detail = format!("{} {}: {}", keyword, name.text, type_str);
-                let resolved_ty = ty.as_ref().map(|t| t.get_type());
-                self.push_decl(name, SymKind::Variable, detail, scope, resolved_ty);
+                    .or_else(|| inferred.clone())
+                    .unwrap_or_else(|| "unknown".to_string());
+                let detail = type_str.clone();
+                let resolved_ty = ty.as_ref().map(|t| t.get_type()).or(inferred);
+                self.push_decl(name, SymKind::Variable, detail, scope, resolved_ty.clone());
                 if let Some(t) = ty {
                     self.add_type_ref(t, scope);
+                } else if let Some(t_str) = resolved_ty {
+                    self.inlay_hints.push((name.position.end, format!(": {}", t_str)));
                 }
                 self.walk_expr(expr, scope);
             }
@@ -677,6 +751,9 @@ impl Builder {
                 for arg in args {
                     self.walk_expr(arg, scope);
                 }
+            }
+            StatementNode::ExpressionStatement(expr) => {
+                self.walk_expr(expr, scope);
             }
             StatementNode::MethodInvocation(recv, method, _, args) => {
                 self.walk_expr(recv, scope);
@@ -717,7 +794,7 @@ impl Builder {
                 self.walk_block(body, scope);
             }
             StatementNode::ForEach(var, iterable, _, _, body) => {
-                let detail = format!("let {}", var.text);
+                let detail = "unknown".to_string();
                 self.push_decl(var, SymKind::Variable, detail, scope, None);
                 self.walk_expr(iterable, scope);
                 self.walk_block(body, scope);

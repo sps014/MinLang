@@ -219,6 +219,7 @@ impl LanguageServer for Backend {
                 }),
                 definition_provider: Some(OneOf::Left(true)),
                 document_formatting_provider: Some(OneOf::Left(true)),
+                inlay_hint_provider: Some(OneOf::Left(true)),
                 signature_help_provider: Some(SignatureHelpOptions {
                     trigger_characters: Some(vec!["(".to_string(), ",".to_string()]),
                     retrigger_characters: None,
@@ -360,6 +361,38 @@ impl LanguageServer for Backend {
                     },
                 })));
             }
+        }
+        Ok(None)
+    }
+
+    async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
+        let uri = params.text_document.uri.to_string();
+        let text = self.document_map.get(&uri).map(|v| v.value().clone());
+        if let Some(text) = text {
+            let file_path = params
+                .text_document
+                .uri
+                .to_file_path()
+                .ok()
+                .map(|p| p.to_string_lossy().to_string());
+            let line_index = position::LineIndex::new(&text);
+            let idx = index::Index::build(file_path.as_deref(), &text);
+
+            let mut hints = Vec::new();
+            for (offset, label) in idx.inlay_hints {
+                let pos = line_index.position(offset);
+                hints.push(InlayHint {
+                    position: map_position(pos),
+                    label: InlayHintLabel::String(label),
+                    kind: Some(InlayHintKind::TYPE),
+                    text_edits: None,
+                    tooltip: None,
+                    padding_left: Some(true),
+                    padding_right: None,
+                    data: None,
+                });
+            }
+            return Ok(Some(hints));
         }
         Ok(None)
     }

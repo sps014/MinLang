@@ -78,15 +78,32 @@ impl<'a, 'b> Parser<'a, 'b> {
         if token.kind == kind {
             self.next_token()
         } else {
+            let mut err_pos = token.position;
+            // If we are looking for a semicolon and we missed it, point the error 
+            // at the end of the previous token rather than the current token.
+            if kind == TokenKind::SemicolonToken {
+                let prev_token = if self.current_token_index > 0 {
+                    self.tokens[self.current_token_index - 1].clone()
+                } else {
+                    token.clone()
+                };
+                
+                if prev_token.position.line_no < token.position.line_no || token.kind == TokenKind::EndOfFileToken || token.kind == TokenKind::CurlyCloseBracketToken {
+                    err_pos = prev_token.position;
+                    err_pos.start = err_pos.end;
+                    err_pos.col_no += err_pos.end - prev_token.position.start;
+                }
+            }
+
             self.diagnostics.report_error(
                 format!(
                     "Expected {} but found {}",
                     kind.friendly_name(),
                     token.kind.friendly_name()
                 ),
-                Some(token.position),
+                Some(err_pos),
             );
-            SyntaxToken::new(kind, token.position, "".to_string())
+            SyntaxToken::new(kind, err_pos, "".to_string())
         }
     }
     /// True if the current token can close a generic argument list: either a plain `>` or the

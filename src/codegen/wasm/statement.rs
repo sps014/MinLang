@@ -71,6 +71,12 @@ impl<'a> WasmGenerator<'a> {
                 self.build_expression(child, &"int".to_string(), function, writer)?;
                 writer.write_line("drop");
             }
+            StatementNode::ExpressionStatement(expr) => {
+                // If it evaluates to a value, we must pop it from the Wasm stack. We'll use "int" 
+                // as a fallback expected type, but dropping ensures the stack remains balanced.
+                self.build_expression(expr, &"int".to_string(), function, writer)?;
+                writer.write_line("drop");
+            }
             StatementNode::FunctionInvocation(n, generic_args, p) => {
                 match n.text.as_str() {
                     intrinsics::SLEEP => {

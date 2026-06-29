@@ -29,6 +29,9 @@ impl<'a> WasmGenerator<'a> {
                 StatementNode::Declaration(_, _, expr, _) | StatementNode::Assignment(_, expr) => {
                     self.collect_strings_from_expr(expr);
                 }
+                StatementNode::ExpressionStatement(expr) => {
+                    self.collect_strings_from_expr(expr);
+                }
                 StatementNode::IndexAssignment(arr, index, expr) => {
                     self.collect_strings_from_expr(arr);
                     self.collect_strings_from_expr(index);

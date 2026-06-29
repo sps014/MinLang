@@ -11,4 +11,5 @@ export fun main() {
     let t = Test("John",20);
     t.name = "Jane";
     t.print_name();
+
 }
