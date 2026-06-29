@@ -1,9 +1,16 @@
 # File I/O
 
-`File` and `FileStream` are a small filesystem API for reading and writing files. They are built on synchronous host functions wrapped in [`async fun`](../language/async.md)s, so file operations return a `Future<T>` you can `await` — and because Dream's async scheduler is compiled into the module itself, the same `.dream` runs unchanged on both the native `wasmtime` runner and Node.
+`File` and `FileStream` are a small filesystem API for reading and writing files. They are built on synchronous host functions wrapped in [`async fun`](../language/async.md)s, so file operations return a `Future<T>` you can `await` — and because Dream's async scheduler is compiled into the module itself, the same `.dream` runs unchanged everywhere.
 
-!!! note "Needs a filesystem host"
-    `File`/`FileStream` work under the native `wasmtime` CLI (`cargo run -- run file.dream`) and Node (via `runtime/dream.js`). A browser has no arbitrary-path filesystem, so calling a file API there raises a clear error.
+## Runtime support
+
+| Runtime | Filesystem |
+| --- | --- |
+| Wasmtime (native CLI) | Real on-disk filesystem (`cargo run -- run file.dream`) |
+| Node.js | Real on-disk filesystem via `node:fs` |
+| Browser | In-memory virtual filesystem, like a C/C++ → WASM build's Emscripten MEMFS; files persist for the page session only |
+
+The API is identical across all three; only the browser differs in that writes live in memory rather than on disk.
 
 ## Reading and writing text
 

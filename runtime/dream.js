@@ -469,48 +469,113 @@ function defaultDreamModule(getInstance) {
     },
     // Reads the body of a `Response` handle as text (Promise; bridged via extern async).
     responseText: (res) => res.text(),
-    // Filesystem helpers (see src/stdlib/file.dream). Synchronous; Node-only (`node:fs`). The
-    // matching native implementations live in src/execution/host.rs for the wasmtime CLI. Text
-    // variants marshal `string`; the byte variants marshal `char[]` directly (binary-safe, no
-    // string round-trip) - the bytes are bulk-copied across the boundary.
-    fileRead: (path) => nodeFs().readFileSync(path, "utf8"),
+    // Filesystem helpers (see src/stdlib/file.dream). Synchronous. They route through `fsBackend()`:
+    // Node's real `node:fs`, or an in-memory virtual filesystem in the browser (see `memFs`). Text
+    // variants marshal `string`; the byte variants marshal `char[]` directly (binary-safe, no string
+    // round-trip) - the bytes are bulk-copied across the boundary.
+    fileRead: (path) => new TextDecoder("utf-8").decode(fsBackend().readBytes(path)),
     fileWrite: (path, content) => {
-      nodeFs().writeFileSync(path, content);
-      return Buffer.byteLength(content);
+      const bytes = new TextEncoder().encode(content);
+      fsBackend().write(path, bytes);
+      return bytes.length;
     },
     fileAppend: (path, content) => {
-      nodeFs().appendFileSync(path, content);
-      return Buffer.byteLength(content);
+      const bytes = new TextEncoder().encode(content);
+      fsBackend().append(path, bytes);
+      return bytes.length;
     },
-    // Returns the file as a Buffer; marshalResult turns it into a Dream `char[]` via writeArray.
-    fileReadBytes: (path) => nodeFs().readFileSync(path),
+    // Returns the file's bytes; marshalResult turns them into a Dream `char[]` via writeArray.
+    fileReadBytes: (path) => fsBackend().readBytes(path),
     // `data` arrives as a JS array of byte values (marshaled from `char[]`).
     fileWriteBytes: (path, data) => {
-      nodeFs().writeFileSync(path, Buffer.from(data));
+      fsBackend().write(path, Uint8Array.from(data));
       return data.length;
     },
-    fileExists: (path) => nodeFs().existsSync(path),
-    fileDelete: (path) => {
-      try { nodeFs().rmSync(path); return true; } catch (_) { return false; }
-    },
-    fileSize: (path) => {
-      try { return Number(nodeFs().statSync(path).size); } catch (_) { return -1; }
-    },
-    fileIsDir: (path) => {
-      try { return nodeFs().statSync(path).isDirectory(); } catch (_) { return false; }
-    },
-    dirList: (path) => {
-      try { return nodeFs().readdirSync(path).sort().join("\n"); } catch (_) { return ""; }
-    },
+    fileExists: (path) => fsBackend().exists(path),
+    fileDelete: (path) => fsBackend().remove(path),
+    fileSize: (path) => fsBackend().size(path),
+    fileIsDir: (path) => fsBackend().isDir(path),
+    dirList: (path) => fsBackend().list(path).join("\n"),
   };
 }
 
 // Node's `fs`, preloaded by `load()` (it's async; the file host functions are synchronous, so the
 // module must already be in hand by the time Dream calls them). Stays null in a browser.
 let _nodeFs = null;
-function nodeFs() {
-  if (_nodeFs) return _nodeFs;
-  throw new Error("File/FileStream require a filesystem host (Node or the native runtime)");
+
+/**
+ * In-memory virtual filesystem used when there is no real FS host (i.e. in the browser), mirroring
+ * how a C/C++ -> WASM toolchain (Emscripten's MEMFS) gives you a working filesystem inside the page.
+ * Files persist for the page session only. Paths are keys; directories are inferred from prefixes.
+ */
+const memFiles = new Map(); // path -> Uint8Array
+const memFs = {
+  readBytes(path) {
+    const bytes = memFiles.get(path);
+    if (!bytes) throw new Error(`ENOENT: no such file '${path}'`);
+    return bytes;
+  },
+  write(path, bytes) {
+    memFiles.set(path, Uint8Array.from(bytes));
+  },
+  append(path, bytes) {
+    const prev = memFiles.get(path) || new Uint8Array(0);
+    const next = new Uint8Array(prev.length + bytes.length);
+    next.set(prev, 0);
+    next.set(bytes, prev.length);
+    memFiles.set(path, next);
+  },
+  exists(path) {
+    return memFiles.has(path) || this.isDir(path);
+  },
+  remove(path) {
+    return memFiles.delete(path);
+  },
+  size(path) {
+    const bytes = memFiles.get(path);
+    return bytes ? bytes.length : -1;
+  },
+  isDir(path) {
+    const prefix = path.endsWith("/") ? path : path + "/";
+    for (const key of memFiles.keys()) {
+      if (key.startsWith(prefix)) return true;
+    }
+    return false;
+  },
+  list(path) {
+    const prefix = path === "" || path === "." ? "" : path.endsWith("/") ? path : path + "/";
+    const names = new Set();
+    for (const key of memFiles.keys()) {
+      if (!key.startsWith(prefix)) continue;
+      const rest = key.slice(prefix.length);
+      const slash = rest.indexOf("/");
+      names.add(slash === -1 ? rest : rest.slice(0, slash));
+    }
+    return Array.from(names).sort();
+  },
+};
+
+// Real-filesystem backend over Node's `fs`, normalized to the same byte-oriented shape as `memFs`.
+let _nodeFsBackend = null;
+function nodeFsBackend() {
+  if (_nodeFsBackend) return _nodeFsBackend;
+  const fs = _nodeFs;
+  _nodeFsBackend = {
+    readBytes: (p) => new Uint8Array(fs.readFileSync(p)),
+    write: (p, bytes) => fs.writeFileSync(p, Buffer.from(bytes)),
+    append: (p, bytes) => fs.appendFileSync(p, Buffer.from(bytes)),
+    exists: (p) => fs.existsSync(p),
+    remove: (p) => { try { fs.rmSync(p); return true; } catch (_) { return false; } },
+    size: (p) => { try { return Number(fs.statSync(p).size); } catch (_) { return -1; } },
+    isDir: (p) => { try { return fs.statSync(p).isDirectory(); } catch (_) { return false; } },
+    list: (p) => { try { return fs.readdirSync(p).sort(); } catch (_) { return []; } },
+  };
+  return _nodeFsBackend;
+}
+
+/** The active filesystem backend: Node's real `fs` when available, else the in-memory `memFs`. */
+function fsBackend() {
+  return _nodeFs ? nodeFsBackend() : memFs;
 }
 
 /** Default `env` builtins every Dream module imports (mirrors src/.../wasm_runner.rs). */
