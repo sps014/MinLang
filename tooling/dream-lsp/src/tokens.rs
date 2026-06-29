@@ -6,8 +6,13 @@ use dream::driver::diagnostics::DiagnosticBag;
 use dream::syntax::lexer::Lexer;
 use dream::syntax::token::token_kind::TokenKind;
 
-use crate::model::TokenOut;
-use crate::position::LineIndex;
+use crate::position::{LineIndex, Range};
+
+#[derive(Debug, Clone)]
+pub struct TokenOut {
+    pub range: Range,
+    pub kind: &'static str,
+}
 
 /// The ordered set of semantic token categories this analyzer emits. The web layer turns this
 /// into a Monaco semantic-tokens legend (index = position in this slice).
