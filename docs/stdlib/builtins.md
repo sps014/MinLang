@@ -50,18 +50,24 @@ Used internally by `Map<K, V>` to find buckets.
 
 ## Math
 
-Math functions live in the `Math` namespace and are called with `Math.<name>(x)`. Each function accepts one numeric argument (`int`, `float`, or `double`) and always returns `float`.
+Math functions are static methods on the `Math` class. Each function accepts numeric arguments (coerced to `double`) and always returns `double`.
 
-| Function    | Description      |
-|-------------|------------------|
-| `Math.sin`  | Sine (radians)   |
-| `Math.cos`  | Cosine (radians) |
-| `Math.sqrt` | Square root      |
-| `Math.abs`  | Absolute value   |
+| Function     | Description      |
+|--------------|------------------|
+| `Math.sin`   | Sine (radians)   |
+| `Math.cos`   | Cosine (radians) |
+| `Math.tan`   | Tangent (radians)|
+| `Math.sqrt`  | Square root      |
+| `Math.abs`   | Absolute value   |
+| `Math.pow`   | Power (x^y)      |
+| `Math.floor` | Floor            |
+| `Math.ceil`  | Ceiling          |
+| `Math.round` | Round to nearest |
 
 ```ts
-let hyp = Math.sqrt(3.0f * 3.0f + 4.0f * 4.0f);   // 5.0
-let s = Math.sin(0);                                // 0.0 (int argument coerced to float)
+let hyp = Math.sqrt(3.0 * 3.0 + 4.0 * 4.0);         // 5.0
+let s = Math.sin(0);                                // 0.0 (int argument coerced to double)
+let p = Math.pow(2.0, 3.0);                         // 8.0
 ```
 
 ## len

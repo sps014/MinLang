@@ -201,21 +201,70 @@ impl Index {
             .find(|d| d.name == name && matches!(d.kind, SymKind::Field | SymKind::Method))
     }
 
-    pub fn hover(&self, offset: usize) -> Option<Located> {
+    fn substitute_generic(detail: &str, receiver_ty: &str) -> String {
+        // receiver_ty might be "List<int>" or "List_int" depending on how it was inferred.
+        // Let's extract the generic part between `<` and `>` or after `_`.
+        let mut generic_arg = None;
+        if let Some(start) = receiver_ty.find('<') {
+            if let Some(end) = receiver_ty.rfind('>') {
+                generic_arg = Some(&receiver_ty[start + 1..end]);
+            }
+        } else if let Some(start) = receiver_ty.find('_') {
+            generic_arg = Some(&receiver_ty[start + 1..]);
+        }
+
+        let Some(generic_arg) = generic_arg else {
+            return detail.to_string();
+        };
+
+        // This is a naive substitution (replaces whole words).
+        detail
+            .replace("<T>", &format!("<{}>", generic_arg))
+            .replace(": T", &format!(": {}", generic_arg))
+            .replace(" T,", &format!(" {},", generic_arg))
+            .replace(" T)", &format!(" {})", generic_arg))
+            .replace(" T>", &format!(" {}>", generic_arg))
+            .replace(" T ", &format!(" {} ", generic_arg))
+    }
+
+    pub fn hover(&self, offset: usize, text: &str) -> Option<Located> {
+        let mut receiver_ty_opt = None;
         let (start, end, decl) = if let Some(decl) = self.decl_at(offset) {
             (decl.start, decl.end, decl)
         } else {
             let reference = self.ref_at(offset)?;
-            let decl = match reference.kind {
+            let d = match reference.kind {
                 SymKind::Field | SymKind::Method | SymKind::EnumMember => {
+                    // Try to infer receiver type
+                    let bytes = text.as_bytes();
+                    let mut i = reference.start;
+                    while i > 0 && is_ident_byte(bytes[i - 1]) {
+                        i -= 1;
+                    }
+                    if i > 0 && bytes[i - 1] == b'.' {
+                        let mut j = i - 1;
+                        while j > 0 && bytes[j - 1] == b' ' { j -= 1; }
+                        let recv_end = j;
+                        let mut recv_start = recv_end;
+                        while recv_start > 0 && is_ident_byte(bytes[recv_start - 1]) {
+                            recv_start -= 1;
+                        }
+                        let receiver = &text[recv_start..recv_end];
+                        receiver_ty_opt = self.variable_type(receiver, reference.scope, reference.start);
+                    }
                     self.resolve_member(&reference.name)
                 }
                 _ => self.resolve(&reference.name, reference.scope, reference.start),
             }?;
-            (reference.start, reference.end, decl)
+            (reference.start, reference.end, d)
         };
 
-        let mut contents = format!("```dream\n{}\n```", decl.detail);
+        let mut detail = decl.detail.clone();
+        if let Some(receiver_ty) = receiver_ty_opt {
+            detail = Self::substitute_generic(&detail, &receiver_ty);
+        }
+
+        let mut contents = format!("```dream\n{}\n```", detail);
         if let Some(doc) = &decl.doc_comment {
             contents.push_str("\n\n---\n\n");
             contents.push_str(doc);
@@ -288,8 +337,22 @@ impl Index {
             k -= 1;
         }
         if k > 0 && bytes[k - 1] == b'.' {
+            let mut j2 = k - 1;
+            while j2 > 0 && bytes[j2 - 1] == b' ' { j2 -= 1; }
+            let recv_obj_end = j2;
+            let mut recv_obj_start = recv_obj_end;
+            while recv_obj_start > 0 && is_ident_byte(bytes[recv_obj_start - 1]) {
+                recv_obj_start -= 1;
+            }
+            let receiver_obj = &text[recv_obj_start..recv_obj_end];
+            let receiver_ty_opt = self.variable_type(receiver_obj, scope, recv_obj_start);
+
             if let Some(decl) = self.resolve_member(name) {
-                return Some(decl.clone());
+                let mut d = decl.clone();
+                if let Some(receiver_ty) = receiver_ty_opt {
+                    d.detail = Self::substitute_generic(&d.detail, &receiver_ty);
+                }
+                return Some(d);
             }
         } else {
             if let Some(decl) = self.resolve(name, scope, recv_start) {
@@ -486,10 +549,11 @@ impl Index {
                     && d.name != "constructor"
             })
             .map(|d| {
+                let detail = Self::substitute_generic(&d.detail, base);
                 (
                     d.name.clone(),
                     d.kind,
-                    d.detail.clone(),
+                    detail,
                     d.doc_comment.clone(),
                 )
             })
@@ -542,6 +606,11 @@ struct Builder {
 
 impl Builder {
     fn infer_type(&self, expr: &ExpressionNode, scope: usize) -> Option<String> {
+        let ty = self.infer_type_internal(expr, scope);
+        ty
+    }
+
+    fn infer_type_internal(&self, expr: &ExpressionNode, scope: usize) -> Option<String> {
         match expr {
             ExpressionNode::Literal(t) => Some(t.get_type()),
             ExpressionNode::StructInstantiation(name, generic_args, _) => match generic_args {
@@ -573,27 +642,49 @@ impl Builder {
                     .find(|d| d.name == member.text && d.kind == SymKind::Field)
                     .and_then(|d| d.ty.clone())
             }
-            ExpressionNode::FunctionCall(name, _, _) => {
+            ExpressionNode::FunctionCall(name, generic_args, _) => {
                 self.resolve(&name.text, scope, name.position.start).and_then(|d| {
                     if d.kind == SymKind::Struct {
                         // It's a constructor call (e.g. `Test("John", 20)`), so the type is the struct name itself.
-                        Some(name.text.clone())
+                        match generic_args {
+                            Some(args) => Some(dream::syntax::nodes::types::mangle_generic(&name.text, args)),
+                            None => Some(name.text.clone()),
+                        }
                     } else {
                         // detail string usually looks like: fun(int, int): string
                         if let Some(colon_idx) = d.detail.rfind(':') {
-                            Some(d.detail[colon_idx + 1..].trim().to_string())
+                            let mut ret_ty = d.detail[colon_idx + 1..].trim().to_string();
+                            if let Some(args) = generic_args {
+                                if args.len() == 1 {
+                                    let arg_type = args[0].get_type();
+                                    ret_ty = ret_ty.replace("_T", &format!("_{}", arg_type))
+                                                   .replace("<T>", &format!("<{}>", arg_type))
+                                                   .replace(" T", &format!(" {}", arg_type))
+                                                   .replace("T ", &format!("{} ", arg_type));
+                                    if ret_ty == "T" {
+                                        ret_ty = arg_type.to_string();
+                                    }
+                                }
+                            }
+                            Some(ret_ty)
                         } else {
                             None
                         }
                     }
                 })
             }
-            ExpressionNode::MethodCall(_, method, _, _) => {
+            ExpressionNode::MethodCall(recv, method, _, _) => {
+                let receiver_ty_opt = self.infer_type(recv, scope);
                 self.decls.iter()
                     .find(|d| d.name == method.text && d.kind == SymKind::Method)
                     .and_then(|d| {
-                        if let Some(colon_idx) = d.detail.rfind(':') {
-                            Some(d.detail[colon_idx + 1..].trim().to_string())
+                        let detail = if let Some(receiver_ty) = &receiver_ty_opt {
+                            Index::substitute_generic(&d.detail, receiver_ty)
+                        } else {
+                            d.detail.clone()
+                        };
+                        if let Some(colon_idx) = detail.rfind(':') {
+                            Some(detail[colon_idx + 1..].trim().to_string())
                         } else {
                             None
                         }
@@ -966,7 +1057,7 @@ impl Builder {
             {
                 let mut text = trivia.text.trim();
                 if text.starts_with("//") {
-                    text = text.trim_start_matches("//").trim_start();
+                    text = text.trim_start_matches('/').trim_start();
                 } else if text.starts_with("/*") {
                     text = text.trim_start_matches("/*").trim_end_matches("*/").trim();
                 }
@@ -1028,10 +1119,12 @@ fn signature(func: &FunctionNode) -> String {
         .map(|t| t.get_type())
         .unwrap_or_else(|| "void".to_string());
 
+    let prefix = if func.is_async { "async fun " } else { "fun " };
+
     if func.name.text == "constructor" || func.name.text == "del" {
         format!("{}({}): {}", func.name.text, params, ret)
     } else {
-        format!("fun {}({}): {}", func.name.text, params, ret)
+        format!("{}{}({}): {}", prefix, func.name.text, params, ret)
     }
 }
 

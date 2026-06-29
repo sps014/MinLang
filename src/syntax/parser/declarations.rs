@@ -363,6 +363,13 @@ impl<'a, 'b> Parser<'a, 'b> {
             is_async = true;
         }
 
+        // `static fun ...`: a method with no implicit `this`, called as `Type.method(...)`.
+        let mut is_static = false;
+        if self.current_token().kind == TokenKind::StaticToken {
+            self.match_token(TokenKind::StaticToken);
+            is_static = true;
+        }
+
         let mut is_extern = false;
         if self.current_token().kind == TokenKind::ExternToken {
             self.match_token(TokenKind::ExternToken);
@@ -375,14 +382,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             }
         }
 
-        // `extern async fun ...`: the host import returns a Promise the runtime awaits.
-        if self.current_token().kind == TokenKind::AsyncToken {
-            self.match_token(TokenKind::AsyncToken);
-            is_async = true;
-        }
-
-        // `static fun ...`: a method with no implicit `this`, called as `Type.method(...)`.
-        let mut is_static = false;
+        // allow `static` again in case order was reversed
         if self.current_token().kind == TokenKind::StaticToken {
             self.match_token(TokenKind::StaticToken);
             is_static = true;

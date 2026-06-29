@@ -148,12 +148,6 @@ impl<'a> WasmGenerator<'a> {
         params: &[crate::syntax::nodes::ExpressionNode<'a>],
         function: &FunctionNode<'a>,
     ) -> Result<bool, Error> {
-        // `Math.<fn>(...)` always yields a float.
-        if let crate::syntax::nodes::ExpressionNode::Identifier(id) = obj {
-            if id.text == intrinsics::MATH {
-                return Ok(true);
-            }
-        }
         if let Some(key) = self.resolve_static_call(obj, &method.text, params, function) {
             let returns_value = self
                 .function_table
@@ -192,11 +186,6 @@ impl<'a> WasmGenerator<'a> {
         params: &[crate::syntax::nodes::ExpressionNode<'a>],
         function: &FunctionNode<'a>,
     ) -> Result<Option<String>, Error> {
-        if let crate::syntax::nodes::ExpressionNode::Identifier(id) = obj {
-            if id.text == intrinsics::MATH {
-                return Ok(Some("float".to_string()));
-            }
-        }
         if let Some(key) = self.resolve_static_call(obj, &method.text, params, function) {
             return Ok(self
                 .function_table

@@ -698,16 +698,6 @@ impl<'a> Analyzer<'a> {
         // `Math.<fn>(...)`: the math namespace. `Math` is not a value, so intercept before
         // trying to analyze it as an expression.
         if let ExpressionNode::Identifier(id) = obj {
-            if id.text == intrinsics::MATH {
-                return self.analyze_math_call(
-                    method,
-                    params,
-                    ctx.parent_function,
-                    ctx.symbol_table,
-                    diagnostics,
-                );
-            }
-
             // `Promise.all/any/race(...)`: the async combinators as static methods.
             if id.text == intrinsics::PROMISE && intrinsics::is_promise_combinator(&method.text) {
                 let is_local = (*ctx.symbol_table).as_ref().borrow().get_symbol(id).is_ok();
@@ -924,51 +914,5 @@ impl<'a> Analyzer<'a> {
         Ok(store_sig.return_type.unwrap_or(Type::Void))
     }
 
-    /// `Math.sin/cos/abs/sqrt(x)`: each takes one numeric argument and yields a `float`.
-    pub(super) fn analyze_math_call(
-        &mut self,
-        method: &SyntaxToken,
-        params: &Vec<ExpressionNode<'a>>,
-        parent_function: &FunctionNode<'a>,
-        symbol_table: &Rc<RefCell<SymbolTable>>,
-        diagnostics: &mut DiagnosticBag,
-    ) -> Result<Type, ()> {
-        if !intrinsics::is_math_function(&method.text) {
-            diagnostics.report_error(
-                format!("Unknown math function 'Math.{}'", method.text),
-                Some(method.position),
-            );
-            return Ok(Type::Float(synthetic_token(
-                TokenKind::DataTypeToken,
-                "float",
-            )));
-        }
-        if params.len() != 1 {
-            diagnostics.report_error(
-                format!(
-                    "'Math.{}' expects exactly 1 argument, got {}",
-                    method.text,
-                    params.len()
-                ),
-                Some(method.position),
-            );
-        }
-        for param in params.iter() {
-            let pt = self.analyze_expression(param, parent_function, symbol_table, diagnostics)?;
-            if !is_numeric_primitive(&pt.get_type()) {
-                diagnostics.report_error(
-                    format!(
-                        "'Math.{}' expects a numeric argument, got {}",
-                        method.text,
-                        pt.get_type()
-                    ),
-                    param.position(),
-                );
-            }
-        }
-        Ok(Type::Float(synthetic_token(
-            TokenKind::DataTypeToken,
-            "float",
-        )))
-    }
+
 }

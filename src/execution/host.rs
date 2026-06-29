@@ -15,26 +15,16 @@ pub fn read_string_from_memory(memory: &Memory, store: impl AsContext, ptr: i32)
     String::from_utf8_lossy(&data[ptr as usize..end]).into_owned()
 }
 
-/// Registers the `Math.*` host functions on `linker` under the `env` module. The recognized set
-/// is the intrinsic registry's [`crate::intrinsics::MATH_FUNCTIONS`]; the native implementation
-/// for each is selected here.
+/// Registers the `Math.*` host functions on `linker` under the `env` module.
 pub fn link_math_functions(linker: &mut Linker<()>) -> Result<()> {
-    for name in crate::intrinsics::MATH_FUNCTIONS {
-        match name {
-            "sin" => {
-                linker.func_wrap("env", name, |v: f32| -> f32 { v.sin() })?;
-            }
-            "cos" => {
-                linker.func_wrap("env", name, |v: f32| -> f32 { v.cos() })?;
-            }
-            "abs" => {
-                linker.func_wrap("env", name, |v: f32| -> f32 { v.abs() })?;
-            }
-            "sqrt" => {
-                linker.func_wrap("env", name, |v: f32| -> f32 { v.sqrt() })?;
-            }
-            other => unreachable!("no native implementation for Math.{}", other),
-        }
-    }
+    linker.func_wrap("env", "sin", |v: f64| -> f64 { v.sin() })?;
+    linker.func_wrap("env", "cos", |v: f64| -> f64 { v.cos() })?;
+    linker.func_wrap("env", "tan", |v: f64| -> f64 { v.tan() })?;
+    linker.func_wrap("env", "abs", |v: f64| -> f64 { v.abs() })?;
+    linker.func_wrap("env", "sqrt", |v: f64| -> f64 { v.sqrt() })?;
+    linker.func_wrap("env", "pow", |base: f64, exp: f64| -> f64 { base.powf(exp) })?;
+    linker.func_wrap("env", "floor", |v: f64| -> f64 { v.floor() })?;
+    linker.func_wrap("env", "ceil", |v: f64| -> f64 { v.ceil() })?;
+    linker.func_wrap("env", "round", |v: f64| -> f64 { v.round() })?;
     Ok(())
 }

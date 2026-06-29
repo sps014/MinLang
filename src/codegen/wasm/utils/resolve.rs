@@ -2,7 +2,6 @@
 //! function names that were emitted (including overload selection and constructor mangling).
 
 use super::super::WasmGenerator;
-use crate::intrinsics;
 use crate::semantics::function_table::{overload_arg_compatible, OverloadResolution};
 use crate::syntax::nodes::types::{canonical_type_name, mangle_generic, method_fn};
 use crate::syntax::nodes::{FunctionNode, Type};
@@ -106,7 +105,7 @@ impl<'a> WasmGenerator<'a> {
         let crate::syntax::nodes::ExpressionNode::Identifier(id) = obj else {
             return None;
         };
-        if id.text == intrinsics::MATH || self.is_local_var(&id.text, function) {
+        if self.is_local_var(&id.text, function) {
             return None;
         }
         let type_name = canonical_type_name(&id.text)

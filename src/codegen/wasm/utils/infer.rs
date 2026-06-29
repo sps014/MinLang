@@ -140,9 +140,6 @@ impl<'a> WasmGenerator<'a> {
             ExpressionNode::Ternary(_, then_e, _) => self.infer_expression_type(then_e, function),
             ExpressionNode::MethodCall(obj, method, generic_args, params) => {
                 if let ExpressionNode::Identifier(id) = obj {
-                    if id.text == intrinsics::MATH {
-                        return Ok("float".to_string());
-                    }
                     // `JSON.serialize(x): string` and `JSON.deserialize<T>(text): T` intrinsics.
                     if id.text == intrinsics::JSON && method.text == intrinsics::JSON_SERIALIZE {
                         return Ok("string".to_string());

@@ -74,7 +74,7 @@ impl<'a> WasmGenerator<'a> {
 
         // User-declared `extern fun` declarations become WASM imports. The import module/field
         // default to `"env"`/<function name> but can be remapped with `@js("mod", "name")`.
-        for func in program.functions.iter() {
+        for func in program.functions.iter().chain(self.struct_methods.iter().map(|(m, _)| *m)) {
             if !func.is_extern {
                 continue;
             }
@@ -242,6 +242,9 @@ impl<'a> WasmGenerator<'a> {
             self.ctx.current_mangled_name = None;
         }
         for (method, bindings) in self.struct_methods {
+            if method.is_extern {
+                continue;
+            }
             self.ctx.current_generic_bindings = bindings.iter().cloned().collect();
             // Overloaded methods are emitted under their signature-mangled key (the parameter
             // list includes the implicit `this`, matching how they were registered).

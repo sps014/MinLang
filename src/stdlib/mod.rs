@@ -20,6 +20,7 @@ pub const PRELUDE_FILES: &[(&str, &str)] = &[
     ("<std>/double.dream", include_str!("double.dream")),
     ("<std>/jsref.dream", include_str!("jsref.dream")),
     ("<std>/json.dream", include_str!("json.dream")),
+    ("<std>/math.dream", include_str!("math.dream")),
     ("<std>/regex.dream", include_str!("regex.dream")),
     ("<std>/fetch.dream", include_str!("fetch.dream")),
 ];
@@ -64,21 +65,13 @@ impl StdlibFunction {
     /// Host functions that are always imported into every module but are NOT user-callable.
     /// The `print`/`println` builtins lower to these; users never name them directly.
     pub fn host_imports() -> Vec<StdlibFunction> {
-        let mut imports = vec![
+        let imports = vec![
             Self::imported("print_string", &["string"], None),
             Self::imported("print_int", &["int"], None),
             Self::imported("print_float", &["float"], None),
             Self::imported("print_double", &["double"], None),
             Self::imported("print_char", &["char"], None),
         ];
-        // Math host functions, reachable only through the `Math.*` namespace. Their names come
-        // from the intrinsic registry so the import set never drifts from the recognized set;
-        // each takes one `float` and returns a `float`.
-        imports.extend(
-            crate::intrinsics::MATH_FUNCTIONS
-                .iter()
-                .map(|name| Self::imported(name, &["float"], Some(Self::create_type("float")))),
-        );
         imports
     }
 

@@ -312,7 +312,7 @@ impl LanguageServer for Backend {
                 params.text_document_position_params.position.character,
             );
             let idx = index::Index::build(file_path.as_deref(), &text);
-            if let Some(located) = idx.hover(offset) {
+            if let Some(located) = idx.hover(offset, &text) {
                 return Ok(Some(Hover {
                     contents: HoverContents::Markup(MarkupContent {
                         kind: MarkupKind::Markdown,

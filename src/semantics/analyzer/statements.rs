@@ -298,8 +298,7 @@ impl<'a> Analyzer<'a> {
         // never drifts from the set of names the compiler special-cases.
         let is_reserved = RESERVED_TYPE_AND_LITERAL_NAMES.contains(&token.text.as_str())
             || intrinsics::is_object_builtin(&token.text)
-            || token.text == intrinsics::ARRAY_NEW
-            || token.text == intrinsics::MATH;
+            || token.text == intrinsics::ARRAY_NEW;
         if is_reserved {
             diagnostics.report_error(
                 format!(

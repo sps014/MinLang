@@ -210,7 +210,11 @@ impl<'a, 'b> Parser<'a, 'b> {
         let mut extends = vec![];
 
         while self.current_token().kind == TokenKind::ImportToken {
-            imports.push(self.parse_import()?);
+            if let Ok(import_node) = self.parse_import() {
+                imports.push(import_node);
+            } else {
+                self.recover_to_next_declaration();
+            }
         }
 
         while self.current_token().kind != TokenKind::EndOfFileToken {
@@ -221,15 +225,24 @@ impl<'a, 'b> Parser<'a, 'b> {
                     && self.peek_token(1).kind == TokenKind::IdentifierToken
                     && (self.peek_token(2).kind == TokenKind::ClassToken || self.peek_token(3).kind == TokenKind::ClassToken))
             {
-                // We let `parse_struct_declaration` handle `@` tokens now.
-                let struct_decl = self.parse_struct_declaration()?;
-                structs.push(struct_decl);
+                match self.parse_struct_declaration() {
+                    Ok(struct_decl) => structs.push(struct_decl),
+                    Err(_) => self.recover_to_next_declaration(),
+                }
             } else if self.current_token().kind == TokenKind::EnumToken {
-                enums.push(self.parse_enum_declaration()?);
+                match self.parse_enum_declaration() {
+                    Ok(enum_decl) => enums.push(enum_decl),
+                    Err(_) => self.recover_to_next_declaration(),
+                }
             } else if self.current_token().kind == TokenKind::ExtendToken {
-                extends.push(self.parse_extend_declaration()?);
+                match self.parse_extend_declaration() {
+                    Ok(extend_decl) => extends.push(extend_decl),
+                    Err(_) => self.recover_to_next_declaration(),
+                }
             } else if self.current_token().kind == TokenKind::TypeToken {
-                self.parse_type_alias()?;
+                if self.parse_type_alias().is_err() {
+                    self.recover_to_next_declaration();
+                }
             } else if self.current_token().kind == TokenKind::FunToken
                 || self.current_token().kind == TokenKind::AtToken
                 || self.current_token().kind == TokenKind::ExternToken
@@ -238,8 +251,10 @@ impl<'a, 'b> Parser<'a, 'b> {
                     && (self.peek_token(1).kind == TokenKind::FunToken
                         || self.peek_token(1).kind == TokenKind::AsyncToken))
             {
-                let function = self.parse_function(None)?;
-                functions.push(function);
+                match self.parse_function(None) {
+                    Ok(function) => functions.push(function),
+                    Err(_) => self.recover_to_next_declaration(),
+                }
             } else {
                 let cur = self.current_token();
                 self.diagnostics.report_error(
@@ -255,6 +270,28 @@ impl<'a, 'b> Parser<'a, 'b> {
         Ok(ProgramNode::new(
             imports, structs, functions, enums, extends,
         ))
+    }
+
+    /// Skips tokens until a recognized top-level declaration keyword is found,
+    /// allowing the parser to recover from a bad declaration and continue building the AST.
+    fn recover_to_next_declaration(&mut self) {
+        while self.current_token().kind != TokenKind::EndOfFileToken {
+            let kind = self.current_token().kind;
+            if matches!(
+                kind,
+                TokenKind::ClassToken
+                    | TokenKind::EnumToken
+                    | TokenKind::ExtendToken
+                    | TokenKind::FunToken
+                    | TokenKind::ExportToken
+                    | TokenKind::ExternToken
+                    | TokenKind::AsyncToken
+                    | TokenKind::TypeToken
+            ) {
+                break;
+            }
+            self.next_token();
+        }
     }
 }
 

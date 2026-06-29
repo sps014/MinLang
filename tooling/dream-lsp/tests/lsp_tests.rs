@@ -17,7 +17,7 @@ fun main(): void {
     let harness = TestHarness::new(src);
     let index = harness.index();
     
-    let hover = index.hover(harness.offset).expect("Expected hover info");
+    let hover = index.hover(harness.offset, &src).expect("Expected hover info");
     assert!(hover.contents.contains("fun add"));
 }
 
@@ -169,7 +169,7 @@ fun main(): void {
     let harness = TestHarness::new(src);
     let index = harness.index();
     
-    let hover = index.hover(harness.offset).expect("Expected hover info");
+    let hover = index.hover(harness.offset, &src).expect("Expected hover info");
     assert!(hover.contents.contains("int"), "Hover should contain field type");
 }
 
@@ -223,7 +223,7 @@ class User { age: int; }
     let index = harness.index();
     
     // Check hover for the reference
-    let hover_ref = index.hover(harness.offset - 1).expect("Expected hover info on ref");
+    let hover_ref = index.hover(harness.offset - 1, &src).expect("Expected hover info on ref");
     assert!(hover_ref.contents.contains("User"), "Hover should show User type on ref, got {}", hover_ref.contents);
 }
 
@@ -241,7 +241,7 @@ class User { age: int; }
     let index = harness.index();
     
     // Check hover for the reference
-    let hover_ref = index.hover(harness.offset - 1).expect("Expected hover info on ref");
+    let hover_ref = index.hover(harness.offset - 1, &src).expect("Expected hover info on ref");
     assert!(hover_ref.contents.contains("User"), "Hover should show User type on ref, got {}", hover_ref.contents);
 }
 #[test]
@@ -357,7 +357,22 @@ fun main(): void {
     let harness = TestHarness::new(src);
     let index = harness.index();
     
-    let hover = index.hover(harness.offset).expect("Expected hover info on builtin method");
-    assert!(hover.contents.contains("push(value: T)"));
+    let hover = index.hover(harness.offset, &src).expect("Expected hover info on builtin method");
+    println!("HOVER CONTENTS: {}", hover.contents);
+    // With generic substitution, it should show 'push(value: int)' instead of 'push(value: T)'
+    assert!(hover.contents.contains("push(value: int)"));
     assert!(hover.contents.contains("Appends a value to the end"));
+}
+
+#[test]
+fn test_hover_math_floor() {
+    let src = "
+fun main(): void {
+    let m = Math.f|loor(3.7);
+}
+";
+    let harness = TestHarness::new(src);
+    let index = harness.index();
+    let hover = index.hover(harness.offset, &src).expect("Expected hover info on Math.floor");
+    println!("HOVER CONTENTS MATH.FLOOR: {}", hover.contents);
 }

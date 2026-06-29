@@ -41,20 +41,8 @@ pub const ENUM_NAME: &str = "name";
 // --- Special static namespaces --------------------------------------------------------------
 // Receivers that name a compiler-known namespace rather than a value/type in the tables.
 
-pub const MATH: &str = "Math";
 pub const PROMISE: &str = "Promise";
 pub const JSON: &str = "JSON";
-
-// --- Math namespace -------------------------------------------------------------------------
-
-/// The math functions reachable through `Math.*`, imported from the host. Each takes one numeric
-/// argument and returns `float`.
-pub const MATH_FUNCTIONS: [&str; 4] = ["sin", "cos", "abs", "sqrt"];
-
-/// True if `name` is a `Math.*` function.
-pub fn is_math_function(name: &str) -> bool {
-    MATH_FUNCTIONS.contains(&name)
-}
 
 // --- Async intrinsics -----------------------------------------------------------------------
 

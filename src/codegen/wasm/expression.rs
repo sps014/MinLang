@@ -857,24 +857,9 @@ impl<'a> WasmGenerator<'a> {
         function: &FunctionNode<'a>,
         writer: &mut IndentedTextWriter,
     ) -> Result<(), Error> {
-        // `Math.<fn>(x)`: evaluate the argument, coerce to f32, and call the host math import.
+        // `Promise.all/any/race([...])`: the async combinators, lowered to the same scheduler
+        // intrinsics as the (legacy) free-function forms.
         if let ExpressionNode::Identifier(id) = obj {
-            if id.text == intrinsics::MATH {
-                if let Some(arg) = params.first() {
-                    let arg_type = self.infer_expression_type(arg, function)?;
-                    self.build_expression(arg, &arg_type, function, writer)?;
-                    match strip_nullable(&arg_type) {
-                        "int" => writer.write_line("f32.convert_i32_s"),
-                        "double" => writer.write_line("f32.demote_f64"),
-                        _ => {}
-                    }
-                }
-                writer.write_line(&format!("call ${}", method.text));
-                return Ok(());
-            }
-
-            // `Promise.all/any/race([...])`: the async combinators, lowered to the same scheduler
-            // intrinsics as the (legacy) free-function forms.
             if id.text == intrinsics::PROMISE && intrinsics::is_promise_combinator(&method.text) {
                 return self.build_async_intrinsic_call(
                     method.text.as_str(),

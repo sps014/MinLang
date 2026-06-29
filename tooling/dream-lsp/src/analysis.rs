@@ -89,6 +89,7 @@ pub fn collect_diagnostics(file_path: Option<&str>, text: &str) -> Vec<Diagnosti
 
     merge_prelude(
         &arena,
+        file_path,
         &mut diagnostics,
         &mut acc.all_functions,
         &mut acc.all_structs,
@@ -141,12 +142,22 @@ pub fn collect_diagnostics(file_path: Option<&str>, text: &str) -> Vec<Diagnosti
 /// `<std>` path so their diagnostics can be filtered out of the user-facing list.
 fn merge_prelude<'a>(
     arena: &'a Bump,
+    file_path: Option<&str>,
     diagnostics: &mut DiagnosticBag,
     all_functions: &mut Vec<FunctionNode<'a>>,
     all_structs: &mut Vec<StructDeclarationNode<'a>>,
     all_extends: &mut Vec<ExtendNode<'a>>,
 ) {
     for &(name, src) in PRELUDE_FILES {
+        // If the user is actively editing this prelude file in the compiler repo, skip merging
+        // the compiled-in version so we don't get duplicate definition errors in the editor.
+        if let Some(path) = file_path {
+            let bare_name = name.trim_start_matches("<std>/");
+            if path.replace('\\', "/").ends_with(&format!("/src/stdlib/{}", bare_name)) {
+                continue;
+            }
+        }
+
         let mut prelude_bag = DiagnosticBag::new(Some(name.to_string()));
         let lexer = Lexer::new(src.to_string());
         let mut parser = Parser::new(lexer, arena, &mut prelude_bag);
