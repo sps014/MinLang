@@ -23,8 +23,11 @@ impl Lexer {
 
     //get all token
     pub fn lex_all(&mut self, diagnostics: &mut DiagnosticBag) -> Vec<SyntaxToken> {
-        let mut res = vec![];
+        let mut res: Vec<SyntaxToken> = vec![];
         let mut lexer = TokenKind::lexer(&self.input_text);
+        
+        let mut pending_leading_trivia = Vec::new();
+        let mut last_token_line = 0;
 
         while let Some(kind) = lexer.next() {
             let span = lexer.span();
@@ -36,24 +39,38 @@ impl Lexer {
                 let text_span = TextSpan::new((span.start, span.end), &self.line_text);
                 diagnostics.report_error(format!("unexpected token '{}'", text), Some(text_span));
                 continue;
-            } else if kind == TokenKind::WhiteSpaceToken ||
-                      kind == TokenKind::LineCommentToken ||
-                      kind == TokenKind::BlockCommentToken {
+            } else if kind == TokenKind::WhiteSpaceToken {
+                continue;
+            } else if kind == TokenKind::LineCommentToken || kind == TokenKind::BlockCommentToken {
+                let text_span = TextSpan::new((span.start, span.end), &self.line_text);
+                let trivia = crate::syntax::token::syntax_trivia::SyntaxTrivia::new(kind, text_span, text);
+                let comment_line = self.line_text.get_point(span.start).0;
+                
+                if !res.is_empty() && comment_line == last_token_line && pending_leading_trivia.is_empty() {
+                    res.last_mut().unwrap().trailing_trivia.push(trivia);
+                } else {
+                    pending_leading_trivia.push(trivia);
+                }
                 continue;
             }
 
-            res.push(SyntaxToken::new(
+            last_token_line = self.line_text.get_point(span.end).0;
+            let mut token = SyntaxToken::new(
                 kind,
                 TextSpan::new((span.start, span.end), &self.line_text),
                 text,
-            ));
+            );
+            token.leading_trivia = std::mem::take(&mut pending_leading_trivia);
+            res.push(token);
         }
         
-        res.push(SyntaxToken::new(
+        let mut eof_token = SyntaxToken::new(
             TokenKind::EndOfFileToken,
             TextSpan::new((self.input_text.len(), self.input_text.len() + 1), &self.line_text),
             "\0".to_string(),
-        ));
+        );
+        eof_token.leading_trivia = pending_leading_trivia;
+        res.push(eof_token);
         
         res
     }

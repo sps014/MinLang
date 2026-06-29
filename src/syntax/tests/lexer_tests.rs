@@ -101,3 +101,61 @@ fn test_lex_bad_token() {
         TokenKind::EndOfFileToken,
     ]);
 }
+
+#[test]
+fn test_lex_trivia() {
+    let source = "let x = 1; /* trailing 1 */ // trailing 2\n// leading 1\nlet y = 2;";
+    let mut lexer = Lexer::new(source.to_string());
+    let mut diagnostics = DiagnosticBag::new(None);
+    let tokens = lexer.lex_all(&mut diagnostics);
+    
+    assert_eq!(diagnostics.has_errors(), false);
+    
+    // let x = 1;
+    let semi_token = &tokens[4];
+    assert_eq!(semi_token.kind, TokenKind::SemicolonToken);
+    
+    // Trailing trivia of ';' should contain the two trailing comments
+    assert_eq!(semi_token.trailing_trivia.len(), 2);
+    assert_eq!(semi_token.trailing_trivia[0].text, "/* trailing 1 */");
+    assert_eq!(semi_token.trailing_trivia[1].text, "// trailing 2");
+    
+    // let y = 2;
+    let next_let = &tokens[5];
+    assert_eq!(next_let.kind, TokenKind::LetToken);
+    
+    // Leading trivia of the next 'let' should contain the leading comment
+    assert_eq!(next_let.leading_trivia.len(), 1);
+    assert_eq!(next_let.leading_trivia[0].text, "// leading 1");
+}
+
+#[test]
+fn test_lex_declaration_comments() {
+    let source = "
+// Class comment
+class MyClass {
+    // Field comment
+    myField: int;
+
+    // Method comment
+    fun myMethod() {}
+}
+";
+    let mut lexer = Lexer::new(source.to_string());
+    let mut diagnostics = DiagnosticBag::new(None);
+    let tokens = lexer.lex_all(&mut diagnostics);
+    
+    assert_eq!(diagnostics.has_errors(), false);
+
+    let class_token = tokens.iter().find(|t| t.kind == TokenKind::ClassToken).unwrap();
+    assert_eq!(class_token.leading_trivia.len(), 1);
+    assert_eq!(class_token.leading_trivia[0].text, "// Class comment");
+
+    let field_token = tokens.iter().find(|t| t.kind == TokenKind::IdentifierToken && t.text == "myField").unwrap();
+    assert_eq!(field_token.leading_trivia.len(), 1);
+    assert_eq!(field_token.leading_trivia[0].text, "// Field comment");
+
+    let fun_token = tokens.iter().find(|t| t.kind == TokenKind::FunToken).unwrap();
+    assert_eq!(fun_token.leading_trivia.len(), 1);
+    assert_eq!(fun_token.leading_trivia[0].text, "// Method comment");
+}

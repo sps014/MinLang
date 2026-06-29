@@ -1,0 +1,123 @@
+# Dream Compiler & Playground — GEMINI.md
+
+This document serves as the foundational instruction manual and architectural guide for any AI-assisted developments, refactorings, or explorations of the Dream language codebase.
+
+---
+
+## 1. Project Overview
+
+**Dream** is a statically typed programming language that compiles to WebAssembly. Key features of the language include a simple C-like syntax, automatic memory management (automatic reference counting/garbage collection via a built-in object runtime and free lists), generic classes/functions, asynchronous programming via `async`/`await`, and standard collections (`List<T>` and `Map<K, V>`).
+
+The repository is structured as a Rust-centric multi-component monorepo:
+1. **`dream` (Root Crate):** The core compiler written in Rust. It compiles `.dream` source files to WebAssembly Text (`.wat`), assembles them to WASM binaries (`.wasm`), generates ABI sidecars (`.abi.json`), and provides a native runner powered by `wasmtime`.
+2. **`tooling/dream-analyzer` (Wasm Crate):** A specialized WebAssembly language service that disables native features to run in browser environments. It translates syntax spans into LSP-compatible positions to power live diagnostics, autocomplete, hover signatures, definition-finding, and code-formatting.
+3. **`tooling/web` (Vite Frontend App):** A browser-based web playground using Monaco Editor that embeds the compiled `dream-analyzer` WASM package.
+
+---
+
+## 2. Directory Layout & Key Modules
+
+*   **`src/` (Core Compiler):**
+    *   `main.rs`: Entry point for the compiler CLI. Manages verbosity, compilation target selection, and invoking the runner.
+    *   `lib.rs`: Exposes parser, semantic analyzer, codegen, and driver APIs.
+    *   `driver/`: Orchestrates the compiler lifecycle.
+        *   `source_manager.rs`: Recursively resolves imports, parses multiple files, merges the standard-library prelude, and handles `@json` derivations.
+        *   `compiler.rs`: High-level orchestrator starting with parsing and concluding with code generation and artifact emission.
+        *   `diagnostics.rs`: Collects, stores, and pretty-prints errors and warnings with inline source code excerpts and squigglies.
+    *   `syntax/`: Parsing stage.
+        *   `lexer.rs`: Tokenizes stream using `logos`.
+        *   `parser/`: Implements recursive descent parsing for declarations, statements, and expressions.
+        *   `nodes/`: Defines AST node types (`ProgramNode`, `Type`, `ExpressionNode`, `StatementNode`, etc.).
+    *   `semantics/`: Semantic analysis stage.
+        *   `analyzer/`: Implements type check, scope validation, `async`/`await` compliance, and generic instantiation.
+        *   `symbol_table.rs`, `function_table.rs`, & `struct_table.rs`: Context-tracking databases for semantic validation.
+    *   `codegen/`: Code generation stage.
+        *   `wasm/`: Produces WebAssembly Text representation (`.wat`). Contains submodules for statements, expressions, async support, objects, memory, and string operations.
+    *   `stdlib/`: Standard library implementations.
+        *   `mod.rs`: Registers host and inline functions. Defines the exact ordering for standard prelude modules.
+        *   `*.dream`: Standard collections (`list.dream`, `map.dream`) and primitive type extensions (`string.dream`, `int.dream`, `char.dream`, etc.).
+*   **`tooling/` (Developer Tooling):**
+    *   `dream-analyzer/`: Uses `wasm-bindgen` to wrap `dream` compiler frontend into a cdylib targeting `wasm32-unknown-unknown`.
+    *   `web/`: Monaco Editor playground utilizing the web assembly artifact from the analyzer.
+*   **`tests/` (Testing Suite):**
+    *   `e2e_tests.rs`: Tests compilations, builds WASM, and runs it with wasmtime to assert outputs against `.expected` or expects failures via `.expected_error` for cases in `tests/cases/`.
+
+---
+
+## 3. Building, Running, and Testing
+
+Always use standard cargo toolchain commands:
+
+### Core Compiler
+
+```bash
+# Build compiler in release mode
+cargo build --release
+
+# Run a dream file
+cargo run -- run path/to/file.dream
+
+# Run a dream file with verbose logs
+cargo run -- -v run path/to/file.dream
+
+# Run all core compiler and integration tests
+cargo test
+```
+
+### Web Playground & Analyzer
+
+Prerequisites: A Rust toolchain with the `wasm32-unknown-unknown` target and `wasm-pack` installed.
+
+```bash
+# Register wasm32 target
+rustup target add wasm32-unknown-unknown
+
+# Quick start (installs node modules, builds WASM, launches Vite)
+./tooling/start
+
+# Run language service tests
+cargo test -p dream-analyzer
+```
+
+---
+
+## 4. Development & Contribution Conventions
+
+### 4.1. Engineering Principles (SOLID & DRY)
+Adhere to strict software engineering standards to maintain long-term scalability and a clean compiler architecture:
+
+*   **Single Responsibility Principle (SRP):** Keep each compilation stage or helper module strictly focused on a single task:
+    *   **Lexing (`lexer.rs`):** Translates source strings into token streams. Must not embed syntactic rules or diagnostic assumptions.
+    *   **Parsing (`parser/`):** Builds AST nodes from token streams. Must not evaluate type correctness or enforce binding scopes.
+    *   **Semantic Analyzer (`analyzer/`):** Validates type correctness, variable scopes, and async constraints. Must not modify AST structure or introduce target code generation.
+    *   **Code Generation (`codegen/`):** Emits target representation (`.wat`). Expects a fully validated AST and resolved symbols; must never perform type checks or emit compile-time errors.
+*   **Don't Repeat Yourself (DRY):**
+    *   Consolidate common type-checking routines, helper operations, or expression evaluations into shared helper traits/methods inside `src/semantics/` or `src/syntax/nodes/`.
+    *   The standard library files in `src/stdlib/*.dream` are the single source of truth. Both the main compiler and the `dream-analyzer` reuse these exact files via `PRELUDE_FILES` to prevent behavior and definitions from drifting.
+*   **Open/Closed Principle (OCP):**
+    *   Compiler passes rely on robust pattern matching over abstract syntax enums (e.g., `ExpressionNode` or `StatementNode`).
+    *   When adding a new statement or expression, declare its representation in `src/syntax/nodes/` and let the Rust compiler's exhaustiveness checks guide you through updating the matching blocks across the parser, analyzer, and codegen. This design allows extending the language safely with compile-time correctness guarantees.
+*   **Interface Segregation & Loose Coupling:**
+    *   The core compilation workflow (`Compiler`) is decoupled from runtime host integration. Native execution details remain isolated in `src/execution/host.rs`, and browser playground details are separated into JS runtime wrappers within Vite.
+
+### 4.2. General Code Quality & Tooling
+*   **Rust Standards:** Prioritize compiling with standard warnings and formatting with `cargo fmt`. Avoid `unsafe` or complex raw memory manipulation when idiomatic composition is possible.
+*   **Memory Management:** The compiler heavily relies on the `bumpalo` arena allocator for AST node allocations, optimizing memory operations and parsing speeds. Be mindful of lifetimes (`'a`) linked to the `Bump` arena.
+
+### 4.3. Diagnostic & Error Reporting
+*   Never panic on syntax or type errors inside compilation steps. Instead, report errors and warnings to `DiagnosticBag` to enable graceful error recovery and nice formatting output in Monaco Editor/CLI:
+    ```rust
+    diagnostics.report_error("Message text".to_string(), Some(node_span));
+    ```
+
+### 4.4. Standard Library (Prelude)
+*   The standard library files under `src/stdlib/*.dream` are embedded directly into the compiled binary.
+*   Whenever a new type method or core standard API is introduced, define its signature in the corresponding `.dream` prelude file, then implement any inline runtime or host backend inside `src/stdlib/mod.rs` and the codegen system.
+
+### 4.5. Extending Tests
+*   When fixing a bug or adding a feature, write a corresponding test case in `tests/cases/`.
+*   **Golden Tests Workflow:**
+    *   Create `tests/cases/your_feature.dream`.
+    *   If expected to compile and run successfully, create `tests/cases/your_feature.expected` containing the exact standard output of the program execution.
+    *   If expected to fail compile-time validation, create `tests/cases/your_feature.expected_error`.
+    *   Run `cargo test` to execute your test cases.
