@@ -42,6 +42,7 @@ pub struct Decl {
     pub scope: usize,
     /// Resolved type name for variables/params/fields, used to type member access.
     pub ty: Option<String>,
+    pub is_main: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -51,6 +52,7 @@ pub struct Ref {
     pub start: usize,
     pub end: usize,
     pub scope: usize,
+    pub is_main: bool,
 }
 
 /// The complete symbol model for one document. All positions are byte offsets into the source.
@@ -81,6 +83,7 @@ impl Index {
             refs: Vec::new(),
             inlay_hints: Vec::new(),
             next_scope: 0,
+            is_main: true,
         };
         if let Ok(ast) = parser.parse() {
             let program = ast.get_root();
@@ -134,7 +137,9 @@ impl Index {
                 acc.all_extends,
             );
             // Pass 1.5: Declare all imported and prelude symbols
+            builder.is_main = false;
             builder.walk_program_for_imports(&combined);
+            builder.is_main = true;
             
             // Pass 2: Walk function/method bodies
             builder.walk_program(program);
@@ -154,14 +159,14 @@ impl Index {
     fn decl_at(&self, offset: usize) -> Option<&Decl> {
         self.decls
             .iter()
-            .find(|d| Self::span_at(d.start, d.end, offset))
+            .find(|d| d.is_main && Self::span_at(d.start, d.end, offset))
     }
 
     /// Returns the reference whose name token is under `offset`, if any.
     fn ref_at(&self, offset: usize) -> Option<&Ref> {
         self.refs
             .iter()
-            .find(|r| Self::span_at(r.start, r.end, offset))
+            .find(|r| r.is_main && Self::span_at(r.start, r.end, offset))
     }
 
     /// Resolves a name used at `offset` within `scope` to its declaration. Locals (variables and
@@ -532,6 +537,7 @@ struct Builder {
     refs: Vec<Ref>,
     inlay_hints: Vec<(usize, String)>,
     next_scope: usize,
+    is_main: bool,
 }
 
 impl Builder {
@@ -717,6 +723,7 @@ impl Builder {
                 end: func.name.position.end,
                 scope,
                 ty: Some(owner.to_string()),
+                is_main: self.is_main,
             });
         }
         self.walk_params_and_body(func, scope);
@@ -971,7 +978,6 @@ impl Builder {
                 comment.push_str(text);
             }
         }
-
         self.decls.push(Decl {
             name: token.text.clone(),
             kind,
@@ -981,6 +987,7 @@ impl Builder {
             end: token.position.end,
             scope,
             ty,
+            is_main: self.is_main,
         });
     }
 
@@ -994,6 +1001,7 @@ impl Builder {
             start: token.position.start,
             end: token.position.end,
             scope,
+            is_main: self.is_main,
         });
     }
 }
