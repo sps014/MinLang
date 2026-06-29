@@ -107,9 +107,13 @@ fn generate_json_extend(
     for field in &struct_decl.fields {
         let fname = &field.name.text;
         let ftype = field.type_token.text.as_str();
-        
+
         let mut json_key = fname.to_string();
-        if let Some(prop_attr) = field.attributes.iter().find(|a| a.name.text == "property_name") {
+        if let Some(prop_attr) = field
+            .attributes
+            .iter()
+            .find(|a| a.name.text == "property_name")
+        {
             if let Some(arg) = prop_attr.args.first() {
                 json_key = arg.text.trim_matches('"').to_string();
             }
@@ -240,7 +244,10 @@ pub(crate) fn generate_json_derives<'a>(
     }
 
     let mut source = String::new();
-    for struct_decl in all_structs.iter().filter(|s| s.attributes.iter().any(|a| a.name.text == "json")) {
+    for struct_decl in all_structs
+        .iter()
+        .filter(|s| s.attributes.iter().any(|a| a.name.text == "json"))
+    {
         if struct_decl.generic_parameters.is_some() {
             diagnostics.report_error(
                 format!(

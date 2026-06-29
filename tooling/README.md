@@ -10,13 +10,17 @@ This directory contains developer tooling for the Dream language, focused around
 ## Features Supported
 
 The `dream-lsp` server provides the following capabilities:
-- **Real-time Diagnostics**: Reports syntax and semantic errors/warnings directly in the editor.
+- **Real-time Diagnostics**: Reports syntax and semantic errors/warnings directly in the editor. Diagnostics keep flowing even while a document has a syntax error — the parser recovers and the analyzer runs over whatever parsed — and are debounced so a burst of keystrokes triggers a single analysis pass.
 - **Semantic Tokens**: AST-driven, perfectly accurate syntax highlighting (functions, classes, fields, parameters, etc.).
-- **Autocomplete (IntelliSense)**: Intelligent completions for keywords, data types, and scoped symbols (including cross-file imports).
-- **Hover**: Rich Markdown hover tooltips displaying symbol signatures and documentation comments.
+- **Autocomplete (IntelliSense)**: Intelligent completions for keywords, data types, and scoped symbols (locals, parameters, top-level `let`/`const` globals, and cross-file imports).
+- **Hover**: Rich Markdown hover tooltips displaying symbol signatures and documentation comments (functions, types, members, and top-level globals).
 - **Signature Help**: Pop-up parameter hints and active parameter tracking when writing function or constructor calls.
-- **Go to Definition / Find References**: Jump to or find all usages of a symbol across the project.
+- **Go to Definition / Find References**: Jump to a symbol's declaration or list every usage of it.
+- **Document Symbols**: An outline of a file's top-level declarations (functions, types, enum members, fields, methods, and globals).
+- **Inlay Hints**: Inferred variable types and parameter-name hints at call sites.
 - **Formatting**: Brace-depth indentation.
+
+Documents are synced **incrementally** (only the changed range is applied) and the symbol index is **cached per document version**, so repeated navigation on an unchanged file is free.
 
 ## Building and Running the Extension
 

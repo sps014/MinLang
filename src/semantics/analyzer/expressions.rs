@@ -98,7 +98,11 @@ impl<'a> Analyzer<'a> {
                         Ok(Type::Boolean(opr.clone()))
                     }
                     TokenKind::PlusToken | TokenKind::MinusToken => {
-                        if !right_type.is_unknown() && right_type.get_type() != "int" && right_type.get_type() != "float" && right_type.get_type() != "double" {
+                        if !right_type.is_unknown()
+                            && right_type.get_type() != "int"
+                            && right_type.get_type() != "float"
+                            && right_type.get_type() != "double"
+                        {
                             diagnostics.report_error(
                                 format!(
                                     "unary +/- requires int, float, or double, got {}",

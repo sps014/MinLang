@@ -129,7 +129,11 @@ fn test_parse_extern_with_js_attribute() {
     assert_eq!(diagnostics.has_errors(), false);
     let func = &program.functions[0];
     assert!(func.is_extern);
-    let js_attr = func.attributes.iter().find(|a| a.name.text == "js").unwrap();
+    let js_attr = func
+        .attributes
+        .iter()
+        .find(|a| a.name.text == "js")
+        .unwrap();
     assert_eq!(js_attr.args.get(0).unwrap().text, "\"dom\"");
     assert_eq!(js_attr.args.get(1).unwrap().text, "\"setText\"");
 }
@@ -368,12 +372,70 @@ fn assert_parses_without_panic(code: &str) {
 #[test]
 fn fuzz_random_token_soup_never_panics() {
     const TOKENS: [&str; 64] = [
-        "fun", "class", "enum", "extend", "let", "const", "public", "static", "async", "return",
-        "if", "else", "while", "for", "do", "switch", "case", "default", "break", "continue",
-        "import", "type", "constructor", "del", "await", "true", "false", "null", "int", "string",
-        "bool", "double", "float", "char", "void", "object", "{", "}", "(", ")", "[", "]", "<",
-        ">", ":", ";", ",", ".", "=", "==", "+", "-", "*", "/", "%", "?", "@", "&&", "||", "\"s\"",
-        "123", "3.14", "'c'", "ident",
+        "fun",
+        "class",
+        "enum",
+        "extend",
+        "let",
+        "const",
+        "public",
+        "static",
+        "async",
+        "return",
+        "if",
+        "else",
+        "while",
+        "for",
+        "do",
+        "switch",
+        "case",
+        "default",
+        "break",
+        "continue",
+        "import",
+        "type",
+        "constructor",
+        "del",
+        "await",
+        "true",
+        "false",
+        "null",
+        "int",
+        "string",
+        "bool",
+        "double",
+        "float",
+        "char",
+        "void",
+        "object",
+        "{",
+        "}",
+        "(",
+        ")",
+        "[",
+        "]",
+        "<",
+        ">",
+        ":",
+        ";",
+        ",",
+        ".",
+        "=",
+        "==",
+        "+",
+        "-",
+        "*",
+        "/",
+        "%",
+        "?",
+        "@",
+        "&&",
+        "||",
+        "\"s\"",
+        "123",
+        "3.14",
+        "'c'",
+        "ident",
     ];
     let mut rng = XorShift(0x9E3779B97F4A7C15);
     for _ in 0..3000 {
@@ -456,5 +518,9 @@ fn fuzz_recovers_and_reports_multiple_errors() {
         "malformed block should report diagnostics"
     );
     // The parser still produced a function (didn't discard the whole declaration).
-    assert_eq!(program.functions.len(), 1, "function should still be recovered");
+    assert_eq!(
+        program.functions.len(),
+        1,
+        "function should still be recovered"
+    );
 }

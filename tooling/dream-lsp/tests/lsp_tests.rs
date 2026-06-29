@@ -16,8 +16,10 @@ fun main(): void {
 ";
     let harness = TestHarness::new(src);
     let index = harness.index();
-    
-    let hover = index.hover(harness.offset, &src).expect("Expected hover info");
+
+    let hover = index
+        .hover(harness.offset, &src)
+        .expect("Expected hover info");
     assert!(hover.contents.contains("fun add"));
 }
 
@@ -33,9 +35,11 @@ fun main(): void {
 ";
     let harness = TestHarness::new(src2);
     let index = harness.index();
-    
-    let def = index.definition(harness.offset).expect("Expected definition");
-    
+
+    let def = index
+        .definition(harness.offset)
+        .expect("Expected definition");
+
     // The definition of `add` should be near the top.
     // The `add` decl starts at `\nfun add` -> offset is roughly around 5.
     let decl_offset = src2.replace("|", "").find("fun add").unwrap();
@@ -51,8 +55,10 @@ fun main(): void {
 ";
     let harness = TestHarness::new(src);
     let diagnostics = harness.diagnostics();
-    
-    let has_error = diagnostics.iter().any(|d| d.severity == "error" && d.message.contains("nope"));
+
+    let has_error = diagnostics
+        .iter()
+        .any(|d| d.severity == "error" && d.message.contains("nope"));
     assert!(has_error, "Expected diagnostic for unknown variable 'nope'");
 }
 
@@ -60,7 +66,7 @@ fun main(): void {
 fn formatting_reindents_by_brace_depth() {
     let src = "fun main(): void {\nlet x: int = 1;\nif (x > 0) {\nprintln(x);\n}\n}\n";
     let formatted = dream_lsp::format::format(src);
-    
+
     assert!(formatted.contains("\n    let x: int = 1;"));
     assert!(formatted.contains("\n        println(x);"));
 }
@@ -77,12 +83,12 @@ fun main(): void {
 ";
     let harness = TestHarness::new(src);
     let index = harness.index();
-    
+
     let comps = index.completions(None, &harness.src, harness.offset);
-    
+
     let has_add = comps.iter().any(|c| c.0 == "add");
     let has_if = comps.iter().any(|c| c.0 == "if");
-    
+
     assert!(has_add, "Expected 'add' in completions");
     assert!(has_if, "Expected 'if' in completions");
 }
@@ -101,12 +107,12 @@ fun main(): void {
 ";
     let harness = TestHarness::new(src);
     let index = harness.index();
-    
+
     let comps = index.completions(None, &harness.src, harness.offset);
-    
+
     let has_x = comps.iter().any(|c| c.0 == "x");
     let has_enum = comps.iter().any(|c| c.1 == dream_lsp::index::SymKind::Enum);
-    
+
     assert!(has_x, "Expected 'x' in completions");
     assert!(!has_enum, "Enums should not appear after `.`");
 }
@@ -121,8 +127,10 @@ fun main(): void {
 ";
     let harness = TestHarness::new(src);
     let index = harness.index();
-    
-    let sig = index.signature_help(&harness.src, harness.offset).expect("Expected signature help");
+
+    let sig = index
+        .signature_help(&harness.src, harness.offset)
+        .expect("Expected signature help");
     assert_eq!(sig.name, "add");
 }
 
@@ -136,8 +144,10 @@ fun main(): void {
 ";
     let harness = TestHarness::new(src);
     let diagnostics = harness.diagnostics();
-    
-    let has_error = diagnostics.iter().any(|d| d.severity == "error" && d.message.contains("Expected ';'"));
+
+    let has_error = diagnostics
+        .iter()
+        .any(|d| d.severity == "error" && d.message.contains("Expected ';'"));
     assert!(has_error, "Expected missing semicolon error");
 }
 
@@ -150,8 +160,10 @@ fun main(): void {
 ";
     let harness = TestHarness::new(src);
     let diagnostics = harness.diagnostics();
-    
-    let has_error = diagnostics.iter().any(|d| d.severity == "error" && d.message.contains("cannot convert"));
+
+    let has_error = diagnostics
+        .iter()
+        .any(|d| d.severity == "error" && d.message.contains("cannot convert"));
     assert!(has_error, "Expected diagnostic for type mismatch");
 }
 
@@ -168,9 +180,14 @@ fun main(): void {
 ";
     let harness = TestHarness::new(src);
     let index = harness.index();
-    
-    let hover = index.hover(harness.offset, &src).expect("Expected hover info");
-    assert!(hover.contents.contains("int"), "Hover should contain field type");
+
+    let hover = index
+        .hover(harness.offset, &src)
+        .expect("Expected hover info");
+    assert!(
+        hover.contents.contains("int"),
+        "Hover should contain field type"
+    );
 }
 
 #[test]
@@ -183,8 +200,10 @@ fun main(): void {
 ";
     let harness = TestHarness::new(src);
     let index = harness.index();
-    
-    let sig = index.signature_help(&harness.src, harness.offset).expect("Expected signature help");
+
+    let sig = index
+        .signature_help(&harness.src, harness.offset)
+        .expect("Expected signature help");
     assert_eq!(sig.name, "add");
 }
 
@@ -204,7 +223,7 @@ class User {
 ";
     let harness = TestHarness::new(src);
     let index = harness.index();
-    
+
     let comps = index.completions(None, &harness.src, harness.offset);
     let has_age = comps.iter().any(|c| c.0 == "age");
     assert!(has_age, "Expected 'age' in completions");
@@ -221,10 +240,16 @@ class User { age: int; }
 ";
     let harness = TestHarness::new(src);
     let index = harness.index();
-    
+
     // Check hover for the reference
-    let hover_ref = index.hover(harness.offset - 1, &src).expect("Expected hover info on ref");
-    assert!(hover_ref.contents.contains("User"), "Hover should show User type on ref, got {}", hover_ref.contents);
+    let hover_ref = index
+        .hover(harness.offset - 1, &src)
+        .expect("Expected hover info on ref");
+    assert!(
+        hover_ref.contents.contains("User"),
+        "Hover should show User type on ref, got {}",
+        hover_ref.contents
+    );
 }
 
 #[test]
@@ -239,10 +264,16 @@ class User { age: int; }
 ";
     let harness = TestHarness::new(src);
     let index = harness.index();
-    
+
     // Check hover for the reference
-    let hover_ref = index.hover(harness.offset - 1, &src).expect("Expected hover info on ref");
-    assert!(hover_ref.contents.contains("User"), "Hover should show User type on ref, got {}", hover_ref.contents);
+    let hover_ref = index
+        .hover(harness.offset - 1, &src)
+        .expect("Expected hover info on ref");
+    assert!(
+        hover_ref.contents.contains("User"),
+        "Hover should show User type on ref, got {}",
+        hover_ref.contents
+    );
 }
 #[test]
 fn explicit_type_hint_cross_file_inference() {
@@ -250,7 +281,9 @@ fn explicit_type_hint_cross_file_inference() {
     std::fs::create_dir_all(&dir).unwrap();
 
     let other_file = dir.join("other.dream");
-    std::fs::write(&other_file, "
+    std::fs::write(
+        &other_file,
+        "
 class RemoteUser {
     id: int;
     fun get_id(): int { return this.id; }
@@ -258,7 +291,9 @@ class RemoteUser {
 fun fetch_user(): RemoteUser {
     return RemoteUser(42);
 }
-").unwrap();
+",
+    )
+    .unwrap();
 
     let main_src = "
 import \"other\";
@@ -292,7 +327,9 @@ fn explicit_test_class_cross_file_inference() {
     std::fs::create_dir_all(&dir).unwrap();
 
     let other_file = dir.join("basic_sum.dream");
-    std::fs::write(&other_file, "
+    std::fs::write(
+        &other_file,
+        "
 public fun add_numbers(a: int, b: int): int {
     return a + b;
 }
@@ -310,7 +347,9 @@ public class Test {
         println(this.name);
     }
 }
-").unwrap();
+",
+    )
+    .unwrap();
 
     let main_src = "
 import \"basic_sum.dream\"
@@ -356,8 +395,10 @@ fun main(): void {
 ";
     let harness = TestHarness::new(src);
     let index = harness.index();
-    
-    let hover = index.hover(harness.offset, &src).expect("Expected hover info on builtin method");
+
+    let hover = index
+        .hover(harness.offset, &src)
+        .expect("Expected hover info on builtin method");
     println!("HOVER CONTENTS: {}", hover.contents);
     // With generic substitution, it should show 'push(value: int)' instead of 'push(value: T)'
     assert!(hover.contents.contains("push(value: int)"));
@@ -373,7 +414,9 @@ fun main(): void {
 ";
     let harness = TestHarness::new(src);
     let index = harness.index();
-    let hover = index.hover(harness.offset, &src).expect("Expected hover info on Math.floor");
+    let hover = index
+        .hover(harness.offset, &src)
+        .expect("Expected hover info on Math.floor");
     println!("HOVER CONTENTS MATH.FLOOR: {}", hover.contents);
 }
 
@@ -401,11 +444,27 @@ fun main(): void {
         .map(|h| h.label.as_str())
         .collect();
     // Auto-generated constructor takes the struct's fields positionally.
-    assert!(labels.contains(&"x:"), "expected `x:` hint, got {:?}", labels);
-    assert!(labels.contains(&"y:"), "expected `y:` hint, got {:?}", labels);
+    assert!(
+        labels.contains(&"x:"),
+        "expected `x:` hint, got {:?}",
+        labels
+    );
+    assert!(
+        labels.contains(&"y:"),
+        "expected `y:` hint, got {:?}",
+        labels
+    );
     // Free function parameters.
-    assert!(labels.contains(&"a:"), "expected `a:` hint, got {:?}", labels);
-    assert!(labels.contains(&"b:"), "expected `b:` hint, got {:?}", labels);
+    assert!(
+        labels.contains(&"a:"),
+        "expected `a:` hint, got {:?}",
+        labels
+    );
+    assert!(
+        labels.contains(&"b:"),
+        "expected `b:` hint, got {:?}",
+        labels
+    );
 }
 
 #[test]
@@ -508,4 +567,106 @@ fun main(): void {
         "doc comment above an attribute should still appear in hover; got {}",
         hover.contents
     );
+}
+
+#[test]
+fn hover_on_global_shows_declaration() {
+    let src = "
+const FACTOR: int = 10;
+fun main(): void {
+    let y: int = FA|CTOR + 1;
+}
+";
+    let harness = TestHarness::new(src);
+    let index = harness.index();
+    let hover = index
+        .hover(harness.offset, &harness.src)
+        .expect("expected hover on a top-level global");
+    assert!(
+        hover.contents.contains("FACTOR") && hover.contents.contains("const"),
+        "global hover should show its `const` declaration; got {}",
+        hover.contents
+    );
+}
+
+#[test]
+fn definition_resolves_global_reference() {
+    let src = "
+let count: int = 0;
+fun main(): void {
+    let y: int = co|unt + 1;
+}
+";
+    let harness = TestHarness::new(src);
+    let index = harness.index();
+    let def = index
+        .definition(harness.offset)
+        .expect("expected to resolve a global reference to its declaration");
+    let decl_offset = harness.src.find("count").unwrap();
+    assert_eq!(def.0, decl_offset, "definition should point at the global decl");
+}
+
+#[test]
+fn completions_include_top_level_globals() {
+    let src = "
+let total: int = 5;
+fun main(): void {
+    |
+}
+";
+    let harness = TestHarness::new(src);
+    let index = harness.index();
+    let comps = index.completions(None, &harness.src, harness.offset);
+    assert!(
+        comps.iter().any(|c| c.0 == "total"),
+        "expected the global `total` among completions"
+    );
+}
+
+#[test]
+fn references_finds_declaration_and_all_uses() {
+    let src = "
+fun add(a: int, b: int): int {
+    return a + b;
+}
+fun main(): void {
+    let x: int = a|dd(1, 2);
+    let y: int = add(3, 4);
+}
+";
+    let harness = TestHarness::new(src);
+    let index = harness.index();
+    let refs = index.references(harness.offset, true);
+    // The declaration plus the two call sites.
+    assert!(
+        refs.len() >= 3,
+        "expected at least 3 occurrences of `add`, got {:?}",
+        refs
+    );
+}
+
+#[test]
+fn document_symbols_list_top_level_declarations() {
+    let src = "
+let g: int = 1;
+fun foo(): void {}
+class Point {
+    public x: int;
+}
+|";
+    let harness = TestHarness::new(src);
+    let index = harness.index();
+    let names: Vec<&str> = index
+        .document_symbols()
+        .iter()
+        .map(|d| d.name.as_str())
+        .collect();
+    for expected in ["g", "foo", "Point"] {
+        assert!(
+            names.contains(&expected),
+            "expected `{}` in document symbols, got {:?}",
+            expected,
+            names
+        );
+    }
 }

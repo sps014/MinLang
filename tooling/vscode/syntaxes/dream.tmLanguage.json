@@ -64,7 +64,7 @@
         },
         {
           "name": "storage.modifier.dream",
-          "match": "\\b(static|export|extern|import|override)\\b"
+          "match": "\\b(static|public|extern|import)\\b"
         },
         {
           "name": "variable.language.this.dream",

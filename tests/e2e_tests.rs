@@ -1,5 +1,5 @@
 use dream::driver::compiler::{Compiler, Target};
-use dream::execution::host::{link_math_functions, read_string_from_memory};
+use dream::execution::host::{link_file_functions, link_math_functions, read_string_from_memory};
 use pretty_assertions::assert_eq;
 use std::fs;
 use std::path::Path;
@@ -120,6 +120,7 @@ fn run_test_case(dream_file: &Path) {
         .unwrap();
 
     link_math_functions(&mut linker).unwrap();
+    link_file_functions(&mut linker).unwrap();
     linker
         .func_wrap("env", "strlen", |_: i32| -> i32 { 0 })
         .unwrap();

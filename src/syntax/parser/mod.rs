@@ -84,7 +84,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             self.next_token()
         } else {
             let mut err_pos = token.position;
-            // If we are looking for a semicolon and we missed it, point the error 
+            // If we are looking for a semicolon and we missed it, point the error
             // at the end of the previous token rather than the current token.
             if kind == TokenKind::SemicolonToken {
                 // The cursor can run one-or-more tokens past the end of the stream during error
@@ -96,8 +96,11 @@ impl<'a, 'b> Parser<'a, 'b> {
                     .and_then(|i| self.tokens.get(i))
                     .cloned()
                     .unwrap_or_else(|| token.clone());
-                
-                if prev_token.position.line_no < token.position.line_no || token.kind == TokenKind::EndOfFileToken || token.kind == TokenKind::CurlyCloseBracketToken {
+
+                if prev_token.position.line_no < token.position.line_no
+                    || token.kind == TokenKind::EndOfFileToken
+                    || token.kind == TokenKind::CurlyCloseBracketToken
+                {
                     err_pos = prev_token.position;
                     err_pos.start = err_pos.end;
                     err_pos.col_no += err_pos.end - prev_token.position.start;

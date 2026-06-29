@@ -71,9 +71,9 @@ impl<'a, 'b> Parser<'a, 'b> {
         &mut self,
     ) -> Result<crate::syntax::nodes::struct_node::StructDeclarationNode<'a>, Error> {
         let first_trivia = self.current_token().leading_trivia.clone();
-        
+
         let attributes = self.parse_attributes();
-        
+
         let mut is_public = false;
         if self.current_token().kind == TokenKind::PublicToken {
             self.match_token(TokenKind::PublicToken);
@@ -359,7 +359,10 @@ impl<'a, 'b> Parser<'a, 'b> {
     }
 
     /// Parses a function declaration
-    pub(super) fn parse_function(&mut self, pre_parsed_attributes: Option<Vec<crate::syntax::nodes::AttributeNode>>) -> Result<FunctionNode<'a>, Error> {
+    pub(super) fn parse_function(
+        &mut self,
+        pre_parsed_attributes: Option<Vec<crate::syntax::nodes::AttributeNode>>,
+    ) -> Result<FunctionNode<'a>, Error> {
         let mut first_trivia = self.current_token().leading_trivia.clone();
 
         let attributes = pre_parsed_attributes.unwrap_or_else(|| self.parse_attributes());
@@ -443,8 +446,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             let params = self.parse_formal_parameters()?;
             let block = self.parse_block()?;
             return Ok(FunctionNode::new(
-                attributes,
-                ctor_name, None, None, params, block, false,
+                attributes, ctor_name, None, None, params, block, false,
             ));
         }
 
@@ -486,7 +488,8 @@ impl<'a, 'b> Parser<'a, 'b> {
             let is_intrinsic = crate::intrinsics::has_intrinsic_attr(&attributes);
             if generic_parameters.is_some() && !is_intrinsic {
                 self.diagnostics.report_error(
-                    "Extern functions cannot be generic unless they are marked @intrinsic".to_string(),
+                    "Extern functions cannot be generic unless they are marked @intrinsic"
+                        .to_string(),
                     Some(function_name.position),
                 );
             }

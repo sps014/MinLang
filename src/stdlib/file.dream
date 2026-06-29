@@ -1,0 +1,213 @@
+// `File` / `FileStream` - a small cross-runtime filesystem API. The host capability is a set of
+// *synchronous* externs (implemented natively in `src/execution/host.rs` for the wasmtime CLI and
+// in `runtime/dream.js` for Node); the `async` surface is built in Dream by wrapping those calls
+// in `async fun`s. Because Dream's async scheduler is compiled into the module itself, calling
+// `File.read(...)` returns a `Future<T>` that resolves on the first poll on *every* host - no
+// host-side promise bridge is required. This is what lets the same `.dream` run fast and natively.
+//
+//   async fun main(): void {
+//       await File.write("notes.txt", "hello\nworld\n");
+//       let text = await File.read("notes.txt");        // whole file as text
+//       System.print(text);
+//
+//       let stream = await File.open("notes.txt");        // buffered cursor
+//       while (stream.has_more()) {
+//           System.print(stream.read(8));                 // 8 chars at a time
+//       }
+//   }
+
+// --- host bridge: synchronous externs (real WASM imports; no @intrinsic) ---------------------
+@js("Dream", "fileRead")
+extern fun __file_read(path: string): string;
+
+// Overwrites `path` with `content`; returns the number of bytes written (-1 on error).
+@js("Dream", "fileWrite")
+extern fun __file_write(path: string, content: string): int;
+
+// Appends `content` to `path`; returns the number of bytes written (-1 on error).
+@js("Dream", "fileAppend")
+extern fun __file_append(path: string, content: string): int;
+
+// Binary I/O: bytes are bulk-copied straight between the file and a Dream `char[]`, with no
+// string round-trip (binary-safe, minimal marshalling).
+@js("Dream", "fileReadBytes")
+extern fun __file_read_bytes(path: string): char[];
+
+@js("Dream", "fileWriteBytes")
+extern fun __file_write_bytes(path: string, data: char[]): int;
+
+@js("Dream", "fileExists")
+extern fun __file_exists(path: string): bool;
+
+// Deletes `path`; returns true on success.
+@js("Dream", "fileDelete")
+extern fun __file_delete(path: string): bool;
+
+// Size of `path` in bytes (-1 if it does not exist).
+@js("Dream", "fileSize")
+extern fun __file_size(path: string): int;
+
+@js("Dream", "fileIsDir")
+extern fun __file_is_dir(path: string): bool;
+
+// Directory entries joined by '\n' ("" when empty or not a directory); split into string[] below.
+@js("Dream", "dirList")
+extern fun __dir_list(path: string): string;
+
+// File: static filesystem utilities contains useful functions for interacting with the filesystem.
+class File {
+    // Reads the whole file at `path` as UTF-8 text.
+    public static async fun read(path: string): string {
+        return __file_read(path);
+    }
+
+    // Overwrites `path` with `content`; resolves with the number of bytes written.
+    public static async fun write(path: string, content: string): int {
+        return __file_write(path, content);
+    }
+
+    // Appends `content` to the end of `path`; resolves with the number of bytes written.
+    public static async fun append(path: string, content: string): int {
+        return __file_append(path, content);
+    }
+
+    // Reads the whole file at `path` as raw bytes (binary-safe; a single bulk copy).
+    public static async fun read_bytes(path: string): char[] {
+        return __file_read_bytes(path);
+    }
+
+    // Writes raw bytes to `path`, replacing any existing contents; resolves with the byte count.
+    public static async fun write_bytes(path: string, data: char[]): int {
+        return __file_write_bytes(path, data);
+    }
+
+    // Deletes `path`; resolves true on success.
+    public static async fun delete(path: string): bool {
+        return __file_delete(path);
+    }
+
+    // Lists the entries of directory `path`. An empty or non-directory path yields an empty array.
+    public static async fun list(path: string): string[] {
+        let joined = __dir_list(path);
+        if (joined.is_empty()) {
+            return array_new<string>(0);
+        }
+        return joined.split('\n');
+    }
+
+    // Cheap synchronous predicates (no async overhead).
+    public static fun exists(path: string): bool {
+        return __file_exists(path);
+    }
+    public static fun size(path: string): int {
+        return __file_size(path);
+    }
+    public static fun is_dir(path: string): bool {
+        return __file_is_dir(path);
+    }
+
+    // Opens a buffered read stream over `path` (reads the file's bytes once into memory).
+    public static async fun open(path: string): FileStream {
+        let bytes = await File.read_bytes(path);
+        return FileStream(bytes);
+    }
+}
+
+// --- FileStream: a buffered, seekable cursor over a file's bytes -----------------------------
+// The file's bytes are read once into `data` (a single bulk copy from the host) and the cursor
+// then slices them in pure Dream. Buffering as raw bytes is binary-safe and means `read_bytes`
+// needs no conversion; `read`/`read_all` materialize a text view only when text is requested.
+// Random access via `seek` is cheap and allocation-free.
+class FileStream {
+    data: char[];
+    pos: int;
+
+    constructor(data: char[]) {
+        this.data = data;
+        this.pos = 0;
+    }
+
+    // Clamps `end` to the buffer length and returns it (helper for the read methods).
+    fun _clamp(end: int): int {
+        if (end > this.data.len()) {
+            return this.data.len();
+        }
+        return end;
+    }
+
+    // Reads up to `n` raw bytes from the current position, advancing the cursor. No conversion.
+    public fun read_bytes(n: int): char[] {
+        let end = this._clamp(this.pos + n);
+        let count = end - this.pos;
+        if (count < 0) {
+            count = 0;
+        }
+        let out = array_new<char>(count);
+        let i = 0;
+        while (i < count) {
+            out[i] = this.data[this.pos + i];
+            i = i + 1;
+        }
+        this.pos = end;
+        return out;
+    }
+
+    // Reads up to `n` bytes from the current position as text, advancing the cursor.
+    public fun read(n: int): string {
+        let end = this._clamp(this.pos + n);
+        let count = end - this.pos;
+        if (count < 0) {
+            count = 0;
+        }
+        let out = string_alloc(count);
+        let i = 0;
+        while (i < count) {
+            string_set(out, i, this.data[this.pos + i]);
+            i = i + 1;
+        }
+        this.pos = end;
+        return out;
+    }
+
+    // Reads everything remaining from the current position as text.
+    public fun read_all(): string {
+        return this.read(this.data.len() - this.pos);
+    }
+
+    // True while there are unread bytes.
+    public fun has_more(): bool {
+        return this.pos < this.data.len();
+    }
+
+    // Current cursor offset (bytes from the start).
+    public fun position(): int {
+        return this.pos;
+    }
+
+    // Total length of the buffered content in bytes.
+    public fun length(): int {
+        return this.data.len();
+    }
+
+    // Moves the cursor to an absolute offset (clamped to [0, length]).
+    public fun seek(offset: int): void {
+        let target = offset;
+        if (target < 0) {
+            target = 0;
+        }
+        if (target > this.data.len()) {
+            target = this.data.len();
+        }
+        this.pos = target;
+    }
+
+    // Rewinds the cursor to the start.
+    public fun reset(): void {
+        this.pos = 0;
+    }
+
+    // Releases the buffer (no-op for the buffered stream; present for API symmetry).
+    public fun close(): void {
+        this.pos = this.data.len();
+    }
+}

@@ -79,4 +79,5 @@ nav:
     - Builtins: stdlib/builtins.md
     - List: stdlib/list.md
     - Map: stdlib/map.md
+    - File I/O: stdlib/file.md
   - Memory Model: memory.md

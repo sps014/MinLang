@@ -135,4 +135,41 @@ impl<'a> WasmGenerator<'a> {
             _ => name.to_string(),
         }
     }
+
+    /// Classifies a `name(args)` call into the concrete thing codegen must emit. This single
+    /// resolution is shared by the value-producing path (`expression.rs`) and the discarded-result
+    /// path (`statement.rs`); only the post-call stack handling (drop/release of the result)
+    /// differs between the two, so it stays at the call sites.
+    pub fn classify_call(
+        &self,
+        name: &str,
+        generic_args: &Option<Vec<Type>>,
+        args: &[crate::syntax::nodes::ExpressionNode<'a>],
+        function: &FunctionNode<'a>,
+    ) -> CallDispatch {
+        if let Some((params, ret)) = self.function_typed_local(name, function) {
+            return CallDispatch::Indirect { params, ret };
+        }
+        let function_name = self.resolve_call_name(name, generic_args, args, function);
+        let ctor_name = self.constructor_struct_name(name, generic_args);
+        // A name that matches no emitted function but does name a (monomorphized) struct is a
+        // constructor call; otherwise it is a free-function call.
+        if self.function_table.get_function(&function_name).is_err()
+            && self.struct_table.get_struct(&ctor_name).is_some()
+        {
+            CallDispatch::Constructor(ctor_name)
+        } else {
+            CallDispatch::Function(function_name)
+        }
+    }
+}
+
+/// The resolved target of a `Name(args)` call (see [`WasmGenerator::classify_call`]).
+pub enum CallDispatch {
+    /// A call through a function-typed local variable, lowered as `call_indirect`.
+    Indirect { params: Vec<Type>, ret: Type },
+    /// A constructor call for the named (already monomorphized) struct.
+    Constructor(String),
+    /// A free-function call to the named (resolved/mangled) function.
+    Function(String),
 }

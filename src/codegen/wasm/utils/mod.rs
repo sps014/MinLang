@@ -10,6 +10,8 @@ mod infer;
 mod ownership;
 mod resolve;
 
+pub use resolve::CallDispatch;
+
 use super::WasmGenerator;
 use crate::semantics::symbol_table::SymbolTable;
 use crate::syntax::nodes::types::{release_func_suffix, strip_nullable, value_size_align};
@@ -152,7 +154,10 @@ impl<'a> WasmGenerator<'a> {
         let t = match func_lookup.get(var_name) {
             Some(t_val) => t_val.clone().get_type(),
             None => {
-                panic!("func_lookup for '{}' missing var: '{}'", func_name, var_name);
+                panic!(
+                    "func_lookup for '{}' missing var: '{}'",
+                    func_name, var_name
+                );
             }
         };
         self.resolve_type(&t)

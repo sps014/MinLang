@@ -32,6 +32,9 @@ impl<'a> WasmGenerator<'a> {
                 StatementNode::ExpressionStatement(expr) => {
                     self.collect_strings_from_expr(expr);
                 }
+                StatementNode::AwaitStmt(expr) => {
+                    self.collect_strings_from_expr(expr);
+                }
                 StatementNode::IndexAssignment(arr, index, expr) => {
                     self.collect_strings_from_expr(arr);
                     self.collect_strings_from_expr(index);

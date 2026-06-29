@@ -1,3 +1,4 @@
+use super::utils::CallDispatch;
 use super::WasmGenerator;
 use crate::intrinsics;
 use crate::syntax::nodes::types::{
@@ -56,20 +57,17 @@ impl<'a> WasmGenerator<'a> {
                     // The `sleep` async intrinsic produces a `Future` handle directly. The
                     // combinators are invoked as `Promise.all/any/race` (see build_method_call).
                     intrinsics::SLEEP => self.build_async_intrinsic_call(n.text.as_str(), args, function, writer)?,
-                    _ => {
-                        if let Some((params_decl, ret)) = self.function_typed_local(&n.text, function) {
-                            self.build_indirect_call(&n.text, &params_decl, &ret, args, function, writer)?;
-                        } else {
-                            let function_name = self.resolve_call_name(&n.text, generic_args, args, function);
-                            let ctor_name = self.constructor_struct_name(&n.text, generic_args);
-                            if self.function_table.get_function(&function_name).is_err()
-                                && self.struct_table.get_struct(&ctor_name).is_some() {
-                                self.build_constructor(&ctor_name, args, function, writer)?
-                            } else {
-                                self.build_function_invocation(&function_name, args, function, writer)?
-                            }
+                    _ => match self.classify_call(&n.text, generic_args, args, function) {
+                        CallDispatch::Indirect { params, ret } => {
+                            self.build_indirect_call(&n.text, &params, &ret, args, function, writer)?
                         }
-                    }
+                        CallDispatch::Constructor(ctor_name) => {
+                            self.build_constructor(&ctor_name, args, function, writer)?
+                        }
+                        CallDispatch::Function(function_name) => {
+                            self.build_function_invocation(&function_name, args, function, writer)?
+                        }
+                    },
                 }
             },
             ExpressionNode::Parenthesized(e) => self.build_expression(e, left_side, function, writer)?,
@@ -801,9 +799,12 @@ impl<'a> WasmGenerator<'a> {
                     IntrinsicOp::Println => {
                         return self.build_println(&params[0], function, writer);
                     }
-                    IntrinsicOp::PromiseAll | IntrinsicOp::PromiseAny | IntrinsicOp::PromiseRace => {
+                    IntrinsicOp::PromiseAll
+                    | IntrinsicOp::PromiseAny
+                    | IntrinsicOp::PromiseRace => {
                         let combinator = op.promise_combinator().expect("combinator op");
-                        return self.build_async_intrinsic_call(combinator, params, function, writer);
+                        return self
+                            .build_async_intrinsic_call(combinator, params, function, writer);
                     }
                     IntrinsicOp::JsonSerialize => {
                         let arg_type = self.infer_expression_type(&params[0], function)?;

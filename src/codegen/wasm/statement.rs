@@ -1,3 +1,4 @@
+use super::utils::CallDispatch;
 use super::WasmGenerator;
 use crate::intrinsics;
 use crate::syntax::nodes::types::strip_nullable;
@@ -72,7 +73,7 @@ impl<'a> WasmGenerator<'a> {
                 writer.write_line("drop");
             }
             StatementNode::ExpressionStatement(expr) => {
-                // If it evaluates to a value, we must pop it from the Wasm stack. We'll use "int" 
+                // If it evaluates to a value, we must pop it from the Wasm stack. We'll use "int"
                 // as a fallback expected type, but dropping ensures the stack remains balanced.
                 self.build_expression(expr, &"int".to_string(), function, writer)?;
                 writer.write_line("drop");
@@ -92,18 +93,11 @@ impl<'a> WasmGenerator<'a> {
                         self.build_hash_code(&p[0], function, writer)?;
                         writer.write_line("drop");
                     }
-                    _ => {
-                        if let Some((params_decl, ret)) =
-                            self.function_typed_local(&n.text, function)
-                        {
-                            self.build_indirect_call(
-                                &n.text,
-                                &params_decl,
-                                &ret,
-                                p,
-                                function,
-                                writer,
-                            )?;
+                    // Shared call dispatch (see `classify_call`); the statement path differs only in
+                    // that the result is discarded, so each arm balances the WASM stack.
+                    _ => match self.classify_call(&n.text, generic_args, p, function) {
+                        CallDispatch::Indirect { params, ret } => {
+                            self.build_indirect_call(&n.text, &params, &ret, p, function, writer)?;
                             // The callee returns an owned +1: release a reference result, drop a
                             // plain value, ignore void.
                             let ret_str = ret.get_type();
@@ -112,42 +106,32 @@ impl<'a> WasmGenerator<'a> {
                             } else if !matches!(ret, Type::Void) {
                                 writer.write_line("drop");
                             }
-                        } else {
-                            let function_name =
-                                self.resolve_call_name(&n.text, generic_args, p, function);
-                            let ctor_name = self.constructor_struct_name(&n.text, generic_args);
-                            if self.function_table.get_function(&function_name).is_err()
-                                && self.struct_table.get_struct(&ctor_name).is_some()
-                            {
-                                // Constructed value is discarded: build it, then release the fresh
-                                // allocation (which also balances the stack).
-                                self.build_constructor(&ctor_name, p, function, writer)?;
-                                self.emit_release(&ctor_name, writer);
-                            } else {
-                                // A discarded function result is an owned +1: release a reference,
-                                // drop a plain value, ignore void.
-                                let ret_str = self
-                                    .function_table
-                                    .get_function(&function_name)
-                                    .ok()
-                                    .and_then(|f| f.return_type)
-                                    .map(|t| t.get_type());
-                                self.build_function_invocation(
-                                    &function_name,
-                                    p,
-                                    function,
-                                    writer,
-                                )?;
-                                match ret_str {
-                                    Some(t) if self.is_reference_type(strip_nullable(&t)) => {
-                                        self.emit_release(&t, writer)
-                                    }
-                                    Some(t) if t != "void" => writer.write_line("drop"),
-                                    _ => {}
+                        }
+                        CallDispatch::Constructor(ctor_name) => {
+                            // Constructed value is discarded: build it, then release the fresh
+                            // allocation (which also balances the stack).
+                            self.build_constructor(&ctor_name, p, function, writer)?;
+                            self.emit_release(&ctor_name, writer);
+                        }
+                        CallDispatch::Function(function_name) => {
+                            // A discarded function result is an owned +1: release a reference,
+                            // drop a plain value, ignore void.
+                            let ret_str = self
+                                .function_table
+                                .get_function(&function_name)
+                                .ok()
+                                .and_then(|f| f.return_type)
+                                .map(|t| t.get_type());
+                            self.build_function_invocation(&function_name, p, function, writer)?;
+                            match ret_str {
+                                Some(t) if self.is_reference_type(strip_nullable(&t)) => {
+                                    self.emit_release(&t, writer)
                                 }
+                                Some(t) if t != "void" => writer.write_line("drop"),
+                                _ => {}
                             }
                         }
-                    }
+                    },
                 }
             }
             StatementNode::MethodInvocation(obj, method, generic_args, params) => {

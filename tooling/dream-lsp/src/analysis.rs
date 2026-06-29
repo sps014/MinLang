@@ -99,9 +99,14 @@ pub fn collect_diagnostics(file_path: Option<&str>, text: &str) -> Vec<Diagnosti
         &mut acc.all_extends,
     );
 
-    // Mirror the compiler: only run semantic analysis once parsing is clean, otherwise the
-    // analyzer would be working over a half-formed tree.
-    if !diagnostics.has_errors() {
+    // Unlike the batch compiler (which stops at the first phase with errors), the editor keeps
+    // semantic diagnostics flowing even while the user is mid-edit: the parser recovers and always
+    // yields a `ProgramNode`, and the analyzer's poison/`Unknown` type stops a few broken spans
+    // from cascading into noise. We only require that the user's document itself parsed into a
+    // tree (`user_ast` is `Ok`); a half-formed tree still yields useful semantic diagnostics for
+    // the parts that did parse. The analysis is wrapped so any residual panic degrades to
+    // "syntax diagnostics only" instead of taking down the language server.
+    if user_ast.is_ok() {
         let combined = ProgramNode::new(
             vec![],
             acc.all_structs,
@@ -111,8 +116,10 @@ pub fn collect_diagnostics(file_path: Option<&str>, text: &str) -> Vec<Diagnosti
             acc.all_globals,
         );
         let tree = SyntaxTree::new(combined);
-        let mut analyzer = Analyzer::new(&tree, &arena);
-        let _ = analyzer.analyze(&mut diagnostics);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut analyzer = Analyzer::new(&tree, &arena);
+            let _ = analyzer.analyze(&mut diagnostics);
+        }));
     }
 
     diagnostics
@@ -157,7 +164,10 @@ fn merge_prelude<'a>(
         // the compiled-in version so we don't get duplicate definition errors in the editor.
         if let Some(path) = file_path {
             let bare_name = name.trim_start_matches("<std>/");
-            if path.replace('\\', "/").ends_with(&format!("/src/stdlib/{}", bare_name)) {
+            if path
+                .replace('\\', "/")
+                .ends_with(&format!("/src/stdlib/{}", bare_name))
+            {
                 continue;
             }
         }

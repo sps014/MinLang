@@ -1,0 +1,48 @@
+// Demonstrates the File / FileStream API. Runs natively (`cargo run -- run sample/interop/file_io.dream`)
+// and under Node via runtime/dream.js, using one code path on both.
+
+async fun main(): void {
+    let path = "scratch_file_io.txt";
+
+    // Write, then append more text.
+    await File.write(path, "Dream\n");
+    await File.append(path, "rocks\n");
+
+    // Metadata (synchronous predicates).
+    if (File.exists(path)) {
+        System.print("size = ");
+        System.println(File.size(path));
+    }
+
+    // Read the whole thing.
+    let text = await File.read(path);
+    System.print(text);
+
+    // Buffered, seekable streaming.
+    let stream = await File.open(path);
+    System.print("first 5: ");
+    System.println(stream.read(5));     // "Dream"
+    System.print("at pos: ");
+    System.println(stream.position());  // 5
+    stream.seek(0);
+    System.print("rest: ");
+    System.println(stream.read_all());  // "Dream\nrocks\n"
+    stream.close();
+
+    // Raw byte round-trip: read 5 bytes, write them to a second file.
+    let head = await File.open(path);
+    let bytes = head.read_bytes(5);     // ['D','r','e','a','m']
+    await File.write_bytes("scratch_head.bin", bytes);
+    let echoed = await File.read("scratch_head.bin");
+    System.print("bytes -> ");
+    System.println(echoed);             // "Dream"
+
+    // List the current directory.
+    let entries = await File.list(".");
+    System.print("entries: ");
+    System.println(entries.len());
+
+    // Clean up.
+    await File.delete(path);
+    await File.delete("scratch_head.bin");
+}

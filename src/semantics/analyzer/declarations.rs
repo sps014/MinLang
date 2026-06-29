@@ -130,7 +130,10 @@ impl<'a> Analyzer<'a> {
 
             if self.globals.iter().any(|g| g.name == global.name.text) {
                 diagnostics.report_error(
-                    format!("Top-level variable '{}' is already defined", global.name.text),
+                    format!(
+                        "Top-level variable '{}' is already defined",
+                        global.name.text
+                    ),
                     Some(global.name.position),
                 );
                 continue;

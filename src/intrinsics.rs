@@ -19,13 +19,15 @@ pub const INTRINSIC_ATTR: &str = "intrinsic";
 /// Extracts the intrinsic key from a declaration's attribute list, i.e. the `"name"` in
 /// `@intrinsic("name")`, or `None` if the declaration is not an intrinsic. Centralizes the
 /// attribute lookup + quote-stripping that was previously duplicated across layers.
-pub fn intrinsic_key(
-    attributes: &[crate::syntax::nodes::AttributeNode],
-) -> Option<String> {
+pub fn intrinsic_key(attributes: &[crate::syntax::nodes::AttributeNode]) -> Option<String> {
     attributes
         .iter()
         .find(|a| a.name.text == INTRINSIC_ATTR)
-        .and_then(|a| a.args.first().map(|arg| arg.text.trim_matches('"').to_string()))
+        .and_then(|a| {
+            a.args
+                .first()
+                .map(|arg| arg.text.trim_matches('"').to_string())
+        })
 }
 
 /// True if `attributes` contains an `@intrinsic(...)` marker.
@@ -124,7 +126,9 @@ impl IntrinsicOp {
     pub fn from_attributes(
         attributes: &[crate::syntax::nodes::AttributeNode],
     ) -> Option<IntrinsicOp> {
-        intrinsic_key(attributes).as_deref().and_then(IntrinsicOp::from_key)
+        intrinsic_key(attributes)
+            .as_deref()
+            .and_then(IntrinsicOp::from_key)
     }
 
     /// For the async combinators, the internal `__promise_*` free-function name they delegate to

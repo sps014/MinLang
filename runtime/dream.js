@@ -34,7 +34,7 @@ export const HEAP_HEADER_SIZE = 12;
 
 /** Byte size of a single element of the given Dream type (see utils.rs `element_size_of`). */
 function elementSize(typeName) {
-  if (typeName === "bool") return 1;
+  if (typeName === "bool" || typeName === "char") return 1;
   if (typeName === "double") return 8;
   return 4; // int, float, and every reference type (pointer)
 }
@@ -177,6 +177,8 @@ export class DreamInstance {
     switch (t) {
       case "int":
         return this.i32(addr);
+      case "char":
+        return this.bytes[addr]; // 1-byte element
       case "bool":
         return this.bytes[addr] !== 0;
       case "float":
@@ -189,6 +191,58 @@ export class DreamInstance {
         if (t.endsWith("[]")) return this.readArray(this.i32(addr), t.slice(0, -2));
         return this.i32(addr); // struct/object/list: opaque pointer
     }
+  }
+
+  /** Writes a single element of `elemType` at byte address `addr`. */
+  _writeElement(addr, elemType, value) {
+    const t = stripSuffix(elemType);
+    switch (t) {
+      case "int":
+        this.view.setInt32(addr, value | 0, true);
+        break;
+      case "char":
+        this.bytes[addr] = value & 0xff; // 1-byte element
+        break;
+      case "bool":
+        this.bytes[addr] = value ? 1 : 0;
+        break;
+      case "float":
+        this.view.setFloat32(addr, value, true);
+        break;
+      case "double":
+        this.view.setFloat64(addr, value, true);
+        break;
+      case "string":
+        this.view.setInt32(addr, this.writeString(value == null ? "" : String(value)), true);
+        break;
+      default:
+        this.view.setInt32(addr, value | 0, true); // struct/object pointer
+    }
+  }
+
+  /**
+   * Allocates a Dream array from a JS array (or typed array) of `elemType`, returning its data
+   * pointer, so JS-implemented externs can return arrays (e.g. `char[]` file bytes) back into
+   * Dream. Layout: [count:i32] followed by `count` elements. Requires the module to export `malloc`.
+   */
+  writeArray(arr, elemType = "int") {
+    if (typeof this.exports.malloc !== "function") {
+      throw new Error("module does not export `malloc`; cannot allocate an array");
+    }
+    const elem = stripSuffix(elemType);
+    const size = elementSize(elem);
+    const count = arr.length;
+    const ptr = this.exports.malloc(4 + count * size, TAGS.ARRAY);
+    this.view.setInt32(ptr, count, true);
+    if (elem === "char") {
+      // Bulk copy for the common byte-array case.
+      this.bytes.set(Uint8Array.from(arr), ptr + 4);
+    } else {
+      for (let i = 0; i < count; i++) {
+        this._writeElement(ptr + 4 + i * size, elem, arr[i]);
+      }
+    }
+    return ptr;
   }
 
   /**
@@ -287,6 +341,9 @@ function marshalResult(inst, result, ret) {
   if (result === "string") return inst.writeString(ret == null ? "" : String(ret));
   if (result === "bool") return ret ? 1 : 0;
   if (result === "JsRef") return inst.registerHandle(ret); // live JS value -> i32 handle id
+  if (typeof result === "string" && result.endsWith("[]")) {
+    return inst.writeArray(ret == null ? [] : ret, result.slice(0, -2)); // e.g. char[] file bytes
+  }
   if (result === "void" || result == null) return ret == null ? 0 : ret;
   return ret;
 }
@@ -412,7 +469,48 @@ function defaultDreamModule(getInstance) {
     },
     // Reads the body of a `Response` handle as text (Promise; bridged via extern async).
     responseText: (res) => res.text(),
+    // Filesystem helpers (see src/stdlib/file.dream). Synchronous; Node-only (`node:fs`). The
+    // matching native implementations live in src/execution/host.rs for the wasmtime CLI. Text
+    // variants marshal `string`; the byte variants marshal `char[]` directly (binary-safe, no
+    // string round-trip) - the bytes are bulk-copied across the boundary.
+    fileRead: (path) => nodeFs().readFileSync(path, "utf8"),
+    fileWrite: (path, content) => {
+      nodeFs().writeFileSync(path, content);
+      return Buffer.byteLength(content);
+    },
+    fileAppend: (path, content) => {
+      nodeFs().appendFileSync(path, content);
+      return Buffer.byteLength(content);
+    },
+    // Returns the file as a Buffer; marshalResult turns it into a Dream `char[]` via writeArray.
+    fileReadBytes: (path) => nodeFs().readFileSync(path),
+    // `data` arrives as a JS array of byte values (marshaled from `char[]`).
+    fileWriteBytes: (path, data) => {
+      nodeFs().writeFileSync(path, Buffer.from(data));
+      return data.length;
+    },
+    fileExists: (path) => nodeFs().existsSync(path),
+    fileDelete: (path) => {
+      try { nodeFs().rmSync(path); return true; } catch (_) { return false; }
+    },
+    fileSize: (path) => {
+      try { return Number(nodeFs().statSync(path).size); } catch (_) { return -1; }
+    },
+    fileIsDir: (path) => {
+      try { return nodeFs().statSync(path).isDirectory(); } catch (_) { return false; }
+    },
+    dirList: (path) => {
+      try { return nodeFs().readdirSync(path).sort().join("\n"); } catch (_) { return ""; }
+    },
   };
+}
+
+// Node's `fs`, preloaded by `load()` (it's async; the file host functions are synchronous, so the
+// module must already be in hand by the time Dream calls them). Stays null in a browser.
+let _nodeFs = null;
+function nodeFs() {
+  if (_nodeFs) return _nodeFs;
+  throw new Error("File/FileStream require a filesystem host (Node or the native runtime)");
 }
 
 /** Default `env` builtins every Dream module imports (mirrors src/.../wasm_runner.rs). */
@@ -475,6 +573,12 @@ async function loadAbi(abi) {
 export async function load(source, options = {}) {
   const wasmBytes = await fetchBytes(source);
   const abi = await loadAbi(options.abi);
+
+  // Preload Node's `fs` so the synchronous File/FileStream host functions can use it. In a browser
+  // this stays unavailable and only surfaces an error if a file API is actually called.
+  if (isNode && !_nodeFs) {
+    try { _nodeFs = await import("node:fs"); } catch (_) { /* leave unavailable */ }
+  }
 
   // Late-bound instance reference so import wrappers can marshal against live memory.
   let instance = null;

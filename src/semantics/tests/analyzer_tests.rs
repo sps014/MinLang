@@ -154,7 +154,11 @@ fn test_unresolved_identifier_does_not_cascade() {
         .iter()
         .filter(|m| m.contains("missing does not exist"))
         .count();
-    assert_eq!(undefined, 3, "expected 3 undefined-identifier errors, got: {:?}", errors);
+    assert_eq!(
+        undefined, 3,
+        "expected 3 undefined-identifier errors, got: {:?}",
+        errors
+    );
     assert_eq!(
         errors.len(),
         3,

@@ -660,8 +660,13 @@ impl<'a> Analyzer<'a> {
                     let mut params_types = vec![];
                     for param in params.iter() {
                         params_types.push(
-                            self.analyze_expression(param, ctx.parent_function, ctx.symbol_table, diagnostics)?
-                                .get_type(),
+                            self.analyze_expression(
+                                param,
+                                ctx.parent_function,
+                                ctx.symbol_table,
+                                diagnostics,
+                            )?
+                            .get_type(),
                         );
                     }
                     let bindings = self.infer_generic_bindings(
@@ -675,8 +680,9 @@ impl<'a> Analyzer<'a> {
 
                     // Promise combinators (`Promise.all/any/race`) are typed by the shared async
                     // intrinsic logic; classify via the registry and delegate when applicable.
-                    if let Some(combinator) = intrinsics::IntrinsicOp::from_attributes(&template.attributes)
-                        .and_then(|op| op.promise_combinator())
+                    if let Some(combinator) =
+                        intrinsics::IntrinsicOp::from_attributes(&template.attributes)
+                            .and_then(|op| op.promise_combinator())
                     {
                         let mut s_tok = method.clone();
                         s_tok.text = combinator.to_string();
@@ -694,8 +700,11 @@ impl<'a> Analyzer<'a> {
                         Self::substitute_generic_signature(&mut specialized, &bindings);
                         let specialized_ref: &'a FunctionNode<'a> = self.arena.alloc(specialized);
                         let info = FunctionTableInfo::from(specialized_ref);
-                        self.function_table.add_function(mangled_name.clone(), info).unwrap();
-                        self.instantiated_generics.insert(mangled_name.clone(), (bindings, specialized_ref));
+                        self.function_table
+                            .add_function(mangled_name.clone(), info)
+                            .unwrap();
+                        self.instantiated_generics
+                            .insert(mangled_name.clone(), (bindings, specialized_ref));
                     }
                     let info = self.function_table.get_function(&mangled_name).unwrap();
                     if info.is_async {
@@ -889,6 +898,4 @@ impl<'a> Analyzer<'a> {
         }
         Ok(store_sig.return_type.unwrap_or(Type::Void))
     }
-
-
 }

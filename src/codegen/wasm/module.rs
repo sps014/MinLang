@@ -74,7 +74,11 @@ impl<'a> WasmGenerator<'a> {
 
         // User-declared `extern fun` declarations become WASM imports. The import module/field
         // default to `"env"`/<function name> but can be remapped with `@js("mod", "name")`.
-        for func in program.functions.iter().chain(self.struct_methods.iter().map(|(m, _)| *m)) {
+        for func in program
+            .functions
+            .iter()
+            .chain(self.struct_methods.iter().map(|(m, _)| *m))
+        {
             if !func.is_extern {
                 continue;
             }

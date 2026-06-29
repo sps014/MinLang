@@ -39,4 +39,5 @@ If you already know the basics, the [Language](language/variables.md) section co
 | [bool](stdlib/bool.md) | Boolean methods: `to_int` |
 | [List\<T\>](stdlib/list.md) | Growable sequence: `push`, `pop`, `get`, `set`, `remove_at`, … |
 | [Map\<K, V\>](stdlib/map.md) | Hash map: `put`, `get`, `contains`, `remove`, `keys`, `values`, … |
+| [File I/O](stdlib/file.md) | `File` and `FileStream`: read/write text and bytes, list, stat, stream |
 

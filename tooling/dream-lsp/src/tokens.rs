@@ -16,7 +16,9 @@ pub struct TokenOut {
 
 /// The ordered set of semantic token categories this analyzer emits. The web layer turns this
 /// into a Monaco semantic-tokens legend (index = position in this slice).
-pub const TOKEN_LEGEND: [&str; 6] = ["keyword", "type", "string", "number", "operator", "variable"];
+pub const TOKEN_LEGEND: [&str; 6] = [
+    "keyword", "type", "string", "number", "operator", "variable",
+];
 
 pub fn classify(text: &str) -> Vec<TokenOut> {
     let line_index = LineIndex::new(text);
@@ -34,7 +36,10 @@ pub fn classify(text: &str) -> Vec<TokenOut> {
                 category(token.kind)?
             };
             let span = token.position;
-            Some(TokenOut { range: line_index.range(span.start, span.end), kind })
+            Some(TokenOut {
+                range: line_index.range(span.start, span.end),
+                kind,
+            })
         })
         .collect()
 }
@@ -53,13 +58,34 @@ fn category(kind: TokenKind) -> Option<&'static str> {
         | ContinueToken | LetToken | ConstToken | FunToken | StaticToken | ImportToken
         | PublicToken | ExternToken | ClassToken | ExtendToken | IsToken | InToken | EnumToken
         | TypeToken | SwitchToken | CaseToken | DefaultToken => "keyword",
-        PlusToken | MinusToken | SlashToken | StarToken | BangToken | ModulusToken
-        | PlusEqualToken | MinusEqualToken | StarEqualToken | SlashEqualToken
-        | ModulusEqualToken | PlusPlusToken | MinusMinusToken | EqualEqualToken
-        | NotEqualToken | AmpersandAmpersandToken | PipePipeToken | BitWisePipeToken
-        | BitWiseAmpersandToken | BitWiseXorToken | ShiftLeftToken | ShiftRightToken
-        | QuestionQuestionToken | EqualToken | GreaterThanEqualToken | GreaterThanToken
-        | SmallerThanToken | SmallerThanEqualToken => "operator",
+        PlusToken
+        | MinusToken
+        | SlashToken
+        | StarToken
+        | BangToken
+        | ModulusToken
+        | PlusEqualToken
+        | MinusEqualToken
+        | StarEqualToken
+        | SlashEqualToken
+        | ModulusEqualToken
+        | PlusPlusToken
+        | MinusMinusToken
+        | EqualEqualToken
+        | NotEqualToken
+        | AmpersandAmpersandToken
+        | PipePipeToken
+        | BitWisePipeToken
+        | BitWiseAmpersandToken
+        | BitWiseXorToken
+        | ShiftLeftToken
+        | ShiftRightToken
+        | QuestionQuestionToken
+        | EqualToken
+        | GreaterThanEqualToken
+        | GreaterThanToken
+        | SmallerThanToken
+        | SmallerThanEqualToken => "operator",
         _ => return None,
     };
     Some(category)

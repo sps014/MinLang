@@ -23,6 +23,7 @@ pub const PRELUDE_FILES: &[(&str, &str)] = &[
     ("<std>/math.dream", include_str!("math.dream")),
     ("<std>/regex.dream", include_str!("regex.dream")),
     ("<std>/fetch.dream", include_str!("fetch.dream")),
+    ("<std>/file.dream", include_str!("file.dream")),
     ("<std>/system.dream", include_str!("system.dream")),
     ("<std>/promise.dream", include_str!("promise.dream")),
 ];

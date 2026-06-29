@@ -7,9 +7,7 @@ pub mod types;
 
 pub use expression::ExpressionNode;
 pub use function::{FunctionNode, ParameterNode};
-pub use program::{
-    EnumDeclarationNode, ExtendNode, GlobalVariableNode, ImportNode, ProgramNode,
-};
+pub use program::{EnumDeclarationNode, ExtendNode, GlobalVariableNode, ImportNode, ProgramNode};
 pub use statement::StatementNode;
 pub use struct_node::{StructDeclarationNode, StructFieldNode};
 pub use types::Type;
