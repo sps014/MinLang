@@ -65,20 +65,18 @@ impl<'a> Analyzer<'a> {
         }
         Ok(())
     }
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn analyze_foreach(
         &mut self,
-        element: &SyntaxToken,
-        iterable: &ExpressionNode<'a>,
-        index_name: &str,
-        array_name: &str,
-        body: &[StatementNode<'a>],
-        parent_function: &FunctionNode<'a>,
-        symbol_table: &Rc<RefCell<SymbolTable>>,
+        statement: &StatementNode<'a>,
+        ctx: &super::AnalyzerContext<'a, '_>,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<(), ()> {
+        let StatementNode::ForEach(element, iterable, index_name, array_name, body) = statement
+        else {
+            unreachable!()
+        };
         let iterable_type =
-            self.analyze_expression(iterable, parent_function, symbol_table, diagnostics)?;
+            self.analyze_expression(iterable, ctx.parent_function, ctx.symbol_table, diagnostics)?;
         let element_type = match &iterable_type {
             Type::Array(inner) => (**inner).clone(),
             _ => {
@@ -94,8 +92,10 @@ impl<'a> Analyzer<'a> {
         };
 
         // Register the synthetic loop locals plus the user's element binding in a dedicated scope.
-        let foreach_scope = Rc::new(RefCell::new(SymbolTable::new(Some(symbol_table.clone()))));
-        (*symbol_table)
+        let foreach_scope = Rc::new(RefCell::new(SymbolTable::new(Some(
+            ctx.symbol_table.clone(),
+        ))));
+        (*ctx.symbol_table)
             .borrow_mut()
             .add_child(foreach_scope.clone());
         {
@@ -111,26 +111,24 @@ impl<'a> Analyzer<'a> {
         }
         self.analyze_body(
             body,
-            parent_function,
+            ctx.parent_function,
             Some(&foreach_scope),
             true,
             diagnostics,
         )?;
         Ok(())
     }
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn analyze_switch(
         &mut self,
         subject: &ExpressionNode<'a>,
         cases: &Vec<(Vec<ExpressionNode<'a>>, &'a [StatementNode<'a>])>,
         default_body: &Option<&'a [StatementNode<'a>]>,
-        parent_function: &FunctionNode<'a>,
-        symbol_table: &Rc<RefCell<SymbolTable>>,
+        ctx: &super::AnalyzerContext<'a, '_>,
         has_parent_while: bool,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<(), ()> {
         let subject_type =
-            self.analyze_expression(subject, parent_function, symbol_table, diagnostics)?;
+            self.analyze_expression(subject, ctx.parent_function, ctx.symbol_table, diagnostics)?;
         let subject_name = subject_type.get_type();
         let subject_is_enum = self.enum_table.contains_key(&subject_name);
         if !matches!(subject_name.as_str(), "int" | "string" | "bool") && !subject_is_enum {
@@ -155,12 +153,17 @@ impl<'a> Analyzer<'a> {
                         label.position(),
                     );
                 }
-                let label_type =
-                    self.analyze_expression(label, parent_function, symbol_table, diagnostics)?;
+                let label_type = self.analyze_expression(
+                    label,
+                    ctx.parent_function,
+                    ctx.symbol_table,
+                    diagnostics,
+                )?;
                 self.compare_data_type(&subject_type, &label_type, &empty_span(), diagnostics)?;
 
                 let key = match label {
-                    ExpressionNode::Literal(lit) => {
+                    ExpressionNode::Literal(lit) =>
+                    {
                         #[allow(clippy::collapsible_match)]
                         match lit {
                             Type::Integer(t)
@@ -170,7 +173,7 @@ impl<'a> Analyzer<'a> {
                             | Type::Boolean(t) => Some(t.text.clone()),
                             _ => None,
                         }
-                    },
+                    }
                     ExpressionNode::MemberAccess(_, m) => Some(m.text.clone()),
                     _ => None,
                 };
@@ -185,8 +188,8 @@ impl<'a> Analyzer<'a> {
             }
             self.analyze_body(
                 body,
-                parent_function,
-                Some(symbol_table),
+                ctx.parent_function,
+                Some(ctx.symbol_table),
                 has_parent_while,
                 diagnostics,
             )?;
@@ -195,8 +198,8 @@ impl<'a> Analyzer<'a> {
         if let Some(db) = default_body {
             self.analyze_body(
                 db,
-                parent_function,
-                Some(symbol_table),
+                ctx.parent_function,
+                Some(ctx.symbol_table),
                 has_parent_while,
                 diagnostics,
             )?;
@@ -222,26 +225,34 @@ impl<'a> Analyzer<'a> {
         self.analyze_body(body, parent_function, Some(symbol_table), true, diagnostics)?;
         Ok(())
     }
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn analyze_for(
         &mut self,
         init: &Option<&'a StatementNode<'a>>,
         condition: &Option<ExpressionNode<'a>>,
         increment: &Option<&'a StatementNode<'a>>,
         body: &[StatementNode<'a>],
-        parent_function: &FunctionNode<'a>,
-        symbol_table: &Rc<RefCell<SymbolTable>>,
+        ctx: &super::AnalyzerContext<'a, '_>,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<(), ()> {
-        let for_scope = Rc::new(RefCell::new(SymbolTable::new(Some(symbol_table.clone()))));
-        (*symbol_table).borrow_mut().add_child(for_scope.clone());
+        let for_scope = Rc::new(RefCell::new(SymbolTable::new(Some(
+            ctx.symbol_table.clone(),
+        ))));
+        (*ctx.symbol_table)
+            .borrow_mut()
+            .add_child(for_scope.clone());
 
         if let Some(init_stmt) = init {
-            self.analyze_statement(init_stmt, parent_function, &for_scope, false, diagnostics)?;
+            self.analyze_statement(
+                init_stmt,
+                ctx.parent_function,
+                &for_scope,
+                false,
+                diagnostics,
+            )?;
         }
         if let Some(cond_expr) = condition {
             let cond_type =
-                self.analyze_expression(cond_expr, parent_function, &for_scope, diagnostics)?;
+                self.analyze_expression(cond_expr, ctx.parent_function, &for_scope, diagnostics)?;
             if cond_type.get_type() != "bool" {
                 diagnostics.report_error(
                     format!("for condition must be bool, got {}", cond_type.get_type()),
@@ -250,9 +261,21 @@ impl<'a> Analyzer<'a> {
             }
         }
         if let Some(inc_stmt) = increment {
-            self.analyze_statement(inc_stmt, parent_function, &for_scope, false, diagnostics)?;
+            self.analyze_statement(
+                inc_stmt,
+                ctx.parent_function,
+                &for_scope,
+                false,
+                diagnostics,
+            )?;
         }
-        self.analyze_body(body, parent_function, Some(&for_scope), true, diagnostics)?;
+        self.analyze_body(
+            body,
+            ctx.parent_function,
+            Some(&for_scope),
+            true,
+            diagnostics,
+        )?;
         Ok(())
     }
     ///return type is returned currently int and float supported
@@ -288,15 +311,13 @@ impl<'a> Analyzer<'a> {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn analyze_declaration(
         &mut self,
         left: &SyntaxToken,
         type_annotation: &Option<Type>,
         right: &ExpressionNode<'a>,
         is_const: bool,
-        parent_function: &FunctionNode<'a>,
-        symbol_table: &Rc<RefCell<SymbolTable>>,
+        ctx: &super::AnalyzerContext<'a, '_>,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<(), ()> {
         self.check_reserved_name(left, "variable", diagnostics);
@@ -306,7 +327,7 @@ impl<'a> Analyzer<'a> {
             if elements.is_empty() {
                 match type_annotation {
                     Some(t) if t.is_array() => {
-                        if let Err(e) = (*symbol_table)
+                        if let Err(e) = (*ctx.symbol_table)
                             .as_ref()
                             .borrow_mut()
                             .add_symbol(left.text.clone(), t.clone())
@@ -314,7 +335,7 @@ impl<'a> Analyzer<'a> {
                             diagnostics.report_error(e.to_string(), Some(left.position));
                         }
                         if is_const {
-                            (*symbol_table)
+                            (*ctx.symbol_table)
                                 .as_ref()
                                 .borrow_mut()
                                 .mark_const(left.text.clone());
@@ -333,7 +354,7 @@ impl<'a> Analyzer<'a> {
         }
         //return right type
         let right_type =
-            self.analyze_expression(right, parent_function, symbol_table, diagnostics)?;
+            self.analyze_expression(right, ctx.parent_function, ctx.symbol_table, diagnostics)?;
 
         let var_type = if let Some(t) = type_annotation {
             self.compare_data_type(t, &right_type, &left.position, diagnostics)?;
@@ -342,7 +363,7 @@ impl<'a> Analyzer<'a> {
             right_type.clone()
         };
 
-        if let Err(e) = (*symbol_table)
+        if let Err(e) = (*ctx.symbol_table)
             .as_ref()
             .borrow_mut()
             .add_symbol(left.text.clone(), var_type)
@@ -350,7 +371,7 @@ impl<'a> Analyzer<'a> {
             diagnostics.report_error(e.to_string(), Some(left.position));
         }
         if is_const {
-            (*symbol_table)
+            (*ctx.symbol_table)
                 .as_ref()
                 .borrow_mut()
                 .mark_const(left.text.clone());
@@ -497,25 +518,23 @@ impl<'a> Analyzer<'a> {
 
         Ok(())
     }
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn analyze_if_else(
         &mut self,
-        condition: &ExpressionNode<'a>,
-        if_body: &[StatementNode<'a>],
-        else_if: &Vec<(ExpressionNode<'a>, &'a [StatementNode<'a>])>,
-        else_body: &Option<&'a [StatementNode<'a>]>,
-        parent_function: &FunctionNode<'a>,
-        symbol_table: &Rc<RefCell<SymbolTable>>,
+        statement: &StatementNode<'a>,
+        ctx: &super::AnalyzerContext<'a, '_>,
         has_parent_while: bool,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<(), ()> {
+        let StatementNode::IfElse(condition, if_body, else_if, else_body) = statement else {
+            unreachable!()
+        };
         // Check for constant expression from `is`
         let mut is_constant_true = false;
         let mut is_constant_false = false;
 
         if let ExpressionNode::IsExpression(left, right_type) = condition {
             let left_t =
-                self.analyze_expression(left, parent_function, symbol_table, diagnostics)?;
+                self.analyze_expression(left, ctx.parent_function, ctx.symbol_table, diagnostics)?;
             // `is` on an `object` is a runtime check; only non-object operands fold to a constant.
             if left_t.get_type() != "object" {
                 if left_t.get_type() == right_type.get_type() {
@@ -528,8 +547,12 @@ impl<'a> Analyzer<'a> {
 
         if !is_constant_false {
             //if condition
-            let cond_type =
-                self.analyze_expression(condition, parent_function, symbol_table, diagnostics)?;
+            let cond_type = self.analyze_expression(
+                condition,
+                ctx.parent_function,
+                ctx.symbol_table,
+                diagnostics,
+            )?;
             if cond_type.get_type() != "bool" {
                 diagnostics.report_error(
                     format!("if condition must be bool, got {}", cond_type.get_type()),
@@ -539,8 +562,8 @@ impl<'a> Analyzer<'a> {
             //if body
             self.analyze_body(
                 if_body,
-                parent_function,
-                Some(symbol_table),
+                ctx.parent_function,
+                Some(ctx.symbol_table),
                 has_parent_while,
                 diagnostics,
             )?;
@@ -555,8 +578,12 @@ impl<'a> Analyzer<'a> {
             let mut elif_constant_true = false;
             let mut elif_constant_false = false;
             if let ExpressionNode::IsExpression(left, right_type) = &i.0 {
-                let left_t =
-                    self.analyze_expression(left, parent_function, symbol_table, diagnostics)?;
+                let left_t = self.analyze_expression(
+                    left,
+                    ctx.parent_function,
+                    ctx.symbol_table,
+                    diagnostics,
+                )?;
                 if left_t.get_type() != "object" {
                     if left_t.get_type() == right_type.get_type() {
                         elif_constant_true = true;
@@ -567,8 +594,12 @@ impl<'a> Analyzer<'a> {
             }
 
             if !elif_constant_false {
-                let elif_cond_type =
-                    self.analyze_expression(&i.0, parent_function, symbol_table, diagnostics)?;
+                let elif_cond_type = self.analyze_expression(
+                    &i.0,
+                    ctx.parent_function,
+                    ctx.symbol_table,
+                    diagnostics,
+                )?;
                 if elif_cond_type.get_type() != "bool" {
                     diagnostics.report_error(
                         format!(
@@ -580,8 +611,8 @@ impl<'a> Analyzer<'a> {
                 }
                 self.analyze_body(
                     i.1,
-                    parent_function,
-                    Some(symbol_table),
+                    ctx.parent_function,
+                    Some(ctx.symbol_table),
                     has_parent_while,
                     diagnostics,
                 )?;
@@ -592,13 +623,15 @@ impl<'a> Analyzer<'a> {
             }
         }
 
-        if let Some(body) = else_body { self.analyze_body(
-            body,
-            parent_function,
-            Some(symbol_table),
-            has_parent_while,
-            diagnostics,
-        )? }
+        if let Some(body) = else_body {
+            self.analyze_body(
+                body,
+                ctx.parent_function,
+                Some(ctx.symbol_table),
+                has_parent_while,
+                diagnostics,
+            )?
+        }
         Ok(())
     }
     pub(super) fn analyze_return(

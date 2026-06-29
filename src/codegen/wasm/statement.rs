@@ -295,18 +295,17 @@ impl<'a> WasmGenerator<'a> {
             .struct_table
             .get_struct(&base_obj_type_str)
             .ok_or_else(|| {
-                Error::other(
-                    format!("unknown class '{}' in member assignment", base_obj_type_str),
-                )
+                Error::other(format!(
+                    "unknown class '{}' in member assignment",
+                    base_obj_type_str
+                ))
             })?
             .clone();
         let field_info = struct_info.fields.get(&member.text).ok_or_else(|| {
-            Error::other(
-                format!(
-                    "unknown field '{}' on class '{}'",
-                    member.text, base_obj_type_str
-                ),
-            )
+            Error::other(format!(
+                "unknown field '{}' on class '{}'",
+                member.text, base_obj_type_str
+            ))
         })?;
         let offset = field_info.offset;
         let field_type_str = field_info.type_.get_type();
@@ -387,12 +386,10 @@ impl<'a> WasmGenerator<'a> {
         }
         if let Some(expr) = expression {
             let return_type = function.return_type.as_ref().ok_or_else(|| {
-                Error::other(
-                    format!(
-                        "function '{}' returns a value but has no declared return type",
-                        function.name.text
-                    ),
-                )
+                Error::other(format!(
+                    "function '{}' returns a value but has no declared return type",
+                    function.name.text
+                ))
             })?;
             let ret_type_str = return_type.get_type();
             // A primitive returned as `object` is boxed (owned); otherwise consult the classifier.
@@ -427,12 +424,10 @@ impl<'a> WasmGenerator<'a> {
 
         if expression.is_some() {
             let return_type = function.return_type.as_ref().ok_or_else(|| {
-                Error::other(
-                    format!(
-                        "function '{}' returns a value but has no declared return type",
-                        function.name.text
-                    ),
-                )
+                Error::other(format!(
+                    "function '{}' returns a value but has no declared return type",
+                    function.name.text
+                ))
             })?;
             if return_type.get_type() == "double" {
                 writer.write_line("local.get $scratch_double");

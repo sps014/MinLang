@@ -9,6 +9,5 @@ pub use expression::ExpressionNode;
 pub use function::{FunctionNode, ParameterNode};
 pub use program::{EnumDeclarationNode, ExtendNode, ImportNode, ProgramNode};
 pub use statement::StatementNode;
-#[allow(unused_imports)]
 pub use struct_node::{StructDeclarationNode, StructFieldNode};
 pub use types::Type;

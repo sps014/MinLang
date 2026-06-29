@@ -39,12 +39,8 @@ impl<'a> Analyzer<'a> {
                 )?;
 
                 for elem in elements.iter().skip(1) {
-                    let element_type = self.analyze_expression(
-                        elem,
-                        parent_function,
-                        symbol_table,
-                        diagnostics,
-                    )?;
+                    let element_type =
+                        self.analyze_expression(elem, parent_function, symbol_table, diagnostics)?;
                     self.compare_data_type(&first_type, &element_type, &empty_span(), diagnostics)?;
                 }
 
@@ -350,15 +346,12 @@ impl<'a> Analyzer<'a> {
                     );
                 }
 
-                // Allow int <-> float casts
-                #[allow(clippy::if_same_then_else)]
-                if (is_numeric_primitive(&target_type_str) && is_numeric_primitive(&expr_type_str)) ||
+                if target_type_str == expr_type_str ||
+                   (is_numeric_primitive(&target_type_str) && is_numeric_primitive(&expr_type_str)) ||
                    // `char` is a code point: allow lossless conversion to/from `int`.
                    (target_type_str == "char" && expr_type_str == "int") ||
                    (target_type_str == "int" && expr_type_str == "char")
                 {
-                    Ok(target_type.clone())
-                } else if target_type_str == expr_type_str {
                     Ok(target_type.clone())
                 } else if target_type_str == "object" || expr_type_str == "object" {
                     // Boxing (`T as object`) and unboxing (`object as T`) are always permitted;
@@ -379,16 +372,13 @@ impl<'a> Analyzer<'a> {
                     Ok(target_type.clone())
                 }
             }
-            ExpressionNode::MethodCall(obj, method, generic_args, params) => self
-                .analyze_method_call(
-                    obj,
-                    method,
-                    generic_args,
-                    params,
+            ExpressionNode::MethodCall(obj, method, generic_args, params) => {
+                let ctx = super::AnalyzerContext {
                     parent_function,
                     symbol_table,
-                    diagnostics,
-                ),
+                };
+                self.analyze_method_call(obj, method, generic_args, params, &ctx, diagnostics)
+            }
             ExpressionNode::Await(inner) => {
                 let fut =
                     self.analyze_expression(inner, parent_function, symbol_table, diagnostics)?;
@@ -457,9 +447,7 @@ impl<'a> Analyzer<'a> {
             | TokenKind::SmallerThanToken
             | TokenKind::SmallerThanEqualToken
             | TokenKind::AmpersandAmpersandToken
-            | TokenKind::PipePipeToken => {
-                Ok(Type::Boolean(opr.clone()))
-            }
+            | TokenKind::PipePipeToken => Ok(Type::Boolean(opr.clone())),
             _ => Ok(left_value),
         }
     }

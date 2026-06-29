@@ -47,7 +47,7 @@ fn run_test_case(dream_file: &Path) {
         return;
     }
 
-    compile_result.expect(&format!("Compilation failed for {:?}", dream_file));
+    compile_result.unwrap_or_else(|_| panic!("Compilation failed for {:?}", dream_file));
 
     let expected_output = fs::read_to_string(&expected_file)
         .unwrap_or_else(|_| panic!("Missing .expected file for {:?}", dream_file));

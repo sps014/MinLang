@@ -53,12 +53,10 @@ impl<'a> FunctionControlGraph<'a> {
         if self.dfs(&Rc::new(root_node.clone())) {
             return Ok(());
         }
-        Err(Error::other(
-            format!(
-                "error : '{}': not all code paths return a value",
-                self.function.name.text
-            ),
-        ))
+        Err(Error::other(format!(
+            "error : '{}': not all code paths return a value",
+            self.function.name.text
+        )))
     }
     //use dfs  and visit from right side depth by depth, if right most is true then all left will be true
     fn dfs(&mut self, node: &Rc<RefCell<FlowNode>>) -> bool {
@@ -78,13 +76,8 @@ impl<'a> FunctionControlGraph<'a> {
             }
         }
 
-        //if all children are true then this node is true
-        #[allow(clippy::if_same_then_else)]
-        if !new.child_nodes.is_empty() && ct_all_true == new.child_nodes.len() {
-            return true;
-        }
-        //if the node is a return node then it is true
-        else if new.has_return {
+        //if all children are true then this node is true or if the node is a return node
+        if (!new.child_nodes.is_empty() && ct_all_true == new.child_nodes.len()) || new.has_return {
             return true;
         }
 

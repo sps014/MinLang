@@ -86,17 +86,13 @@ impl<'a> Analyzer<'a> {
         has_parent_while: bool,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<(), ()> {
+        let ctx = super::AnalyzerContext {
+            parent_function,
+            symbol_table,
+        };
         match statement {
             StatementNode::Declaration(left, type_annotation, right, is_const) => self
-                .analyze_declaration(
-                    left,
-                    type_annotation,
-                    right,
-                    *is_const,
-                    parent_function,
-                    symbol_table,
-                    diagnostics,
-                )?,
+                .analyze_declaration(left, type_annotation, right, *is_const, &ctx, diagnostics)?,
             StatementNode::Assignment(left, right) => {
                 self.analyze_assignment(left, right, parent_function, symbol_table, diagnostics)?
             }
@@ -116,16 +112,9 @@ impl<'a> Analyzer<'a> {
                 symbol_table,
                 diagnostics,
             )?,
-            StatementNode::IfElse(condition, if_body, else_if, else_body) => self.analyze_if_else(
-                condition,
-                if_body,
-                else_if,
-                else_body,
-                parent_function,
-                symbol_table,
-                has_parent_while,
-                diagnostics,
-            )?,
+            StatementNode::IfElse(..) => {
+                self.analyze_if_else(statement, &ctx, has_parent_while, diagnostics)?
+            }
             StatementNode::Return(expression) => {
                 self.analyze_return(expression, parent_function, symbol_table, diagnostics)?
             }
@@ -135,32 +124,15 @@ impl<'a> Analyzer<'a> {
             StatementNode::DoWhile(body, condition) => {
                 self.analyze_while(condition, body, parent_function, symbol_table, diagnostics)?
             }
-            StatementNode::For(init, condition, increment, body) => self.analyze_for(
-                init,
-                condition,
-                increment,
-                body,
-                parent_function,
-                symbol_table,
-                diagnostics,
-            )?,
-            StatementNode::ForEach(element, iterable, index_name, array_name, body) => self
-                .analyze_foreach(
-                    element,
-                    iterable,
-                    index_name,
-                    array_name,
-                    body,
-                    parent_function,
-                    symbol_table,
-                    diagnostics,
-                )?,
+            StatementNode::For(init, condition, increment, body) => {
+                self.analyze_for(init, condition, increment, body, &ctx, diagnostics)?
+            }
+            StatementNode::ForEach(..) => self.analyze_foreach(statement, &ctx, diagnostics)?,
             StatementNode::Switch(subject, cases, default_body) => self.analyze_switch(
                 subject,
                 cases,
                 default_body,
-                parent_function,
-                symbol_table,
+                &ctx,
                 has_parent_while,
                 diagnostics,
             )?,
@@ -193,15 +165,7 @@ impl<'a> Analyzer<'a> {
                 )?;
             }
             StatementNode::MethodInvocation(obj, method, generic_args, params) => {
-                self.analyze_method_call(
-                    obj,
-                    method,
-                    generic_args,
-                    params,
-                    parent_function,
-                    symbol_table,
-                    diagnostics,
-                )?;
+                self.analyze_method_call(obj, method, generic_args, params, &ctx, diagnostics)?;
             }
             StatementNode::AwaitStmt(future_expr) => {
                 let fut = self.analyze_expression(

@@ -225,7 +225,7 @@ fn test_parse_error_recovery() {
 
     assert_eq!(diagnostics.has_errors(), true);
     // The parser should report an error for the missing expression but continue parsing `let y = 5;`
-    assert!(diagnostics.diagnostics.len() > 0);
+    assert!(!diagnostics.diagnostics.is_empty());
 }
 
 #[test]

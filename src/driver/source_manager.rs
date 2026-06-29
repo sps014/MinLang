@@ -281,20 +281,32 @@ pub(crate) fn generate_json_derives<'a>(
     Ok(())
 }
 
+#[derive(Default)]
+pub struct ProgramAccumulator<'a> {
+    pub visited: HashSet<String>,
+    pub all_functions: Vec<crate::syntax::nodes::FunctionNode<'a>>,
+    pub all_structs: Vec<crate::syntax::nodes::struct_node::StructDeclarationNode<'a>>,
+    pub all_enums: Vec<crate::syntax::nodes::EnumDeclarationNode>,
+    pub all_extends: Vec<crate::syntax::nodes::ExtendNode<'a>>,
+    pub file_contents: HashMap<String, String>,
+}
+
+pub fn resolve_import_path(base_dir: &Path, module_name: &str) -> std::path::PathBuf {
+    let mut import_path = base_dir.join(module_name);
+    if import_path.extension().is_none() {
+        import_path.set_extension("dream");
+    }
+    import_path
+}
+
 /// Recursively parses `file_path` and every file it imports, merging all declarations into the
 /// `all_*` accumulators. Each declaration is tagged with its originating file so semantic
 /// diagnostics (which run on the merged program) can attribute errors correctly.
-#[allow(clippy::too_many_arguments)]
 pub fn parse_file_recursive<'a>(
     file_path: &String,
-    visited: &mut HashSet<String>,
-    all_functions: &mut Vec<crate::syntax::nodes::FunctionNode<'a>>,
-    all_structs: &mut Vec<crate::syntax::nodes::struct_node::StructDeclarationNode<'a>>,
-    all_enums: &mut Vec<crate::syntax::nodes::EnumDeclarationNode>,
-    all_extends: &mut Vec<crate::syntax::nodes::ExtendNode<'a>>,
+    acc: &mut ProgramAccumulator<'a>,
     arena: &'a Bump,
     diagnostics: &mut DiagnosticBag,
-    file_contents: &mut HashMap<String, String>,
 ) -> Result<(), Error> {
     let path = Path::new(file_path).canonicalize()?;
     let path_str = path
@@ -307,10 +319,10 @@ pub fn parse_file_recursive<'a>(
         })?
         .to_string();
 
-    if visited.contains(&path_str) {
+    if acc.visited.contains(&path_str) {
         return Ok(()); // Already processed
     }
-    visited.insert(path_str.clone());
+    acc.visited.insert(path_str.clone());
 
     let mut file = File::open(&path)?;
     let mut text = String::new();
@@ -319,7 +331,7 @@ pub fn parse_file_recursive<'a>(
     // `print` (along with `to_string`/`hash_code`) is now a compiler builtin resolved during
     // code generation via the object protocol, so no source injection is needed.
 
-    file_contents.insert(path_str.clone(), text.clone());
+    acc.file_contents.insert(path_str.clone(), text.clone());
 
     let mut file_diagnostics = DiagnosticBag::new(Some(path_str.clone()));
 
@@ -341,10 +353,7 @@ pub fn parse_file_recursive<'a>(
 
     for import in &program.imports {
         let module_name = import.module_name.text.trim_matches('"');
-        let mut import_path = parent_dir.join(module_name);
-        if import_path.extension().is_none() {
-            import_path.set_extension("dream");
-        }
+        let import_path = resolve_import_path(parent_dir, module_name);
 
         let import_path_str = match import_path.to_str() {
             Some(s) => s.to_string(),
@@ -364,17 +373,7 @@ pub fn parse_file_recursive<'a>(
             continue;
         }
 
-        parse_file_recursive(
-            &import_path_str,
-            visited,
-            all_functions,
-            all_structs,
-            all_enums,
-            all_extends,
-            arena,
-            diagnostics,
-            file_contents,
-        )?;
+        parse_file_recursive(&import_path_str, acc, arena, diagnostics)?;
     }
 
     // Tag every declaration with its source file so semantic diagnostics (which run on the
@@ -383,7 +382,7 @@ pub fn parse_file_recursive<'a>(
     for function in program.functions.iter().cloned() {
         let mut function = function;
         function.file_path = Some(file_tag.clone());
-        all_functions.push(function);
+        acc.all_functions.push(function);
     }
     for struct_decl in program.structs.iter().cloned() {
         let mut struct_decl = struct_decl;
@@ -391,10 +390,10 @@ pub fn parse_file_recursive<'a>(
         for method in struct_decl.methods.iter_mut() {
             method.file_path = Some(file_tag.clone());
         }
-        all_structs.push(struct_decl);
+        acc.all_structs.push(struct_decl);
     }
     for enum_decl in program.enums.iter().cloned() {
-        all_enums.push(enum_decl);
+        acc.all_enums.push(enum_decl);
     }
     for extend_decl in program.extends.iter().cloned() {
         let mut extend_decl = extend_decl;
@@ -402,7 +401,7 @@ pub fn parse_file_recursive<'a>(
         for method in extend_decl.methods.iter_mut() {
             method.file_path = Some(file_tag.clone());
         }
-        all_extends.push(extend_decl);
+        acc.all_extends.push(extend_decl);
     }
 
     Ok(())

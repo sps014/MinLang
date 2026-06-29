@@ -93,7 +93,6 @@ impl CodegenContext {
 }
 
 /// Generates WebAssembly (WAT) code from the given syntax tree and semantic info.
-#[allow(dead_code)]
 pub struct WasmGenerator<'a> {
     pub syntax_tree: &'a SyntaxTree<'a>,
     pub symbol_map: &'a HashMap<String, Rc<RefCell<SymbolTable>>>,

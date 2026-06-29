@@ -20,12 +20,12 @@ impl IndentedTextWriter {
             indent_pending: true,
         }
     }
-    #[allow(unreachable_code)]
     fn new_line() -> &'static str {
-        #[cfg(windows)]
-        return "\r\n";
-
-        "\n"
+        if cfg!(windows) {
+            "\r\n"
+        } else {
+            "\n"
+        }
     }
 
     fn indent_string(&mut self) {

@@ -39,10 +39,7 @@ pub fn collect_diagnostics(file_path: Option<&str>, text: &str) -> Vec<Diagnosti
 
     let mut diagnostics = DiagnosticBag::new(None);
 
-    let mut all_functions: Vec<FunctionNode> = Vec::new();
-    let mut all_structs: Vec<StructDeclarationNode> = Vec::new();
-    let mut all_enums: Vec<EnumDeclarationNode> = Vec::new();
-    let mut all_extends: Vec<ExtendNode> = Vec::new();
+    let mut acc = dream::driver::source_manager::ProgramAccumulator::default();
 
     // Parse the user's document. Parsing reports lexical/syntactic errors into `user_bag`.
     let mut user_bag = DiagnosticBag::new(Some(MAIN_FILE.to_string()));
@@ -53,46 +50,36 @@ pub fn collect_diagnostics(file_path: Option<&str>, text: &str) -> Vec<Diagnosti
     };
     diagnostics.extend(&user_bag);
 
-    let mut file_contents = std::collections::HashMap::new();
-
     if let Ok(ast) = &user_ast {
         let program = ast.get_root();
         collect_declarations(
             program,
             MAIN_FILE,
-            &mut all_functions,
-            &mut all_structs,
-            &mut all_enums,
-            &mut all_extends,
+            &mut acc.all_functions,
+            &mut acc.all_structs,
+            &mut acc.all_enums,
+            &mut acc.all_extends,
         );
 
         if let Some(path_str) = file_path {
             let parent_dir = std::path::Path::new(path_str)
                 .parent()
                 .unwrap_or_else(|| std::path::Path::new(""));
-            let mut visited = std::collections::HashSet::new();
-            visited.insert(path_str.to_string());
-            visited.insert(MAIN_FILE.to_string());
+            acc.visited.insert(path_str.to_string());
+            acc.visited.insert(MAIN_FILE.to_string());
 
             for import in &program.imports {
                 let module_name = import.module_name.text.trim_matches('"');
-                let mut import_path = parent_dir.join(module_name);
-                if import_path.extension().is_none() {
-                    import_path.set_extension("dream");
-                }
+                let import_path =
+                    dream::driver::source_manager::resolve_import_path(parent_dir, module_name);
 
                 if let Some(import_path_str) = import_path.to_str() {
                     if import_path.exists() {
                         let _ = dream::driver::source_manager::parse_file_recursive(
                             &import_path_str.to_string(),
-                            &mut visited,
-                            &mut all_functions,
-                            &mut all_structs,
-                            &mut all_enums,
-                            &mut all_extends,
+                            &mut acc,
                             &arena,
                             &mut diagnostics,
-                            &mut file_contents,
                         );
                     }
                 }
@@ -103,15 +90,21 @@ pub fn collect_diagnostics(file_path: Option<&str>, text: &str) -> Vec<Diagnosti
     merge_prelude(
         &arena,
         &mut diagnostics,
-        &mut all_functions,
-        &mut all_structs,
-        &mut all_extends,
+        &mut acc.all_functions,
+        &mut acc.all_structs,
+        &mut acc.all_extends,
     );
 
     // Mirror the compiler: only run semantic analysis once parsing is clean, otherwise the
     // analyzer would be working over a half-formed tree.
     if !diagnostics.has_errors() {
-        let combined = ProgramNode::new(vec![], all_structs, all_functions, all_enums, all_extends);
+        let combined = ProgramNode::new(
+            vec![],
+            acc.all_structs,
+            acc.all_functions,
+            acc.all_enums,
+            acc.all_extends,
+        );
         let tree = SyntaxTree::new(combined);
         let mut analyzer = Analyzer::new(&tree, &arena);
         let _ = analyzer.analyze(&mut diagnostics);

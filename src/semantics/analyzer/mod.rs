@@ -161,6 +161,12 @@ impl<'a> SemanticInfo<'a> {
     }
 }
 
+/// Groups context arguments frequently passed together to simplify function signatures.
+pub struct AnalyzerContext<'a, 'b> {
+    pub parent_function: &'b FunctionNode<'a>,
+    pub symbol_table: &'b Rc<RefCell<SymbolTable>>,
+}
+
 pub struct Analyzer<'a> {
     syntax_tree: &'a SyntaxTree<'a>,
     function_table: FunctionTable,

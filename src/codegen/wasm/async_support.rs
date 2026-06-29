@@ -70,6 +70,11 @@ struct Segment<'a> {
     end: SegEnd<'a>,
 }
 
+pub struct AsyncSlots {
+    pub entries: Vec<(String, String)>,
+    pub offsets: HashMap<String, i32>,
+}
+
 impl<'a> WasmGenerator<'a> {
     /// True for a `Future`-typed value name (`Future_<inner>`), which the codegen treats as a
     /// plain `i32` handle (never ref-counted).
@@ -97,12 +102,11 @@ impl<'a> WasmGenerator<'a> {
 
     /// Collects the saved-frame slots (params + locals) of an async function as
     /// `(name, wasm_type)`, sorted by name for a stable layout, plus a name -> byte offset map.
-    #[allow(clippy::type_complexity)]
     fn async_slots(
         &self,
         _function: &FunctionNode<'a>,
         func_name: &str,
-    ) -> Result<(Vec<(String, String)>, HashMap<String, i32>), Error> {
+    ) -> Result<AsyncSlots, Error> {
         let locals = self.get_local_variables(self.symbol_map.get(func_name).unwrap())?;
         let mut entries: Vec<(String, String)> = locals
             .into_iter()
@@ -119,7 +123,7 @@ impl<'a> WasmGenerator<'a> {
         for (i, (name, _)) in entries.iter().enumerate() {
             offsets.insert(name.clone(), F_SLOTS + (i as i32) * SLOT_SIZE);
         }
-        Ok((entries, offsets))
+        Ok(AsyncSlots { entries, offsets })
     }
 
     /// Emits the constructor + poll function for one `async fun`.
@@ -133,7 +137,9 @@ impl<'a> WasmGenerator<'a> {
             .current_mangled_name
             .clone()
             .unwrap_or_else(|| function.name.text.clone());
-        let (slots, offsets) = self.async_slots(function, &func_name)?;
+        let async_slots = self.async_slots(function, &func_name)?;
+        let slots = async_slots.entries;
+        let offsets = async_slots.offsets;
         let frame_size = F_SLOTS + (slots.len() as i32) * SLOT_SIZE;
         let poll_idx = *self
             .ctx

@@ -88,40 +88,34 @@ impl Index {
                 let parent_dir = std::path::Path::new(path_str)
                     .parent()
                     .unwrap_or_else(|| std::path::Path::new(""));
-                let mut visited = std::collections::HashSet::new();
-                visited.insert(path_str.to_string());
 
-                let mut all_functions = Vec::new();
-                let mut all_structs = Vec::new();
-                let mut all_enums = Vec::new();
-                let mut all_extends = Vec::new();
-                let mut file_contents = std::collections::HashMap::new();
+                let mut acc = dream::driver::source_manager::ProgramAccumulator::default();
+                acc.visited.insert(path_str.to_string());
 
                 for import in &program.imports {
                     let module_name = import.module_name.text.trim_matches('"');
-                    let mut import_path = parent_dir.join(module_name);
-                    if import_path.extension().is_none() {
-                        import_path.set_extension("dream");
-                    }
+                    let import_path =
+                        dream::driver::source_manager::resolve_import_path(parent_dir, module_name);
+
                     if let Some(import_path_str) = import_path.to_str() {
                         if import_path.exists() {
                             let _ = dream::driver::source_manager::parse_file_recursive(
                                 &import_path_str.to_string(),
-                                &mut visited,
-                                &mut all_functions,
-                                &mut all_structs,
-                                &mut all_enums,
-                                &mut all_extends,
+                                &mut acc,
                                 &arena,
                                 &mut scratch,
-                                &mut file_contents,
                             );
                         }
                     }
                 }
 
-                let combined =
-                    ProgramNode::new(vec![], all_structs, all_functions, all_enums, all_extends);
+                let combined = ProgramNode::new(
+                    vec![],
+                    acc.all_structs,
+                    acc.all_functions,
+                    acc.all_enums,
+                    acc.all_extends,
+                );
                 builder.walk_program_for_imports(&combined);
             }
         }
@@ -327,17 +321,22 @@ impl Index {
             if j >= 6 && &text[j - 6..j] == "import" {
                 let mut out = Vec::new();
                 if let Some(path_str) = file_path {
-                    let parent_dir = std::path::Path::new(path_str).parent().unwrap_or_else(|| std::path::Path::new(""));
+                    let parent_dir = std::path::Path::new(path_str)
+                        .parent()
+                        .unwrap_or_else(|| std::path::Path::new(""));
                     let current_dir = if offset > i {
                         parent_dir.join(&text[i..offset])
                     } else {
                         parent_dir.to_path_buf()
                     };
-                    
+
                     let search_dir = if current_dir.is_dir() {
                         current_dir.clone()
                     } else {
-                        current_dir.parent().unwrap_or_else(|| std::path::Path::new("")).to_path_buf()
+                        current_dir
+                            .parent()
+                            .unwrap_or_else(|| std::path::Path::new(""))
+                            .to_path_buf()
                     };
 
                     if let Ok(entries) = std::fs::read_dir(&search_dir) {
@@ -345,7 +344,12 @@ impl Index {
                             if let Ok(file_type) = entry.file_type() {
                                 let name = entry.file_name().to_string_lossy().to_string();
                                 if file_type.is_dir() {
-                                    out.push((name, SymKind::Variable, "directory".to_string(), None));
+                                    out.push((
+                                        name,
+                                        SymKind::Variable,
+                                        "directory".to_string(),
+                                        None,
+                                    ));
                                 } else if name.ends_with(".dream") {
                                     out.push((name, SymKind::Variable, "module".to_string(), None));
                                 }

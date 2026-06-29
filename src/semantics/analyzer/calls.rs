@@ -712,15 +712,13 @@ impl<'a> Analyzer<'a> {
         ))
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn analyze_method_call(
         &mut self,
         obj: &ExpressionNode<'a>,
         method: &SyntaxToken,
         _generic_args: &Option<Vec<Type>>,
         params: &Vec<ExpressionNode<'a>>,
-        parent_function: &FunctionNode<'a>,
-        symbol_table: &Rc<RefCell<SymbolTable>>,
+        ctx: &super::AnalyzerContext<'a, '_>,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<Type, ()> {
         // `Math.<fn>(...)`: the math namespace. `Math` is not a value, so intercept before
@@ -730,21 +728,21 @@ impl<'a> Analyzer<'a> {
                 return self.analyze_math_call(
                     method,
                     params,
-                    parent_function,
-                    symbol_table,
+                    ctx.parent_function,
+                    ctx.symbol_table,
                     diagnostics,
                 );
             }
 
             // `Promise.all/any/race(...)`: the async combinators as static methods.
             if id.text == intrinsics::PROMISE && intrinsics::is_promise_combinator(&method.text) {
-                let is_local = (*symbol_table).as_ref().borrow().get_symbol(id).is_ok();
+                let is_local = (*ctx.symbol_table).as_ref().borrow().get_symbol(id).is_ok();
                 if !is_local {
                     return self.analyze_async_intrinsic(
                         method,
                         params,
-                        parent_function,
-                        symbol_table,
+                        ctx.parent_function,
+                        ctx.symbol_table,
                         diagnostics,
                     );
                 }
@@ -755,21 +753,25 @@ impl<'a> Analyzer<'a> {
             // `to_json`/`from_json` converters generated for every `@json` class.
             if id.text == intrinsics::JSON
                 && intrinsics::is_json_derive_method(&method.text)
-                && (*symbol_table).as_ref().borrow().get_symbol(id).is_err()
+                && (*ctx.symbol_table)
+                    .as_ref()
+                    .borrow()
+                    .get_symbol(id)
+                    .is_err()
             {
                 return self.analyze_json_derive_call(
                     method,
                     _generic_args,
                     params,
-                    parent_function,
-                    symbol_table,
+                    ctx.parent_function,
+                    ctx.symbol_table,
                     diagnostics,
                 );
             }
 
             // `Type.method(args)`: a static-method call. The receiver names a type (not a local
             // variable), so resolve `{type}_{method}` directly with no implicit `this`.
-            let is_local = (*symbol_table).as_ref().borrow().get_symbol(id).is_ok();
+            let is_local = (*ctx.symbol_table).as_ref().borrow().get_symbol(id).is_ok();
             if !is_local {
                 let type_name = canonical_type_name(&id.text)
                     .unwrap_or(id.text.as_str())
@@ -782,15 +784,16 @@ impl<'a> Analyzer<'a> {
                         &type_name,
                         method,
                         params,
-                        parent_function,
-                        symbol_table,
+                        ctx.parent_function,
+                        ctx.symbol_table,
                         diagnostics,
                     );
                 }
             }
         }
 
-        let obj_type = self.analyze_expression(obj, parent_function, symbol_table, diagnostics)?;
+        let obj_type =
+            self.analyze_expression(obj, ctx.parent_function, ctx.symbol_table, diagnostics)?;
 
         // Private methods (`_name`) may only be called from within the declaring type's own methods.
         if method.text.starts_with('_') {
@@ -798,7 +801,8 @@ impl<'a> Analyzer<'a> {
             let base_name = Self::resolve_struct_parts(&obj_type)
                 .map(|(b, _)| b)
                 .unwrap_or_else(|| receiver_base.clone());
-            if !self.in_methods_of(parent_function, &base_name) {
+
+            if !self.in_methods_of(ctx.parent_function, &base_name) {
                 diagnostics.report_error(
                     format!("'{}' is private to '{}'", method.text, base_name),
                     Some(method.position),
@@ -862,7 +866,7 @@ impl<'a> Analyzer<'a> {
         let mut arg_types = Vec::new();
         for param in params.iter() {
             arg_types.push(
-                self.analyze_expression(param, parent_function, symbol_table, diagnostics)?
+                self.analyze_expression(param, ctx.parent_function, ctx.symbol_table, diagnostics)?
                     .get_type(),
             );
         }

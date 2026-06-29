@@ -264,9 +264,7 @@ impl<'a> WasmGenerator<'a> {
             .struct_table
             .get_struct(&struct_name)
             .ok_or_else(|| {
-                Error::other(
-                    format!("unknown class '{}' in instantiation", struct_name),
-                )
+                Error::other(format!("unknown class '{}' in instantiation", struct_name))
             })?
             .clone();
 
@@ -284,12 +282,10 @@ impl<'a> WasmGenerator<'a> {
         self.ctx.alloc_depth += 1;
         for (field_name, expr) in fields.iter() {
             let field_info = struct_info.fields.get(&field_name.text).ok_or_else(|| {
-                Error::other(
-                    format!(
-                        "unknown field '{}' on class '{}'",
-                        field_name.text, struct_name
-                    ),
-                )
+                Error::other(format!(
+                    "unknown field '{}' on class '{}'",
+                    field_name.text, struct_name
+                ))
             })?;
             let offset = field_info.offset;
             let field_type = field_info.type_.get_type();
@@ -333,11 +329,7 @@ impl<'a> WasmGenerator<'a> {
         let struct_info = self
             .struct_table
             .get_struct(struct_name)
-            .ok_or_else(|| {
-                Error::other(
-                    format!("unknown class '{}' in constructor", struct_name),
-                )
-            })?
+            .ok_or_else(|| Error::other(format!("unknown class '{}' in constructor", struct_name)))?
             .clone();
         let init_name = constructor_fn(struct_name);
         let has_init = self.function_table.get_function(&init_name).is_ok();
@@ -441,9 +433,10 @@ impl<'a> WasmGenerator<'a> {
         if let ExpressionNode::Identifier(id) = obj {
             if let Some(members) = self.enums.get(&id.text) {
                 let value = members.get(&member.text).copied().ok_or_else(|| {
-                    Error::other(
-                        format!("enum '{}' has no member '{}'", id.text, member.text),
-                    )
+                    Error::other(format!(
+                        "enum '{}' has no member '{}'",
+                        id.text, member.text
+                    ))
                 })?;
                 writer.write_line(&format!("i32.const {}", value));
                 return Ok(());
@@ -455,18 +448,17 @@ impl<'a> WasmGenerator<'a> {
             .struct_table
             .get_struct(&base_obj_type_str)
             .ok_or_else(|| {
-                Error::other(
-                    format!("unknown class '{}' in member access", base_obj_type_str),
-                )
+                Error::other(format!(
+                    "unknown class '{}' in member access",
+                    base_obj_type_str
+                ))
             })?
             .clone();
         let field_info = struct_info.fields.get(&member.text).ok_or_else(|| {
-            Error::other(
-                format!(
-                    "unknown field '{}' on class '{}'",
-                    member.text, base_obj_type_str
-                ),
-            )
+            Error::other(format!(
+                "unknown field '{}' on class '{}'",
+                member.text, base_obj_type_str
+            ))
         })?;
         let offset = field_info.offset;
         let field_type = field_info.type_.get_type();
@@ -497,18 +489,12 @@ impl<'a> WasmGenerator<'a> {
             Type::Char(c) => format!("i32.const {}", c.text),
             Type::String(s) => {
                 let offset = self.ctx.strings.get(&s.text).ok_or_else(|| {
-                    Error::other(
-                        format!("string literal not interned: {}", s.text),
-                    )
+                    Error::other(format!("string literal not interned: {}", s.text))
                 })?;
                 format!("i32.const {}", offset)
             }
             Type::Nullable(_) => "i32.const 0".to_string(),
-            _ => {
-                return Err(Error::other(
-                    format!("unknown literal {:?}", literal),
-                ))
-            }
+            _ => return Err(Error::other(format!("unknown literal {:?}", literal))),
         };
         writer.write_line(&type_);
         Ok(())
@@ -648,19 +634,13 @@ impl<'a> WasmGenerator<'a> {
                 | TokenKind::StarToken
                 | TokenKind::EqualEqualToken
                 | TokenKind::NotEqualToken => {}
-                _ => {
-                    return Err(Error::other(
-                        format!("unknown operator {}", opr.text),
-                    ))
-                }
+                _ => return Err(Error::other(format!("unknown operator {}", opr.text))),
             };
         } else if symbol == "f64" {
             match opr.kind {
                 TokenKind::SlashToken => writer.write_line(&format!("{}.div", symbol)),
                 TokenKind::ModulusToken => {
-                    return Err(Error::other(
-                        "modulus not supported for double",
-                    ))
+                    return Err(Error::other("modulus not supported for double"))
                 }
                 TokenKind::GreaterThanToken => writer.write_line(&format!("{}.gt", symbol)),
                 TokenKind::SmallerThanToken => writer.write_line(&format!("{}.lt", symbol)),
@@ -671,11 +651,7 @@ impl<'a> WasmGenerator<'a> {
                 | TokenKind::StarToken
                 | TokenKind::EqualEqualToken
                 | TokenKind::NotEqualToken => {}
-                _ => {
-                    return Err(Error::other(
-                        format!("unknown operator {}", opr.text),
-                    ))
-                }
+                _ => return Err(Error::other(format!("unknown operator {}", opr.text))),
             };
         } else if symbol == "i32" {
             match opr.kind {
@@ -699,16 +675,10 @@ impl<'a> WasmGenerator<'a> {
                 | TokenKind::StarToken
                 | TokenKind::EqualEqualToken
                 | TokenKind::NotEqualToken => {}
-                _ => {
-                    return Err(Error::other(
-                        format!("unknown operator {}", opr.text),
-                    ))
-                }
+                _ => return Err(Error::other(format!("unknown operator {}", opr.text))),
             };
         } else {
-            return Err(Error::other(
-                format!("unknown symbol {}", symbol),
-            ));
+            return Err(Error::other(format!("unknown symbol {}", symbol)));
         }
 
         Ok(())
@@ -736,9 +706,10 @@ impl<'a> WasmGenerator<'a> {
             }
             TokenKind::PlusToken => {}
             _ => {
-                return Err(Error::other(
-                    format!("wasm does not support unary operator {}", opr.text),
-                ))
+                return Err(Error::other(format!(
+                    "wasm does not support unary operator {}",
+                    opr.text
+                )))
             }
         };
         Ok(())

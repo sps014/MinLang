@@ -88,10 +88,8 @@ impl<'a, 'b> Parser<'a, 'b> {
                 Ok(StatementNode::MemberAssignment(obj, member, value))
             }
             _ => {
-                self.diagnostics.report_error(
-                    "Invalid assignment target".to_string(),
-                    Some(cur.position),
-                );
+                self.diagnostics
+                    .report_error("Invalid assignment target".to_string(), Some(cur.position));
                 Ok(StatementNode::Break(None))
             }
         }
@@ -168,11 +166,8 @@ impl<'a, 'b> Parser<'a, 'b> {
                         op_tok.position,
                         Self::operator_text(plain_kind),
                     );
-                    let one_token = SyntaxToken::new(
-                        TokenKind::NumberToken,
-                        op_tok.position,
-                        "1".to_string(),
-                    );
+                    let one_token =
+                        SyntaxToken::new(TokenKind::NumberToken, op_tok.position, "1".to_string());
                     let one = ExpressionNode::Literal(Type::Integer(one_token));
                     let left_operand = self.arena.alloc(expr.clone());
                     let value =
