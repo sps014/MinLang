@@ -49,7 +49,7 @@ extern fun log(msg: string): void;
 ```
 
 !!! note "Restrictions"
-    Extern functions cannot have a body, cannot be generic, and cannot be combined with `export`.
+    Extern functions cannot have a body, cannot be generic, and cannot be combined with `public`.
 
 ## Running it from JavaScript
 

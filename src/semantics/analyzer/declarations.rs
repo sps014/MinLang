@@ -90,6 +90,95 @@ impl<'a> Analyzer<'a> {
         }
     }
 
+    /// Pass: analyze and register every top-level variable. Each initializer is type-checked in
+    /// declaration order against the globals declared so far (forward references to later globals
+    /// are not allowed) plus all already-registered functions/types. The resolved type is recorded
+    /// in the module-global symbol scope so function bodies can resolve the variable, and surfaced
+    /// to codegen via [`super::GlobalSymbol`].
+    pub(super) fn register_globals(
+        &mut self,
+        node: &'a ProgramNode<'a>,
+        diagnostics: &mut DiagnosticBag,
+    ) {
+        // A synthetic, parameterless, non-async "module init" supplies the parent-function context
+        // that expression analysis requires; with no `this` parameter it is treated as outside any
+        // type, so initializers cannot reach private members.
+        let empty_body: &'a [crate::syntax::nodes::StatementNode<'a>] = &[];
+        let init_fn = FunctionNode::new(
+            Vec::new(),
+            synthetic_token(TokenKind::IdentifierToken, "__module_init"),
+            None,
+            None,
+            Vec::new(),
+            empty_body,
+            false,
+        );
+
+        for global in node.globals.iter() {
+            diagnostics.file_path = file_path_string(&global.file_path);
+            self.check_reserved_name(&global.name, "variable", diagnostics);
+
+            if global.is_public && global.is_static {
+                diagnostics.report_error(
+                    format!(
+                        "Top-level variable '{}' cannot be both 'public' and 'static'",
+                        global.name.text
+                    ),
+                    Some(global.name.position),
+                );
+            }
+
+            if self.globals.iter().any(|g| g.name == global.name.text) {
+                diagnostics.report_error(
+                    format!("Top-level variable '{}' is already defined", global.name.text),
+                    Some(global.name.position),
+                );
+                continue;
+            }
+
+            let gtable = self.global_symbol_table.clone();
+            let init_type = self
+                .analyze_expression(&global.initializer, &init_fn, &gtable, diagnostics)
+                .unwrap_or(Type::Void);
+
+            let resolved = match &global.declared_type {
+                Some(declared) => {
+                    let dt = declared.get_type();
+                    let it = init_type.get_type();
+                    let numeric = crate::syntax::nodes::types::is_numeric_primitive(&dt)
+                        && crate::syntax::nodes::types::is_numeric_primitive(&it);
+                    if !numeric && it != "void" && !self.type_str_assignable(&dt, &it) {
+                        diagnostics.report_error(
+                            format!(
+                                "Top-level variable '{}' is declared '{}' but initialized with '{}'",
+                                global.name.text, dt, it
+                            ),
+                            Some(global.name.position),
+                        );
+                    }
+                    declared.clone()
+                }
+                None => init_type,
+            };
+
+            {
+                let mut table = self.global_symbol_table.borrow_mut();
+                let _ = table.add_symbol(global.name.text.clone(), resolved.clone());
+                if global.is_const {
+                    table.mark_const(global.name.text.clone());
+                }
+            }
+
+            self.globals.push(super::GlobalSymbol {
+                name: global.name.text.clone(),
+                type_str: resolved.get_type(),
+                is_const: global.is_const,
+                is_public: global.is_public,
+                is_static: global.is_static,
+            });
+        }
+    }
+
     /// Pass 1: register every (non-generic) function signature; stash generic templates.
     pub(super) fn register_functions(
         &mut self,
@@ -104,8 +193,8 @@ impl<'a> Analyzer<'a> {
                     .insert(function.name.text.clone(), function);
                 continue;
             }
-            if function.is_exported {
-                self.check_export_visibility(function, diagnostics);
+            if function.is_public {
+                self.check_public_visibility(function, diagnostics);
             }
             if let Err(e) = self
                 .function_table
@@ -130,8 +219,9 @@ impl<'a> Analyzer<'a> {
         }
     }
 
-    /// Ensures an exported function does not leak a non-exported struct through its signature.
-    pub(super) fn check_export_visibility(
+    /// Ensures a `public` function does not leak a private (non-`public`) class through its
+    /// signature, which would make the class unusable by the callers the function is exposed to.
+    pub(super) fn check_public_visibility(
         &self,
         function: &FunctionNode<'a>,
         diagnostics: &mut DiagnosticBag,
@@ -143,10 +233,10 @@ impl<'a> Analyzer<'a> {
         for type_to_check in signature_types {
             let base_type_str = strip_nullable(strip_array(&type_to_check.get_type())).to_string();
             if let Some(struct_info) = self.struct_table.get_struct(&base_type_str) {
-                if !struct_info.is_exported {
+                if !struct_info.is_public {
                     diagnostics.report_error(
                         format!(
-                            "Exported function '{}' exposes unexported class '{}'",
+                            "Public function '{}' exposes private class '{}'",
                             function.name.text, base_type_str
                         ),
                         Some(function.name.position),
@@ -294,6 +384,7 @@ impl<'a> Analyzer<'a> {
             .map(|field| StructFieldNode {
                 attributes: field.attributes.clone(),
                 name: field.name.clone(),
+                is_public: field.is_public,
                 type_token: substitute_generic_token(&field.type_token, &bindings),
                 field_type: substitute_generic_type(&field.field_type, &bindings),
             })
@@ -307,7 +398,7 @@ impl<'a> Analyzer<'a> {
             None,
             new_fields,
             template.methods.clone(),
-            template.is_exported,
+            template.is_public,
         );
 
         let new_decl_ref: &'a StructDeclarationNode<'a> = self.arena.alloc(new_decl);
@@ -470,10 +561,10 @@ impl<'a> Analyzer<'a> {
         }
 
         if is_override && is_protocol {
-            if !method.is_exported {
+            if !method.is_public {
                 diagnostics.report_error(
                     format!(
-                        "overridden object-protocol method '{}' must be declared 'pub'",
+                        "overridden object-protocol method '{}' must be declared 'public'",
                         name
                     ),
                     Some(method.name.position),

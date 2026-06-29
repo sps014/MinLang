@@ -6,6 +6,9 @@ use std::rc::Rc;
 pub struct StructFieldNode {
     pub attributes: Vec<crate::syntax::nodes::AttributeNode>,
     pub name: SyntaxToken,
+    /// True when the field is marked `public`. Private (the default) fields may only be read or
+    /// written from within the declaring type's own methods.
+    pub is_public: bool,
     /// The field type's canonical spelling as a token (carries the source position and a flat
     /// display name like `List_JsonValue`). For the structured type (which preserves generic
     /// arguments such as `List<JsonValue>`), use `field_type`.
@@ -23,7 +26,9 @@ pub struct StructDeclarationNode<'a> {
     pub generic_parameters: Option<Vec<SyntaxToken>>,
     pub fields: Vec<StructFieldNode>,
     pub methods: Vec<crate::syntax::nodes::function::FunctionNode<'a>>,
-    pub is_exported: bool,
+    /// True when the class is marked `public`: visible to other modules and emitted as a
+    /// WebAssembly export. Private (the default) classes are module-internal.
+    pub is_public: bool,
     /// Source file this declaration came from; set during multi-file merge so semantic
     /// diagnostics can report the correct file. `None` for synthesized nodes.
     pub file_path: Option<Rc<str>>,
@@ -36,7 +41,7 @@ impl<'a> StructDeclarationNode<'a> {
         generic_parameters: Option<Vec<SyntaxToken>>,
         fields: Vec<StructFieldNode>,
         methods: Vec<crate::syntax::nodes::function::FunctionNode<'a>>,
-        is_exported: bool,
+        is_public: bool,
     ) -> Self {
         Self {
             attributes,
@@ -44,7 +49,7 @@ impl<'a> StructDeclarationNode<'a> {
             generic_parameters,
             fields,
             methods,
-            is_exported,
+            is_public,
             file_path: None,
         }
     }

@@ -1,8 +1,8 @@
 // Overloaded extension methods on a primitive resolve by argument type. `this` is the int
 // value (a stack value), supplied implicitly as the receiver.
 extend int {
-    export fun combine(other: int): int { return this + other; }
-    export fun combine(other: string): int { return this + 100; }
+    public fun combine(other: int): int { return this + other; }
+    public fun combine(other: string): int { return this + 100; }
 }
 
 fun main(): void {

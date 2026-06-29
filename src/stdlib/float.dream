@@ -3,7 +3,7 @@
 
 extend float {
     // Absolute value of this float.
-    fun abs(): float {
+    public fun abs(): float {
         if (this < 0.0) {
             return 0.0 - this;
         }
@@ -11,7 +11,7 @@ extend float {
     }
 
     // The smaller of this and `other`.
-    fun min(other: float): float {
+    public fun min(other: float): float {
         if (this < other) {
             return this;
         }
@@ -19,7 +19,7 @@ extend float {
     }
 
     // The larger of this and `other`.
-    fun max(other: float): float {
+    public fun max(other: float): float {
         if (this > other) {
             return this;
         }

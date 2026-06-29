@@ -1,6 +1,6 @@
 class Node {
-    value: int;
-    next: Node?;
+    public value: int;
+    public next: Node?;
 }
 
 fun create_list(n: int): Node? {

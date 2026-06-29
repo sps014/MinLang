@@ -30,12 +30,12 @@ class Map<K, V> {
     }
 
     // Number of key/value pairs currently stored.
-    fun size(): int {
+    public fun size(): int {
         return this.count;
     }
 
     // Initial probe index for a key, normalized into [0, cap).
-    fun home(key: K): int {
+    public fun home(key: K): int {
         let h = hash_code(key);
         let idx = h % this.cap;
         if (idx < 0) {
@@ -45,7 +45,7 @@ class Map<K, V> {
     }
 
     // Index of an occupied slot holding `key`, or -1.
-    fun find(key: K): int {
+    public fun find(key: K): int {
         let idx = this.home(key);
         let result = -1;
         let searching = true;
@@ -72,7 +72,7 @@ class Map<K, V> {
     }
 
     // Grows and rehashes when the table gets too full (load factor ~0.75).
-    fun rehash(): void {
+    public fun rehash(): void {
         let old_keys = this.keys;
         let old_values = this.values;
         let old_states = this.states;
@@ -97,7 +97,7 @@ class Map<K, V> {
     }
 
     // Inserts or updates the value for `key`.
-    fun put(key: K, value: V): void {
+    public fun put(key: K, value: V): void {
         if ((this.used + 1) * 4 >= this.cap * 3) {
             this.rehash();
         }
@@ -141,12 +141,12 @@ class Map<K, V> {
     }
 
     // True if `key` has an associated value.
-    fun contains(key: K): bool {
+    public fun contains(key: K): bool {
         return this.find(key) >= 0;
     }
 
     // Value for `key`, or the zero value of V if absent.
-    fun get(key: K): V {
+    public fun get(key: K): V {
         let i = this.find(key);
         if (i >= 0) {
             return this.values[i];
@@ -155,7 +155,7 @@ class Map<K, V> {
     }
 
     // Value for `key`, or `fallback` if absent.
-    fun get_or(key: K, fallback: V): V {
+    public fun get_or(key: K, fallback: V): V {
         let i = this.find(key);
         if (i >= 0) {
             return this.values[i];
@@ -164,7 +164,7 @@ class Map<K, V> {
     }
 
     // Removes `key` if present, returning true if a value was removed.
-    fun remove(key: K): bool {
+    public fun remove(key: K): bool {
         let i = this.find(key);
         if (i >= 0) {
             this.states[i] = 2;
@@ -176,12 +176,12 @@ class Map<K, V> {
     }
 
     // True when the map holds no key/value pairs.
-    fun is_empty(): bool {
+    public fun is_empty(): bool {
         return this.count == 0;
     }
 
     // Removes every entry, resetting the map to its initial empty capacity.
-    fun clear(): void {
+    public fun clear(): void {
         this.keys = array_new<K>(8);
         this.values = array_new<V>(8);
         this.states = array_new<int>(8);
@@ -191,7 +191,7 @@ class Map<K, V> {
     }
 
     // A freshly allocated array of every stored key, in unspecified order.
-    fun keys(): K[] {
+    public fun keys(): K[] {
         let result = array_new<K>(this.count);
         let i = 0;
         let j = 0;
@@ -207,7 +207,7 @@ class Map<K, V> {
 
     // A freshly allocated array of every stored value, in unspecified order (key-aligned with
     // `keys()` when the map is not mutated between calls).
-    fun values(): V[] {
+    public fun values(): V[] {
         let result = array_new<V>(this.count);
         let i = 0;
         let j = 0;

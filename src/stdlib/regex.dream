@@ -24,19 +24,19 @@ class Regex {
     flags: string;
 
     // True if `input` contains a match for this pattern.
-    fun test(input: string): bool {
+    public fun test(input: string): bool {
         return __regex_test(this.pattern, this.flags, input);
     }
 
     // Returns `input` with every match replaced by `replacement` (use the `g` flag for all).
     // `replacement` supports JS `$1`/`$<name>` group references.
-    fun replace(input: string, replacement: string): string {
+    public fun replace(input: string, replacement: string): string {
         return __regex_replace(this.pattern, this.flags, input, replacement);
     }
 
     // Returns the matches in `input` as an array. With the `g` flag this is every match; without
     // it, the full match followed by any capture groups. Empty when there is no match.
-    fun match(input: string): string[] {
+    public fun match(input: string): string[] {
         let joined = __regex_match_joined(this.pattern, this.flags, input, "\n");
         if (joined.len() == 0) {
             return array_new<string>(0);
@@ -46,7 +46,7 @@ class Regex {
 
     // Returns a live JS `RegExp` handle for stateful operations (`exec`, `lastIndex`). Remember to
     // call `.release()` on the handle when finished.
-    fun compile(): JsRef {
+    public fun compile(): JsRef {
         return __regex_compile(this.pattern, this.flags);
     }
 }

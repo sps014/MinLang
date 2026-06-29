@@ -1,8 +1,8 @@
 class Mixed {
-    b1: bool;
-    i1: int;
-    d1: double;
-    b2: bool;
+    public b1: bool;
+    public i1: int;
+    public d1: double;
+    public b2: bool;
 }
 
 fun main(): void {

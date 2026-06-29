@@ -4,7 +4,7 @@ use pretty_assertions::assert_eq;
 #[test]
 fn test_lex_keywords() {
     let mut lexer =
-        Lexer::new("let fun if else for while return break continue import export".to_string());
+        Lexer::new("let fun if else for while return break continue import public".to_string());
     let mut diagnostics = DiagnosticBag::new(None);
     let tokens = lexer.lex_all(&mut diagnostics);
 
@@ -23,7 +23,7 @@ fn test_lex_keywords() {
             TokenKind::BreakToken,
             TokenKind::ContinueToken,
             TokenKind::ImportToken,
-            TokenKind::ExportToken,
+            TokenKind::PublicToken,
             TokenKind::EndOfFileToken,
         ]
     );

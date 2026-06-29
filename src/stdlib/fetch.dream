@@ -28,35 +28,35 @@ class Response {
     raw: JsRef;
 
     // HTTP status code, e.g. 200.
-    fun status(): int {
+    public fun status(): int {
         return this.raw.get_int("status");
     }
 
     // True for a 2xx status.
-    fun ok(): bool {
+    public fun ok(): bool {
         return this.raw.get_bool("ok");
     }
 
     // The response body as text.
-    async fun text(): string {
+    public async fun text(): string {
         return await __response_text(this.raw);
     }
 
     // The response body parsed as JSON.
-    async fun json(): JsonValue {
+    public async fun json(): JsonValue {
         let body = await this.text();
         return JSON.parse(body);
     }
 
     // Releases the underlying JS handle. Call when finished with the response.
-    fun release(): void {
+    public fun release(): void {
         this.raw.release();
     }
 }
 
 class Fetch {
     // GETs `url` and returns its body as text.
-    static fun text(url: string): Future<string> {
+    public static fun text(url: string): Future<string> {
         return __fetch_text(url);
     }
 
@@ -64,32 +64,32 @@ class Fetch {
     // `body` is the request body ("" for none), and `headers` is a JSON-object string of header
     // name/value pairs ("" for none), e.g. "{\"Content-Type\":\"application/json\"}". The verb
     // helpers below cover the common cases.
-    static async fun request(method: string, url: string, body: string, headers: string): Response {
+    public static async fun request(method: string, url: string, body: string, headers: string): Response {
         let raw = await __fetch_request(url, method, headers, body);
         return Response(raw);
     }
 
     // GETs `url` and returns a `Response` for richer access (status, headers, json()).
-    static async fun get(url: string): Response {
+    public static async fun get(url: string): Response {
         return await Fetch.request("GET", url, "", "");
     }
 
     // POST/PUT/PATCH `url` with a request `body` (e.g. a JSON string from `JSON.serialize`).
-    static async fun post(url: string, body: string): Response {
+    public static async fun post(url: string, body: string): Response {
         return await Fetch.request("POST", url, body, "");
     }
-    static async fun put(url: string, body: string): Response {
+    public static async fun put(url: string, body: string): Response {
         return await Fetch.request("PUT", url, body, "");
     }
-    static async fun patch(url: string, body: string): Response {
+    public static async fun patch(url: string, body: string): Response {
         return await Fetch.request("PATCH", url, body, "");
     }
 
     // DELETE / HEAD `url`.
-    static async fun delete(url: string): Response {
+    public static async fun delete(url: string): Response {
         return await Fetch.request("DELETE", url, "", "");
     }
-    static async fun head(url: string): Response {
+    public static async fun head(url: string): Response {
         return await Fetch.request("HEAD", url, "", "");
     }
 }

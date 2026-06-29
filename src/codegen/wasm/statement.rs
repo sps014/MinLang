@@ -223,6 +223,11 @@ impl<'a> WasmGenerator<'a> {
     ) -> Result<(), Error> {
         let type_str = self.table_read_type(&left.text, function);
 
+        // A top-level variable lives in a WASM global, so it is read/written with `global.*`.
+        let is_global = self.ctx.globals.contains_key(&left.text);
+        let load = if is_global { "global.get" } else { "local.get" };
+        let store = if is_global { "global.set" } else { "local.set" };
+
         // An owned reference already carries the reference being assigned; do not retain it again.
         let owns_ref = self.stores_owned_ref(expression, &type_str, function)?;
         self.build_expression(expression, &type_str, function, writer)?;
@@ -231,18 +236,18 @@ impl<'a> WasmGenerator<'a> {
             writer.write_line("local.set $scratch_ptr");
 
             // Retain the new value (unless it already owns its reference), then release the value
-            // previously held by this local.
+            // previously held by this binding.
             if !owns_ref {
                 writer.write_line("local.get $scratch_ptr");
                 writer.write_line("call $retain");
             }
-            writer.write_line(&format!("local.get ${}", left.text));
+            writer.write_line(&format!("{} ${}", load, left.text));
             self.emit_release(&type_str, writer);
 
             writer.write_line("local.get $scratch_ptr");
         }
 
-        writer.write_line(&format!("local.set ${}", left.text));
+        writer.write_line(&format!("{} ${}", store, left.text));
         Ok(())
     }
 

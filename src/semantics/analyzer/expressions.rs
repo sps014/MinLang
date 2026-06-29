@@ -231,10 +231,11 @@ impl<'a> Analyzer<'a> {
                 };
 
                 let field_type = field_info.type_.clone();
+                let field_is_public = field_info.is_public;
 
-                // Private fields (`_name`) may only be read from within the declaring type's methods.
-                if member.text.starts_with('_') && !self.in_methods_of(parent_function, &base_name)
-                {
+                // Private fields (the default) may only be read from within the declaring type's
+                // own methods; `public` exposes them to outside code.
+                if !field_is_public && !self.in_methods_of(parent_function, &base_name) {
                     diagnostics.report_error(
                         format!("'{}' is private to '{}'", member.text, base_name),
                         Some(member.position),

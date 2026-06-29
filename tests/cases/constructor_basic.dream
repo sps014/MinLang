@@ -1,12 +1,12 @@
 // Auto-generated (default) constructor: Point(x, y) stores fields positionally.
 class Point {
-    x: int;
-    y: int;
+    public x: int;
+    public y: int;
 }
 
 // Custom constructor via `constructor`, plus a destructor via `del`.
 class Logged {
-    id: int;
+    public id: int;
 
     constructor(id: int) {
         this.id = id;

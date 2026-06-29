@@ -157,6 +157,7 @@ impl Index {
                 acc.all_functions,
                 acc.all_enums,
                 acc.all_extends,
+                acc.all_globals,
             );
             // Pass 1.5: Declare all imported and prelude symbols
             builder.is_main = false;
@@ -1240,7 +1241,7 @@ pub const KEYWORDS: [&str; 37] = [
     "fun",
     "static",
     "import",
-    "export",
+    "public",
     "extern",
     "class",
     "extend",

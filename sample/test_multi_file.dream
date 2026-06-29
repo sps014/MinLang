@@ -1,7 +1,7 @@
 import "math_lib.dream"
 import "basic_sum.dream"
 
-export fun main() {
+public fun main() {
     let result = add_numbers(10,20);
     System.println(result);
     

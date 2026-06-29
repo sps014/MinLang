@@ -51,7 +51,7 @@ fn category(kind: TokenKind) -> Option<&'static str> {
         BooleanToken | NullToken => "keyword",
         IfToken | ElseToken | ForToken | WhileToken | DoToken | ReturnToken | BreakToken
         | ContinueToken | LetToken | ConstToken | FunToken | StaticToken | ImportToken
-        | ExportToken | ExternToken | ClassToken | ExtendToken | IsToken | InToken | EnumToken
+        | PublicToken | ExternToken | ClassToken | ExtendToken | IsToken | InToken | EnumToken
         | TypeToken | SwitchToken | CaseToken | DefaultToken => "keyword",
         PlusToken | MinusToken | SlashToken | StarToken | BangToken | ModulusToken
         | PlusEqualToken | MinusEqualToken | StarEqualToken | SlashEqualToken

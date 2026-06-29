@@ -97,7 +97,7 @@ pub(crate) fn build_abi_json(program: &ProgramNode) -> String {
         if func.is_extern || func.generic_parameters.is_some() {
             continue;
         }
-        if func.is_exported || func.name.text == "main" {
+        if func.is_public || func.name.text == "main" {
             exports.push(format!("\"{}\"", json_escape(&func.name.text)));
         }
     }

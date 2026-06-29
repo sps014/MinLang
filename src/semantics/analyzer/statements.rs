@@ -476,7 +476,7 @@ impl<'a> Analyzer<'a> {
         self.ensure_struct_instantiated(&base_name, &generic_args, &member.position, diagnostics);
         let struct_name = mangle_generic(&base_name, &generic_args);
 
-        let field_type = {
+        let (field_type, field_is_public) = {
             let struct_info = match self.struct_table.get_struct(&struct_name) {
                 Some(info) => info,
                 None => {
@@ -489,7 +489,7 @@ impl<'a> Analyzer<'a> {
             };
 
             match struct_info.fields.get(&member.text) {
-                Some(info) => info.type_.clone(),
+                Some(info) => (info.type_.clone(), info.is_public),
                 None => {
                     diagnostics.report_error(
                         format!(
@@ -503,8 +503,9 @@ impl<'a> Analyzer<'a> {
             }
         };
 
-        // Private fields (`_name`) may only be written from within the declaring type's methods.
-        if member.text.starts_with('_') && !self.in_methods_of(parent_function, &base_name) {
+        // Private fields (the default) may only be written from within the declaring type's own
+        // methods; `public` exposes them to outside code.
+        if !field_is_public && !self.in_methods_of(parent_function, &base_name) {
             diagnostics.report_error(
                 format!("'{}' is private to '{}'", member.text, base_name),
                 Some(member.position),

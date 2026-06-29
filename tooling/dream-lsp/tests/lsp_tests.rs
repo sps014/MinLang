@@ -293,20 +293,20 @@ fn explicit_test_class_cross_file_inference() {
 
     let other_file = dir.join("basic_sum.dream");
     std::fs::write(&other_file, "
-export fun add_numbers(a: int, b: int): int {
+public fun add_numbers(a: int, b: int): int {
     return a + b;
 }
 
-export class Test {
-    name: string;
-    age: int;
+public class Test {
+    public name: string;
+    public age: int;
 
     constructor(name: string, age: int) {
         this.name = name;
         this.age = age;
     }
 
-    fun print_name() {
+    public fun print_name() {
         println(this.name);
     }
 }
@@ -315,7 +315,7 @@ export class Test {
     let main_src = "
 import \"basic_sum.dream\"
 
-export fun main() {
+public fun main() {
     let result = add_numbers(10,20);
     let t = Test(\"John\", 20);
     t.|

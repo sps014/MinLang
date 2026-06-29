@@ -3,7 +3,7 @@
 
 extend bool {
     // 1 for true, 0 for false.
-    fun to_int(): int {
+    public fun to_int(): int {
         if (this == true) {
             return 1;
         }

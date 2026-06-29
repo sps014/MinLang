@@ -1,18 +1,18 @@
 // Generic class with an auto-generated constructor.
 class Box<T> {
-    value: T;
+    public value: T;
 }
 
 // Class holding a reference-typed field, built via the default constructor.
 class Named {
-    name: string;
-    score: int;
+    public name: string;
+    public score: int;
 }
 
 // Custom constructor that derives a field, plus a destructor.
 class Account {
-    owner: string;
-    balance: int;
+    public owner: string;
+    public balance: int;
 
     constructor(owner: string) {
         this.owner = owner;

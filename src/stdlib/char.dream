@@ -3,12 +3,12 @@
 
 extend char {
     // True if this character is an ASCII decimal digit ('0'-'9').
-    fun is_digit(): bool {
+    public fun is_digit(): bool {
         return (this >= '0') && (this <= '9');
     }
 
     // True if this character is an ASCII letter ('a'-'z' or 'A'-'Z').
-    fun is_alpha(): bool {
+    public fun is_alpha(): bool {
         if ((this >= 'a') && (this <= 'z')) {
             return true;
         }
@@ -16,7 +16,7 @@ extend char {
     }
 
     // True if this character is ASCII whitespace (space, tab, newline, or carriage return).
-    fun is_whitespace(): bool {
+    public fun is_whitespace(): bool {
         if (this == ' ') {
             return true;
         }
@@ -30,7 +30,7 @@ extend char {
     }
 
     // The lowercase form of an ASCII uppercase letter; other characters are returned unchanged.
-    fun to_lower(): char {
+    public fun to_lower(): char {
         if ((this >= 'A') && (this <= 'Z')) {
             return (char)((int)this + 32);
         }
@@ -38,7 +38,7 @@ extend char {
     }
 
     // The uppercase form of an ASCII lowercase letter; other characters are returned unchanged.
-    fun to_upper(): char {
+    public fun to_upper(): char {
         if ((this >= 'a') && (this <= 'z')) {
             return (char)((int)this - 32);
         }
@@ -46,13 +46,13 @@ extend char {
     }
 
     // This character's numeric code point.
-    fun to_int(): int {
+    public fun to_int(): int {
         return (int)this;
     }
 
     // A new single-character string containing this character. (The global `to_string(c)`
     // builtin also works; this is the method-style equivalent.)
-    fun as_string(): string {
+    public fun as_string(): string {
         let result = string_alloc(1);
         string_set(result, 0, this);
         return result;

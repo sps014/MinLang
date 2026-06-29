@@ -1,5 +1,5 @@
 use super::WasmGenerator;
-use crate::syntax::nodes::{FunctionNode, ParameterNode, ProgramNode};
+use crate::syntax::nodes::{FunctionNode, ParameterNode, ProgramNode, StatementNode};
 use crate::syntax::text::indented_text_writer::IndentedTextWriter;
 use std::io::Error;
 
@@ -132,6 +132,10 @@ impl<'a> WasmGenerator<'a> {
 
         // Memory management functions
         self.build_memory_management(writer)?;
+
+        // Top-level variable storage (one mutable WASM global each), zero-initialized; their real
+        // initializers run in `$__dream_init` (emitted below, invoked via `(start ...)`).
+        self.build_global_declarations(writer)?;
 
         // Object protocol: boxing/unboxing, to_string/hash_code dispatchers, defaults.
         self.build_object_runtime(writer)?;
@@ -267,9 +271,106 @@ impl<'a> WasmGenerator<'a> {
             self.ctx.current_generic_bindings.clear();
         }
 
+        // Evaluate top-level variable initializers once, before `main`, via a `(start)` function.
+        self.build_global_init(program, writer)?;
+
         self.build_export(program, writer)?;
         writer.unindent();
         writer.write_line(")");
+        Ok(())
+    }
+
+    /// Emits one mutable, zero-initialized WASM global per top-level variable. Reference-typed
+    /// globals start as `0` (null); their real values are stored by `$__dream_init`.
+    fn build_global_declarations(&self, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+        for g in self.globals {
+            let wasm_ty = WasmGenerator::get_wasm_type_from(self.resolve_type(&g.type_str))?;
+            let zero = match wasm_ty.as_str() {
+                "f32" => "(f32.const 0)",
+                "f64" => "(f64.const 0)",
+                "i64" => "(i64.const 0)",
+                _ => "(i32.const 0)",
+            };
+            writer.write_line(&format!("(global ${} (mut {}) {})", g.name, wasm_ty, zero));
+        }
+        Ok(())
+    }
+
+    /// Emits `$__dream_init`, the module-init function that evaluates each top-level variable's
+    /// initializer in declaration order and stores the result into its global, then registers it
+    /// as the module `(start)` function so it runs before any export (including `main`).
+    fn build_global_init(
+        &mut self,
+        program: &ProgramNode<'a>,
+        writer: &mut IndentedTextWriter,
+    ) -> Result<(), Error> {
+        if self.globals.is_empty() {
+            return Ok(());
+        }
+
+        // A synthetic, parameterless context so expression lowering (constructor base pointers,
+        // owned-argument temporaries, identifier resolution) behaves exactly as in a real function.
+        let empty_body: &'a [StatementNode<'a>] = &[];
+        let init_fn = FunctionNode::new(
+            Vec::new(),
+            crate::syntax::token::syntax_token::SyntaxToken::new(
+                crate::syntax::token::token_kind::TokenKind::IdentifierToken,
+                crate::syntax::text::text_span::TextSpan::new(
+                    (0, 0),
+                    &crate::syntax::text::line_text::LineText::new(String::new()),
+                ),
+                "__dream_init".to_string(),
+            ),
+            None,
+            None,
+            Vec::new(),
+            empty_body,
+            false,
+        );
+        self.ctx
+            .combined_symbol_lookup
+            .insert("__dream_init".to_string(), std::collections::HashMap::new());
+
+        writer.write("(func $__dream_init");
+        writer.write(" (local $scratch_ptr i32)");
+        writer.write(" (local $scratch_addr i32)");
+        writer.write(" (local $scratch_double f64)");
+        writer.write(" (local $scratch_float f32)");
+        writer.write(" (local $scratch_len i32)");
+        writer.write(" (local $scratch_arr i32)");
+        writer.write(" (local $scratch_switch i32)");
+        writer.write(" (local $scratch_coalesce i32)");
+        for i in 0..Self::CTOR_BASE_POOL {
+            writer.write(&format!(" (local $ctor_base{} i32)", i));
+        }
+        for i in 0..Self::TMP_POOL {
+            writer.write(&format!(" (local $tmp{} i32)", i));
+        }
+        writer.write_line("");
+        writer.indent();
+
+        self.ctx.current_mangled_name = Some("__dream_init".to_string());
+        for (g, ast) in self.globals.iter().zip(program.globals.iter()) {
+            let type_str = self.resolve_type(&g.type_str);
+            let owns_ref = self.stores_owned_ref(&ast.initializer, &type_str, &init_fn)?;
+            self.build_expression(&ast.initializer, &type_str, &init_fn, writer)?;
+            if self.is_reference_type(&type_str) {
+                writer.write_line("local.set $scratch_ptr");
+                // The global starts null, so there is no prior value to release; just take a
+                // reference to the stored value (unless the initializer already owns one).
+                if !owns_ref {
+                    writer.write_line("local.get $scratch_ptr");
+                    writer.write_line("call $retain");
+                }
+                writer.write_line("local.get $scratch_ptr");
+            }
+            writer.write_line(&format!("global.set ${}", g.name));
+        }
+        self.ctx.current_mangled_name = None;
+
+        writer.unindent();
+        writer.write_line(")");
+        writer.write_line("(start $__dream_init)");
         Ok(())
     }
 
@@ -358,7 +459,7 @@ impl<'a> WasmGenerator<'a> {
             if i.is_extern {
                 continue;
             }
-            if i.is_exported || i.name.text == "main" {
+            if i.is_public || i.name.text == "main" {
                 let emitted = self
                     .function_table
                     .resolve_emitted_name(&i.name.text, &Self::func_param_types(i));

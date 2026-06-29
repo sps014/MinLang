@@ -1,15 +1,15 @@
 @json
 class Product {
     @property_name("id")
-    product_id: int;
+    public product_id: int;
 
     @property_name("title")
-    name: string;
+    public name: string;
 
     @property_name("priceUsd")
-    price: float;
+    public price: float;
 
-    tags: string[]; // standard field
+    public tags: string[]; // standard field
 }
 
 fun main(): void {

@@ -1,12 +1,12 @@
 class Worker {
-    base: int;
+    public base: int;
 
-    async fun compute(n: int): int {
+    public async fun compute(n: int): int {
         await sleep(10);
         return this.base + n;
     }
 
-    async fun twice(n: int): int {
+    public async fun twice(n: int): int {
         let once = await this.compute(n);
         return once + once;
     }

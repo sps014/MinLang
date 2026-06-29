@@ -7,6 +7,9 @@ use std::collections::HashMap;
 pub struct StructFieldInfo {
     pub type_: Type,
     pub offset: usize,
+    /// True when the field is declared `public`. Private (default) fields may only be accessed
+    /// from within the declaring type's own methods.
+    pub is_public: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -14,7 +17,7 @@ pub struct StructInfo {
     pub name: String,
     pub fields: HashMap<String, StructFieldInfo>,
     pub size: usize,
-    pub is_exported: bool,
+    pub is_public: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -70,6 +73,7 @@ impl StructTable {
                 StructFieldInfo {
                     type_: field_type,
                     offset: current_offset,
+                    is_public: field.is_public,
                 },
             );
             current_offset += size;
@@ -93,7 +97,7 @@ impl StructTable {
                 name,
                 fields,
                 size: current_offset,
-                is_exported: struct_decl.is_exported,
+                is_public: struct_decl.is_public,
             },
         );
 

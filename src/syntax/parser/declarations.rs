@@ -74,10 +74,10 @@ impl<'a, 'b> Parser<'a, 'b> {
         
         let attributes = self.parse_attributes();
         
-        let mut is_exported = false;
-        if self.current_token().kind == TokenKind::ExportToken {
-            self.match_token(TokenKind::ExportToken);
-            is_exported = true;
+        let mut is_public = false;
+        if self.current_token().kind == TokenKind::PublicToken {
+            self.match_token(TokenKind::PublicToken);
+            is_public = true;
         }
 
         self.match_token(TokenKind::ClassToken);
@@ -113,20 +113,33 @@ impl<'a, 'b> Parser<'a, 'b> {
         {
             let iter = self.current_token_index;
             let field_attributes = self.parse_attributes();
-            
-            // `constructor(...)` / `del(...)` without a leading `export` still declare a
-            // constructor/destructor method rather than a field.
-            let is_ctor_dtor = self.current_token().kind == TokenKind::IdentifierToken
-                && matches!(self.current_token().text.as_str(), "constructor" | "del")
-                && self.peek_token(1).kind == TokenKind::OpenParenthesisToken;
-            if self.current_token().kind == TokenKind::FunToken
-                || self.current_token().kind == TokenKind::ExportToken
-                || self.current_token().kind == TokenKind::StaticToken
-                || self.current_token().kind == TokenKind::AsyncToken
+
+            // Classify the member by looking past any leading `public`/`static`/`async`: a
+            // method (`fun`, `static fun`, `constructor`/`del`, `extern fun`) is dispatched to
+            // `parse_function` (which consumes its own modifiers), otherwise it is a field.
+            let mut m = 0;
+            while matches!(
+                self.peek_token(m).kind,
+                TokenKind::PublicToken | TokenKind::StaticToken | TokenKind::AsyncToken
+            ) {
+                m += 1;
+            }
+            let core = self.peek_token(m);
+            let is_ctor_dtor = core.kind == TokenKind::IdentifierToken
+                && matches!(core.text.as_str(), "constructor" | "del")
+                && self.peek_token(m + 1).kind == TokenKind::OpenParenthesisToken;
+            if core.kind == TokenKind::FunToken
+                || core.kind == TokenKind::ExternToken
                 || is_ctor_dtor
             {
                 methods.push(self.parse_function(Some(field_attributes))?);
             } else {
+                // Fields are private by default; an explicit `public` exposes them.
+                let mut field_public = false;
+                if self.current_token().kind == TokenKind::PublicToken {
+                    self.match_token(TokenKind::PublicToken);
+                    field_public = true;
+                }
                 let field_name = self.match_token(TokenKind::IdentifierToken);
                 self.match_token(TokenKind::ColonToken);
 
@@ -144,6 +157,7 @@ impl<'a, 'b> Parser<'a, 'b> {
                 fields.push(crate::syntax::nodes::struct_node::StructFieldNode {
                     attributes: field_attributes,
                     name: field_name,
+                    is_public: field_public,
                     type_token: field_type_token,
                     field_type: parsed_type,
                 });
@@ -159,7 +173,7 @@ impl<'a, 'b> Parser<'a, 'b> {
                 generic_parameters,
                 fields,
                 methods,
-                is_exported,
+                is_public,
             ),
         )
     }
@@ -209,7 +223,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             let iter = self.current_token_index;
             let field_attributes = self.parse_attributes();
             if self.current_token().kind == TokenKind::FunToken
-                || self.current_token().kind == TokenKind::ExportToken
+                || self.current_token().kind == TokenKind::PublicToken
                 || self.current_token().kind == TokenKind::StaticToken
                 || self.current_token().kind == TokenKind::AsyncToken
             {
@@ -344,18 +358,18 @@ impl<'a, 'b> Parser<'a, 'b> {
         
         let attributes = pre_parsed_attributes.unwrap_or_else(|| self.parse_attributes());
 
-        // `async` may appear before or after `export` (e.g. `async fun`, `export async fun`,
-        // `async export fun`). Calling such a function eagerly starts a task and yields `Future<T>`.
+        // `async` may appear before or after `public` (e.g. `async fun`, `public async fun`,
+        // `async public fun`). Calling such a function eagerly starts a task and yields `Future<T>`.
         let mut is_async = false;
         if self.current_token().kind == TokenKind::AsyncToken {
             self.match_token(TokenKind::AsyncToken);
             is_async = true;
         }
 
-        let mut is_exported = false;
-        if self.current_token().kind == TokenKind::ExportToken {
-            self.match_token(TokenKind::ExportToken);
-            is_exported = true;
+        let mut is_public = false;
+        if self.current_token().kind == TokenKind::PublicToken {
+            self.match_token(TokenKind::PublicToken);
+            is_public = true;
         }
 
         if self.current_token().kind == TokenKind::AsyncToken {
@@ -374,9 +388,9 @@ impl<'a, 'b> Parser<'a, 'b> {
         if self.current_token().kind == TokenKind::ExternToken {
             self.match_token(TokenKind::ExternToken);
             is_extern = true;
-            if is_exported {
+            if is_public {
                 self.diagnostics.report_error(
-                    "A function cannot be both 'export' and 'extern'".to_string(),
+                    "A function cannot be both 'public' and 'extern'".to_string(),
                     Some(self.current_token().position),
                 );
             }
@@ -402,9 +416,9 @@ impl<'a, 'b> Parser<'a, 'b> {
             && matches!(self.current_token().text.as_str(), "constructor" | "del")
         {
             let ctor_name = self.match_token(TokenKind::IdentifierToken);
-            if is_exported {
+            if is_public {
                 self.diagnostics.report_error(
-                    format!("'{}' cannot be marked 'export'", ctor_name.text),
+                    format!("'{}' cannot be marked 'public'", ctor_name.text),
                     Some(ctor_name.position),
                 );
             }
@@ -484,11 +498,70 @@ impl<'a, 'b> Parser<'a, 'b> {
             return_type,
             params,
             block,
-            is_exported,
+            is_public,
         );
         node.is_static = is_static;
         node.is_async = is_async;
         Ok(node)
+    }
+
+    /// Parses a top-level variable declaration: an optional `public`/`static` modifier pair,
+    /// then `let`/`const`, a name, an optional `: type` annotation, a required initializer, and a
+    /// terminating `;`. Returns the assembled [`GlobalVariableNode`].
+    pub(super) fn parse_global_variable(
+        &mut self,
+    ) -> Result<crate::syntax::nodes::GlobalVariableNode<'a>, Error> {
+        let first_trivia = self.current_token().leading_trivia.clone();
+
+        // `public` and `static` may appear in either order before `let`/`const`.
+        let mut is_public = false;
+        let mut is_static = false;
+        loop {
+            match self.current_token().kind {
+                TokenKind::PublicToken => {
+                    self.match_token(TokenKind::PublicToken);
+                    is_public = true;
+                }
+                TokenKind::StaticToken => {
+                    self.match_token(TokenKind::StaticToken);
+                    is_static = true;
+                }
+                _ => break,
+            }
+        }
+
+        let is_const = self.current_token().kind == TokenKind::ConstToken;
+        if is_const {
+            self.match_token(TokenKind::ConstToken);
+        } else {
+            self.match_token(TokenKind::LetToken);
+        }
+
+        let mut name = self.match_token(TokenKind::IdentifierToken);
+        if !first_trivia.is_empty() {
+            name.leading_trivia.splice(0..0, first_trivia);
+        }
+
+        let declared_type = if self.current_token().kind == TokenKind::ColonToken {
+            self.match_token(TokenKind::ColonToken);
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+
+        self.match_token(TokenKind::EqualToken);
+        let initializer = self.parse_expression(0)?;
+        self.match_token(TokenKind::SemicolonToken);
+
+        Ok(crate::syntax::nodes::GlobalVariableNode {
+            name,
+            declared_type,
+            initializer,
+            is_const,
+            is_public,
+            is_static,
+            file_path: None,
+        })
     }
 
     /// Parses formal parameters for a function declaration

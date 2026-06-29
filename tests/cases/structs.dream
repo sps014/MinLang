@@ -1,11 +1,11 @@
 class Point {
-    x: int;
-    y: int;
+    public x: int;
+    public y: int;
 }
 
 class Rect {
-    p1: Point;
-    p2: Point;
+    public p1: Point;
+    public p2: Point;
 }
 
 fun main(): void {

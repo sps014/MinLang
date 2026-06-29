@@ -3,7 +3,7 @@
 
 extend double {
     // Absolute value of this double.
-    fun abs(): double {
+    public fun abs(): double {
         if (this < 0.0d) {
             return 0.0d - this;
         }
@@ -11,7 +11,7 @@ extend double {
     }
 
     // The smaller of this and `other`.
-    fun min(other: double): double {
+    public fun min(other: double): double {
         if (this < other) {
             return this;
         }
@@ -19,7 +19,7 @@ extend double {
     }
 
     // The larger of this and `other`.
-    fun max(other: double): double {
+    public fun max(other: double): double {
         if (this > other) {
             return this;
         }
@@ -29,7 +29,7 @@ extend double {
     // Parses a decimal double from `text`, supporting an optional sign, a fractional part, and a
     // `e`/`E` exponent (e.g. "-3.14", "1.5e-3"). Parsing stops at the first character that does not
     // fit the grammar; an empty or non-numeric string yields 0.0.
-    static fun parse(text: string): double {
+    public static fun parse(text: string): double {
         let n = text.len();
         let i = 0;
         let neg = false;

@@ -132,6 +132,19 @@ pub type GenericBindings = Vec<(String, String)>;
 /// Enum name -> (member name -> integer value).
 pub type EnumTable = HashMap<String, HashMap<String, i32>>;
 
+/// A resolved top-level variable, carried from semantic analysis into code generation so the
+/// generator can emit the corresponding WASM global and the module-init store (and decide whether
+/// to export it to the host).
+#[derive(Debug, Clone)]
+pub struct GlobalSymbol {
+    pub name: String,
+    /// The resolved (non-generic) type name, e.g. `int`, `string`, `Point`.
+    pub type_str: String,
+    pub is_const: bool,
+    pub is_public: bool,
+    pub is_static: bool,
+}
+
 pub struct SemanticInfo<'a> {
     pub hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>,
     pub function_table: &'a FunctionTable,
@@ -139,9 +152,11 @@ pub struct SemanticInfo<'a> {
     pub instantiated_generics: HashMap<String, (GenericBindings, &'a FunctionNode<'a>)>,
     pub struct_methods: Vec<(&'a FunctionNode<'a>, GenericBindings)>,
     pub enums: EnumTable,
+    pub globals: Vec<GlobalSymbol>,
 }
 
 impl<'a> SemanticInfo<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>,
         function_table: &'a FunctionTable,
@@ -149,6 +164,7 @@ impl<'a> SemanticInfo<'a> {
         instantiated_generics: HashMap<String, (GenericBindings, &'a FunctionNode<'a>)>,
         struct_methods: Vec<(&'a FunctionNode<'a>, GenericBindings)>,
         enums: EnumTable,
+        globals: Vec<GlobalSymbol>,
     ) -> SemanticInfo<'a> {
         SemanticInfo {
             hash_map,
@@ -157,6 +173,7 @@ impl<'a> SemanticInfo<'a> {
             instantiated_generics,
             struct_methods,
             enums,
+            globals,
         }
     }
 }
@@ -188,6 +205,12 @@ pub struct Analyzer<'a> {
     loop_labels: Vec<String>,
     /// True while analyzing the body of an `async fun`. Gates the use of `await`.
     current_function_is_async: bool,
+    /// Resolved top-level variables, in declaration order. Surfaced to codegen via [`SemanticInfo`].
+    globals: Vec<GlobalSymbol>,
+    /// The module-level symbol scope holding every top-level variable. It is the root parent of
+    /// every function's parameter table, so function bodies resolve global identifiers (and their
+    /// `const`-ness) through ordinary lexical lookup.
+    global_symbol_table: Rc<RefCell<SymbolTable>>,
 }
 impl<'a> Analyzer<'a> {
     pub fn new(tree: &'a SyntaxTree<'a>, arena: &'a Bump) -> Self {
@@ -204,6 +227,8 @@ impl<'a> Analyzer<'a> {
             current_generic_bindings: Vec::new(),
             loop_labels: Vec::new(),
             current_function_is_async: false,
+            globals: Vec::new(),
+            global_symbol_table: Rc::new(RefCell::new(SymbolTable::new(None))),
         }
     }
 
@@ -276,6 +301,9 @@ impl<'a> Analyzer<'a> {
         self.register_structs(node, diagnostics);
         self.register_extensions(node, diagnostics);
         self.register_functions(node, diagnostics);
+        // Globals are analyzed after functions/types are known (so initializers can call them) but
+        // before function bodies, so those bodies can resolve global identifiers.
+        self.register_globals(node, diagnostics);
         self.analyze_function_bodies(node, &mut symbol_table_map, diagnostics)?;
         self.analyze_pending_instantiations(&mut symbol_table_map, diagnostics)?;
 
@@ -286,6 +314,7 @@ impl<'a> Analyzer<'a> {
             self.instantiated_generics.clone(),
             self.struct_methods.clone(),
             self.enum_table.clone(),
+            self.globals.clone(),
         ))
     }
 }

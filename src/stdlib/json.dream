@@ -18,73 +18,73 @@
 // parallel `obj_vals` hold object entries as an insertion-ordered association list (so stringify
 // is deterministic). Using `List<T>` fields keeps the value tree free of raw-array bookkeeping.
 class JsonValue {
-    kind: int;
-    bool_val: bool;
-    num_val: double;
-    str_val: string;
-    items: List<JsonValue>;
-    obj_keys: List<string>;
-    obj_vals: List<JsonValue>;
+    public kind: int;
+    public bool_val: bool;
+    public num_val: double;
+    public str_val: string;
+    public items: List<JsonValue>;
+    public obj_keys: List<string>;
+    public obj_vals: List<JsonValue>;
 
     // --- builders ---------------------------------------------------------------------------
 
-    static fun none(): JsonValue {
+    public static fun none(): JsonValue {
         return _json_new(0);
     }
-    static fun boolean(b: bool): JsonValue {
+    public static fun boolean(b: bool): JsonValue {
         let v = _json_new(1);
         v.bool_val = b;
         return v;
     }
-    static fun number(n: double): JsonValue {
+    public static fun number(n: double): JsonValue {
         let v = _json_new(2);
         v.num_val = n;
         return v;
     }
-    static fun from_int(n: int): JsonValue {
+    public static fun from_int(n: int): JsonValue {
         return JsonValue.number((double)n);
     }
-    static fun from_string(s: string): JsonValue {
+    public static fun from_string(s: string): JsonValue {
         let v = _json_new(3);
         v.str_val = s;
         return v;
     }
     // A new, empty JSON array. (`object`/`string` are reserved type names, so the object builder
     // is named `dict`.)
-    static fun array(): JsonValue {
+    public static fun array(): JsonValue {
         return _json_new(4);
     }
-    static fun dict(): JsonValue {
+    public static fun dict(): JsonValue {
         return _json_new(5);
     }
 
     // --- inspection -------------------------------------------------------------------------
 
-    fun kind_of(): int {
+    public fun kind_of(): int {
         return this.kind;
     }
-    fun is_null(): bool {
+    public fun is_null(): bool {
         return this.kind == 0;
     }
-    fun is_array(): bool {
+    public fun is_array(): bool {
         return this.kind == 4;
     }
-    fun is_object(): bool {
+    public fun is_object(): bool {
         return this.kind == 5;
     }
 
     // --- scalar accessors -------------------------------------------------------------------
 
-    fun as_bool(): bool {
+    public fun as_bool(): bool {
         return this.bool_val;
     }
-    fun as_double(): double {
+    public fun as_double(): double {
         return this.num_val;
     }
-    fun as_int(): int {
+    public fun as_int(): int {
         return (int)this.num_val;
     }
-    fun as_string(): string {
+    public fun as_string(): string {
         return this.str_val;
     }
 
@@ -101,17 +101,17 @@ class JsonValue {
         return 0 - 1;
     }
 
-    fun has(key: string): bool {
+    public fun has(key: string): bool {
         return this._find_key(key) >= 0;
     }
-    fun get(key: string): JsonValue {
+    public fun get(key: string): JsonValue {
         let idx = this._find_key(key);
         if (idx >= 0) {
             return this.obj_vals.get(idx);
         }
         return JsonValue.none();
     }
-    fun set(key: string, value: JsonValue): void {
+    public fun set(key: string, value: JsonValue): void {
         let idx = this._find_key(key);
         if (idx >= 0) {
             this.obj_vals.set(idx, value);
@@ -120,24 +120,24 @@ class JsonValue {
             this.obj_vals.push(value);
         }
     }
-    fun key_at(index: int): string {
+    public fun key_at(index: int): string {
         return this.obj_keys.get(index);
     }
-    fun keys(): List<string> {
+    public fun keys(): List<string> {
         return this.obj_keys;
     }
 
     // --- array accessors --------------------------------------------------------------------
 
-    fun at(index: int): JsonValue {
+    public fun at(index: int): JsonValue {
         return this.items.get(index);
     }
-    fun push(value: JsonValue): void {
+    public fun push(value: JsonValue): void {
         this.items.push(value);
     }
 
     // Element count for arrays/objects (0 for scalars).
-    fun size(): int {
+    public fun size(): int {
         if (this.kind == 5) {
             return this.obj_keys.size();
         }
@@ -303,7 +303,7 @@ class JsonParser {
     pos: int;
     n: int;
 
-    fun skip_ws(): void {
+    public fun skip_ws(): void {
         let going = true;
         while (going == true) {
             if (this.pos >= this.n) {
@@ -320,12 +320,12 @@ class JsonParser {
     }
 
     // Consumes a literal keyword (`true`/`false`/`null`) of the given length, returning `value`.
-    fun keyword(length: int, value: JsonValue): JsonValue {
+    public fun keyword(length: int, value: JsonValue): JsonValue {
         this.pos = this.pos + length;
         return value;
     }
 
-    fun parse_string(): string {
+    public fun parse_string(): string {
         this.pos = this.pos + 1; // opening quote
         let result = "";
         let going = true;
@@ -365,7 +365,7 @@ class JsonParser {
         return result;
     }
 
-    fun parse_number(): JsonValue {
+    public fun parse_number(): JsonValue {
         let start = this.pos;
         let going = true;
         while (going == true) {
@@ -384,7 +384,7 @@ class JsonParser {
         return JsonValue.number(double.parse(text));
     }
 
-    fun parse_array(): JsonValue {
+    public fun parse_array(): JsonValue {
         let result = JsonValue.array();
         this.pos = this.pos + 1; // '['
         this.skip_ws();
@@ -414,7 +414,7 @@ class JsonParser {
         return result;
     }
 
-    fun parse_object(): JsonValue {
+    public fun parse_object(): JsonValue {
         let result = JsonValue.dict();
         this.pos = this.pos + 1; // '{'
         this.skip_ws();
@@ -452,7 +452,7 @@ class JsonParser {
         return result;
     }
 
-    fun parse_value(): JsonValue {
+    public fun parse_value(): JsonValue {
         this.skip_ws();
         if (this.pos >= this.n) {
             return JsonValue.none();
@@ -489,20 +489,20 @@ class JSON {
     @intrinsic("json_deserialize")
     static extern fun deserialize<T>(text: string): T;
 
-    static fun stringify(value: JsonValue): string {
+    public static fun stringify(value: JsonValue): string {
         return _json_stringify(value);
     }
 
     // Pretty-prints `value` with newlines and `indent` spaces per nesting level (e.g. 2 or 4).
     // Pass 0 to fall back to compact output.
-    static fun stringify_pretty(value: JsonValue, indent: int): string {
+    public static fun stringify_pretty(value: JsonValue, indent: int): string {
         if (indent <= 0) {
             return _json_stringify(value);
         }
         return _json_stringify_pretty(value, indent, 0);
     }
 
-    static fun parse(text: string): JsonValue {
+    public static fun parse(text: string): JsonValue {
         let parser = JsonParser(text, 0, text.len());
         return parser.parse_value();
     }

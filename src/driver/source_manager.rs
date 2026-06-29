@@ -215,7 +215,7 @@ fn generate_json_extend(
     );
 
     Some(format!(
-        "extend {name} {{\n    fun to_json(): JsonValue {{\n{to_body}    }}\n    static fun from_json(v: JsonValue): {name} {{\n{from_body}    }}\n}}\n",
+        "extend {name} {{\n    public fun to_json(): JsonValue {{\n{to_body}    }}\n    public static fun from_json(v: JsonValue): {name} {{\n{from_body}    }}\n}}\n",
         name = name, to_body = to_body, from_body = from_body
     ))
 }
@@ -295,6 +295,7 @@ pub struct ProgramAccumulator<'a> {
     pub all_structs: Vec<crate::syntax::nodes::struct_node::StructDeclarationNode<'a>>,
     pub all_enums: Vec<crate::syntax::nodes::EnumDeclarationNode>,
     pub all_extends: Vec<crate::syntax::nodes::ExtendNode<'a>>,
+    pub all_globals: Vec<crate::syntax::nodes::GlobalVariableNode<'a>>,
     pub file_contents: HashMap<String, String>,
 }
 
@@ -409,6 +410,11 @@ pub fn parse_file_recursive<'a>(
             method.file_path = Some(file_tag.clone());
         }
         acc.all_extends.push(extend_decl);
+    }
+    for global in program.globals.iter().cloned() {
+        let mut global = global;
+        global.file_path = Some(file_tag.clone());
+        acc.all_globals.push(global);
     }
 
     Ok(())

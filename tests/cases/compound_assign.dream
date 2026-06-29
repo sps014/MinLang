@@ -1,4 +1,4 @@
-class P { v: int; }
+class P { public v: int; }
 
 fun main(): void {
     let x: int = 10;

@@ -1,0 +1,7 @@
+// `public` (host-exported + module-visible) and `static` (file-local) are mutually exclusive
+// on a top-level variable.
+public static let shared: int = 1;
+
+fun main(): void {
+    System.println(shared);
+}

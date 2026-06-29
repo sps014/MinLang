@@ -1,5 +1,5 @@
 class Node {
-    val: int;
+    public val: int;
 }
 
 fun create_node(v: int): Node {

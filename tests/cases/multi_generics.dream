@@ -2,10 +2,10 @@
 // two-parameter functions, and a mangling-collision check between Pair<int, float> and
 // Pair<int, double> (which previously both collapsed to "Pair_int").
 class Pair<K, V> {
-    key: K;
-    value: V;
+    public key: K;
+    public value: V;
 
-    fun show() {
+    public fun show() {
         System.println(this.key);
         System.print(this.value);
     }

@@ -14,7 +14,7 @@ import "math_lib.dream"
 
 ```ts
 // math_lib.dream
-export fun add_numbers(a: int, b: int): int {
+public fun add_numbers(a: int, b: int): int {
     return a + b;
 }
 ```
@@ -30,17 +30,17 @@ fun main() {
 
 Imports are resolved recursively (an imported file may import others), and each file is processed only once even if imported from several places.
 
-## Export visibility
+## Visibility
 
-Mark a declaration `export` to make it part of a file's public surface and to expose it to the host environment. An exported function cannot expose a class that is not itself exported.
+Declarations are **private by default**: visible throughout their own module but not exposed to the host. Mark a declaration `public` to make it part of a file's public surface and to expose it to the host environment. A `public` function cannot expose a class that is not itself `public`.
 
 ```ts
-export class Point {
-    x: int;
-    y: int;
+public class Point {
+    public x: int;
+    public y: int;
 }
 
-export fun origin(): Point {
+public fun origin(): Point {
     return Point(0, 0);
 }
 ```

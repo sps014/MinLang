@@ -50,7 +50,7 @@ fun main(): void {
 ```
 
 A `constructor` declares no return type — it always produces an instance of its class. Inside the
-body, `this` refers to the new instance. A `constructor` cannot be marked `export`.
+body, `this` refers to the new instance. A `constructor` cannot be marked `public`.
 
 ## Accessing and mutating fields
 
@@ -94,7 +94,7 @@ Methods are called with `instance.method(args)`. The `this` parameter is implici
 Define `del()` to run cleanup logic when an instance is destroyed. A class is destroyed
 when its last reference goes out of scope; `del` runs automatically just before the memory is
 released, while the fields are still valid. A destructor takes no parameters and has no return
-type, and cannot be marked `export`:
+type, and cannot be marked `public`:
 
 ```ts
 class File {
@@ -147,14 +147,43 @@ class Node {
 }
 ```
 
-## Exporting classes
+## Visibility
 
-Mark a class `export` to make it visible to the WebAssembly host:
+Class members — fields and methods — are **private by default**. A private member may only be
+read, written, or called from within the declaring type's own methods (instance or static).
+Mark a member `public` to allow access from outside:
 
 ```ts
-export class Vec2 {
-    x: float;
-    y: float;
+class Account {
+    public owner: string;   // readable/writable from anywhere
+    balance: int;           // private: only Account's own methods may touch it
+
+    constructor(owner: string) {
+        this.owner = owner;
+        this.balance = 100;
+    }
+
+    public fun deposit(amount: int): void {
+        this.balance = this.balance + amount;   // OK: inside Account
+    }
+}
+
+fun main(): void {
+    let a = Account("Ada");
+    println(a.owner);        // OK: public field
+    a.deposit(50);           // OK: public method
+    // println(a.balance);   // error: 'balance' is private to 'Account'
+}
+```
+
+## Public classes
+
+Mark a class `public` to make it module-visible and expose it to the WebAssembly host:
+
+```ts
+public class Vec2 {
+    public x: float;
+    public y: float;
 }
 ```
 

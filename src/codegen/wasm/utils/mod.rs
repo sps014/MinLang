@@ -134,6 +134,10 @@ impl<'a> WasmGenerator<'a> {
 
     /// Reads the type of a variable from the symbol table
     pub fn table_read_type(&self, var_name: &String, function: &FunctionNode<'a>) -> String {
+        // Top-level variables are not in any function's local table; resolve them directly.
+        if let Some(global_type) = self.ctx.globals.get(var_name) {
+            return self.resolve_type(global_type);
+        }
         let func_name = self
             .ctx
             .current_mangled_name

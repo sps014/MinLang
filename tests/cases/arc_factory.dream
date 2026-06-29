@@ -3,7 +3,7 @@
 // fields, and owned temporaries passed as call arguments.
 
 class Tracked {
-    id: int;
+    public id: int;
 
     constructor(id: int) {
         this.id = id;
@@ -16,15 +16,15 @@ class Tracked {
 }
 
 class Factory {
-    base: int;
+    public base: int;
 
-    fun create(n: int): Tracked {
+    public fun create(n: int): Tracked {
         return Tracked(this.base + n);
     }
 }
 
 class Named {
-    name: string;
+    public name: string;
 
     del() {
         System.print("bye ");

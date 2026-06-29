@@ -1,11 +1,11 @@
 class Point<T> {
-    x: T;
-    y: T;
+    public x: T;
+    public y: T;
 }
 
 class Pixel {
-    r: int;
-    g: int;
+    public r: int;
+    public g: int;
 }
 
 fun main() {

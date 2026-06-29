@@ -1,35 +1,35 @@
 @json
 class Geo {
-    lat: double;
-    lng: double;
+    public lat: double;
+    public lng: double;
 }
 
 @json
 class Address {
-    city: string;
-    zip: string;
-    geo: Geo;
+    public city: string;
+    public zip: string;
+    public geo: Geo;
 }
 
 @json
 class Company {
-    name: string;
-    address: Address;
+    public name: string;
+    public address: Address;
 }
 
 @json
 class User {
-    name: string;
-    age: int;
-    company: Company;
-    tags: string[];
+    public name: string;
+    public age: int;
+    public company: Company;
+    public tags: string[];
 }
 
 @json
 class Team {
-    title: string;
-    lead: User;
-    members: User[];
+    public title: string;
+    public lead: User;
+    public members: User[];
 }
 
 fun mk_user(name: string, age: int, city: string): User {

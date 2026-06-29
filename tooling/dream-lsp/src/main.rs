@@ -79,7 +79,7 @@ fn get_semantic_tokens(file_path: Option<&str>, text: &str) -> Vec<SemanticToken
                 | TokenKind::FunToken
                 | TokenKind::StaticToken
                 | TokenKind::ImportToken
-                | TokenKind::ExportToken
+                | TokenKind::PublicToken
                 | TokenKind::ExternToken
                 | TokenKind::ClassToken
                 | TokenKind::ExtendToken

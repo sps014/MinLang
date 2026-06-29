@@ -26,7 +26,10 @@ pub struct FunctionNode<'a> {
     pub return_type: Option<Type>,
     pub parameters: Vec<ParameterNode>,
     pub body: &'a [StatementNode<'a>],
-    pub is_exported: bool,
+    /// True when the declaration is marked `public`: it is visible to other modules and (for
+    /// top-level functions) emitted as a WebAssembly export. Private (the default) symbols are
+    /// module-internal.
+    pub is_public: bool,
     /// True for `extern fun` declarations: the function has no body and is lowered to a WASM
     /// import instead of a defined function. Used for JS interop.
     pub is_extern: bool,
@@ -50,7 +53,7 @@ impl<'a> FunctionNode<'a> {
         return_type: Option<Type>,
         parameters: Vec<ParameterNode>,
         body: &'a [StatementNode<'a>],
-        is_exported: bool,
+        is_public: bool,
     ) -> FunctionNode<'a> {
         FunctionNode {
             attributes,
@@ -59,7 +62,7 @@ impl<'a> FunctionNode<'a> {
             return_type,
             parameters,
             body,
-            is_exported,
+            is_public,
             is_extern: false,
             is_static: false,
             is_async: false,

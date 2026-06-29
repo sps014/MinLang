@@ -35,7 +35,7 @@ let b = to_string(true);    // "true"
 let f = to_string(3.14f);   // "3.14"
 ```
 
-For classes with a `@override export fun to_string()` method, that method is called.
+For classes with a `@override public fun to_string()` method, that method is called.
 
 ## hash_code
 

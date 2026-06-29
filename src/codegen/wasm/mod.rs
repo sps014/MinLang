@@ -67,6 +67,9 @@ pub struct CodegenContext {
     /// True when the program contains at least one (non-extern) `async fun`, so the scheduler
     /// runtime, queue globals, and poll-dispatch table type are emitted.
     pub has_async: bool,
+    /// Top-level variable name -> resolved type name. Identifiers and assignments that name a
+    /// global lower to `global.get`/`global.set` instead of `local.get`/`local.set`.
+    pub globals: HashMap<String, String>,
 }
 
 impl CodegenContext {
@@ -88,6 +91,7 @@ impl CodegenContext {
             poll_indices: HashMap::new(),
             current_async_self: None,
             has_async: false,
+            globals: HashMap::new(),
         }
     }
 }
@@ -111,6 +115,8 @@ pub struct WasmGenerator<'a> {
     )>,
     /// Registered enums: name -> (member -> i32 value). Enum members lower to `i32.const`.
     pub enums: &'a crate::semantics::analyzer::EnumTable,
+    /// Resolved top-level variables, in declaration order.
+    pub globals: &'a Vec<crate::semantics::analyzer::GlobalSymbol>,
     /// Mutable working state accumulated during emission.
     pub ctx: CodegenContext,
 }
@@ -125,6 +131,10 @@ impl<'a> CodeGenerator<'a> for WasmGenerator<'a> {
 impl<'a> WasmGenerator<'a> {
     /// Creates a new instance of WasmGenerator
     pub fn new(syntax_tree: &'a SyntaxTree<'a>, semantic_info: &'a SemanticInfo) -> Self {
+        let mut ctx = CodegenContext::new();
+        for g in &semantic_info.globals {
+            ctx.globals.insert(g.name.clone(), g.type_str.clone());
+        }
         Self {
             syntax_tree,
             symbol_map: &semantic_info.hash_map,
@@ -133,7 +143,8 @@ impl<'a> WasmGenerator<'a> {
             instantiated_generics: &semantic_info.instantiated_generics,
             struct_methods: &semantic_info.struct_methods,
             enums: &semantic_info.enums,
-            ctx: CodegenContext::new(),
+            globals: &semantic_info.globals,
+            ctx,
         }
     }
 

@@ -1,8 +1,8 @@
 class Node {
-    value: int;
-    next: Node?;
+    public value: int;
+    public next: Node?;
 
-    fun has_next(): bool {
+    public fun has_next(): bool {
         return this.next != null;
     }
 }

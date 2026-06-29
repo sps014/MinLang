@@ -137,8 +137,8 @@ pub enum TokenKind {
     StaticToken,
     #[token("import")]
     ImportToken,
-    #[token("export")]
-    ExportToken,
+    #[token("public")]
+    PublicToken,
     #[token("extern")]
     ExternToken,
     #[token("class")]
@@ -246,7 +246,7 @@ impl TokenKind {
             TokenKind::AwaitToken => "'await'",
             TokenKind::StaticToken => "'static'",
             TokenKind::ImportToken => "'import'",
-            TokenKind::ExportToken => "'export'",
+            TokenKind::PublicToken => "'public'",
             TokenKind::ExternToken => "'extern'",
             TokenKind::ClassToken => "'class'",
             TokenKind::ExtendToken => "'extend'",

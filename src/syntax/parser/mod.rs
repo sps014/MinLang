@@ -201,6 +201,20 @@ impl<'a, 'b> Parser<'a, 'b> {
         Ok(SyntaxTree::new(self.parse_program()?))
     }
 
+    /// Returns the kind of the first token at or after the cursor that is not a leading
+    /// declaration modifier (`public`, `static`, `async`). Used to classify a top-level
+    /// declaration regardless of the order/number of modifiers preceding its core keyword
+    /// (e.g. `public static let`, `public async fun`).
+    fn first_keyword_after_modifiers(&self) -> TokenKind {
+        let mut i = 0;
+        loop {
+            match self.peek_token(i).kind {
+                TokenKind::PublicToken | TokenKind::StaticToken | TokenKind::AsyncToken => i += 1,
+                other => return other,
+            }
+        }
+    }
+
     ///get all functions in the file
     fn parse_program(&mut self) -> Result<ProgramNode<'a>, Error> {
         let mut imports = vec![];
@@ -208,6 +222,7 @@ impl<'a, 'b> Parser<'a, 'b> {
         let mut structs = vec![];
         let mut enums = vec![];
         let mut extends = vec![];
+        let mut globals = vec![];
 
         while self.current_token().kind == TokenKind::ImportToken {
             if let Ok(import_node) = self.parse_import() {
@@ -218,38 +233,43 @@ impl<'a, 'b> Parser<'a, 'b> {
         }
 
         while self.current_token().kind != TokenKind::EndOfFileToken {
-            if self.current_token().kind == TokenKind::ClassToken
-                || (self.current_token().kind == TokenKind::ExportToken
-                    && self.peek_token(1).kind == TokenKind::ClassToken)
-                || (self.current_token().kind == TokenKind::AtToken
+            let cur = self.current_token().kind;
+            // The core declaration keyword, looking past any leading `public`/`static`/`async`.
+            let core = self.first_keyword_after_modifiers();
+            if core == TokenKind::ClassToken
+                || (cur == TokenKind::AtToken
                     && self.peek_token(1).kind == TokenKind::IdentifierToken
-                    && (self.peek_token(2).kind == TokenKind::ClassToken || self.peek_token(3).kind == TokenKind::ClassToken))
+                    && (self.peek_token(2).kind == TokenKind::ClassToken
+                        || self.peek_token(3).kind == TokenKind::ClassToken))
             {
                 match self.parse_struct_declaration() {
                     Ok(struct_decl) => structs.push(struct_decl),
                     Err(_) => self.recover_to_next_declaration(),
                 }
-            } else if self.current_token().kind == TokenKind::EnumToken {
+            } else if cur == TokenKind::EnumToken {
                 match self.parse_enum_declaration() {
                     Ok(enum_decl) => enums.push(enum_decl),
                     Err(_) => self.recover_to_next_declaration(),
                 }
-            } else if self.current_token().kind == TokenKind::ExtendToken {
+            } else if cur == TokenKind::ExtendToken {
                 match self.parse_extend_declaration() {
                     Ok(extend_decl) => extends.push(extend_decl),
                     Err(_) => self.recover_to_next_declaration(),
                 }
-            } else if self.current_token().kind == TokenKind::TypeToken {
+            } else if cur == TokenKind::TypeToken {
                 if self.parse_type_alias().is_err() {
                     self.recover_to_next_declaration();
                 }
-            } else if self.current_token().kind == TokenKind::FunToken
-                || self.current_token().kind == TokenKind::AtToken
-                || self.current_token().kind == TokenKind::ExternToken
-                || self.current_token().kind == TokenKind::AsyncToken
-                || (self.current_token().kind == TokenKind::ExportToken
-                    && (self.peek_token(1).kind == TokenKind::FunToken
-                        || self.peek_token(1).kind == TokenKind::AsyncToken))
+            } else if core == TokenKind::LetToken || core == TokenKind::ConstToken {
+                match self.parse_global_variable() {
+                    Ok(global) => globals.push(global),
+                    Err(_) => self.recover_to_next_declaration(),
+                }
+            } else if cur == TokenKind::FunToken
+                || cur == TokenKind::AtToken
+                || cur == TokenKind::ExternToken
+                || core == TokenKind::FunToken
+                || core == TokenKind::ExternToken
             {
                 match self.parse_function(None) {
                     Ok(function) => functions.push(function),
@@ -259,7 +279,7 @@ impl<'a, 'b> Parser<'a, 'b> {
                 let cur = self.current_token();
                 self.diagnostics.report_error(
                     format!(
-                        "Expected function, class, or enum declaration but found {}",
+                        "Expected a declaration (function, class, enum, or variable) but found {}",
                         cur.kind.friendly_name()
                     ),
                     Some(cur.position),
@@ -268,7 +288,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             }
         }
         Ok(ProgramNode::new(
-            imports, structs, functions, enums, extends,
+            imports, structs, functions, enums, extends, globals,
         ))
     }
 
@@ -283,10 +303,12 @@ impl<'a, 'b> Parser<'a, 'b> {
                     | TokenKind::EnumToken
                     | TokenKind::ExtendToken
                     | TokenKind::FunToken
-                    | TokenKind::ExportToken
+                    | TokenKind::PublicToken
                     | TokenKind::ExternToken
                     | TokenKind::AsyncToken
                     | TokenKind::TypeToken
+                    | TokenKind::LetToken
+                    | TokenKind::ConstToken
             ) {
                 break;
             }

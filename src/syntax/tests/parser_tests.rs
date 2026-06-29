@@ -14,6 +14,7 @@ fn parse_code<'a>(code: &str, arena: &'a bumpalo::Bump) -> (ProgramNode<'a>, Dia
             vec![],
             vec![],
             vec![],
+            vec![],
         ))
     });
     (tree.get_root().clone(), diagnostics)

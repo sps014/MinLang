@@ -70,6 +70,7 @@ impl Compiler {
             acc.all_functions,
             acc.all_enums,
             acc.all_extends,
+            acc.all_globals,
         );
         let ast = SyntaxTree::new(combined_program);
 

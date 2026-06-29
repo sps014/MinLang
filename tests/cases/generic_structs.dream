@@ -1,10 +1,10 @@
 class Box<T> {
-    val: T;
+    public val: T;
 }
 
 class Pair<T> {
-    first: T;
-    second: T;
+    public first: T;
+    public second: T;
 }
 
 fun print_box_int(b: Box<int>) {

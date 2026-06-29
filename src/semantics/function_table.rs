@@ -236,6 +236,10 @@ pub struct FunctionTableInfo {
     /// `Future<T>` (where `T` is `return_type`). Awaiting a call to it produces `T`.
     pub is_async: bool,
     pub intrinsic_name: Option<String>,
+    /// True when the declaration is marked `public`. For methods this gates external calls
+    /// (private methods may only be called from within their declaring type). Defaults to `true`
+    /// for synthesized/stdlib entries so they are callable everywhere.
+    pub is_public: bool,
 }
 
 impl FunctionTableInfo {
@@ -250,6 +254,7 @@ impl FunctionTableInfo {
             parameters,
             is_async: false,
             intrinsic_name: None,
+            is_public: true,
         }
     }
     pub fn from(func: &FunctionNode) -> Self {
@@ -267,6 +272,9 @@ impl FunctionTableInfo {
         let mut info = FunctionTableInfo::new(name.text, return_type, parameters);
         info.is_async = func.is_async;
         info.intrinsic_name = intrinsic_name;
+        // `extern` functions/methods are interop entry points (WASM imports): they cannot be
+        // host-exported and privacy is meaningless for them, so they are always call-visible.
+        info.is_public = func.is_public || func.is_extern;
         info
     }
 }

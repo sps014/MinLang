@@ -2,7 +2,7 @@
 // the caller's binding. The callee now retains its parameter on entry so the matching
 // release at exit keeps the reference count balanced.
 class Box {
-    value: int;
+    public value: int;
 }
 
 fun read_value(b: Box): int {

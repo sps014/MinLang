@@ -4,7 +4,7 @@
 
 extend int {
     // Absolute value of this integer.
-    fun abs(): int {
+    public fun abs(): int {
         if (this < 0) {
             return 0 - this;
         }
@@ -12,7 +12,7 @@ extend int {
     }
 
     // The smaller of this and `other`.
-    fun min(other: int): int {
+    public fun min(other: int): int {
         if (this < other) {
             return this;
         }
@@ -20,7 +20,7 @@ extend int {
     }
 
     // The larger of this and `other`.
-    fun max(other: int): int {
+    public fun max(other: int): int {
         if (this > other) {
             return this;
         }
@@ -28,7 +28,7 @@ extend int {
     }
 
     // This value constrained to the inclusive range [lo, hi].
-    fun clamp(lo: int, hi: int): int {
+    public fun clamp(lo: int, hi: int): int {
         if (this < lo) {
             return lo;
         }
@@ -39,7 +39,7 @@ extend int {
     }
 
     // This value raised to a non-negative integer power (exponents <= 0 yield 1).
-    fun pow(exp: int): int {
+    public fun pow(exp: int): int {
         let result = 1;
         let i = 0;
         while (i < exp) {
@@ -50,7 +50,7 @@ extend int {
     }
 
     // The sign of this value: -1, 0, or 1.
-    fun signum(): int {
+    public fun signum(): int {
         if (this > 0) {
             return 1;
         }
@@ -62,7 +62,7 @@ extend int {
 
     // Parses a (possibly signed) decimal integer from `text`. Non-digit characters are ignored;
     // an empty or all-non-digit string yields 0. Called as `int.parse("42")`.
-    static fun parse(text: string): int {
+    public static fun parse(text: string): int {
         let n = text.len();
         let i = 0;
         let neg = false;

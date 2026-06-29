@@ -38,6 +38,37 @@ count = count + 1;
 
 Compound assignment (`+=`, `-=`, `*=`, `/=`, `%=`) and increment/decrement (`++`, `--`) are also supported (see [operators](operators.md)).
 
+## Top-level variables
+
+`let` and `const` can also be declared at the top level of a file, outside any function or class. These become module globals: their initializers run once, in declaration order, when the module is instantiated, and a later global may reference an earlier one.
+
+```ts
+let counter: int = 10;
+const FACTOR: int = 3;
+let derived: int = counter * FACTOR;   // may reference earlier globals
+
+fun main(): void {
+    counter = counter + 5;             // top-level `let` is mutable
+    System.println(derived);
+}
+```
+
+Like class members, top-level variables are **private by default** — visible throughout their own module but not exported. Two modifiers adjust this:
+
+- `public` — also export the variable to the WebAssembly host and make it module-visible.
+- `static` — keep the variable file-local.
+
+`public` and `static` are mutually exclusive on the same declaration:
+
+```ts
+public let version: int = 1;   // exported to the host
+static let cache: int = 0;     // file-local
+
+// public static let x = 1;    // error: cannot be both 'public' and 'static'
+```
+
+A top-level `const` is immutable just like a local one; reassigning it is a compile error.
+
 ## Scope
 
 Variables live until the end of the block they are declared in. When a reference-typed variable (string, array, class) goes out of scope, its reference count is decremented automatically.

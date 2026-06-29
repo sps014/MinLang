@@ -2,15 +2,15 @@ class InternalData {
     value: int;
 }
 
-export class PublicData {
+public class PublicData {
     val: int;
 }
 
-export fun get_internal(): InternalData {
+public fun get_internal(): InternalData {
     return InternalData(1);
 }
 
-export fun get_public(): PublicData {
+public fun get_public(): PublicData {
     return PublicData(2);
 }
 

@@ -1,12 +1,12 @@
 @json
-class Address { city: string; zip: string; }
+class Address { public city: string; public zip: string; }
 
 @json
 class Profile {
-    name: string;
-    nickname: string?;
-    address: Address?;
-    age: int;
+    public name: string;
+    public nickname: string?;
+    public address: Address?;
+    public age: int;
 }
 
 fun main(): void {

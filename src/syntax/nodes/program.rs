@@ -1,7 +1,30 @@
+use super::expression::ExpressionNode;
 use super::function::FunctionNode;
 use super::struct_node::StructDeclarationNode;
+use super::types::Type;
 use crate::syntax::token::syntax_token::SyntaxToken;
 use std::rc::Rc;
+
+/// A top-level variable declaration: `let`/`const` written outside any class or function. The
+/// initializer is an arbitrary expression evaluated once, in declaration order, by the generated
+/// module-init function that runs before `main`.
+#[derive(Debug, Clone)]
+pub struct GlobalVariableNode<'a> {
+    pub name: SyntaxToken,
+    /// The explicit type annotation, if written (`let x: int = ...`). When absent the type is
+    /// inferred from the initializer.
+    pub declared_type: Option<Type>,
+    pub initializer: ExpressionNode<'a>,
+    /// `const` declarations may not be reassigned after initialization.
+    pub is_const: bool,
+    /// `public` exposes the variable to other modules; private (the default) is module-internal.
+    pub is_public: bool,
+    /// `static` pins the variable to file/module-internal linkage (it can never be `public`).
+    pub is_static: bool,
+    /// Source file this declaration came from; set during multi-file merge so semantic
+    /// diagnostics can report the correct file. `None` for synthesized nodes.
+    pub file_path: Option<Rc<str>>,
+}
 
 /// Represents an import declaration in the AST
 #[derive(Debug, Clone)]
@@ -68,6 +91,8 @@ pub struct ProgramNode<'a> {
     pub functions: Vec<FunctionNode<'a>>,
     pub enums: Vec<EnumDeclarationNode>,
     pub extends: Vec<ExtendNode<'a>>,
+    /// Top-level `let`/`const` variables declared outside any class or function.
+    pub globals: Vec<GlobalVariableNode<'a>>,
 }
 
 impl<'a> ProgramNode<'a> {
@@ -78,6 +103,7 @@ impl<'a> ProgramNode<'a> {
         functions: Vec<FunctionNode<'a>>,
         enums: Vec<EnumDeclarationNode>,
         extends: Vec<ExtendNode<'a>>,
+        globals: Vec<GlobalVariableNode<'a>>,
     ) -> ProgramNode<'a> {
         ProgramNode {
             imports,
@@ -85,6 +111,7 @@ impl<'a> ProgramNode<'a> {
             functions,
             enums,
             extends,
+            globals,
         }
     }
 }

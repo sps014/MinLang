@@ -659,6 +659,11 @@ impl<'a> WasmGenerator<'a> {
             .map(|m| m.contains_key(&identifier.text))
             .unwrap_or(false);
         if !is_local {
+            // A top-level variable lives in a WASM global, not a function local.
+            if self.ctx.globals.contains_key(&identifier.text) {
+                writer.write_line(&format!("global.get ${}", identifier.text));
+                return Ok(());
+            }
             if let Some(idx) = self.ctx.function_indices.get(&identifier.text) {
                 writer.write_line(&format!("i32.const {}", idx));
                 return Ok(());

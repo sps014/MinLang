@@ -102,17 +102,17 @@ fun main() {
 
 Closures (capturing surrounding variables) are not yet supported.
 
-## Exported functions
+## Public functions
 
-Mark a function `export` to expose it to the WebAssembly host environment:
+Functions are **private by default** — callable within their own module but not exposed to the host. Mark a function `public` to make it module-visible and export it to the WebAssembly host environment:
 
 ```ts
-export fun compute(n: int): int {
+public fun compute(n: int): int {
     return n * n;
 }
 ```
 
-Exported functions cannot expose classes that are not themselves exported.
+A `public` function cannot expose a class that is not itself `public`.
 
 ## Entry point
 

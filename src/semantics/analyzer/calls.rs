@@ -92,7 +92,7 @@ impl<'a> Analyzer<'a> {
             }
         };
 
-        if method.text.starts_with('_') && !self.in_methods_of(parent_function, type_name) {
+        if !store_sig.is_public && !self.in_methods_of(parent_function, type_name) {
             diagnostics.report_error(
                 format!("'{}' is private to '{}'", method.text, type_name),
                 Some(method.position),
@@ -153,6 +153,15 @@ impl<'a> Analyzer<'a> {
         parent_function: &FunctionNode<'a>,
         base_name: &str,
     ) -> bool {
+        // A `static` method belongs to its declaring type, so it may access that type's private
+        // members even though it has no `this` receiver. Static methods are registered under the
+        // mangled name `{Type}_{method}`, so a name prefixed with `{base_name}_` identifies one.
+        if parent_function.is_static {
+            let name = &parent_function.name.text;
+            return name == base_name
+                || name.starts_with(&format!("{}_", base_name))
+                || base_name.starts_with(&format!("{}_", name));
+        }
         let Some(first) = parent_function.parameters.first() else {
             return false;
         };
@@ -343,6 +352,7 @@ impl<'a> Analyzer<'a> {
                         .as_ref()
                         .map(|ret| Self::monomorphize_type(ret, &bindings)),
                     is_async: template.is_async,
+                    is_public: template.is_public,
                     intrinsic_name: template.attributes
                         .iter()
                         .find(|a| a.name.text == "intrinsic")
@@ -703,21 +713,6 @@ impl<'a> Analyzer<'a> {
         let obj_type =
             self.analyze_expression(obj, ctx.parent_function, ctx.symbol_table, diagnostics)?;
 
-        // Private methods (`_name`) may only be called from within the declaring type's own methods.
-        if method.text.starts_with('_') {
-            let receiver_base = strip_nullable(&obj_type.get_type()).to_string();
-            let base_name = Self::resolve_struct_parts(&obj_type)
-                .map(|(b, _)| b)
-                .unwrap_or_else(|| receiver_base.clone());
-
-            if !self.in_methods_of(ctx.parent_function, &base_name) {
-                diagnostics.report_error(
-                    format!("'{}' is private to '{}'", method.text, base_name),
-                    Some(method.position),
-                );
-            }
-        }
-
         // `EnumValue.name()`: built-in accessor returning the variant name as a string.
         if method.text == intrinsics::ENUM_NAME {
             let base = strip_nullable(&obj_type.get_type()).to_string();
@@ -802,6 +797,20 @@ impl<'a> Analyzer<'a> {
                 }
             }
         };
+
+        // Private methods (the default) may only be called from within the declaring type's own
+        // methods; `public` exposes them to outside code.
+        if !store_sig.is_public {
+            let base_name = Self::resolve_struct_parts(&obj_type)
+                .map(|(b, _)| b)
+                .unwrap_or_else(|| strip_nullable(&obj_type.get_type()).to_string());
+            if !self.in_methods_of(ctx.parent_function, &base_name) {
+                diagnostics.report_error(
+                    format!("'{}' is private to '{}'", method.text, base_name),
+                    Some(method.position),
+                );
+            }
+        }
 
         let mut expected_params = store_sig.parameters.clone();
 

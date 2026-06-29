@@ -1,16 +1,16 @@
 class Vec2 {
-    x: int;
-    y: int;
+    public x: int;
+    public y: int;
 
-    static fun origin(): Vec2 {
+    public static fun origin(): Vec2 {
         return Vec2(0, 0);
     }
 
-    static fun of(x: int, y: int): Vec2 {
+    public static fun of(x: int, y: int): Vec2 {
         return Vec2(x, y);
     }
 
-    fun sum(): int {
+    public fun sum(): int {
         return this.x + this.y;
     }
 }

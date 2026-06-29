@@ -1,0 +1,7 @@
+// A top-level `const` is immutable; reassigning it is a compile-time error.
+const LIMIT: int = 5;
+
+fun main(): void {
+    LIMIT = 6;
+    System.println(LIMIT);
+}

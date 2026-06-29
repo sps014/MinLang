@@ -1,7 +1,7 @@
 /// Mathematical functions implemented in pure Dream.
 class Math {
     /// Returns the absolute value of `x`.
-    static fun abs(x: double): double {
+    public static fun abs(x: double): double {
         if (x < 0.0d) {
             return 0.0d - x;
         }
@@ -9,7 +9,7 @@ class Math {
     }
 
     /// Returns the largest integer less than or equal to `x`.
-    static fun floor(x: double): double {
+    public static fun floor(x: double): double {
         let i = (double) (int) x;
         if ((x < 0.0d) && (x != i)) {
             return i - 1.0d;
@@ -18,7 +18,7 @@ class Math {
     }
 
     /// Returns the smallest integer greater than or equal to `x`.
-    static fun ceil(x: double): double {
+    public static fun ceil(x: double): double {
         let i = (double) (int) x;
         if ((x > 0.0d) && (x != i)) {
             return i + 1.0d;
@@ -27,7 +27,7 @@ class Math {
     }
 
     /// Returns the value of `x` rounded to the nearest integer.
-    static fun round(x: double): double {
+    public static fun round(x: double): double {
         if (x >= 0.0d) {
             return Math.floor(x + 0.5d);
         }
@@ -35,7 +35,7 @@ class Math {
     }
 
     /// Returns the square root of `x` using the Newton-Raphson method.
-    static fun sqrt(x: double): double {
+    public static fun sqrt(x: double): double {
         if (x < 0.0d) {
             return 0.0d; // Error case, usually NaN but Dream doesn't have NaN literal
         }
@@ -52,7 +52,7 @@ class Math {
     }
 
     /// Returns `base` to the exponent power (integer exponents only for simplicity in basic implementation).
-    static fun pow(base: double, exponent: double): double {
+    public static fun pow(base: double, exponent: double): double {
         if (exponent == 0.0d) {
             return 1.0d;
         }
@@ -70,7 +70,7 @@ class Math {
     }
 
     /// Returns the sine of the angle `x` (in radians) using Taylor series approximation.
-    static fun sin(x: double): double {
+    public static fun sin(x: double): double {
         // Normalize x to -PI to PI
         let pi = 3.141592653589793d;
         let normalized = x;
@@ -95,7 +95,7 @@ class Math {
     }
 
     /// Returns the cosine of the angle `x` (in radians) using Taylor series approximation.
-    static fun cos(x: double): double {
+    public static fun cos(x: double): double {
         let pi = 3.141592653589793d;
         let normalized = x;
         while (normalized > pi) {
@@ -119,7 +119,7 @@ class Math {
     }
 
     /// Returns the tangent of the angle `x` (in radians).
-    static fun tan(x: double): double {
+    public static fun tan(x: double): double {
         return Math.sin(x) / Math.cos(x);
     }
 }

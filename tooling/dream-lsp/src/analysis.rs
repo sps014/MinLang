@@ -9,7 +9,9 @@ use dream::driver::diagnostics::{DiagnosticBag, Severity};
 use dream::semantics::analyzer::Analyzer;
 use dream::syntax::lexer::Lexer;
 use dream::syntax::nodes::struct_node::StructDeclarationNode;
-use dream::syntax::nodes::{EnumDeclarationNode, ExtendNode, FunctionNode, ProgramNode};
+use dream::syntax::nodes::{
+    EnumDeclarationNode, ExtendNode, FunctionNode, GlobalVariableNode, ProgramNode,
+};
 use dream::syntax::parser::Parser;
 use dream::syntax::syntax_tree::SyntaxTree;
 
@@ -59,6 +61,7 @@ pub fn collect_diagnostics(file_path: Option<&str>, text: &str) -> Vec<Diagnosti
             &mut acc.all_structs,
             &mut acc.all_enums,
             &mut acc.all_extends,
+            &mut acc.all_globals,
         );
 
         if let Some(path_str) = file_path {
@@ -105,6 +108,7 @@ pub fn collect_diagnostics(file_path: Option<&str>, text: &str) -> Vec<Diagnosti
             acc.all_functions,
             acc.all_enums,
             acc.all_extends,
+            acc.all_globals,
         );
         let tree = SyntaxTree::new(combined);
         let mut analyzer = Analyzer::new(&tree, &arena);
@@ -166,6 +170,7 @@ fn merge_prelude<'a>(
 
         if let Ok(ast) = parsed {
             let mut enums = Vec::new();
+            let mut globals = Vec::new();
             collect_declarations(
                 ast.get_root(),
                 name,
@@ -173,6 +178,7 @@ fn merge_prelude<'a>(
                 all_structs,
                 &mut enums,
                 all_extends,
+                &mut globals,
             );
         }
     }
@@ -188,6 +194,7 @@ fn collect_declarations<'a>(
     all_structs: &mut Vec<StructDeclarationNode<'a>>,
     all_enums: &mut Vec<EnumDeclarationNode>,
     all_extends: &mut Vec<ExtendNode<'a>>,
+    all_globals: &mut Vec<GlobalVariableNode<'a>>,
 ) {
     let tag: Rc<str> = Rc::from(file_tag);
 
@@ -214,5 +221,10 @@ fn collect_declarations<'a>(
             method.file_path = Some(tag.clone());
         }
         all_extends.push(extend_decl);
+    }
+    for global in program.globals.iter().cloned() {
+        let mut global = global;
+        global.file_path = Some(tag.clone());
+        all_globals.push(global);
     }
 }

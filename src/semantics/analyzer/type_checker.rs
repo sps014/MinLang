@@ -40,7 +40,9 @@ impl<'a> Analyzer<'a> {
         function: &FunctionNode<'a>,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<SymbolTable, ()> {
-        let mut param_table = SymbolTable::new(None);
+        // Parent the parameter table off the module-global scope so function bodies resolve
+        // top-level variables (and their `const`-ness) through ordinary lexical lookup.
+        let mut param_table = SymbolTable::new(Some(self.global_symbol_table.clone()));
         for param in function.parameters.iter() {
             self.check_reserved_name(&param.name, "parameter", diagnostics);
             if let Err(e) = param_table.add_symbol(param.name.text.clone(), param.type_.clone()) {

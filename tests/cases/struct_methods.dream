@@ -1,23 +1,23 @@
 class Counter {
-    count: int;
+    public count: int;
 
-    fun increment() {
+    public fun increment() {
         this.count = this.count + 1;
     }
 
-    fun add(amount: int) {
+    public fun add(amount: int) {
         this.count = this.count + amount;
     }
 
-    fun get(): int {
+    public fun get(): int {
         return this.count;
     }
 }
 
 class GenericBox<T> {
-    val: T;
+    public val: T;
 
-    fun print_val() {
+    public fun print_val() {
         if (this.val is int) {
             System.println(this.val);
         } else if (this.val is float) {
@@ -27,7 +27,7 @@ class GenericBox<T> {
         }
     }
 
-    fun set_val(new_val: T) {
+    public fun set_val(new_val: T) {
         this.val = new_val;
     }
 }
