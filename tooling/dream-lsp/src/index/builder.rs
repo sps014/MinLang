@@ -123,6 +123,19 @@ impl Builder {
                     })
             }
             ExpressionNode::Parenthesized(inner) => self.infer_type(inner, scope),
+            ExpressionNode::Await(inner) => {
+                // `await` unwraps a `Future<T>` to `T`. Call inference already reports an async
+                // function's *declared* return type (e.g. `int` for `async fun f(): int`), so the
+                // inner type is usually the awaited type already; only an explicit `Future<T>`
+                // needs unwrapping.
+                let inner_ty = self.infer_type(inner, scope)?;
+                let unwrapped = inner_ty
+                    .strip_prefix("Future<")
+                    .and_then(|rest| rest.strip_suffix('>'))
+                    .map(|t| t.to_string())
+                    .unwrap_or(inner_ty);
+                Some(unwrapped)
+            }
             _ => None,
         }
     }

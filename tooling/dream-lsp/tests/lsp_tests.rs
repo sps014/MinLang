@@ -546,6 +546,32 @@ fun main(): void {
 }
 
 #[test]
+fn await_call_infers_unwrapped_type() {
+    use dream_lsp::index::{Index, InlayKind};
+    let src = "
+async fun delayedDouble(n: int): int {
+    await sleep(100);
+    return n * 2;
+}
+async fun main(): void {
+    let a = await delayedDouble(10);
+}
+";
+    let index = Index::build(None, src);
+    let labels: Vec<&str> = index
+        .inlay_hints
+        .iter()
+        .filter(|h| h.kind == InlayKind::Type)
+        .map(|h| h.label.as_str())
+        .collect();
+    assert!(
+        labels.contains(&": int"),
+        "`let a = await delayedDouble(10)` should show `: int`, not unknown; got {:?}",
+        labels
+    );
+}
+
+#[test]
 fn hover_shows_doc_comment_above_attribute() {
     let src = "
 class System {

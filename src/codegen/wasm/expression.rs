@@ -11,8 +11,10 @@ use crate::syntax::token::token_kind::TokenKind;
 use std::io::Error;
 
 impl<'a> WasmGenerator<'a> {
-    /// Builds an expression, applying implicit boxing when a primitive value flows into an
-    /// `object`-typed context (the `left_side`). All other cases defer to `build_expression_inner`.
+    /// Builds an expression, applying the two implicit coercions the analyzer permits at value
+    /// sinks (assignments, call arguments, returns): boxing a primitive into an `object` context,
+    /// and widening a narrower numeric into a wider one (`int` -> `float` -> `double`). All other
+    /// cases defer to `build_expression_inner`.
     pub fn build_expression(
         &mut self,
         expression: &ExpressionNode<'a>,
@@ -31,6 +33,24 @@ impl<'a> WasmGenerator<'a> {
                 return Ok(());
             }
         }
+
+        // Implicit numeric widening: a narrower numeric value flowing into a wider numeric context
+        // (e.g. the `float` literal `3.14` passed to a `double` parameter) must be promoted on the
+        // WASM stack, otherwise validation fails with an operand type mismatch. The value is built
+        // in its own type first, then converted. Narrowing never reaches here (the analyzer
+        // requires an explicit cast, which is lowered by `build_cast`).
+        let target_base = strip_nullable(left_side);
+        if matches!(target_base, "int" | "float" | "double") {
+            if let Ok(real) = self.infer_expression_type(expression, function) {
+                let real_base = strip_nullable(&real);
+                if let Some(instr) = numeric_widen_instr(real_base, target_base) {
+                    self.build_expression_inner(expression, &real, function, writer)?;
+                    writer.write_line(instr);
+                    return Ok(());
+                }
+            }
+        }
+
         self.build_expression_inner(expression, left_side, function, writer)
     }
 
@@ -995,5 +1015,17 @@ impl<'a> WasmGenerator<'a> {
 
         WasmGenerator::emit_load(left_side, writer)?;
         Ok(())
+    }
+}
+
+/// The WASM instruction that widens a numeric value of type `from` to the wider type `to`
+/// (`int` -> `float` -> `double`), or `None` when no widening is needed (`from == to`) or the
+/// conversion would be a narrowing (which requires an explicit cast).
+fn numeric_widen_instr(from: &str, to: &str) -> Option<&'static str> {
+    match (from, to) {
+        ("int", "float") => Some("f32.convert_i32_s"),
+        ("int", "double") => Some("f64.convert_i32_s"),
+        ("float", "double") => Some("f64.promote_f32"),
+        _ => None,
     }
 }

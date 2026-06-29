@@ -1,0 +1,27 @@
+// Implicit numeric widening (int -> float -> double) at method-call arguments. Regression test
+// for codegen failing to promote a narrower numeric on the WASM operand stack (e.g. passing a
+// `float`/`int` literal to a `double` parameter), which previously produced an invalid module.
+
+class Calc {
+    public static fun identity(x: double): double {
+        return x;
+    }
+
+    public static fun add(a: double, b: double): double {
+        return a + b;
+    }
+}
+
+fun main(): void {
+    // float literal -> double parameter
+    let a = Calc.identity(1.5f);
+    System.println(to_string(a));
+
+    // int literal -> double parameter
+    let b = Calc.identity(3);
+    System.println(to_string(b));
+
+    // both arguments widened (int -> double)
+    let c = Calc.add(10, 20);
+    System.println(to_string(c));
+}
