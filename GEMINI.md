@@ -96,6 +96,8 @@ Adhere to strict software engineering standards to maintain long-term scalabilit
 *   **Don't Repeat Yourself (DRY):**
     *   Consolidate common type-checking routines, helper operations, or expression evaluations into shared helper traits/methods inside `src/semantics/` or `src/syntax/nodes/`.
     *   The standard library files in `src/stdlib/*.dream` are the single source of truth. Both the main compiler and the `dream-lsp` reuse these exact files via `PRELUDE_FILES` to prevent behavior and definitions from drifting.
+    *   **Intrinsics registry (`src/intrinsics.rs`):** the builtins/`@intrinsic`-tagged stdlib operations the compiler special-cases live in one place. Recognize them through the registry's constants/predicates and classify `@intrinsic("…")` static methods via `IntrinsicOp::from_key`/`from_attributes` — never re-match bare strings like `"print"`, `"len"`, or `"promise_all"` in the analyzer or codegen.
+    *   **Reserved names (`src/syntax/nodes/types.rs`):** special member names (`constructor`/`del` via `is_special_member_name`), the `@intrinsic` attribute name, and synthetic `for-each` locals are defined once and reused by parser/semantics/codegen rather than re-spelled as literals.
 *   **Open/Closed Principle (OCP):**
     *   Compiler passes rely on robust pattern matching over abstract syntax enums (e.g., `ExpressionNode` or `StatementNode`).
     *   When adding a new statement or expression, declare its representation in `src/syntax/nodes/` and let the Rust compiler's exhaustiveness checks guide you through updating the matching blocks across the parser, analyzer, and codegen. This design allows extending the language safely with compile-time correctness guarantees.
@@ -111,6 +113,8 @@ Adhere to strict software engineering standards to maintain long-term scalabilit
     ```rust
     diagnostics.report_error("Message text".to_string(), Some(node_span));
     ```
+*   **Parser is recover-and-continue.** `match_token` synthesizes a placeholder token (and reports an error) instead of bailing, and `parse_program`/`parse_block` recover at declaration/statement boundaries, so `parse()` *always* returns a `ProgramNode` regardless of how malformed the input is. Every token-consuming loop must keep its `ensure_progress` guard so recovery can never spin forever. The fuzz/property tests in `src/syntax/tests/parser_tests.rs` (`fuzz_*`) lock in the "never panics, always returns a ProgramNode" guarantee — keep them green when touching the parser.
+*   **Semantics use a poison type to stop cascades.** On a type error (unresolved identifier, unknown call/member, etc.) the analyzer reports once and returns `Type::Unknown`. `Unknown` unifies with every type (`compare_data_type`, `type_str_assignable`, `overload_arg_compatible` all short-circuit on it), so a single mistake never snowballs into a flood of follow-on diagnostics. New analyzer arms should return `Type::Unknown` on error (not `Type::Void`) and skip their own checks when an operand `is_unknown()`. Codegen never runs once any error is reported, so `Unknown` never needs lowering.
 
 ### 4.4. Standard Library (Prelude)
 *   The standard library files under `src/stdlib/*.dream` are embedded directly into the compiled binary.

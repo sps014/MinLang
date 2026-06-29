@@ -216,7 +216,7 @@ impl<'a> Analyzer<'a> {
     ) -> Result<(), ()> {
         let cond_type =
             self.analyze_expression(condition, parent_function, symbol_table, diagnostics)?;
-        if cond_type.get_type() != "bool" {
+        if !cond_type.is_unknown() && cond_type.get_type() != "bool" {
             diagnostics.report_error(
                 format!("while condition must be bool, got {}", cond_type.get_type()),
                 condition.position(),
@@ -253,7 +253,7 @@ impl<'a> Analyzer<'a> {
         if let Some(cond_expr) = condition {
             let cond_type =
                 self.analyze_expression(cond_expr, ctx.parent_function, &for_scope, diagnostics)?;
-            if cond_type.get_type() != "bool" {
+            if !cond_type.is_unknown() && cond_type.get_type() != "bool" {
                 diagnostics.report_error(
                     format!("for condition must be bool, got {}", cond_type.get_type()),
                     cond_expr.position(),
@@ -431,7 +431,7 @@ impl<'a> Analyzer<'a> {
 
         let index_type =
             self.analyze_expression(index, parent_function, symbol_table, diagnostics)?;
-        if index_type.get_type() != "int" {
+        if !index_type.is_unknown() && index_type.get_type() != "int" {
             diagnostics.report_error(
                 format!(
                     "Array index must be of type int, got {}",
@@ -553,7 +553,7 @@ impl<'a> Analyzer<'a> {
                 ctx.symbol_table,
                 diagnostics,
             )?;
-            if cond_type.get_type() != "bool" {
+            if !cond_type.is_unknown() && cond_type.get_type() != "bool" {
                 diagnostics.report_error(
                     format!("if condition must be bool, got {}", cond_type.get_type()),
                     condition.position(),
@@ -600,7 +600,7 @@ impl<'a> Analyzer<'a> {
                     ctx.symbol_table,
                     diagnostics,
                 )?;
-                if elif_cond_type.get_type() != "bool" {
+                if !elif_cond_type.is_unknown() && elif_cond_type.get_type() != "bool" {
                     diagnostics.report_error(
                         format!(
                             "else if condition must be bool, got {}",

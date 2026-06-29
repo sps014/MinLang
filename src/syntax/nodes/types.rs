@@ -115,10 +115,38 @@ pub fn json_from_json_fn(struct_name: &str) -> String {
     method_fn(struct_name, "from_json")
 }
 
+/// The reserved member name of a type's constructor declaration (`constructor(...) { ... }`).
+/// The parser recognizes it, semantics validates it, and codegen mangles it via
+/// [`constructor_fn`]. Single source of truth so the spelling never drifts between layers.
+pub const CONSTRUCTOR_NAME: &str = "constructor";
+
+/// The reserved member name of a type's destructor declaration (`del() { ... }`), run on
+/// scope exit. Single source of truth shared by parser/semantics/codegen.
+pub const DESTRUCTOR_NAME: &str = "del";
+
+/// True if `name` is a reserved member declaration keyword (`constructor`/`del`) that the parser
+/// accepts without the leading `fun` and that cannot be marked `public` or carry a return type.
+pub fn is_special_member_name(name: &str) -> bool {
+    name == CONSTRUCTOR_NAME || name == DESTRUCTOR_NAME
+}
+
+/// The synthetic loop-index local the parser emits when lowering a `for-each`; `n` is a
+/// per-loop counter that keeps nested loops from colliding. Centralized so the parser is the
+/// only place that knows the spelling.
+pub fn foreach_index_local(n: usize) -> String {
+    format!("__foreach_idx_{}", n)
+}
+
+/// The synthetic array-holder local the parser emits when lowering a `for-each`. See
+/// [`foreach_index_local`].
+pub fn foreach_array_local(n: usize) -> String {
+    format!("__foreach_arr_{}", n)
+}
+
 /// The internal name under which a struct's user-defined constructor is registered/emitted
 /// (e.g. `User_constructor`). Single source of truth for the constructor naming convention.
 pub fn constructor_fn(struct_name: &str) -> String {
-    method_fn(struct_name, "constructor")
+    method_fn(struct_name, CONSTRUCTOR_NAME)
 }
 
 /// The base type name of the async handle `Future<T>`. Single source of truth for the identifier
@@ -173,6 +201,22 @@ pub enum Type {
     /// index into the module's function table (used with `call_indirect`).
     Function(Vec<Type>, Box<Type>),
     Void,
+    /// The "poison" type produced on a semantic error (e.g. an unresolved identifier or call).
+    /// It is assignable to and from every type so a single mistake does not cascade into a flood
+    /// of follow-on diagnostics. It exists only during analysis of erroneous programs; codegen
+    /// never runs once any error is reported, so it never has to be lowered.
+    Unknown,
+}
+
+/// The sentinel type name carried by [`Type::Unknown`]. Chosen with angle brackets so it can never
+/// collide with a user-declared identifier.
+pub const UNKNOWN_TYPE_NAME: &str = "<unknown>";
+
+/// True if `name` is the poison sentinel produced on type errors (see [`Type::Unknown`]).
+pub fn is_unknown_type_name(name: &str) -> bool {
+    // Strip any nullable/array suffixes a caller may have appended before comparing.
+    let base = strip_array(strip_nullable(name));
+    base == UNKNOWN_TYPE_NAME
 }
 
 impl Type {
@@ -202,6 +246,7 @@ impl Type {
                     .join(",");
                 format!("fun({}):{}", params_str, ret.get_type())
             }
+            Type::Unknown => UNKNOWN_TYPE_NAME.to_string(),
         }
     }
 
@@ -233,9 +278,15 @@ impl Type {
                     .join(", ");
                 format!("fun({}): {}", params_str, ret.display_name())
             }
+            Type::Unknown => "unknown".to_string(),
             // Primitives and bare generic parameters spell the same either way.
             _ => self.get_type(),
         }
+    }
+
+    /// True if this is the poison [`Type::Unknown`] produced on a semantic error.
+    pub fn is_unknown(&self) -> bool {
+        matches!(self, Type::Unknown)
     }
 
     /// Returns true if this type is a nullable (`T?`) type.
@@ -267,7 +318,7 @@ impl Type {
             | Type::Object(token)
             | Type::Struct(token, _) => Some(token.position),
             Type::Array(inner) | Type::Nullable(inner) => inner.get_span(),
-            Type::Void | Type::Generic(_) | Type::Function(_, _) => None,
+            Type::Void | Type::Generic(_) | Type::Function(_, _) | Type::Unknown => None,
         }
     }
 
@@ -287,6 +338,7 @@ impl Type {
             Type::Generic(_) => "".to_string(), // Can be improved
             Type::Nullable(inner) => inner.get_line_str(),
             Type::Function(_, _) => "".to_string(),
+            Type::Unknown => "".to_string(),
         }
     }
 

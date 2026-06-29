@@ -78,7 +78,7 @@ impl<'a> WasmGenerator<'a> {
             if !func.is_extern {
                 continue;
             }
-            if func.attributes.iter().any(|a| a.name.text == "intrinsic") {
+            if crate::intrinsics::has_intrinsic_attr(&func.attributes) {
                 continue;
             }
 

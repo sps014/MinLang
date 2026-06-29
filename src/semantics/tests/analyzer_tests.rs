@@ -128,3 +128,62 @@ fn test_analyze_await_non_future_rejected() {
     let diagnostics = analyze_code(code);
     assert_eq!(diagnostics.has_errors(), true);
 }
+
+#[test]
+fn test_unresolved_identifier_does_not_cascade() {
+    // A single unresolved identifier should report exactly one error: the poison/`Unknown` type it
+    // produces unifies with everything, so the downstream `+`, the `: int` annotation, the call
+    // argument, and the array index must NOT each add their own follow-on diagnostic.
+    let code = "
+        fun takes_int(n: int): int { return n; }
+        fun main(): void {
+            let a: int = missing + 1;
+            let b: int = takes_int(missing);
+            let arr: int[] = [1, 2, 3];
+            let c: int = arr[missing];
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    let errors: Vec<&str> = diagnostics
+        .diagnostics
+        .iter()
+        .map(|d| d.message.as_str())
+        .collect();
+    // Three uses of `missing`, so three "does not exist" errors -- and nothing else.
+    let undefined = errors
+        .iter()
+        .filter(|m| m.contains("missing does not exist"))
+        .count();
+    assert_eq!(undefined, 3, "expected 3 undefined-identifier errors, got: {:?}", errors);
+    assert_eq!(
+        errors.len(),
+        3,
+        "poison type should suppress cascading errors; got: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn test_unknown_call_result_does_not_cascade() {
+    // Calling an unknown function poisons the result; the inferred variable is poison too, so
+    // using it must not pile on more errors.
+    let code = "
+        fun main(): void {
+            let x = nope();
+            let y: int = x + 1;
+            let z: bool = x;
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    let errors: Vec<&str> = diagnostics
+        .diagnostics
+        .iter()
+        .map(|d| d.message.as_str())
+        .collect();
+    assert_eq!(
+        errors.len(),
+        1,
+        "only the unknown-function error should be reported; got: {:?}",
+        errors
+    );
+}

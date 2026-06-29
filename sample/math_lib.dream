@@ -19,6 +19,6 @@ public class Test
 
     /* print_name is a function that prints the name of the object */
     public fun print_name() {
-        System.println(this.name);
+        System.print(this.name);
     }
 }

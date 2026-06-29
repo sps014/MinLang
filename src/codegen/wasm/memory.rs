@@ -171,7 +171,7 @@ impl<'a> WasmGenerator<'a> {
         // refcount is first pinned to 1; this keeps that internal release from dropping the
         // count back to 0 and re-entering this release function.
         if struct_info.is_some() {
-            let drop_name = method_fn(type_name, "del");
+            let drop_name = method_fn(type_name, crate::syntax::nodes::types::DESTRUCTOR_NAME);
             if self.function_table.get_function(&drop_name).is_ok() {
                 writer.write_line("local.get $ref_count_ptr");
                 writer.write_line("i32.const 1");

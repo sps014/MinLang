@@ -788,24 +788,24 @@ impl<'a> WasmGenerator<'a> {
         // `Type.method(args)`: a static call. Arguments map 1:1 to the parameters (no `this`).
         if let Some(key) = self.resolve_static_call(obj, &method.text, params, function) {
             let info = self.function_table.get_function(&key)?;
-            if let Some(intrinsic) = &info.intrinsic_name {
-                match intrinsic.as_str() {
-                    "print" => {
+            if let Some(op) = info
+                .intrinsic_name
+                .as_deref()
+                .and_then(intrinsics::IntrinsicOp::from_key)
+            {
+                use intrinsics::IntrinsicOp;
+                match op {
+                    IntrinsicOp::Print => {
                         return self.build_print(&params[0], function, writer);
                     }
-                    "println" => {
+                    IntrinsicOp::Println => {
                         return self.build_println(&params[0], function, writer);
                     }
-                    "promise_all" => {
-                        return self.build_async_intrinsic_call(intrinsics::PROMISE_ALL, params, function, writer);
+                    IntrinsicOp::PromiseAll | IntrinsicOp::PromiseAny | IntrinsicOp::PromiseRace => {
+                        let combinator = op.promise_combinator().expect("combinator op");
+                        return self.build_async_intrinsic_call(combinator, params, function, writer);
                     }
-                    "promise_any" => {
-                        return self.build_async_intrinsic_call(intrinsics::PROMISE_ANY, params, function, writer);
-                    }
-                    "promise_race" => {
-                        return self.build_async_intrinsic_call(intrinsics::PROMISE_RACE, params, function, writer);
-                    }
-                    "json_serialize" => {
+                    IntrinsicOp::JsonSerialize => {
                         let arg_type = self.infer_expression_type(&params[0], function)?;
                         let struct_name = strip_nullable(&arg_type).to_string();
                         self.build_expression(&params[0], &arg_type, function, writer)?;
@@ -813,7 +813,7 @@ impl<'a> WasmGenerator<'a> {
                         writer.write_line("call $JSON_stringify");
                         return Ok(());
                     }
-                    "json_deserialize" => {
+                    IntrinsicOp::JsonDeserialize => {
                         let struct_name = _generic_args
                             .as_ref()
                             .and_then(|g| g.first())
@@ -824,7 +824,6 @@ impl<'a> WasmGenerator<'a> {
                         writer.write_line(&format!("call ${}", json_from_json_fn(&struct_name)));
                         return Ok(());
                     }
-                    _ => {}
                 }
             }
 

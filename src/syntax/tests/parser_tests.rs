@@ -328,3 +328,133 @@ fn test_parse_extern_async_either_order() {
         assert!(func.is_async, "code: {}", code);
     }
 }
+
+// --- Property / fuzz tests --------------------------------------------------------------------
+// The parser is a recover-and-continue recursive-descent parser: on *any* input it must report
+// diagnostics rather than panic, and `parse()` must always succeed in producing a `ProgramNode`
+// (it never returns `Err`). These tests throw large amounts of malformed input at it; reaching the
+// end of each test (without a panic or hang) is the assertion.
+
+/// Tiny deterministic xorshift PRNG so fuzz inputs are reproducible without external crates.
+struct XorShift(u64);
+impl XorShift {
+    fn next_u64(&mut self) -> u64 {
+        let mut x = self.0;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.0 = x;
+        x
+    }
+    fn pick<'t>(&mut self, items: &[&'t str]) -> &'t str {
+        items[(self.next_u64() as usize) % items.len()]
+    }
+}
+
+/// Parses `code` and asserts the parser produced a `ProgramNode` without panicking or erroring.
+fn assert_parses_without_panic(code: &str) {
+    let arena = bumpalo::Bump::new();
+    let mut diagnostics = DiagnosticBag::new(None);
+    let lexer = Lexer::new(code.to_string());
+    let mut parser = Parser::new(lexer, &arena, &mut diagnostics);
+    let result = parser.parse();
+    assert!(
+        result.is_ok(),
+        "parser returned Err (should always yield a ProgramNode) for input: {:?}",
+        code
+    );
+}
+
+#[test]
+fn fuzz_random_token_soup_never_panics() {
+    const TOKENS: [&str; 64] = [
+        "fun", "class", "enum", "extend", "let", "const", "public", "static", "async", "return",
+        "if", "else", "while", "for", "do", "switch", "case", "default", "break", "continue",
+        "import", "type", "constructor", "del", "await", "true", "false", "null", "int", "string",
+        "bool", "double", "float", "char", "void", "object", "{", "}", "(", ")", "[", "]", "<",
+        ">", ":", ";", ",", ".", "=", "==", "+", "-", "*", "/", "%", "?", "@", "&&", "||", "\"s\"",
+        "123", "3.14", "'c'", "ident",
+    ];
+    let mut rng = XorShift(0x9E3779B97F4A7C15);
+    for _ in 0..3000 {
+        let len = (rng.next_u64() as usize) % 40;
+        let mut s = String::new();
+        for _ in 0..len {
+            s.push_str(rng.pick(&TOKENS));
+            s.push(' ');
+        }
+        assert_parses_without_panic(&s);
+    }
+}
+
+#[test]
+fn fuzz_truncated_valid_programs_never_panic() {
+    let samples = [
+        "fun main(): int { return 42; }",
+        "class Box<T> { public value: T; }",
+        "public fun add(a: int, b: int): int { return a + b; }",
+        "enum Color { Red, Green = 5, Blue }",
+        "fun f() { let xs: int[] = [1,2,3]; for (x in xs) { System.println(x); } }",
+        "extend int { public fun doubled(): int { return this * 2; } }",
+        "const LIMIT: int = 5; let counter: int = LIMIT * 2;",
+        "@json class User { public name: string; public age: int; }",
+        "async fun g(): int { await sleep(1); return await h(); }",
+    ];
+    for s in samples {
+        // Every byte prefix (a "file cut off mid-token") must still parse without panicking.
+        for end in 0..=s.len() {
+            if !s.is_char_boundary(end) {
+                continue;
+            }
+            assert_parses_without_panic(&s[..end]);
+        }
+    }
+}
+
+#[test]
+fn fuzz_byte_mutations_never_panic() {
+    let base = "fun main(): int { let x = foo(1, 2); return x; }";
+    let bytes = base.as_bytes();
+    let mut rng = XorShift(0xDEAD_BEEF_CAFE_F00D);
+    for _ in 0..3000 {
+        let mut v = bytes.to_vec();
+        let mutations = 1 + (rng.next_u64() as usize) % 6;
+        for _ in 0..mutations {
+            let idx = (rng.next_u64() as usize) % v.len();
+            v[idx] = (rng.next_u64() as u8) | 0x20; // bias toward printable bytes
+        }
+        let s = String::from_utf8_lossy(&v);
+        assert_parses_without_panic(&s);
+    }
+}
+
+#[test]
+fn fuzz_unbalanced_delimiters_never_panic() {
+    let pieces = [
+        "{", "}", "(", ")", "[", "]", "<", ">", "fun", "class", "if", "for", "x", ";", ":", ",",
+    ];
+    let mut rng = XorShift(0x1234_5678_ABCD_EF01);
+    for _ in 0..4000 {
+        let len = (rng.next_u64() as usize) % 60;
+        let mut s = String::new();
+        for _ in 0..len {
+            s.push_str(rng.pick(&pieces));
+        }
+        assert_parses_without_panic(&s);
+    }
+}
+
+#[test]
+fn fuzz_recovers_and_reports_multiple_errors() {
+    // Two independently-broken statements: a robust block parser should recover from the first
+    // and still parse/lint the second (so we expect to keep the valid trailing statement).
+    let code = "fun main(): void { let = ; let y = 5; @@@ ; return y; }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+    assert!(
+        diagnostics.has_errors(),
+        "malformed block should report diagnostics"
+    );
+    // The parser still produced a function (didn't discard the whole declaration).
+    assert_eq!(program.functions.len(), 1, "function should still be recovered");
+}

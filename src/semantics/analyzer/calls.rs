@@ -9,7 +9,7 @@ use crate::semantics::function_table::{
 };
 use crate::semantics::symbol_table::SymbolTable;
 use crate::syntax::nodes::types::{
-    canonical_type_name, constructor_fn, is_numeric_primitive,
+    canonical_type_name, constructor_fn, is_numeric_primitive, is_unknown_type_name,
     mangle_generic, method_fn, strip_nullable,
 };
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, Type};
@@ -73,7 +73,7 @@ impl<'a> Analyzer<'a> {
                 Ok(sig) => sig,
                 Err(message) => {
                     diagnostics.report_error(message, Some(method.position));
-                    return Ok(Type::Void);
+                    return Ok(Type::Unknown);
                 }
             }
         } else {
@@ -87,7 +87,7 @@ impl<'a> Analyzer<'a> {
                         ),
                         Some(method.position),
                     );
-                    return Ok(Type::Void);
+                    return Ok(Type::Unknown);
                 }
             }
         };
@@ -114,7 +114,7 @@ impl<'a> Analyzer<'a> {
         }
         for (i, given_type) in arg_types.iter().enumerate() {
             let expected = &expected_params[i];
-            if expected == "object" {
+            if expected == "object" || is_unknown_type_name(given_type) {
                 continue;
             }
             if is_numeric_primitive(expected) && is_numeric_primitive(given_type) {
@@ -353,10 +353,7 @@ impl<'a> Analyzer<'a> {
                         .map(|ret| Self::monomorphize_type(ret, &bindings)),
                     is_async: template.is_async,
                     is_public: template.is_public,
-                    intrinsic_name: template.attributes
-                        .iter()
-                        .find(|a| a.name.text == "intrinsic")
-                        .and_then(|a| a.args.first().map(|arg| arg.text.trim_matches('"').to_string())),
+                    intrinsic_name: intrinsics::intrinsic_key(&template.attributes),
                 };
 
                 let _ = self.function_table.add_function(mangled_name.clone(), info);
@@ -371,7 +368,7 @@ impl<'a> Analyzer<'a> {
                 Ok(sig) => sig,
                 Err(message) => {
                     diagnostics.report_error(message, Some(name.position));
-                    return Ok(Type::Void);
+                    return Ok(Type::Unknown);
                 }
             }
         } else {
@@ -379,7 +376,7 @@ impl<'a> Analyzer<'a> {
                 Ok(sig) => sig,
                 Err(e) => {
                     diagnostics.report_error(e.to_string(), Some(name.position));
-                    return Ok(Type::Void);
+                    return Ok(Type::Unknown);
                 }
             }
         };
@@ -404,6 +401,10 @@ impl<'a> Analyzer<'a> {
                 .get(i)
                 .map(|s| s == "object")
                 .unwrap_or(false)
+                || params_types
+                    .get(i)
+                    .map(|s| is_unknown_type_name(s))
+                    .unwrap_or(false)
             {
                 continue;
             }
@@ -530,6 +531,13 @@ impl<'a> Analyzer<'a> {
     /// is nullable (`T?`) and the argument is `T`, `T?`, or the `null` literal (`void?`). Used by
     /// constructor-call checking, which only has the type names (not structured `Type`s) available.
     pub(super) fn type_str_assignable(&self, expected: &str, given: &str) -> bool {
+        // The poison type unifies with everything so an earlier error never cascades into a
+        // spurious assignment/argument mismatch here.
+        if crate::syntax::nodes::types::is_unknown_type_name(expected)
+            || crate::syntax::nodes::types::is_unknown_type_name(given)
+        {
+            return true;
+        }
         if expected == given || expected == "object" {
             return true;
         }
@@ -665,19 +673,20 @@ impl<'a> Analyzer<'a> {
                     );
                     let mangled_name = mangle_bindings(&base, &bindings);
 
-                    // Check for intrinsic promise combinators and delegate to analyze_async_intrinsic
-                    if let Some(intrinsic) = template.attributes.iter().find(|a| a.name.text == "intrinsic").and_then(|a| a.args.first().map(|arg| arg.text.trim_matches('"').to_string())) {
-                        if intrinsic.starts_with("promise_") {
-                            let mut s_tok = method.clone();
-                            s_tok.text = format!("__{}", intrinsic);
-                            return self.analyze_async_intrinsic(
-                                &s_tok,
-                                params,
-                                ctx.parent_function,
-                                ctx.symbol_table,
-                                diagnostics,
-                            );
-                        }
+                    // Promise combinators (`Promise.all/any/race`) are typed by the shared async
+                    // intrinsic logic; classify via the registry and delegate when applicable.
+                    if let Some(combinator) = intrinsics::IntrinsicOp::from_attributes(&template.attributes)
+                        .and_then(|op| op.promise_combinator())
+                    {
+                        let mut s_tok = method.clone();
+                        s_tok.text = combinator.to_string();
+                        return self.analyze_async_intrinsic(
+                            &s_tok,
+                            params,
+                            ctx.parent_function,
+                            ctx.symbol_table,
+                            diagnostics,
+                        );
                     }
 
                     if self.function_table.get_function(&mangled_name).is_err() {
@@ -712,6 +721,20 @@ impl<'a> Analyzer<'a> {
 
         let obj_type =
             self.analyze_expression(obj, ctx.parent_function, ctx.symbol_table, diagnostics)?;
+
+        // The receiver was already poisoned by an earlier error; still type-check the arguments
+        // (to surface their own mistakes) but stay quiet about the method itself and stay poison.
+        if obj_type.is_unknown() {
+            for param in params.iter() {
+                let _ = self.analyze_expression(
+                    param,
+                    ctx.parent_function,
+                    ctx.symbol_table,
+                    diagnostics,
+                );
+            }
+            return Ok(Type::Unknown);
+        }
 
         // `EnumValue.name()`: built-in accessor returning the variant name as a string.
         if method.text == intrinsics::ENUM_NAME {
@@ -782,7 +805,7 @@ impl<'a> Analyzer<'a> {
                 Ok(sig) => sig,
                 Err(message) => {
                     diagnostics.report_error(message, Some(method.position));
-                    return Ok(Type::Void);
+                    return Ok(Type::Unknown);
                 }
             }
         } else {
@@ -793,7 +816,7 @@ impl<'a> Analyzer<'a> {
                         format!("Type '{}' has no method '{}'", struct_name, method.text),
                         Some(method.position),
                     );
-                    return Ok(Type::Void);
+                    return Ok(Type::Unknown);
                 }
             }
         };
@@ -835,7 +858,7 @@ impl<'a> Analyzer<'a> {
         for (i, given_type) in arg_types.iter().enumerate() {
             let expected_type_str = &expected_params[i];
 
-            if expected_type_str == "object" {
+            if expected_type_str == "object" || is_unknown_type_name(given_type) {
                 continue;
             }
 

@@ -1,6 +1,6 @@
 use crate::semantics::errors::SymbolError;
 use crate::stdlib::StdlibFunction;
-use crate::syntax::nodes::types::{is_numeric_primitive, strip_nullable};
+use crate::syntax::nodes::types::{is_numeric_primitive, is_unknown_type_name, strip_nullable};
 use crate::syntax::nodes::{FunctionNode, Type};
 use std::collections::HashMap;
 
@@ -10,6 +10,11 @@ use std::collections::HashMap;
 /// among int/float/double, and matching base types across a nullable marker. `is_enum` reports
 /// whether a type name denotes a registered enum (supplied by each caller's own tables).
 pub fn overload_arg_compatible(param: &str, arg: &str, is_enum: impl Fn(&str) -> bool) -> bool {
+    // A poison-typed argument (from an earlier error) is considered viable against any parameter
+    // so overload resolution doesn't pile on additional "no matching overload" errors.
+    if is_unknown_type_name(param) || is_unknown_type_name(arg) {
+        return true;
+    }
     if param == arg {
         return true;
     }
@@ -265,10 +270,7 @@ impl FunctionTableInfo {
             let j = i.clone();
             parameters.push(j.type_.get_type());
         }
-        let intrinsic_name = func.attributes
-            .iter()
-            .find(|a| a.name.text == "intrinsic")
-            .and_then(|a| a.args.first().map(|arg| arg.text.trim_matches('"').to_string()));
+        let intrinsic_name = crate::intrinsics::intrinsic_key(&func.attributes);
         let mut info = FunctionTableInfo::new(name.text, return_type, parameters);
         info.is_async = func.is_async;
         info.intrinsic_name = intrinsic_name;

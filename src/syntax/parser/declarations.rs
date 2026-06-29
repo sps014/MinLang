@@ -126,7 +126,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             }
             let core = self.peek_token(m);
             let is_ctor_dtor = core.kind == TokenKind::IdentifierToken
-                && matches!(core.text.as_str(), "constructor" | "del")
+                && crate::syntax::nodes::types::is_special_member_name(&core.text)
                 && self.peek_token(m + 1).kind == TokenKind::OpenParenthesisToken;
             if core.kind == TokenKind::FunToken
                 || core.kind == TokenKind::ExternToken
@@ -429,9 +429,9 @@ impl<'a, 'b> Parser<'a, 'b> {
         // Constructor (`constructor`) / destructor (`del`) declarations omit the `fun` keyword and
         // the return type; they are lowered to ordinary methods named `constructor`/`del` and
         // dispatched specially (constructor calls, scope-exit destructor calls). They cannot be
-        // marked `export`.
+        // marked `public`.
         if self.current_token().kind == TokenKind::IdentifierToken
-            && matches!(self.current_token().text.as_str(), "constructor" | "del")
+            && crate::syntax::nodes::types::is_special_member_name(&self.current_token().text)
         {
             let ctor_name = self.match_token(TokenKind::IdentifierToken);
             if is_public {
@@ -483,7 +483,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 
         if is_extern {
             // Extern functions are lowered to WASM imports: no body, terminated by `;`.
-            let is_intrinsic = attributes.iter().any(|a| a.name.text == "intrinsic");
+            let is_intrinsic = crate::intrinsics::has_intrinsic_attr(&attributes);
             if generic_parameters.is_some() && !is_intrinsic {
                 self.diagnostics.report_error(
                     "Extern functions cannot be generic unless they are marked @intrinsic".to_string(),

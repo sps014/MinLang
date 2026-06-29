@@ -524,20 +524,22 @@ impl<'a> Analyzer<'a> {
         let name = method.name.text.as_str();
 
         // Constructors/destructors: `del` takes no parameters and neither declares a return type.
-        if name == "del" && !method.parameters.is_empty() {
+        if name == crate::syntax::nodes::types::DESTRUCTOR_NAME && !method.parameters.is_empty() {
             diagnostics.report_error(
                 "destructor 'del' must not declare parameters".to_string(),
                 Some(method.name.position),
             );
         }
-        if (name == "constructor" || name == "del") && method.return_type.is_some() {
+        if crate::syntax::nodes::types::is_special_member_name(name) && method.return_type.is_some()
+        {
             diagnostics.report_error(
                 format!("'{}' must not declare a return type", name),
                 Some(method.name.position),
             );
         }
 
-        let is_protocol = name == "to_string" || name == "hash_code";
+        let is_protocol =
+            name == crate::intrinsics::TO_STRING || name == crate::intrinsics::HASH_CODE;
 
         let is_override = method.attributes.iter().any(|a| a.name.text == "override");
 

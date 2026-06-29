@@ -14,8 +14,13 @@ impl<'a, 'b> Parser<'a, 'b> {
             && self.current_token().kind != TokenKind::EndOfFileToken
         {
             let iter = self.current_token_index;
-            let statement = self.parse_statement()?;
-            statements.push(statement);
+            // Recover at statement granularity: a malformed statement is reported (by the failing
+            // sub-parser) and skipped to the next boundary so the rest of the block still parses
+            // and surfaces its own diagnostics, instead of discarding the entire enclosing block.
+            match self.parse_statement() {
+                Ok(statement) => statements.push(statement),
+                Err(_) => self.recover_to_next_statement(),
+            }
             self.ensure_progress(iter);
         }
         //eat the close curly brace
@@ -370,8 +375,8 @@ impl<'a, 'b> Parser<'a, 'b> {
 
             let n = self.foreach_counter;
             self.foreach_counter += 1;
-            let index_name = format!("__foreach_idx_{}", n);
-            let array_name = format!("__foreach_arr_{}", n);
+            let index_name = crate::syntax::nodes::types::foreach_index_local(n);
+            let array_name = crate::syntax::nodes::types::foreach_array_local(n);
             return Ok(StatementNode::ForEach(
                 element, iterable, index_name, array_name, body,
             ));

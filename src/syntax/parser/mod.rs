@@ -61,7 +61,12 @@ impl<'a, 'b> Parser<'a, 'b> {
     ///returns current token and moves to next token
     fn next_token(&mut self) -> SyntaxToken {
         let r = self.current_token();
-        self.current_token_index += 1;
+        // Clamp at the end of the stream so repeated `next_token` calls during error recovery can
+        // never push the cursor arbitrarily far past EOF (which previously enabled out-of-bounds
+        // indexing). `current_token` keeps returning a synthetic EOF once we reach the end.
+        if self.current_token_index < self.tokens.len() {
+            self.current_token_index += 1;
+        }
         r
     }
     ///return the token at the given index with some offset
@@ -82,11 +87,15 @@ impl<'a, 'b> Parser<'a, 'b> {
             // If we are looking for a semicolon and we missed it, point the error 
             // at the end of the previous token rather than the current token.
             if kind == TokenKind::SemicolonToken {
-                let prev_token = if self.current_token_index > 0 {
-                    self.tokens[self.current_token_index - 1].clone()
-                } else {
-                    token.clone()
-                };
+                // The cursor can run one-or-more tokens past the end of the stream during error
+                // recovery, so resolve the previous token with a bounds-checked `get` rather than
+                // indexing (which would panic on malformed/truncated input).
+                let prev_token = self
+                    .current_token_index
+                    .checked_sub(1)
+                    .and_then(|i| self.tokens.get(i))
+                    .cloned()
+                    .unwrap_or_else(|| token.clone());
                 
                 if prev_token.position.line_no < token.position.line_no || token.kind == TokenKind::EndOfFileToken || token.kind == TokenKind::CurlyCloseBracketToken {
                     err_pos = prev_token.position;
@@ -233,6 +242,7 @@ impl<'a, 'b> Parser<'a, 'b> {
         }
 
         while self.current_token().kind != TokenKind::EndOfFileToken {
+            let loop_start = self.current_token_index;
             let cur = self.current_token().kind;
             // The core declaration keyword, looking past any leading `public`/`static`/`async`.
             let core = self.first_keyword_after_modifiers();
@@ -286,6 +296,10 @@ impl<'a, 'b> Parser<'a, 'b> {
                 );
                 self.next_token();
             }
+            // Final guard: every branch above is expected to consume at least one token (directly
+            // or via recovery). If a future change ever leaves the cursor parked, skip a token so
+            // top-level parsing can never spin forever.
+            self.ensure_progress(loop_start);
         }
         Ok(ProgramNode::new(
             imports, structs, functions, enums, extends, globals,

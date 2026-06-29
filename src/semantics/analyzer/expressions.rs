@@ -55,12 +55,14 @@ impl<'a> Analyzer<'a> {
                 )?;
                 let inner_type = match array_type {
                     Type::Array(inner) => *inner,
+                    // Don't cascade if the base was already poisoned by an earlier error.
+                    Type::Unknown => Type::Unknown,
                     _ => {
                         diagnostics.report_error(
                             format!("Cannot index into non-array type {}", array_type.get_type()),
                             array_expr.position(),
                         );
-                        Type::Void
+                        Type::Unknown
                     }
                 };
 
@@ -70,7 +72,7 @@ impl<'a> Analyzer<'a> {
                     symbol_table,
                     diagnostics,
                 )?;
-                if index_type.get_type() != "int" {
+                if !index_type.is_unknown() && index_type.get_type() != "int" {
                     diagnostics.report_error(
                         format!(
                             "Array index must be of type int, got {}",
@@ -87,7 +89,7 @@ impl<'a> Analyzer<'a> {
                     self.analyze_expression(right, parent_function, symbol_table, diagnostics)?;
                 match opr.kind {
                     TokenKind::BangToken => {
-                        if right_type.get_type() != "bool" {
+                        if !right_type.is_unknown() && right_type.get_type() != "bool" {
                             diagnostics.report_error(
                                 format!("! operator requires bool, got {}", right_type.get_type()),
                                 Some(opr.position),
@@ -96,7 +98,7 @@ impl<'a> Analyzer<'a> {
                         Ok(Type::Boolean(opr.clone()))
                     }
                     TokenKind::PlusToken | TokenKind::MinusToken => {
-                        if right_type.get_type() != "int" && right_type.get_type() != "float" && right_type.get_type() != "double" {
+                        if !right_type.is_unknown() && right_type.get_type() != "int" && right_type.get_type() != "float" && right_type.get_type() != "double" {
                             diagnostics.report_error(
                                 format!(
                                     "unary +/- requires int, float, or double, got {}",
@@ -183,6 +185,11 @@ impl<'a> Analyzer<'a> {
                 let obj_type =
                     self.analyze_expression(obj, parent_function, symbol_table, diagnostics)?;
 
+                // The receiver was already poisoned by an earlier error: stay quiet and stay poison.
+                if obj_type.is_unknown() {
+                    return Ok(Type::Unknown);
+                }
+
                 let (base_name, generic_args) = match Self::resolve_struct_parts(&obj_type) {
                     Some(parts) => parts,
                     None => {
@@ -193,7 +200,7 @@ impl<'a> Analyzer<'a> {
                             ),
                             Some(member.position),
                         );
-                        return Ok(Type::Void);
+                        return Ok(Type::Unknown);
                     }
                 };
 
@@ -212,7 +219,7 @@ impl<'a> Analyzer<'a> {
                             format!("Struct '{}' not found", struct_name),
                             Some(member.position),
                         );
-                        return Ok(Type::Void);
+                        return Ok(Type::Unknown);
                     }
                 };
 
@@ -226,7 +233,7 @@ impl<'a> Analyzer<'a> {
                             ),
                             Some(member.position),
                         );
-                        return Ok(Type::Void);
+                        return Ok(Type::Unknown);
                     }
                 };
 
@@ -301,6 +308,9 @@ impl<'a> Analyzer<'a> {
             ExpressionNode::Await(inner) => {
                 let fut =
                     self.analyze_expression(inner, parent_function, symbol_table, diagnostics)?;
+                if fut.is_unknown() {
+                    return Ok(Type::Unknown);
+                }
                 match Self::future_inner_type(&fut) {
                     Some(t) => Ok(t),
                     None => {
@@ -308,7 +318,7 @@ impl<'a> Analyzer<'a> {
                             format!("'await' expects a Future value, got {}", fut.get_type()),
                             inner.position(),
                         );
-                        Ok(Type::Void)
+                        Ok(Type::Unknown)
                     }
                 }
             }
@@ -377,6 +387,11 @@ impl<'a> Analyzer<'a> {
         position: &TextSpan,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<(), ()> {
+        // A poison operand (from an earlier reported error) is compatible with anything, so we
+        // never emit a follow-on mismatch for it.
+        if left.is_unknown() || right.is_unknown() {
+            return Ok(());
+        }
         if left.get_type() == right.get_type() {
             return Ok(());
         }
@@ -456,7 +471,8 @@ impl<'a> Analyzer<'a> {
                     return Ok(Type::Function(params, Box::new(ret)));
                 }
                 diagnostics.report_error(e.to_string(), Some(id.position));
-                Type::Void
+                // Poison the result so uses of this unresolved name don't cascade further errors.
+                Type::Unknown
             }
         };
         Ok(r)
