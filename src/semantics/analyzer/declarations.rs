@@ -310,16 +310,18 @@ impl<'a> Analyzer<'a> {
             template.is_exported,
         );
 
-        if let Err(e) = self.struct_table.add_struct(&new_decl) {
+        let new_decl_ref: &'a StructDeclarationNode<'a> = self.arena.alloc(new_decl);
+
+        if let Err(e) = self.struct_table.add_struct(new_decl_ref) {
             diagnostics.report_error(e, Some(*position));
         }
 
-        self.register_struct_methods(&new_decl, &mangled_name, &bindings, diagnostics);
+        self.register_struct_methods(new_decl_ref, &mangled_name, &bindings, diagnostics);
     }
 
     pub(super) fn register_struct_methods(
         &mut self,
-        struct_decl: &StructDeclarationNode<'a>,
+        struct_decl: &'a StructDeclarationNode<'a>,
         struct_type_str: &str,
         bindings: &[(String, String)],
         diagnostics: &mut DiagnosticBag,
@@ -335,7 +337,7 @@ impl<'a> Analyzer<'a> {
     pub(super) fn register_methods_for(
         &mut self,
         target_type_str: &str,
-        methods: &[FunctionNode<'a>],
+        methods: &'a [FunctionNode<'a>],
         bindings: &[(String, String)],
         diagnostics: &mut DiagnosticBag,
     ) {
@@ -345,6 +347,10 @@ impl<'a> Analyzer<'a> {
                 self.validate_protocol_override(method, diagnostics);
             }
             let mangled_name = method_fn(target_type_str, &method.name.text);
+
+            if method.generic_parameters.is_some() {
+                self.generic_functions.insert(mangled_name.clone(), method);
+            }
 
             let mut new_method = method.clone();
             new_method.name = synthetic_token(TokenKind::IdentifierToken, &mangled_name);

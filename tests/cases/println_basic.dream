@@ -1,8 +1,8 @@
 fun main(): void {
-    print("a");
-    print("b");
-    println("c");
-    println(1);
-    print(2);
-    println(3);
+    System.print("a");
+    System.print("b");
+    System.println("c");
+    System.println(1);
+    System.print(2);
+    System.println(3);
 }

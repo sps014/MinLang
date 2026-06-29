@@ -8,12 +8,12 @@ fun main(): void {
     user.set("tags", tags);
     user.set("active", JsonValue.boolean(true));
 
-    println(JSON.stringify(user));
+    System.println(JSON.stringify(user));
 
     let parsed = JSON.parse(JSON.stringify(user));
-    println(parsed.get("name").as_string());
-    println(to_string(parsed.get("age").as_int()));
-    println(parsed.get("tags").at(1).as_string());
-    println(to_string(parsed.get("active").as_bool()));
-    println(to_string(parsed.get("tags").size()));
+    System.println(parsed.get("name").as_string());
+    System.println(to_string(parsed.get("age").as_int()));
+    System.println(parsed.get("tags").at(1).as_string());
+    System.println(to_string(parsed.get("active").as_bool()));
+    System.println(to_string(parsed.get("tags").size()));
 }

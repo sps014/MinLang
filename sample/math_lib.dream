@@ -19,6 +19,6 @@ export class Test
 
     /* print_name is a function that prints the name of the object */
     fun print_name() {
-        println(this.name);
+        System.println(this.name);
     }
 }

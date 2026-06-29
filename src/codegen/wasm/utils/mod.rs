@@ -139,8 +139,18 @@ impl<'a> WasmGenerator<'a> {
             .current_mangled_name
             .as_ref()
             .unwrap_or(&function.name.text);
-        let func_lookup = self.ctx.combined_symbol_lookup.get(func_name).unwrap();
-        let t = func_lookup.get(var_name).unwrap().clone().get_type();
+        let func_lookup = match self.ctx.combined_symbol_lookup.get(func_name) {
+            Some(lookup) => lookup,
+            None => {
+                panic!("combined_symbol_lookup missing key: '{}', var_name: '{}', function.name.text: '{}', current_mangled_name: {:?}", func_name, var_name, function.name.text, self.ctx.current_mangled_name);
+            }
+        };
+        let t = match func_lookup.get(var_name) {
+            Some(t_val) => t_val.clone().get_type(),
+            None => {
+                panic!("func_lookup for '{}' missing var: '{}'", func_name, var_name);
+            }
+        };
         self.resolve_type(&t)
     }
 

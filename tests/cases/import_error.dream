@@ -3,5 +3,5 @@
 import "helpers/broken"
 
 fun main() {
-    println(broken_helper());
+    System.println(broken_helper());
 }

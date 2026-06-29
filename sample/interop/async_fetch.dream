@@ -11,13 +11,13 @@
 extern async fun getUser(id: int): string;
 
 async fun main(): void {
-    println("fetching...");
+    System.println("fetching...");
     let name = await getUser(42);
-    println("user = " + name);
+    System.println("user = " + name);
 
     // `sleep` is a built-in awaitable timer; combinators compose stored futures.
     let a = getUser(1);
     let b = getUser(2);
     let both = await all([a, b]);
-    println("all = " + both[0] + ", " + both[1]);
+    System.println("all = " + both[0] + ", " + both[1]);
 }

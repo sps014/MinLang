@@ -7,6 +7,6 @@ extend int {
 
 fun main(): void {
     let n: int = 5;
-    println(n.combine(3));     // 8    (int overload)
-    println(n.combine("x"));   // 105  (string overload)
+    System.println(n.combine(3));     // 8    (int overload)
+    System.println(n.combine("x"));   // 105  (string overload)
 }

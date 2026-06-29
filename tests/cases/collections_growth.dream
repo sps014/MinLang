@@ -5,9 +5,9 @@ fun main(): void {
         xs.push(i * 2);
         i = i + 1;
     }
-    println(xs.size());
-    println(xs.get(0));
-    println(xs.get(99));
+    System.println(xs.size());
+    System.println(xs.get(0));
+    System.println(xs.get(99));
 
     let sum = 0;
     let j = 0;
@@ -15,7 +15,7 @@ fun main(): void {
         sum = sum + xs.get(j);
         j = j + 1;
     }
-    println(sum);
+    System.println(sum);
 
     let words = List<string>();
     let k = 0;
@@ -23,13 +23,13 @@ fun main(): void {
         words.push("x");
         k = k + 1;
     }
-    println(words.size());
-    print(words.get(19));
-    print("\n");
-    print(words.contains("x"));
-    print("\n");
-    print(words.contains("y"));
-    print("\n");
+    System.println(words.size());
+    System.print(words.get(19));
+    System.print("\n");
+    System.print(words.contains("x"));
+    System.print("\n");
+    System.print(words.contains("y"));
+    System.print("\n");
 
     let squares = Map<int, int>();
     let n = 0;
@@ -37,7 +37,7 @@ fun main(): void {
         squares.put(n, n * n);
         n = n + 1;
     }
-    println(squares.size());
-    println(squares.get(12));
-    println(squares.get(63));
+    System.println(squares.size());
+    System.println(squares.get(12));
+    System.println(squares.get(63));
 }

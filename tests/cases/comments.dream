@@ -8,5 +8,5 @@ fun main(): void {
        comment spanning
        multiple lines */
     let x: int = 42; // a trailing line comment
-    println(x);
+    System.println(x);
 }

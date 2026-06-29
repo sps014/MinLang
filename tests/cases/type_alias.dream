@@ -8,8 +8,8 @@ fun add(a: Number, b: Number): Number {
 fun main(): void {
     let x: Number = 7;
     let y: Number = 5;
-    println(add(x, y));
+    System.println(add(x, y));
 
     let greeting: Text = "hello";
-    print(greeting);
+    System.print(greeting);
 }

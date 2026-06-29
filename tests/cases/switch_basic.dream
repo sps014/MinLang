@@ -11,20 +11,20 @@ fun classify(n: int): string {
 }
 
 fun main(): void {
-    print(classify(2));
-    print("\n");
-    print(classify(10));
-    print("\n");
-    print(classify(99));
-    print("\n");
+    System.print(classify(2));
+    System.print("\n");
+    System.print(classify(10));
+    System.print("\n");
+    System.print(classify(99));
+    System.print("\n");
 
     let s: string = "hi";
     switch (s) {
         case "hi":
-            println(1);
+            System.println(1);
         case "bye":
-            println(2);
+            System.println(2);
         default:
-            println(0);
+            System.println(0);
     }
 }

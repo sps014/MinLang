@@ -84,12 +84,6 @@ impl<'a> WasmGenerator<'a> {
                         self.build_async_intrinsic_call(n.text.as_str(), p, function, writer)?;
                         writer.write_line("drop");
                     }
-                    intrinsics::PRINT if p.len() == 1 => {
-                        self.build_print(&p[0], function, writer)?
-                    }
-                    intrinsics::PRINTLN if p.len() == 1 => {
-                        self.build_println(&p[0], function, writer)?
-                    }
                     intrinsics::TO_STRING if p.len() == 1 => {
                         self.build_to_string(&p[0], function, writer)?;
                         writer.write_line("drop");

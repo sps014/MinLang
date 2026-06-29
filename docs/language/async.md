@@ -59,7 +59,7 @@ async fun main(): void {
     let a = work(2);                         // a : Future<int>, started now
     let b = work(3);                         // b : Future<int>, started now
     let results = await Promise.all([a, b]); // both ran concurrently -> [4, 9]
-    println(to_string(results[0]) + ", " + to_string(results[1]));
+    System.println(to_string(results[0]) + ", " + to_string(results[1]));
 }
 ```
 
@@ -159,3 +159,4 @@ A complete runnable example lives in [`sample/interop/async_fetch.dream`](https:
 
 - There is no `.then()`/callback chaining and no `spawn`/channels yet.
 - References created inside an async function may leak across suspension points (a deliberate v1 simplification).
+tion).

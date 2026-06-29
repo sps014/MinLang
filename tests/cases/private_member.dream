@@ -9,5 +9,5 @@ class Box {
 fun main(): void {
     let b = Box { _secret: 42 };
     // Accessing a private (`_`-prefixed) field from outside the type is a compile error.
-    println(b._secret);
+    System.println(b._secret);
 }

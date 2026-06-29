@@ -10,8 +10,8 @@ class Tracked {
     }
 
     del() {
-        print("drop ");
-        println(this.id);
+        System.print("drop ");
+        System.println(this.id);
     }
 }
 
@@ -27,8 +27,8 @@ class Named {
     name: string;
 
     del() {
-        print("bye ");
-        println(this.name);
+        System.print("bye ");
+        System.println(this.name);
     }
 }
 
@@ -41,15 +41,15 @@ fun make_named(n: string): Named {
 }
 
 fun consume(t: Tracked) {
-    print("consume ");
-    println(t.id);
+    System.print("consume ");
+    System.println(t.id);
 }
 
 // Factory result bound to a single local: dropped at scope exit.
 fun use_once(id: int) {
     let a = make(id);
-    print("use ");
-    println(a.id);
+    System.print("use ");
+    System.println(a.id);
 }
 
 // Reassigning a local with fresh factory results drops the previous value each time.
@@ -66,14 +66,14 @@ fun loop_reassign() {
 fun method_factory() {
     let f = Factory(10);
     let m = f.create(5);
-    println(m.id);
+    System.println(m.id);
 }
 
 // A factory whose class owns a reference (string) field; freeing it must not corrupt the
 // interned literal.
 fun ref_field() {
     let x = make_named("Zaphod");
-    println(x.name);
+    System.println(x.name);
 }
 
 // An owned temporary passed straight into a call is reclaimed after the call returns.
@@ -83,13 +83,13 @@ fun arg_temp() {
 
 fun main() {
     use_once(1);
-    println(0);
+    System.println(0);
     loop_reassign();
-    println(0);
+    System.println(0);
     method_factory();
-    println(0);
+    System.println(0);
     ref_field();
-    println(0);
+    System.println(0);
     arg_temp();
-    println(0);
+    System.println(0);
 }

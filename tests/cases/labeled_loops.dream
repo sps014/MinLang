@@ -7,7 +7,7 @@ fun main(): void {
             if (i == 2) {
                 break outer;
             }
-            println(i * 10 + j);
+            System.println(i * 10 + j);
         }
     }
 }

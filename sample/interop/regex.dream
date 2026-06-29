@@ -8,14 +8,14 @@ fun main(): void {
     let digits = Regex { pattern: "\\d+", flags: "g" };
 
     if (digits.test("abc123")) {
-        println("has digits");
+        System.println("has digits");
     }
 
     let cleaned = digits.replace("a1b2c3", "#");
-    println(cleaned);                          // a#b#c#
+    System.println(cleaned);                          // a#b#c#
 
     let parts = digits.match("a1b2c3");
-    println(to_string(parts.len()));           // 3
-    println(parts[0]);                         // 1
-    println(parts[2]);                         // 3
+    System.println(to_string(parts.len()));           // 3
+    System.println(parts[0]);                         // 1
+    System.println(parts[2]);                         // 3
 }

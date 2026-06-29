@@ -3,10 +3,10 @@ import "basic_sum.dream"
 
 export fun main() {
     let result = add_numbers(10,20);
-    println(result);
+    System.println(result);
     
     let s = Math.sin(3.14);
-    println(s);
+    System.println(s);
 
     let t = Test("John",20);
     t.name = "Jane";

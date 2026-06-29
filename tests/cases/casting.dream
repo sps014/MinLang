@@ -3,6 +3,6 @@ fun main(): void {
     let y: float = (float)x;
     let z: int = (int)y;
     
-    println(y);
-    println(z);
+    System.println(y);
+    System.println(z);
 }

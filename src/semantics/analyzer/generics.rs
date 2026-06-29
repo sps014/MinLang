@@ -20,6 +20,29 @@ impl<'a> Analyzer<'a> {
         }
     }
 
+    fn match_generic_type(formal: &Type, arg: &str, param_name: &str) -> Option<String> {
+        match formal {
+            Type::Struct(token, None) if token.text == param_name => Some(arg.to_string()),
+            Type::Array(inner) => {
+                if arg.ends_with("[]") {
+                    let arg_inner = &arg[..arg.len() - 2];
+                    Self::match_generic_type(inner, arg_inner, param_name)
+                } else {
+                    None
+                }
+            }
+            Type::Nullable(inner) => {
+                if arg.ends_with('?') {
+                    let arg_inner = &arg[..arg.len() - 1];
+                    Self::match_generic_type(inner, arg_inner, param_name)
+                } else {
+                    Self::match_generic_type(inner, arg, param_name)
+                }
+            }
+            _ => None,
+        }
+    }
+
     /// Determines the concrete type bound to each generic parameter of `template` for one call.
     /// Uses explicit type arguments when given (arity-checked); otherwise infers each parameter
     /// from the actual argument passed to the first formal parameter that is exactly that
@@ -52,10 +75,9 @@ impl<'a> Analyzer<'a> {
 
         gen_params.iter().map(|param| {
             let concrete = template.parameters.iter().enumerate().find_map(|(i, formal)| {
-                match &formal.type_ {
-                    Type::Struct(token, None) if token.text == param.text => params_types.get(i).cloned(),
-                    _ => None,
-                }
+                params_types.get(i).and_then(|arg| {
+                    Self::match_generic_type(&formal.type_, arg, &param.text)
+                })
             });
             match concrete {
                 Some(concrete) => (param.text.clone(), concrete),

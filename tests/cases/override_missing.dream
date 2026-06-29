@@ -9,5 +9,5 @@ class Foo {
 
 fun main() {
     let f = Foo { x: 1 };
-    print(to_string(f));
+    System.print(to_string(f));
 }

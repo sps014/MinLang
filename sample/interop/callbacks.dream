@@ -6,7 +6,7 @@
 // Dream -> JS: a Dream function is passed to a JS host, which calls it back N times. The runtime
 // wraps the function index (into the exported funcref table) as a JS callable automatically.
 fun on_tick(n: int): void {
-    println("tick " + to_string(n));
+    System.println("tick " + to_string(n));
 }
 
 extern fun run_callback(cb: fun(int): void, times: int): void;

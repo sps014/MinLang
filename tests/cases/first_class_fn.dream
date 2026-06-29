@@ -19,13 +19,13 @@ fun map_sum(arr: int[], f: fun(int): int): int {
 }
 
 fun main(): void {
-    println(apply(twice, 5));
-    println(apply(thrice, 5));
+    System.println(apply(twice, 5));
+    System.println(apply(thrice, 5));
 
     let arr: int[] = [1, 2, 3];
-    println(map_sum(arr, twice));
-    println(map_sum(arr, thrice));
+    System.println(map_sum(arr, twice));
+    System.println(map_sum(arr, thrice));
 
     let g: fun(int): int = twice;
-    println(g(7));
+    System.println(g(7));
 }

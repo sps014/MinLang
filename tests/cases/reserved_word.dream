@@ -1,4 +1,4 @@
 fun main(): void {
-    let print: int = 5;
-    println(print);
+    let to_string: int = 5;
+    System.println(to_string);
 }

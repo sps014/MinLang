@@ -78,6 +78,9 @@ impl<'a> WasmGenerator<'a> {
             if !func.is_extern {
                 continue;
             }
+            if func.attributes.iter().any(|a| a.name.text == "intrinsic") {
+                continue;
+            }
 
             let mut params_str = String::new();
             for p in &func.parameters {
@@ -235,6 +238,9 @@ impl<'a> WasmGenerator<'a> {
             self.ctx.current_mangled_name = None;
         }
         for (mangled_name, (bindings, template)) in self.instantiated_generics {
+            if template.is_extern {
+                continue;
+            }
             self.ctx.current_generic_bindings = bindings.iter().cloned().collect();
             self.ctx.current_mangled_name = Some(mangled_name.clone());
             self.build_function(template, writer)?;

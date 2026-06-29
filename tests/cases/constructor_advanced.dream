@@ -20,28 +20,28 @@ class Account {
     }
 
     del() {
-        print("closing ");
-        println(this.owner);
+        System.print("closing ");
+        System.println(this.owner);
     }
 }
 
 fun open_account(owner: string) {
     let a = Account(owner);
-    print(a.owner);
-    print(" has ");
-    println(a.balance);
+    System.print(a.owner);
+    System.print(" has ");
+    System.println(a.balance);
 }
 
 fun main() {
     let b = Box<int>(42);
-    println(b.value);
+    System.println(b.value);
 
     let n = Named("Ada", 95);
-    print(n.name);
-    print(" ");
-    println(n.score);
+    System.print(n.name);
+    System.print(" ");
+    System.println(n.score);
 
     open_account("Grace");
     open_account("Linus");
-    println(0);
+    System.println(0);
 }

@@ -9,5 +9,5 @@ fun create_node(v: int): Node {
 
 fun main(): void {
     let n1 = create_node(10);
-    println(n1.val);
+    System.println(n1.val);
 }

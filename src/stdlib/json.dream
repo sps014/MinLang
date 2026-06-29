@@ -491,6 +491,12 @@ class JsonParser {
 // The public JSON API. `serialize`/`deserialize<T>` (the @json auto-derive surface) are recognized
 // directly by the compiler; `parse`/`stringify` are ordinary static methods defined here.
 class JSON {
+    @intrinsic("json_serialize")
+    static extern fun serialize<T>(value: T): string;
+
+    @intrinsic("json_deserialize")
+    static extern fun deserialize<T>(text: string): T;
+
     static fun stringify(value: JsonValue): string {
         return _json_stringify(value);
     }

@@ -17,8 +17,8 @@ class Vec2 {
 
 fun main(): void {
     let o = Vec2.origin();
-    println(o.sum());
+    System.println(o.sum());
     let p = Vec2.of(3, 4);
-    println(p.sum());
-    println(int.parse("100"));
+    System.println(p.sum());
+    System.println(int.parse("100"));
 }

@@ -6,8 +6,8 @@ class Pair<K, V> {
     value: V;
 
     fun show() {
-        println(this.key);
-        print(this.value);
+        System.println(this.key);
+        System.print(this.value);
     }
 }
 
@@ -24,12 +24,12 @@ fun main() {
     p.show();
 
     let q = Pair<int, float> { key: 2, value: 2.5f };
-    println(q.value);
+    System.println(q.value);
 
     let r = Pair<int, double> { key: 3, value: 3.5d };
-    println(r.value);
+    System.println(r.value);
 
-    println(first<int, string>(10, "ten"));
+    System.println(first<int, string>(10, "ten"));
     let s = second<int, string>(10, "two\n");
-    print(s);
+    System.print(s);
 }

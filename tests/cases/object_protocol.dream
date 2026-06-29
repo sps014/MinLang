@@ -21,16 +21,16 @@ class Named {
 
 fun main() {
     let p = Point { x: 3, y: 7 };
-    print(to_string(p));
-    print("\n");
-    println(hash_code(p));
+    System.print(to_string(p));
+    System.print("\n");
+    System.println(hash_code(p));
 
     let n = Named { id: 5, label: "hello" };
-    print(to_string(n));
-    print("\n");
-    println(hash_code(n));
+    System.print(to_string(n));
+    System.print("\n");
+    System.println(hash_code(n));
 
     let o: object = p;
-    print(to_string(o));
-    print("\n");
+    System.print(to_string(o));
+    System.print("\n");
 }

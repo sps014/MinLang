@@ -50,8 +50,6 @@ impl<'a> WasmGenerator<'a> {
             ExpressionNode::Literal(literal) => self.build_literal(literal, writer)?,
             ExpressionNode::FunctionCall(n, generic_args, args) => {
                 match n.text.as_str() {
-                    intrinsics::PRINT if args.len() == 1 => self.build_print(&args[0], function, writer)?,
-                    intrinsics::PRINTLN if args.len() == 1 => self.build_println(&args[0], function, writer)?,
                     intrinsics::TO_STRING if args.len() == 1 => self.build_to_string(&args[0], function, writer)?,
                     intrinsics::HASH_CODE if args.len() == 1 => self.build_hash_code(&args[0], function, writer)?,
                     intrinsics::ARRAY_NEW if args.len() == 1 => self.build_array_new(generic_args, &args[0], function, writer)?,
@@ -857,54 +855,50 @@ impl<'a> WasmGenerator<'a> {
         function: &FunctionNode<'a>,
         writer: &mut IndentedTextWriter,
     ) -> Result<(), Error> {
-        // `Promise.all/any/race([...])`: the async combinators, lowered to the same scheduler
-        // intrinsics as the (legacy) free-function forms.
-        if let ExpressionNode::Identifier(id) = obj {
-            if id.text == intrinsics::PROMISE && intrinsics::is_promise_combinator(&method.text) {
-                return self.build_async_intrinsic_call(
-                    method.text.as_str(),
-                    params,
-                    function,
-                    writer,
-                );
-            }
-
-            // `JSON.serialize(x)`: `JSON.stringify(x.to_json())` for any `@json` class. Lower to a
-            // call to the auto-derived `<Struct>_to_json` instance method followed by `JSON_stringify`.
-            if id.text == intrinsics::JSON
-                && method.text == intrinsics::JSON_SERIALIZE
-                && params.len() == 1
-            {
-                let arg_type = self.infer_expression_type(&params[0], function)?;
-                let struct_name = strip_nullable(&arg_type).to_string();
-                self.build_expression(&params[0], &arg_type, function, writer)?;
-                writer.write_line(&format!("call ${}", json_to_json_fn(&struct_name)));
-                writer.write_line("call $JSON_stringify");
-                return Ok(());
-            }
-
-            // `JSON.deserialize<T>(text)`: `T.from_json(JSON.parse(text))`. Lower to `JSON_parse`
-            // followed by the auto-derived `<T>_from_json` static method.
-            if id.text == intrinsics::JSON
-                && method.text == intrinsics::JSON_DESERIALIZE
-                && params.len() == 1
-            {
-                let struct_name = _generic_args
-                    .as_ref()
-                    .and_then(|g| g.first())
-                    .map(|t| strip_nullable(&t.get_type()).to_string())
-                    .unwrap_or_default();
-                self.build_expression(&params[0], &"string".to_string(), function, writer)?;
-                writer.write_line("call $JSON_parse");
-                writer.write_line(&format!("call ${}", json_from_json_fn(&struct_name)));
-                return Ok(());
-            }
-        }
-
         // `Type.method(args)`: a static call. Arguments map 1:1 to the parameters (no `this`).
         if let Some(key) = self.resolve_static_call(obj, &method.text, params, function) {
-            let param_types: Vec<String> =
-                self.function_table.get_function(&key)?.parameters.clone();
+            let info = self.function_table.get_function(&key)?;
+            if let Some(intrinsic) = &info.intrinsic_name {
+                match intrinsic.as_str() {
+                    "print" => {
+                        return self.build_print(&params[0], function, writer);
+                    }
+                    "println" => {
+                        return self.build_println(&params[0], function, writer);
+                    }
+                    "promise_all" => {
+                        return self.build_async_intrinsic_call(intrinsics::PROMISE_ALL, params, function, writer);
+                    }
+                    "promise_any" => {
+                        return self.build_async_intrinsic_call(intrinsics::PROMISE_ANY, params, function, writer);
+                    }
+                    "promise_race" => {
+                        return self.build_async_intrinsic_call(intrinsics::PROMISE_RACE, params, function, writer);
+                    }
+                    "json_serialize" => {
+                        let arg_type = self.infer_expression_type(&params[0], function)?;
+                        let struct_name = strip_nullable(&arg_type).to_string();
+                        self.build_expression(&params[0], &arg_type, function, writer)?;
+                        writer.write_line(&format!("call ${}", json_to_json_fn(&struct_name)));
+                        writer.write_line("call $JSON_stringify");
+                        return Ok(());
+                    }
+                    "json_deserialize" => {
+                        let struct_name = _generic_args
+                            .as_ref()
+                            .and_then(|g| g.first())
+                            .map(|t| strip_nullable(&t.get_type()).to_string())
+                            .unwrap_or_default();
+                        self.build_expression(&params[0], &"string".to_string(), function, writer)?;
+                        writer.write_line("call $JSON_parse");
+                        writer.write_line(&format!("call ${}", json_from_json_fn(&struct_name)));
+                        return Ok(());
+                    }
+                    _ => {}
+                }
+            }
+
+            let param_types: Vec<String> = info.parameters.clone();
             let saved_tmp = self.ctx.tmp_depth;
             let mut owned_temps: Vec<(usize, String)> = Vec::new();
             for (i, expr) in params.iter().enumerate() {

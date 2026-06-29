@@ -21,9 +21,9 @@ fun main(): void {
     };
 
     let serialized = JSON.serialize(p);
-    println(serialized);
+    System.println(serialized);
 
     let deserialized = JSON.deserialize<Product>(serialized);
-    println(deserialized.name);
-    println(deserialized.product_id);
+    System.println(deserialized.name);
+    System.println(deserialized.product_id);
 }

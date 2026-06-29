@@ -15,18 +15,18 @@ fun describe(c: Color): string {
 
 fun main(): void {
     let c: Color = Color.Green;
-    println(c);
+    System.println(c);
 
-    print(describe(c));
-    print("\n");
+    System.print(describe(c));
+    System.print("\n");
 
-    print(describe(Color.Blue));
-    print("\n");
+    System.print(describe(Color.Blue));
+    System.print("\n");
 
     let s: Status = Status.Inactive;
-    println(s);
+    System.println(s);
 
     if (c == Color.Green) {
-        println(100);
+        System.println(100);
     }
 }

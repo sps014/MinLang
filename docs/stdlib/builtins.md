@@ -2,27 +2,27 @@
 
 These are available in every Dream program without any import.
 
-## print
+## System.print
 
 Prints a value to stdout without a trailing newline. Works on all types.
 
 ```ts
-print(42);         // prints "42"
-print(3.14f);      // prints "3.14"
-print("hello");    // prints "hello"
-print(true);       // prints "true"
-print('A');        // prints "A"
+System.print(42);         // prints "42"
+System.print(3.14f);      // prints "3.14"
+System.print("hello");    // prints "hello"
+System.print(true);       // prints "true"
+System.print('A');        // prints "A"
 ```
 
-For classes that override `to_string`, `print` calls the override automatically.
+For classes that override `to_string`, `System.print` calls the override automatically.
 
-## println
+## System.println
 
-Like `print`, but appends a newline (`\n`) after the value.
+Like `System.print`, but appends a newline (`\n`) after the value.
 
 ```ts
-println(42);       // prints "42\n"
-println("hello");  // prints "hello\n"
+System.println(42);       // prints "42\n"
+System.println("hello");  // prints "hello\n"
 ```
 
 ## to_string
@@ -76,10 +76,10 @@ let p = Math.pow(2.0, 3.0);                         // 8.0
 
 ```ts
 let arr = [10, 20, 30];
-println(arr.len());     // 3
+System.println(arr.len());     // 3
 
 let name = "hello";
-println(name.len());    // 5
+System.println(name.len());    // 5
 ```
 
 ## array_new

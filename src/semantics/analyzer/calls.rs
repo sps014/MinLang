@@ -9,7 +9,7 @@ use crate::semantics::function_table::{
 };
 use crate::semantics::symbol_table::SymbolTable;
 use crate::syntax::nodes::types::{
-    canonical_type_name, constructor_fn, is_numeric_primitive, json_from_json_fn, json_to_json_fn,
+    canonical_type_name, constructor_fn, is_numeric_primitive,
     mangle_generic, method_fn, strip_nullable,
 };
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, Type};
@@ -343,6 +343,10 @@ impl<'a> Analyzer<'a> {
                         .as_ref()
                         .map(|ret| Self::monomorphize_type(ret, &bindings)),
                     is_async: template.is_async,
+                    intrinsic_name: template.attributes
+                        .iter()
+                        .find(|a| a.name.text == "intrinsic")
+                        .and_then(|a| a.args.first().map(|arg| arg.text.trim_matches('"').to_string())),
                 };
 
                 let _ = self.function_table.add_function(mangled_name.clone(), info);
@@ -510,104 +514,6 @@ impl<'a> Analyzer<'a> {
         }
     }
 
-    /// Type-checks the `@json` auto-derive entry points `JSON.serialize(x)` and
-    /// `JSON.deserialize<T>(text)`. These are compiler intrinsics: the actual conversion runs
-    /// through the per-class `to_json`/`from_json` methods generated for every `@json` class.
-    pub(super) fn analyze_json_derive_call(
-        &mut self,
-        method: &SyntaxToken,
-        generic_args: &Option<Vec<Type>>,
-        params: &[ExpressionNode<'a>],
-        parent_function: &FunctionNode<'a>,
-        symbol_table: &Rc<RefCell<SymbolTable>>,
-        diagnostics: &mut DiagnosticBag,
-    ) -> Result<Type, ()> {
-        if method.text == intrinsics::JSON_SERIALIZE {
-            if params.len() != 1 {
-                diagnostics.report_error(
-                    format!(
-                        "'JSON.{}' expects exactly 1 argument(s), got {}",
-                        method.text,
-                        params.len()
-                    ),
-                    Some(method.position),
-                );
-                return Ok(Type::String(synthetic_token(
-                    TokenKind::DataTypeToken,
-                    "string",
-                )));
-            }
-            let arg_type =
-                self.analyze_expression(&params[0], parent_function, symbol_table, diagnostics)?;
-            let struct_name = strip_nullable(&arg_type.get_type()).to_string();
-            if self
-                .function_table
-                .get_function(&json_to_json_fn(&struct_name))
-                .is_err()
-            {
-                diagnostics.report_error(
-                    format!(
-                        "'JSON.{}' requires a @json class, but '{}' has no derived converter",
-                        method.text, struct_name
-                    ),
-                    params[0].position(),
-                );
-            }
-            return Ok(Type::String(synthetic_token(
-                TokenKind::DataTypeToken,
-                "string",
-            )));
-        }
-
-        // deserialize<T>(text: string): T
-        let target = match generic_args.as_ref().and_then(|g| g.first()) {
-            Some(t) => t.clone(),
-            None => {
-                diagnostics.report_error("'JSON.deserialize' requires an explicit type argument, e.g. JSON.deserialize<User>(text)".to_string(), Some(method.position));
-                return Ok(Type::Object(synthetic_token(
-                    TokenKind::DataTypeToken,
-                    "object",
-                )));
-            }
-        };
-        if params.len() != 1 {
-            diagnostics.report_error(
-                format!(
-                    "'JSON.deserialize' expects exactly 1 argument, got {}",
-                    params.len()
-                ),
-                Some(method.position),
-            );
-            return Ok(target);
-        }
-        let arg_type =
-            self.analyze_expression(&params[0], parent_function, symbol_table, diagnostics)?;
-        if strip_nullable(&arg_type.get_type()) != "string" {
-            diagnostics.report_error(
-                format!(
-                    "'JSON.deserialize' expects a string argument, got {}",
-                    arg_type.get_type()
-                ),
-                params[0].position(),
-            );
-        }
-        let struct_name = strip_nullable(&target.get_type()).to_string();
-        if self
-            .function_table
-            .get_function(&json_from_json_fn(&struct_name))
-            .is_err()
-        {
-            diagnostics.report_error(
-                format!(
-                    "'JSON.deserialize' requires a @json class, but '{}' has no derived converter",
-                    struct_name
-                ),
-                Some(method.position),
-            );
-        }
-        Ok(target)
-    }
-
     /// Type-checks a constructor call `Struct(args)`. When the struct defines a custom `constructor`
     /// the call is checked against `init`'s parameters; otherwise it is checked positionally
     /// against the struct's fields in declaration order (the auto-generated constructor).
@@ -695,44 +601,7 @@ impl<'a> Analyzer<'a> {
         ctx: &super::AnalyzerContext<'a, '_>,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<Type, ()> {
-        // `Math.<fn>(...)`: the math namespace. `Math` is not a value, so intercept before
-        // trying to analyze it as an expression.
         if let ExpressionNode::Identifier(id) = obj {
-            // `Promise.all/any/race(...)`: the async combinators as static methods.
-            if id.text == intrinsics::PROMISE && intrinsics::is_promise_combinator(&method.text) {
-                let is_local = (*ctx.symbol_table).as_ref().borrow().get_symbol(id).is_ok();
-                if !is_local {
-                    return self.analyze_async_intrinsic(
-                        method,
-                        params,
-                        ctx.parent_function,
-                        ctx.symbol_table,
-                        diagnostics,
-                    );
-                }
-            }
-
-            // `JSON.serialize(x)` / `JSON.deserialize<T>(text)`: auto-derive entry points. They are
-            // compiler intrinsics (no real signature in `json.dream`), backed by per-class
-            // `to_json`/`from_json` converters generated for every `@json` class.
-            if id.text == intrinsics::JSON
-                && intrinsics::is_json_derive_method(&method.text)
-                && (*ctx.symbol_table)
-                    .as_ref()
-                    .borrow()
-                    .get_symbol(id)
-                    .is_err()
-            {
-                return self.analyze_json_derive_call(
-                    method,
-                    _generic_args,
-                    params,
-                    ctx.parent_function,
-                    ctx.symbol_table,
-                    diagnostics,
-                );
-            }
-
             // `Type.method(args)`: a static-method call. The receiver names a type (not a local
             // variable), so resolve `{type}_{method}` directly with no implicit `this`.
             let is_local = (*ctx.symbol_table).as_ref().borrow().get_symbol(id).is_ok();
@@ -741,6 +610,56 @@ impl<'a> Analyzer<'a> {
                     .unwrap_or(id.text.as_str())
                     .to_string();
                 let base = method_fn(&type_name, &method.text);
+
+                // Support generic static method calls by monomorphizing them on the fly.
+                if self.generic_functions.contains_key(&base) {
+                    let template = *self.generic_functions.get(&base).unwrap();
+                    let mut params_types = vec![];
+                    for param in params.iter() {
+                        params_types.push(
+                            self.analyze_expression(param, ctx.parent_function, ctx.symbol_table, diagnostics)?
+                                .get_type(),
+                        );
+                    }
+                    let bindings = self.infer_generic_bindings(
+                        template,
+                        _generic_args,
+                        &params_types,
+                        &method.position,
+                        diagnostics,
+                    );
+                    let mangled_name = mangle_bindings(&base, &bindings);
+
+                    // Check for intrinsic promise combinators and delegate to analyze_async_intrinsic
+                    if let Some(intrinsic) = template.attributes.iter().find(|a| a.name.text == "intrinsic").and_then(|a| a.args.first().map(|arg| arg.text.trim_matches('"').to_string())) {
+                        if intrinsic.starts_with("promise_") {
+                            let mut s_tok = method.clone();
+                            s_tok.text = format!("__{}", intrinsic);
+                            return self.analyze_async_intrinsic(
+                                &s_tok,
+                                params,
+                                ctx.parent_function,
+                                ctx.symbol_table,
+                                diagnostics,
+                            );
+                        }
+                    }
+
+                    if self.function_table.get_function(&mangled_name).is_err() {
+                        let mut specialized = template.clone();
+                        Self::substitute_generic_signature(&mut specialized, &bindings);
+                        let specialized_ref: &'a FunctionNode<'a> = self.arena.alloc(specialized);
+                        let info = FunctionTableInfo::from(specialized_ref);
+                        self.function_table.add_function(mangled_name.clone(), info).unwrap();
+                        self.instantiated_generics.insert(mangled_name.clone(), (bindings, specialized_ref));
+                    }
+                    let info = self.function_table.get_function(&mangled_name).unwrap();
+                    if info.is_async {
+                        return Ok(Self::future_type(info.return_type.unwrap_or(Type::Void)));
+                    }
+                    return Ok(info.return_type.unwrap_or(Type::Void));
+                }
+
                 if self.function_table.is_overloaded(&base)
                     || self.function_table.get_function(&base).is_ok()
                 {

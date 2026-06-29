@@ -1,0 +1,10 @@
+/// System utilities
+class System {
+    /// Prints a value to standard output.
+    @intrinsic("print")
+    static extern fun print<T>(value: T): void;
+
+    /// Prints a value to standard output followed by a newline.
+    @intrinsic("println")
+    static extern fun println<T>(value: T): void;
+}

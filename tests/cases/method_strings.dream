@@ -4,11 +4,11 @@ class Greeter {
     name: string;
 
     fun greet() {
-        print("hello from method body\n");
+        System.print("hello from method body\n");
     }
 
     fun say(msg: string) {
-        print(msg);
+        System.print(msg);
     }
 }
 

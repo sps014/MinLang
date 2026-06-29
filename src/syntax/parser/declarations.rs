@@ -451,9 +451,10 @@ impl<'a, 'b> Parser<'a, 'b> {
 
         if is_extern {
             // Extern functions are lowered to WASM imports: no body, terminated by `;`.
-            if generic_parameters.is_some() {
+            let is_intrinsic = attributes.iter().any(|a| a.name.text == "intrinsic");
+            if generic_parameters.is_some() && !is_intrinsic {
                 self.diagnostics.report_error(
-                    "Extern functions cannot be generic".to_string(),
+                    "Extern functions cannot be generic unless they are marked @intrinsic".to_string(),
                     Some(function_name.position),
                 );
             }

@@ -15,7 +15,7 @@ fun main(): void {
     
     let curr: Node? = head;
     while (curr != null ) {
-        println(curr.value);
+        System.println(curr.value);
         curr = curr.next;
     }
 }

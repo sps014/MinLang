@@ -4,5 +4,5 @@ fun h(x: string): int { return 2; }
 
 fun main(): void {
     let b: bool = true;
-    println(h(b));
+    System.println(h(b));
 }

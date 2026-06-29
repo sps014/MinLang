@@ -56,20 +56,20 @@ fun main(): void {
     };
 
     let text = JSON.serialize(team);
-    println(text);
+    System.println(text);
 
     let back = JSON.deserialize<Team>(text);
-    println(back.title);
-    println(back.lead.name);
-    println(back.lead.company.name);
-    println(back.lead.company.address.city);
-    println(to_string(back.lead.company.address.geo.lat));
-    println(back.lead.tags[1]);
-    println(to_string(back.members.len()));
-    println(back.members[0].name);
-    println(to_string(back.members[1].company.address.geo.lng));
-    println(to_string(back.members[1].age));
+    System.println(back.title);
+    System.println(back.lead.name);
+    System.println(back.lead.company.name);
+    System.println(back.lead.company.address.city);
+    System.println(to_string(back.lead.company.address.geo.lat));
+    System.println(back.lead.tags[1]);
+    System.println(to_string(back.members.len()));
+    System.println(back.members[0].name);
+    System.println(to_string(back.members[1].company.address.geo.lng));
+    System.println(to_string(back.members[1].age));
 
     // Round-trips identically.
-    println(to_string(JSON.serialize(back) == text));
+    System.println(to_string(JSON.serialize(back) == text));
 }

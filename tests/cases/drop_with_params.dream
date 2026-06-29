@@ -3,11 +3,11 @@ class Bad {
     id: int;
 
     del(extra: int) {
-        println(this.id);
+        System.println(this.id);
     }
 }
 
 fun main() {
     let b = Bad(1);
-    println(b.id);
+    System.println(b.id);
 }

@@ -14,12 +14,12 @@
 // Callable as `f(x)` with a single argument of any type; lowered to dedicated object-protocol
 // runtime helpers rather than to user/stdlib functions.
 
-pub const PRINT: &str = "print";
-pub const PRINTLN: &str = "println";
+pub const PRINT: &str = "__print";
+pub const PRINTLN: &str = "__println";
 pub const TO_STRING: &str = "to_string";
 pub const HASH_CODE: &str = "hash_code";
 
-/// The object-protocol builtins (`print`, `println`, `to_string`, `hash_code`).
+/// The object-protocol builtins.
 pub const OBJECT_BUILTINS: [&str; 4] = [PRINT, PRINTLN, TO_STRING, HASH_CODE];
 
 /// True if `name` is an object-protocol builtin free function.
@@ -38,41 +38,33 @@ pub const LEN: &str = "len";
 /// `<enum>.name()`: the variant-name accessor on enum values.
 pub const ENUM_NAME: &str = "name";
 
-// --- Special static namespaces --------------------------------------------------------------
-// Receivers that name a compiler-known namespace rather than a value/type in the tables.
-
-pub const PROMISE: &str = "Promise";
-pub const JSON: &str = "JSON";
-
 // --- Async intrinsics -----------------------------------------------------------------------
 
 /// `sleep(ms)`: the async timer intrinsic (a free function, unlike the `Promise.*` combinators).
 pub const SLEEP: &str = "sleep";
 
-pub const PROMISE_ALL: &str = "all";
-pub const PROMISE_ANY: &str = "any";
-pub const PROMISE_RACE: &str = "race";
+pub const PROMISE_ALL: &str = "__promise_all";
+pub const PROMISE_ANY: &str = "__promise_any";
+pub const PROMISE_RACE: &str = "__promise_race";
 
-/// The async combinators exposed as `Promise.all/any/race`.
+/// The async combinators.
 pub const PROMISE_COMBINATORS: [&str; 3] = [PROMISE_ALL, PROMISE_ANY, PROMISE_RACE];
 
-/// True if `name` is a `Promise.*` async combinator.
+/// True if `name` is a promise async combinator.
 pub fn is_promise_combinator(name: &str) -> bool {
     PROMISE_COMBINATORS.contains(&name)
 }
 
 // --- JSON auto-derive intrinsics ------------------------------------------------------------
 
-pub const JSON_SERIALIZE: &str = "serialize";
-pub const JSON_DESERIALIZE: &str = "deserialize";
+pub const JSON_SERIALIZE: &str = "__json_serialize";
+pub const JSON_DESERIALIZE: &str = "__json_deserialize";
 
-/// The `JSON.*` auto-derive entry points (`serialize`, `deserialize`). These
-/// have no real signature in `json.dream`; they are backed by the per-class `to_json`/`from_json`
-/// converters generated for every `@json` class.
+/// The `JSON.*` auto-derive entry points (`serialize`, `deserialize`).
 pub const JSON_DERIVE_METHODS: [&str; 2] =
     [JSON_SERIALIZE, JSON_DESERIALIZE];
 
-/// True if `name` is a `JSON.*` auto-derive entry point.
+/// True if `name` is a JSON auto-derive entry point.
 pub fn is_json_derive_method(name: &str) -> bool {
     JSON_DERIVE_METHODS.contains(&name)
 }

@@ -10,26 +10,26 @@ class Logged {
 
     constructor(id: int) {
         this.id = id;
-        print("create ");
-        println(this.id);
+        System.print("create ");
+        System.println(this.id);
     }
 
     del() {
-        print("drop ");
-        println(this.id);
+        System.print("drop ");
+        System.println(this.id);
     }
 }
 
 fun make(n: int) {
     let temp = Logged(n);
-    println(temp.id);
+    System.println(temp.id);
 }
 
 fun main() {
     let p = Point(3, 4);
-    println(p.x);
-    println(p.y);
+    System.println(p.x);
+    System.println(p.y);
 
     make(7);
-    println(999);
+    System.println(999);
 }

@@ -1,14 +1,14 @@
 fun main(): void {
     let i: int = 7;
     let d: double = (double)i;
-    println(d);
+    System.println(d);
 
     let f: float = (float)d;
-    println(f);
+    System.println(f);
 
     let back: int = (int)d;
-    println(back);
+    System.println(back);
 
     let g: double = (double)f;
-    println(g);
+    System.println(g);
 }

@@ -3,25 +3,25 @@ class P { v: int; }
 fun main(): void {
     let x: int = 10;
     x += 5;
-    println(x);
+    System.println(x);
     x -= 3;
-    println(x);
+    System.println(x);
     x *= 2;
-    println(x);
+    System.println(x);
     x /= 4;
-    println(x);
+    System.println(x);
     x %= 4;
-    println(x);
+    System.println(x);
     x++;
-    println(x);
+    System.println(x);
     x--;
-    println(x);
+    System.println(x);
 
     let arr: int[] = [1, 2, 3];
     arr[1] += 10;
-    println(arr[1]);
+    System.println(arr[1]);
 
     let p = P { v: 5 };
     p.v += 7;
-    println(p.v);
+    System.println(p.v);
 }

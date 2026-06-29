@@ -27,11 +27,11 @@ fun main(): void {
     
     let curr = list;
     while (curr != null) {
-        println(curr.value);
+        System.println(curr.value);
         if (curr.has_next()) {
-            print(" -> ");
+            System.print(" -> ");
         }
         curr = curr.next;
     }
-    print("\n");
+    System.print("\n");
 }

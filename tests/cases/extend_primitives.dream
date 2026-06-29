@@ -4,9 +4,9 @@ extend int {
 
 fun main(): void {
     let n: Int32 = -7;
-    println(n.abs());        // 7  (prelude extend)
-    println(n.doubled());    // -14 (user extend)
+    System.println(n.abs());        // 7  (prelude extend)
+    System.println(n.doubled());    // -14 (user extend)
 
     let s: String = "hello";
-    println(s.length());     // 5  (prelude extend)
+    System.println(s.length());     // 5  (prelude extend)
 }

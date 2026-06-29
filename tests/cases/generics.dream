@@ -1,10 +1,10 @@
 fun Test<T>(data: T) {
     if (data is int) {
-        println(data);
+        System.println(data);
     } else if (data is float) {
-        println(data);
+        System.println(data);
     } else if (data is string) {
-        print(data);
+        System.print(data);
     }
 }
 

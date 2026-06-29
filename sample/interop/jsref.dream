@@ -8,14 +8,14 @@ fun main(): void {
     // `appConfig` is a plain JS object provided by the host (see jsref.mjs / jsref.html).
     let config = js_global("appConfig");
 
-    println("title = " + config.get_string("title"));
-    println("count = " + to_string(config.get_int("count")));
-    println("enabled = " + to_string(config.get_bool("enabled")));
+    System.println("title = " + config.get_string("title"));
+    System.println("count = " + to_string(config.get_int("count")));
+    System.println("enabled = " + to_string(config.get_bool("enabled")));
 
     // Read a nested reference, then call a method on it.
     let title = config.get("title");
     let shout = title.call("toUpperCase");
-    println("shout = " + shout.text());
+    System.println("shout = " + shout.text());
 
     // Mutate the object back on the JS side.
     config.set("touched", js_bool(true));

@@ -19,11 +19,11 @@ class GenericBox<T> {
 
     fun print_val() {
         if (this.val is int) {
-            println(this.val);
+            System.println(this.val);
         } else if (this.val is float) {
-            println(this.val);
+            System.println(this.val);
         } else if (this.val is string) {
-            print(this.val);
+            System.print(this.val);
         }
     }
 
@@ -36,7 +36,7 @@ fun main() {
     let c = Counter { count: 0 };
     c.increment();
     c.add(4);
-    println(c.get());
+    System.println(c.get());
 
     let int_box = GenericBox<int> { val: 42 };
     int_box.print_val();

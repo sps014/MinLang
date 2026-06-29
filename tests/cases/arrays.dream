@@ -13,25 +13,25 @@ fun modify_array(arr: int[]): void {
 
 fun main(): void {
     let arr1: int[] = [10, 20, 30, 40, 50];
-    println(arr1[0]);
-    println(arr1[4]);
+    System.println(arr1[0]);
+    System.println(arr1[4]);
     
     // Array passed to function
-    println(sum_array(arr1, 5));
+    System.println(sum_array(arr1, 5));
     
     // Array modification in function
     modify_array(arr1);
-    println(arr1[0]);
-    println(arr1[1]);
-    println(arr1[2]); // Should still be 30
+    System.println(arr1[0]);
+    System.println(arr1[1]);
+    System.println(arr1[2]); // Should still be 30
     
     let arr2: float[] = [1.5, 2.5, 3.5];
-    println(arr2[0]);
-    println(arr2[2]);
+    System.println(arr2[0]);
+    System.println(arr2[2]);
     
     let arr3: string[] = ["hello", "world", "dream"];
-    print(arr3[0]);
-    print("\n");
-    print(arr3[2]);
-    print("\n");
+    System.print(arr3[0]);
+    System.print("\n");
+    System.print(arr3[2]);
+    System.print("\n");
 }

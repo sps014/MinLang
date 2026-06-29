@@ -235,6 +235,7 @@ pub struct FunctionTableInfo {
     /// True when the declaration is `async fun`: calling it eagerly starts a task and yields
     /// `Future<T>` (where `T` is `return_type`). Awaiting a call to it produces `T`.
     pub is_async: bool,
+    pub intrinsic_name: Option<String>,
 }
 
 impl FunctionTableInfo {
@@ -248,6 +249,7 @@ impl FunctionTableInfo {
             return_type,
             parameters,
             is_async: false,
+            intrinsic_name: None,
         }
     }
     pub fn from(func: &FunctionNode) -> Self {
@@ -258,8 +260,13 @@ impl FunctionTableInfo {
             let j = i.clone();
             parameters.push(j.type_.get_type());
         }
+        let intrinsic_name = func.attributes
+            .iter()
+            .find(|a| a.name.text == "intrinsic")
+            .and_then(|a| a.args.first().map(|arg| arg.text.trim_matches('"').to_string()));
         let mut info = FunctionTableInfo::new(name.text, return_type, parameters);
         info.is_async = func.is_async;
+        info.intrinsic_name = intrinsic_name;
         info
     }
 }

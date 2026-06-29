@@ -10,11 +10,11 @@ class Pixel {
 
 fun main() {
     let pts: Point<int>[] = [Point<int> { x: 1, y: 2 }, Point<int> { x: 3, y: 4 }];
-    println(pts.len());
-    println(pts[0].x);
-    println(pts[1].y);
+    System.println(pts.len());
+    System.println(pts[0].x);
+    System.println(pts[1].y);
 
     let px: Pixel[] = [Pixel { r: 10, g: 20 }];
-    println(px[0].r);
-    println(px[0].g);
+    System.println(px[0].r);
+    System.println(px[0].g);
 }

@@ -11,11 +11,11 @@ fun main(): void {
         tags: ["dev", "math"],
     };
 
-    println(JSON.stringify_pretty(u.to_json(), 2));
+    System.println(JSON.stringify_pretty(u.to_json(), 2));
 
     let v = JSON.parse("{\"a\":[1,2],\"b\":{\"c\":true},\"d\":[]}");
-    println(JSON.stringify_pretty(v, 4));
+    System.println(JSON.stringify_pretty(v, 4));
 
     // indent 0 falls back to compact output.
-    println(JSON.stringify_pretty(v, 0));
+    System.println(JSON.stringify_pretty(v, 0));
 }
