@@ -1,5 +1,5 @@
-use std::io::{Error, ErrorKind};
 use crate::syntax::token::syntax_token::SyntaxToken;
+use std::io::Error;
 
 /// Returns the given type name with a single trailing nullable (`?`) suffix removed.
 pub fn strip_nullable(type_name: &str) -> &str {
@@ -9,7 +9,10 @@ pub fn strip_nullable(type_name: &str) -> &str {
 /// Single source of truth for name mangling: joins `base` with each suffix using `_`
 /// separators, e.g. base `Pair` with `["int", "string"]` becomes `Pair_int_string`.
 /// With no suffixes the base name is returned unchanged.
-pub fn mangle_with_suffixes<S: AsRef<str>>(base: &str, suffixes: impl IntoIterator<Item = S>) -> String {
+pub fn mangle_with_suffixes<S: AsRef<str>>(
+    base: &str,
+    suffixes: impl IntoIterator<Item = S>,
+) -> String {
     let mut name = base.to_string();
     for suffix in suffixes {
         name.push('_');
@@ -185,16 +188,18 @@ impl Type {
             Type::Boolean(_) => "bool".to_string(),
             Type::Char(_) => "char".to_string(),
             Type::Array(inner) => format!("{}[]", inner.get_type()),
-            Type::Struct(token, generic_args) => {
-                match generic_args {
-                    Some(args) => mangle_generic(&token.text, args),
-                    None => token.text.clone(),
-                }
+            Type::Struct(token, generic_args) => match generic_args {
+                Some(args) => mangle_generic(&token.text, args),
+                None => token.text.clone(),
             },
             Type::Generic(name) => name.clone(),
             Type::Nullable(inner) => format!("{}?", inner.get_type()),
             Type::Function(params, ret) => {
-                let params_str = params.iter().map(|p| p.get_type()).collect::<Vec<_>>().join(",");
+                let params_str = params
+                    .iter()
+                    .map(|p| p.get_type())
+                    .collect::<Vec<_>>()
+                    .join(",");
                 format!("fun({}):{}", params_str, ret.get_type())
             }
         }
@@ -227,7 +232,7 @@ impl Type {
             | Type::Boolean(token)
             | Type::Char(token)
             | Type::Object(token)
-            | Type::Struct(token, _) => Some(token.position.clone()),
+            | Type::Struct(token, _) => Some(token.position),
             Type::Array(inner) | Type::Nullable(inner) => inner.get_span(),
             Type::Void | Type::Generic(_) | Type::Function(_, _) => None,
         }
@@ -271,14 +276,18 @@ impl Type {
                     let mut base_token = token.clone();
                     base_token.text = base_type_str.to_string();
                     let base_type = Type::from_token(base_token)?;
-                    
+
                     // Restrict nullable to reference types
                     match &base_type {
-                        Type::String(_) | Type::Object(_) | Type::Array(_) | Type::Struct(_, _) | Type::Void => {
+                        Type::String(_)
+                        | Type::Object(_)
+                        | Type::Array(_)
+                        | Type::Struct(_, _)
+                        | Type::Void => {
                             return Ok(Type::Nullable(Box::new(base_type)));
-                        },
+                        }
                         _ => {
-                            return Err(Error::new(ErrorKind::Other, format!("Type '{}' cannot be nullable. Only reference types (string, arrays, structs) can be nullable.", base_type.get_type())));
+                            return Err(Error::other(format!("Type '{}' cannot be nullable. Only reference types (string, arrays, structs) can be nullable.", base_type.get_type())));
                         }
                     }
                 }

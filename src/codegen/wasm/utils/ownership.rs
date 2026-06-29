@@ -2,12 +2,12 @@
 //! expressions yield an *owned* (+1) reference vs. a *borrowed* one, how call arguments are
 //! retained/released around a call, and what a method call returns.
 
-use std::io::Error;
-use crate::syntax::nodes::FunctionNode;
-use crate::syntax::nodes::types::strip_nullable;
-use crate::syntax::text::indented_text_writer::IndentedTextWriter;
-use crate::intrinsics;
 use super::super::WasmGenerator;
+use crate::intrinsics;
+use crate::syntax::nodes::types::strip_nullable;
+use crate::syntax::nodes::FunctionNode;
+use crate::syntax::text::indented_text_writer::IndentedTextWriter;
+use std::io::Error;
 
 impl<'a> WasmGenerator<'a> {
     /// Returns true if `expr` produces an *owned* reference: a freshly created value (or a call
@@ -20,7 +20,11 @@ impl<'a> WasmGenerator<'a> {
     /// reference a value someone else owns, so consumers must retain them. Ambiguous producers
     /// (`Ternary`, `??`, explicit `Cast`) are treated as borrowed — the conservative choice that
     /// at worst leaks, never double-frees.
-    pub fn produces_owned_ref(&self, expr: &crate::syntax::nodes::ExpressionNode<'a>, function: &FunctionNode<'a>) -> bool {
+    pub fn produces_owned_ref(
+        &self,
+        expr: &crate::syntax::nodes::ExpressionNode<'a>,
+        function: &FunctionNode<'a>,
+    ) -> bool {
         use crate::syntax::nodes::ExpressionNode;
         match expr {
             ExpressionNode::StructInstantiation(_, _, _) | ExpressionNode::ArrayLiteral(_) => true,
@@ -63,7 +67,12 @@ impl<'a> WasmGenerator<'a> {
     /// True when `expr` flowing into a slot of type `target_type` is implicitly boxed by
     /// `build_expression` (a primitive value flowing into an `object` slot), producing a fresh
     /// (owned) heap object.
-    pub fn will_box(&self, expr: &crate::syntax::nodes::ExpressionNode<'a>, target_type: &str, function: &FunctionNode<'a>) -> Result<bool, Error> {
+    pub fn will_box(
+        &self,
+        expr: &crate::syntax::nodes::ExpressionNode<'a>,
+        target_type: &str,
+        function: &FunctionNode<'a>,
+    ) -> Result<bool, Error> {
         if strip_nullable(target_type) != "object" {
             return Ok(false);
         }
@@ -74,7 +83,12 @@ impl<'a> WasmGenerator<'a> {
     /// Whether the value of `expr`, when stored into a slot of type `target_type`, is an *owned*
     /// reference the slot takes ownership of (so it must not be retained again). Combines the
     /// expression classifier with implicit boxing into an `object` slot.
-    pub fn stores_owned_ref(&self, expr: &crate::syntax::nodes::ExpressionNode<'a>, target_type: &str, function: &FunctionNode<'a>) -> Result<bool, Error> {
+    pub fn stores_owned_ref(
+        &self,
+        expr: &crate::syntax::nodes::ExpressionNode<'a>,
+        target_type: &str,
+        function: &FunctionNode<'a>,
+    ) -> Result<bool, Error> {
         Ok(self.will_box(expr, target_type, function)? || self.produces_owned_ref(expr, function))
     }
 
@@ -82,7 +96,14 @@ impl<'a> WasmGenerator<'a> {
     /// implicitly boxed into an `object` parameter), `local.tee`s it into a fresh `$tmp{n}` and
     /// records `(slot, release_type)` so [`release_call_temps`] can release it after the call.
     /// The value is left on the operand stack as the argument either way.
-    pub fn build_call_arg(&mut self, expr: &crate::syntax::nodes::ExpressionNode<'a>, param_type: &str, function: &FunctionNode<'a>, owned: &mut Vec<(usize, String)>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+    pub fn build_call_arg(
+        &mut self,
+        expr: &crate::syntax::nodes::ExpressionNode<'a>,
+        param_type: &str,
+        function: &FunctionNode<'a>,
+        owned: &mut Vec<(usize, String)>,
+        writer: &mut IndentedTextWriter,
+    ) -> Result<(), Error> {
         let pt_base = strip_nullable(param_type).to_string();
         let will_box = self.will_box(expr, param_type, function)?;
         let owns_ref = will_box || self.produces_owned_ref(expr, function);
@@ -92,7 +113,11 @@ impl<'a> WasmGenerator<'a> {
             self.ctx.tmp_depth += 1;
             writer.write_line(&format!("local.tee $tmp{}", slot));
             // A boxed primitive is released as an `object`; otherwise use the parameter's type.
-            let release_type = if will_box { "object".to_string() } else { pt_base };
+            let release_type = if will_box {
+                "object".to_string()
+            } else {
+                pt_base
+            };
             owned.push((slot, release_type));
         }
         Ok(())
@@ -101,7 +126,12 @@ impl<'a> WasmGenerator<'a> {
     /// Releases the owned-argument temporaries recorded by [`build_call_arg`] (LIFO) and restores
     /// `tmp_depth` to `saved_depth`. Each release is stack-neutral, so a value left on the stack
     /// by the preceding `call` (the call's result) is preserved.
-    pub fn release_call_temps(&mut self, owned: &[(usize, String)], saved_depth: usize, writer: &mut IndentedTextWriter) {
+    pub fn release_call_temps(
+        &mut self,
+        owned: &[(usize, String)],
+        saved_depth: usize,
+        writer: &mut IndentedTextWriter,
+    ) {
         for (slot, release_type) in owned.iter().rev() {
             writer.write_line(&format!("local.get $tmp{}", slot));
             self.emit_release(release_type, writer);
@@ -111,7 +141,13 @@ impl<'a> WasmGenerator<'a> {
 
     /// Returns true if the method invoked as `obj.method(...)` yields a non-void value
     /// (used to decide whether a statement-level invocation must `drop` the result).
-    pub fn method_returns_value(&self, obj: &crate::syntax::nodes::ExpressionNode<'a>, method: &crate::syntax::token::syntax_token::SyntaxToken, params: &[crate::syntax::nodes::ExpressionNode<'a>], function: &FunctionNode<'a>) -> Result<bool, Error> {
+    pub fn method_returns_value(
+        &self,
+        obj: &crate::syntax::nodes::ExpressionNode<'a>,
+        method: &crate::syntax::token::syntax_token::SyntaxToken,
+        params: &[crate::syntax::nodes::ExpressionNode<'a>],
+        function: &FunctionNode<'a>,
+    ) -> Result<bool, Error> {
         // `Math.<fn>(...)` always yields a float.
         if let crate::syntax::nodes::ExpressionNode::Identifier(id) = obj {
             if id.text == intrinsics::MATH {
@@ -119,7 +155,9 @@ impl<'a> WasmGenerator<'a> {
             }
         }
         if let Some(key) = self.resolve_static_call(obj, &method.text, params, function) {
-            let returns_value = self.function_table.get_function(&key)
+            let returns_value = self
+                .function_table
+                .get_function(&key)
                 .ok()
                 .and_then(|info| info.return_type)
                 .map(|ret| ret.get_type() != "void")
@@ -128,11 +166,15 @@ impl<'a> WasmGenerator<'a> {
         }
         let obj_type = self.infer_expression_type(obj, function)?;
         let struct_name = strip_nullable(&obj_type).to_string();
-        if method.text == intrinsics::LEN && (struct_name.ends_with("[]") || struct_name == "string") {
+        if method.text == intrinsics::LEN
+            && (struct_name.ends_with("[]") || struct_name == "string")
+        {
             return Ok(true);
         }
         let mangled_name = self.resolve_method_key(&struct_name, &method.text, params, function);
-        let returns_value = self.function_table.get_function(&mangled_name)
+        let returns_value = self
+            .function_table
+            .get_function(&mangled_name)
             .ok()
             .and_then(|info| info.return_type)
             .map(|ret| ret.get_type() != "void")
@@ -143,28 +185,40 @@ impl<'a> WasmGenerator<'a> {
     /// The return type name of `obj.method(...)`, or `None` for `void`/unknown. Used to decide
     /// whether a discarded statement-level method result should be released (owned reference),
     /// dropped (non-reference value), or ignored (void).
-    pub fn method_return_type(&self, obj: &crate::syntax::nodes::ExpressionNode<'a>, method: &crate::syntax::token::syntax_token::SyntaxToken, params: &[crate::syntax::nodes::ExpressionNode<'a>], function: &FunctionNode<'a>) -> Result<Option<String>, Error> {
+    pub fn method_return_type(
+        &self,
+        obj: &crate::syntax::nodes::ExpressionNode<'a>,
+        method: &crate::syntax::token::syntax_token::SyntaxToken,
+        params: &[crate::syntax::nodes::ExpressionNode<'a>],
+        function: &FunctionNode<'a>,
+    ) -> Result<Option<String>, Error> {
         if let crate::syntax::nodes::ExpressionNode::Identifier(id) = obj {
             if id.text == intrinsics::MATH {
                 return Ok(Some("float".to_string()));
             }
         }
         if let Some(key) = self.resolve_static_call(obj, &method.text, params, function) {
-            return Ok(self.function_table.get_function(&key)
+            return Ok(self
+                .function_table
+                .get_function(&key)
                 .ok()
                 .and_then(|info| info.return_type)
                 .map(|ret| ret.get_type()));
         }
         let obj_type = self.infer_expression_type(obj, function)?;
         let struct_name = strip_nullable(&obj_type).to_string();
-        if method.text == intrinsics::LEN && (struct_name.ends_with("[]") || struct_name == "string") {
+        if method.text == intrinsics::LEN
+            && (struct_name.ends_with("[]") || struct_name == "string")
+        {
             return Ok(Some("int".to_string()));
         }
         if method.text == intrinsics::ENUM_NAME && self.enums.contains_key(&struct_name) {
             return Ok(Some("string".to_string()));
         }
         let mangled_name = self.resolve_method_key(&struct_name, &method.text, params, function);
-        Ok(self.function_table.get_function(&mangled_name)
+        Ok(self
+            .function_table
+            .get_function(&mangled_name)
             .ok()
             .and_then(|info| info.return_type)
             .map(|ret| ret.get_type()))

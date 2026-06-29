@@ -82,7 +82,8 @@ pub const JSON_DESERIALIZE: &str = "deserialize";
 /// The `JSON.*` auto-derive entry points (`serialize`, `serialize_pretty`, `deserialize`). These
 /// have no real signature in `json.dream`; they are backed by the per-class `to_json`/`from_json`
 /// converters generated for every `@json` class.
-pub const JSON_DERIVE_METHODS: [&str; 3] = [JSON_SERIALIZE, JSON_SERIALIZE_PRETTY, JSON_DESERIALIZE];
+pub const JSON_DERIVE_METHODS: [&str; 3] =
+    [JSON_SERIALIZE, JSON_SERIALIZE_PRETTY, JSON_DESERIALIZE];
 
 /// True if `name` is a `JSON.*` auto-derive entry point.
 pub fn is_json_derive_method(name: &str) -> bool {

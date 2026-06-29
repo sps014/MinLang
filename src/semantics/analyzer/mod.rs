@@ -1,18 +1,18 @@
-use bumpalo::Bump;
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::rc::Rc;
-use crate::syntax::nodes::{FunctionNode, Type, ProgramNode};
+use crate::driver::diagnostics::DiagnosticBag;
+use crate::semantics::function_table::FunctionTable;
+use crate::semantics::struct_table::StructTable;
+use crate::semantics::symbol_table::SymbolTable;
 use crate::syntax::nodes::types::{mangle_with_suffixes, primitive_type, FUTURE_TYPE};
+use crate::syntax::nodes::{FunctionNode, ProgramNode, Type};
 use crate::syntax::syntax_tree::SyntaxTree;
 use crate::syntax::text::line_text::LineText;
 use crate::syntax::text::text_span::TextSpan;
 use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
-use crate::semantics::function_table::FunctionTable;
-use crate::semantics::symbol_table::SymbolTable;
-use crate::semantics::struct_table::StructTable;
-use crate::driver::diagnostics::DiagnosticBag;
+use bumpalo::Bump;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 mod await_rules;
 mod calls;
@@ -45,7 +45,8 @@ fn synthetic_token(kind: TokenKind, text: &str) -> SyntaxToken {
 /// parameters or arguments beyond the common length are ignored (arity is validated
 /// separately so a clear diagnostic is produced).
 fn generic_bindings(params: &[SyntaxToken], args: &[Type]) -> Vec<(String, String)> {
-    params.iter()
+    params
+        .iter()
         .zip(args.iter())
         .map(|(param, arg)| (param.text.clone(), arg.get_type()))
         .collect()
@@ -53,7 +54,10 @@ fn generic_bindings(params: &[SyntaxToken], args: &[Type]) -> Vec<(String, Strin
 
 /// Looks up the concrete type bound to a generic parameter name, if any.
 fn lookup_binding(bindings: &[(String, String)], name: &str) -> Option<String> {
-    bindings.iter().find(|(param, _)| param == name).map(|(_, concrete)| concrete.clone())
+    bindings
+        .iter()
+        .find(|(param, _)| param == name)
+        .map(|(_, concrete)| concrete.clone())
 }
 
 /// Builds a mangled function name by appending each concrete type from the bindings in order,
@@ -89,7 +93,10 @@ fn substitute_generic_type(ty: &Type, bindings: &[(String, String)]) -> Type {
         Type::Array(inner) => Type::Array(Box::new(substitute_generic_type(inner, bindings))),
         Type::Nullable(inner) => Type::Nullable(Box::new(substitute_generic_type(inner, bindings))),
         Type::Function(params, ret) => Type::Function(
-            params.iter().map(|p| substitute_generic_type(p, bindings)).collect(),
+            params
+                .iter()
+                .map(|p| substitute_generic_type(p, bindings))
+                .collect(),
             Box::new(substitute_generic_type(ret, bindings)),
         ),
         Type::Generic(name) => bind_concrete(name, bindings).unwrap_or_else(|| ty.clone()),
@@ -101,7 +108,11 @@ fn substitute_generic_type(ty: &Type, bindings: &[(String, String)]) -> Type {
                     return concrete;
                 }
             }
-            let new_args = args.as_ref().map(|a| a.iter().map(|x| substitute_generic_type(x, bindings)).collect());
+            let new_args = args.as_ref().map(|a| {
+                a.iter()
+                    .map(|x| substitute_generic_type(x, bindings))
+                    .collect()
+            });
             Type::Struct(token.clone(), new_args)
         }
         other => other.clone(),
@@ -121,8 +132,7 @@ pub type GenericBindings = Vec<(String, String)>;
 /// Enum name -> (member name -> integer value).
 pub type EnumTable = HashMap<String, HashMap<String, i32>>;
 
-pub struct SemanticInfo<'a>
-{
+pub struct SemanticInfo<'a> {
     pub hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>,
     pub function_table: &'a FunctionTable,
     pub struct_table: &'a StructTable,
@@ -132,8 +142,14 @@ pub struct SemanticInfo<'a>
 }
 
 impl<'a> SemanticInfo<'a> {
-    pub fn new(hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>, function_table: &'a FunctionTable, struct_table: &'a StructTable, instantiated_generics: HashMap<String, (GenericBindings, &'a FunctionNode<'a>)>, struct_methods: Vec<(&'a FunctionNode<'a>, GenericBindings)>, enums: EnumTable) -> SemanticInfo<'a>
-    {
+    pub fn new(
+        hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>,
+        function_table: &'a FunctionTable,
+        struct_table: &'a StructTable,
+        instantiated_generics: HashMap<String, (GenericBindings, &'a FunctionNode<'a>)>,
+        struct_methods: Vec<(&'a FunctionNode<'a>, GenericBindings)>,
+        enums: EnumTable,
+    ) -> SemanticInfo<'a> {
         SemanticInfo {
             hash_map,
             function_table,
@@ -145,15 +161,15 @@ impl<'a> SemanticInfo<'a> {
     }
 }
 
-
 pub struct Analyzer<'a> {
-    syntax_tree:&'a SyntaxTree<'a>,
-    function_table:FunctionTable,
-    struct_table:StructTable,
+    syntax_tree: &'a SyntaxTree<'a>,
+    function_table: FunctionTable,
+    struct_table: StructTable,
     arena: &'a Bump,
     generic_functions: HashMap<String, &'a FunctionNode<'a>>,
     instantiated_generics: HashMap<String, (GenericBindings, &'a FunctionNode<'a>)>,
-    generic_structs: HashMap<String, &'a crate::syntax::nodes::struct_node::StructDeclarationNode<'a>>,
+    generic_structs:
+        HashMap<String, &'a crate::syntax::nodes::struct_node::StructDeclarationNode<'a>>,
     struct_methods: Vec<(&'a FunctionNode<'a>, GenericBindings)>,
     /// Registered enums: name -> (member -> value). Enum values are plain `i32`s at runtime.
     enum_table: EnumTable,
@@ -169,24 +185,43 @@ pub struct Analyzer<'a> {
 }
 impl<'a> Analyzer<'a> {
     pub fn new(tree: &'a SyntaxTree<'a>, arena: &'a Bump) -> Self {
-        Self { syntax_tree:tree, function_table: FunctionTable::new(), struct_table: StructTable::new(), arena, generic_functions: HashMap::new(), instantiated_generics: HashMap::new(), generic_structs: HashMap::new(), struct_methods: Vec::new(), enum_table: HashMap::new(), current_generic_bindings: Vec::new(), loop_labels: Vec::new(), current_function_is_async: false }
+        Self {
+            syntax_tree: tree,
+            function_table: FunctionTable::new(),
+            struct_table: StructTable::new(),
+            arena,
+            generic_functions: HashMap::new(),
+            instantiated_generics: HashMap::new(),
+            generic_structs: HashMap::new(),
+            struct_methods: Vec::new(),
+            enum_table: HashMap::new(),
+            current_generic_bindings: Vec::new(),
+            loop_labels: Vec::new(),
+            current_function_is_async: false,
+        }
     }
 
     /// Builds the `Future<T>` type carrying inner type `inner`. Async-call results are this type,
     /// and `await` unwraps it back to `inner`.
     pub(super) fn future_type(inner: Type) -> Type {
-        Type::Struct(synthetic_token(TokenKind::IdentifierToken, FUTURE_TYPE), Some(vec![inner]))
+        Type::Struct(
+            synthetic_token(TokenKind::IdentifierToken, FUTURE_TYPE),
+            Some(vec![inner]),
+        )
     }
 
     /// If `ty` is a `Future<T>`, returns the inner `T`; otherwise `None`.
     pub(super) fn future_inner_type(ty: &Type) -> Option<Type> {
         match ty {
-            Type::Struct(token, Some(args)) if token.text == FUTURE_TYPE && args.len() == 1 => Some(args[0].clone()),
+            Type::Struct(token, Some(args)) if token.text == FUTURE_TYPE && args.len() == 1 => {
+                Some(args[0].clone())
+            }
             _ => None,
         }
     }
+    #[allow(clippy::result_unit_err)]
     pub fn analyze(&mut self, diagnostics: &mut DiagnosticBag) -> Result<SemanticInfo<'_>, ()> {
-        let pgm= self.syntax_tree.get_root();
+        let pgm = self.syntax_tree.get_root();
         self.analyze_pgm(pgm, diagnostics)
     }
 
@@ -203,7 +238,9 @@ impl<'a> Analyzer<'a> {
     /// array is invalid and must surface as an error).
     fn resolve_struct_parts(ty: &Type) -> Option<(String, Vec<Type>)> {
         match ty {
-            Type::Struct(token, args) => Some((token.text.clone(), args.clone().unwrap_or_default())),
+            Type::Struct(token, args) => {
+                Some((token.text.clone(), args.clone().unwrap_or_default()))
+            }
             Type::Nullable(inner) => Self::resolve_struct_parts(inner),
             _ => None,
         }
@@ -222,7 +259,11 @@ impl<'a> Analyzer<'a> {
         }
         None
     }
-    fn analyze_pgm(&mut self,node:&'a ProgramNode<'a>, diagnostics: &mut DiagnosticBag) -> Result<SemanticInfo<'_>, ()> {
+    fn analyze_pgm(
+        &mut self,
+        node: &'a ProgramNode<'a>,
+        diagnostics: &mut DiagnosticBag,
+    ) -> Result<SemanticInfo<'_>, ()> {
         let mut symbol_table_map = HashMap::new();
 
         self.register_enums(node, diagnostics);
@@ -232,7 +273,14 @@ impl<'a> Analyzer<'a> {
         self.analyze_function_bodies(node, &mut symbol_table_map, diagnostics)?;
         self.analyze_pending_instantiations(&mut symbol_table_map, diagnostics)?;
 
-        Ok(SemanticInfo::new(symbol_table_map, &self.function_table, &self.struct_table, self.instantiated_generics.clone(), self.struct_methods.clone(), self.enum_table.clone()))
+        Ok(SemanticInfo::new(
+            symbol_table_map,
+            &self.function_table,
+            &self.struct_table,
+            self.instantiated_generics.clone(),
+            self.struct_methods.clone(),
+            self.enum_table.clone(),
+        ))
     }
 }
 

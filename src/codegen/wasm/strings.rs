@@ -1,5 +1,5 @@
-use crate::syntax::nodes::{ProgramNode, StatementNode, ExpressionNode, Type};
 use super::WasmGenerator;
+use crate::syntax::nodes::{ExpressionNode, ProgramNode, StatementNode, Type};
 
 impl<'a> WasmGenerator<'a> {
     /// Collects all string literals from the program to place them in the data segment
@@ -113,7 +113,9 @@ impl<'a> WasmGenerator<'a> {
             ExpressionNode::Literal(Type::String(token)) => {
                 let s = token.text.clone();
                 if !self.ctx.strings.contains_key(&s) {
-                    self.ctx.strings.insert(s.clone(), self.ctx.next_string_offset);
+                    self.ctx
+                        .strings
+                        .insert(s.clone(), self.ctx.next_string_offset);
                     // +1 for the null terminator, + header for the next block's [size][tag][ref_count].
                     self.ctx.next_string_offset += s.len() + 1 + super::HEAP_HEADER_SIZE;
                 }

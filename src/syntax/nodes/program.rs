@@ -1,7 +1,7 @@
-use std::rc::Rc;
-use crate::syntax::token::syntax_token::SyntaxToken;
 use super::function::FunctionNode;
 use super::struct_node::StructDeclarationNode;
+use crate::syntax::token::syntax_token::SyntaxToken;
+use std::rc::Rc;
 
 /// Represents an import declaration in the AST
 #[derive(Debug, Clone)]
@@ -46,8 +46,17 @@ pub struct ExtendNode<'a> {
 }
 
 impl<'a> ExtendNode<'a> {
-    pub fn new(target: SyntaxToken, generic_parameters: Option<Vec<SyntaxToken>>, methods: Vec<FunctionNode<'a>>) -> ExtendNode<'a> {
-        ExtendNode { target, generic_parameters, methods, file_path: None }
+    pub fn new(
+        target: SyntaxToken,
+        generic_parameters: Option<Vec<SyntaxToken>>,
+        methods: Vec<FunctionNode<'a>>,
+    ) -> ExtendNode<'a> {
+        ExtendNode {
+            target,
+            generic_parameters,
+            methods,
+            file_path: None,
+        }
     }
 }
 
@@ -63,7 +72,19 @@ pub struct ProgramNode<'a> {
 
 impl<'a> ProgramNode<'a> {
     /// Creates a new program node
-    pub fn new(imports: Vec<ImportNode>, structs: Vec<StructDeclarationNode<'a>>, functions: Vec<FunctionNode<'a>>, enums: Vec<EnumDeclarationNode>, extends: Vec<ExtendNode<'a>>) -> ProgramNode<'a> {
-        ProgramNode { imports, structs, functions, enums, extends }
+    pub fn new(
+        imports: Vec<ImportNode>,
+        structs: Vec<StructDeclarationNode<'a>>,
+        functions: Vec<FunctionNode<'a>>,
+        enums: Vec<EnumDeclarationNode>,
+        extends: Vec<ExtendNode<'a>>,
+    ) -> ProgramNode<'a> {
+        ProgramNode {
+            imports,
+            structs,
+            functions,
+            enums,
+            extends,
+        }
     }
 }

@@ -8,7 +8,7 @@ pub fn execute_wasm(wat_path: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     let engine = Engine::default();
     let module = Module::new(&engine, &wasm_bytes)?;
-    
+
     let mut store = Store::new(&engine, ());
     let mut linker = Linker::new(&engine);
 
@@ -30,11 +30,15 @@ pub fn execute_wasm(wat_path: &str) -> Result<(), Box<dyn std::error::Error>> {
         }
     })?;
 
-    linker.func_wrap("env", "print_string", |mut caller: Caller<'_, ()>, ptr: i32| {
-        let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
-        let s = read_string_from_memory(&memory, &caller, ptr);
-        print!("{}", s);
-    })?;
+    linker.func_wrap(
+        "env",
+        "print_string",
+        |mut caller: Caller<'_, ()>, ptr: i32| {
+            let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+            let s = read_string_from_memory(&memory, &caller, ptr);
+            print!("{}", s);
+        },
+    )?;
 
     linker.func_wrap("env", "println", |mut caller: Caller<'_, ()>, ptr: i32| {
         let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
@@ -53,7 +57,7 @@ pub fn execute_wasm(wat_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     linker.define_unknown_imports_as_traps(&module)?;
 
     let instance = linker.instantiate(&mut store, &module)?;
-    
+
     if let Ok(main_func) = instance.get_typed_func::<(), ()>(&mut store, "main") {
         main_func.call(&mut store, ())?;
     } else {

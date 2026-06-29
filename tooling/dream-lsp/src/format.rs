@@ -35,7 +35,9 @@ pub fn format(text: &str) -> String {
             if trimmed.is_empty() {
                 // leave blank line empty
             } else {
-                let first_is_close = trimmed.starts_with('}') || trimmed.starts_with(')') || trimmed.starts_with(']');
+                let first_is_close = trimmed.starts_with('}')
+                    || trimmed.starts_with(')')
+                    || trimmed.starts_with(']');
                 let this_depth = (depth - if first_is_close { 1 } else { 0 }).max(0);
                 for _ in 0..this_depth {
                     out.push_str(INDENT_UNIT);
@@ -121,7 +123,10 @@ fn scan_line(line: &str) -> LineScan {
         }
     }
 
-    LineScan { delta, ends_in_block: state == State::Block }
+    LineScan {
+        delta,
+        ends_in_block: state == State::Block,
+    }
 }
 
 /// Whether a line already inside a block comment contains the closing `*/`.

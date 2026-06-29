@@ -1,7 +1,7 @@
-use std::rc::Rc;
-use crate::syntax::token::syntax_token::SyntaxToken;
 use super::statement::StatementNode;
 use super::types::Type;
+use crate::syntax::token::syntax_token::SyntaxToken;
+use std::rc::Rc;
 
 /// Represents a function parameter in the AST
 #[derive(Debug, Clone)]

@@ -2,7 +2,7 @@ use crate::syntax::token::token_kind::TokenKind;
 
 impl TokenKind {
     pub fn get_binary_precedence(&self) -> i32 {
-        return match self {
+        match self {
             TokenKind::BitWiseAmpersandToken => 90,
             TokenKind::BitWiseXorToken => 85,
             TokenKind::BitWisePipeToken => 80,
@@ -32,14 +32,14 @@ impl TokenKind {
             TokenKind::QuestionQuestionToken => 8,
 
             _ => 0,
-        };
+        }
     }
     pub fn get_unary_precedence(&self) -> i32 {
-        return match self {
+        match self {
             TokenKind::PlusToken => 6,
             TokenKind::MinusToken => 6,
             TokenKind::BangToken => 6,
             _ => 0,
-        };
+        }
     }
 }

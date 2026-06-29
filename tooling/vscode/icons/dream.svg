@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#6A5ACD"/>
+  <text x="32" y="44" font-size="34" font-weight="bold" font-family="sans-serif" fill="#FFFFFF" text-anchor="middle">D</text>
+  <path d="M 40 20 Q 50 15 50 25 Q 55 35 45 40 Q 30 50 20 40 Q 10 30 20 20 Q 25 10 40 20 Z" fill="rgba(255,255,255,0.15)"/>
+</svg>

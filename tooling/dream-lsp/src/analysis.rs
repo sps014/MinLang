@@ -8,13 +8,19 @@ use bumpalo::Bump;
 use dream::driver::diagnostics::{DiagnosticBag, Severity};
 use dream::semantics::analyzer::Analyzer;
 use dream::syntax::lexer::Lexer;
-use dream::syntax::nodes::{EnumDeclarationNode, ExtendNode, FunctionNode, ProgramNode};
 use dream::syntax::nodes::struct_node::StructDeclarationNode;
+use dream::syntax::nodes::{EnumDeclarationNode, ExtendNode, FunctionNode, ProgramNode};
 use dream::syntax::parser::Parser;
 use dream::syntax::syntax_tree::SyntaxTree;
 
-use crate::model::DiagnosticOut;
 use crate::position::LineIndex;
+
+#[derive(Debug, Clone)]
+pub struct DiagnosticOut {
+    pub range: crate::position::Range,
+    pub severity: &'static str,
+    pub message: String,
+}
 
 /// Synthetic file tag for the document under analysis. Diagnostics carrying this tag (or no
 /// tag, as produced by the semantic analyzer) belong to the user's code; prelude-tagged
@@ -27,7 +33,7 @@ use dream::stdlib::PRELUDE_FILES;
 
 /// Runs the full front-end over `text` and returns the diagnostics that belong to the user's
 /// document, with byte spans converted to LSP ranges.
-pub fn collect_diagnostics(text: &str) -> Vec<DiagnosticOut> {
+pub fn collect_diagnostics(file_path: Option<&str>, text: &str) -> Vec<DiagnosticOut> {
     let arena = Bump::new();
     let line_index = LineIndex::new(text);
 
@@ -47,18 +53,60 @@ pub fn collect_diagnostics(text: &str) -> Vec<DiagnosticOut> {
     };
     diagnostics.extend(&user_bag);
 
+    let mut file_contents = std::collections::HashMap::new();
+
     if let Ok(ast) = &user_ast {
+        let program = ast.get_root();
         collect_declarations(
-            ast.get_root(),
+            program,
             MAIN_FILE,
             &mut all_functions,
             &mut all_structs,
             &mut all_enums,
             &mut all_extends,
         );
+
+        if let Some(path_str) = file_path {
+            let parent_dir = std::path::Path::new(path_str)
+                .parent()
+                .unwrap_or_else(|| std::path::Path::new(""));
+            let mut visited = std::collections::HashSet::new();
+            visited.insert(path_str.to_string());
+            visited.insert(MAIN_FILE.to_string());
+
+            for import in &program.imports {
+                let module_name = import.module_name.text.trim_matches('"');
+                let mut import_path = parent_dir.join(module_name);
+                if import_path.extension().is_none() {
+                    import_path.set_extension("dream");
+                }
+
+                if let Some(import_path_str) = import_path.to_str() {
+                    if import_path.exists() {
+                        let _ = dream::driver::source_manager::parse_file_recursive(
+                            &import_path_str.to_string(),
+                            &mut visited,
+                            &mut all_functions,
+                            &mut all_structs,
+                            &mut all_enums,
+                            &mut all_extends,
+                            &arena,
+                            &mut diagnostics,
+                            &mut file_contents,
+                        );
+                    }
+                }
+            }
+        }
     }
 
-    merge_prelude(&arena, &mut diagnostics, &mut all_functions, &mut all_structs, &mut all_extends);
+    merge_prelude(
+        &arena,
+        &mut diagnostics,
+        &mut all_functions,
+        &mut all_structs,
+        &mut all_extends,
+    );
 
     // Mirror the compiler: only run semantic analysis once parsing is clean, otherwise the
     // analyzer would be working over a half-formed tree.
@@ -79,7 +127,11 @@ pub fn collect_diagnostics(text: &str) -> Vec<DiagnosticOut> {
             if span.start > text.len() {
                 return None;
             }
-            let end = if span.end > span.start { span.end } else { span.start + 1 };
+            let end = if span.end > span.start {
+                span.end
+            } else {
+                span.start + 1
+            };
             Some(DiagnosticOut {
                 range: line_index.range(span.start, end),
                 severity: match d.severity {
@@ -110,7 +162,14 @@ fn merge_prelude<'a>(
 
         if let Ok(ast) = parsed {
             let mut enums = Vec::new();
-            collect_declarations(ast.get_root(), name, all_functions, all_structs, &mut enums, all_extends);
+            collect_declarations(
+                ast.get_root(),
+                name,
+                all_functions,
+                all_structs,
+                &mut enums,
+                all_extends,
+            );
         }
     }
 }

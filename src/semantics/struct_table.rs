@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use crate::syntax::nodes::Type;
 use crate::syntax::nodes::struct_node::StructDeclarationNode;
 use crate::syntax::nodes::types::value_size_align;
+use crate::syntax::nodes::Type;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct StructFieldInfo {
@@ -20,6 +20,12 @@ pub struct StructInfo {
 #[derive(Debug, Clone)]
 pub struct StructTable {
     pub structs: HashMap<String, StructInfo>,
+}
+
+impl Default for StructTable {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StructTable {
@@ -41,7 +47,10 @@ impl StructTable {
         for field in &struct_decl.fields {
             let field_name = field.name.text.clone();
             if fields.contains_key(&field_name) {
-                return Err(format!("Field '{}' is already defined in class '{}'", field_name, name));
+                return Err(format!(
+                    "Field '{}' is already defined in class '{}'",
+                    field_name, name
+                ));
             }
 
             // Use the structured type parsed by the parser, which preserves generic arguments
@@ -56,29 +65,37 @@ impl StructTable {
                 current_offset += alignment - remainder;
             }
 
-            fields.insert(field_name, StructFieldInfo {
-                type_: field_type,
-                offset: current_offset,
-            });
+            fields.insert(
+                field_name,
+                StructFieldInfo {
+                    type_: field_type,
+                    offset: current_offset,
+                },
+            );
             current_offset += size;
         }
 
         // Align total size to the largest alignment (usually 8 if double is present, else 4)
-        let max_alignment = fields.values()
+        let max_alignment = fields
+            .values()
             .map(|f| value_size_align(f.type_.get_type().as_str()).1)
-            .max().unwrap_or(4);
+            .max()
+            .unwrap_or(4);
 
         let remainder = current_offset % max_alignment;
         if remainder != 0 {
             current_offset += max_alignment - remainder;
         }
 
-        self.structs.insert(name.clone(), StructInfo {
-            name,
-            fields,
-            size: current_offset,
-            is_exported: struct_decl.is_exported,
-        });
+        self.structs.insert(
+            name.clone(),
+            StructInfo {
+                name,
+                fields,
+                size: current_offset,
+                is_exported: struct_decl.is_exported,
+            },
+        );
 
         Ok(())
     }
@@ -90,9 +107,8 @@ impl StructTable {
     /// Returns true if `type_name` is a heap-allocated reference type known to this table
     /// (a string, an array, or a registered struct).
     pub fn is_reference_type(&self, type_name: &str) -> bool {
-        crate::syntax::nodes::types::is_reference_type_name(
-            type_name,
-            |name| self.get_struct(name).is_some(),
-        )
+        crate::syntax::nodes::types::is_reference_type_name(type_name, |name| {
+            self.get_struct(name).is_some()
+        })
     }
 }

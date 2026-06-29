@@ -1,17 +1,16 @@
-use std::path::Path;
-use tracing::{info, error, Level};
-use tracing_subscriber::FmtSubscriber;
 use dream::driver::compiler::{Compiler, Target};
 use dream::execution::wasm_runner::execute_wasm;
+use std::path::Path;
+use tracing::{error, info, Level};
+use tracing_subscriber::FmtSubscriber;
 
-fn main()
-{
+fn main() {
     let args: Vec<String> = std::env::args().collect();
-    
+
     let mut verbose = false;
     let mut run_after_compile = false;
     let mut file_name = None;
-    
+
     for arg in args.iter().skip(1) {
         if arg == "-v" || arg == "--verbose" {
             verbose = true;
@@ -35,7 +34,7 @@ fn main()
         error!(r"Example: {} run src/sample/test_arrays.dream", args[0]);
         return;
     }
-    
+
     let file_name = file_name.unwrap();
 
     info!("Dream Compiler Tools");
@@ -51,18 +50,17 @@ fn main()
         }
     };
 
-    match compiler.compile(file_name, &out_path)
-    {
+    match compiler.compile(file_name, &out_path) {
         Ok(_) => {
             info!("Compilation successful");
-            
+
             if run_after_compile {
                 info!("Executing via Wasmtime...");
                 if let Err(e) = execute_wasm(&out_path) {
                     error!("Execution failed: {}", e);
                 }
             }
-        },
+        }
         Err(e) => {
             error!("Compilation failed: {}", e.to_string());
         }

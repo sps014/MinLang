@@ -1,14 +1,17 @@
-use crate::syntax::nodes::{FunctionNode, Type};
+use super::*;
+use crate::driver::diagnostics::DiagnosticBag;
 use crate::syntax::nodes::function::ParameterNode;
+use crate::syntax::nodes::{FunctionNode, Type};
 use crate::syntax::text::text_span::TextSpan;
 use crate::syntax::token::token_kind::TokenKind;
-use crate::driver::diagnostics::DiagnosticBag;
-use super::*;
 
 impl<'a> Analyzer<'a> {
     /// Substitutes every generic parameter appearing in a method's parameter or return types
     /// with its concrete type, according to the monomorphization bindings.
-    pub(super) fn substitute_generic_signature(method: &mut FunctionNode<'a>, bindings: &[(String, String)]) {
+    pub(super) fn substitute_generic_signature(
+        method: &mut FunctionNode<'a>,
+        bindings: &[(String, String)],
+    ) {
         for param in &mut method.parameters {
             param.type_ = Self::monomorphize_type(&param.type_, bindings);
         }
@@ -21,7 +24,14 @@ impl<'a> Analyzer<'a> {
     /// Uses explicit type arguments when given (arity-checked); otherwise infers each parameter
     /// from the actual argument passed to the first formal parameter that is exactly that
     /// parameter. Parameters that cannot be inferred produce a diagnostic.
-    pub(super) fn infer_generic_bindings(&self, template: &FunctionNode<'a>, generic_args: &Option<Vec<Type>>, params_types: &[String], position: &TextSpan, diagnostics: &mut DiagnosticBag) -> Vec<(String, String)> {
+    pub(super) fn infer_generic_bindings(
+        &self,
+        template: &FunctionNode<'a>,
+        generic_args: &Option<Vec<Type>>,
+        params_types: &[String],
+        position: &TextSpan,
+        diagnostics: &mut DiagnosticBag,
+    ) -> Vec<(String, String)> {
         let gen_params = template.generic_parameters.as_deref().unwrap_or(&[]);
 
         if let Some(generics) = generic_args {
@@ -29,10 +39,11 @@ impl<'a> Analyzer<'a> {
                 if generics.len() != gen_params.len() {
                     diagnostics.report_error(
                         format!("Generic function '{}' expects {} type argument(s), but {} were provided", template.name.text, gen_params.len(), generics.len()),
-                        Some(position.clone()),
+                        Some(*position),
                     );
                 }
-                return gen_params.iter()
+                return gen_params
+                    .iter()
                     .zip(generics.iter())
                     .map(|(param, arg)| (param.text.clone(), arg.get_type()))
                     .collect();
@@ -51,7 +62,7 @@ impl<'a> Analyzer<'a> {
                 None => {
                     diagnostics.report_error(
                         format!("Cannot infer generic parameter '{}' of function '{}'; specify type arguments explicitly", param.text, template.name.text),
-                        Some(position.clone()),
+                        Some(*position),
                     );
                     (param.text.clone(), "void".to_string())
                 }
@@ -71,10 +82,16 @@ impl<'a> Analyzer<'a> {
             // arguments so a generic function/method returning `List<T>` resolves to `List<int>`.
             Type::Struct(token, Some(args)) => Type::Struct(
                 token.clone(),
-                Some(args.iter().map(|a| Self::monomorphize_type(a, bindings)).collect()),
+                Some(
+                    args.iter()
+                        .map(|a| Self::monomorphize_type(a, bindings))
+                        .collect(),
+                ),
             ),
             Type::Array(inner) => Type::Array(Box::new(Self::monomorphize_type(inner, bindings))),
-            Type::Nullable(inner) => Type::Nullable(Box::new(Self::monomorphize_type(inner, bindings))),
+            Type::Nullable(inner) => {
+                Type::Nullable(Box::new(Self::monomorphize_type(inner, bindings)))
+            }
             _ => ty.clone(),
         }
     }
@@ -85,6 +102,9 @@ impl<'a> Analyzer<'a> {
     pub(super) fn make_this_param(struct_type_str: &str) -> ParameterNode {
         let token = synthetic_token(TokenKind::IdentifierToken, struct_type_str);
         let this_type = Type::from_token(token.clone()).unwrap_or(Type::Struct(token, None));
-        ParameterNode::new(synthetic_token(TokenKind::IdentifierToken, "this"), this_type)
+        ParameterNode::new(
+            synthetic_token(TokenKind::IdentifierToken, "this"),
+            this_type,
+        )
     }
 }

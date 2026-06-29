@@ -10,8 +10,8 @@ This document serves as the foundational instruction manual and architectural gu
 
 The repository is structured as a Rust-centric multi-component monorepo:
 1. **`dream` (Root Crate):** The core compiler written in Rust. It compiles `.dream` source files to WebAssembly Text (`.wat`), assembles them to WASM binaries (`.wasm`), generates ABI sidecars (`.abi.json`), and provides a native runner powered by `wasmtime`.
-2. **`tooling/dream-analyzer` (Wasm Crate):** A specialized WebAssembly language service that disables native features to run in browser environments. It translates syntax spans into LSP-compatible positions to power live diagnostics, autocomplete, hover signatures, definition-finding, and code-formatting.
-3. **`tooling/web` (Vite Frontend App):** A browser-based web playground using Monaco Editor that embeds the compiled `dream-analyzer` WASM package.
+2. **`tooling/dream-lsp` (Language Server):** A native Rust Language Server Protocol (LSP) implementation that reuses the compiler frontend to provide live diagnostics, autocomplete, hover signatures, and code-formatting to editors.
+3. **`tooling/vscode` (VS Code Extension):** A TypeScript extension client that embeds the `dream-lsp` server to provide rich IDE features directly in Visual Studio Code.
 
 ---
 
@@ -37,8 +37,8 @@ The repository is structured as a Rust-centric multi-component monorepo:
         *   `mod.rs`: Registers host and inline functions. Defines the exact ordering for standard prelude modules.
         *   `*.dream`: Standard collections (`list.dream`, `map.dream`) and primitive type extensions (`string.dream`, `int.dream`, `char.dream`, etc.).
 *   **`tooling/` (Developer Tooling):**
-    *   `dream-analyzer/`: Uses `wasm-bindgen` to wrap `dream` compiler frontend into a cdylib targeting `wasm32-unknown-unknown`.
-    *   `web/`: Monaco Editor playground utilizing the web assembly artifact from the analyzer.
+    *   `dream-lsp/`: A native binary implementing the Language Server Protocol (LSP).
+    *   `vscode/`: A TypeScript extension client for Visual Studio Code that bundles the `dream-lsp` server.
 *   **`tests/` (Testing Suite):**
     *   `e2e_tests.rs`: Tests compilations, builds WASM, and runs it with wasmtime to assert outputs against `.expected` or expects failures via `.expected_error` for cases in `tests/cases/`.
 
@@ -64,19 +64,21 @@ cargo run -- -v run path/to/file.dream
 cargo test
 ```
 
-### Web Playground & Analyzer
+### VS Code Language Server
 
-Prerequisites: A Rust toolchain with the `wasm32-unknown-unknown` target and `wasm-pack` installed.
+The language service is a native Rust LSP server. The TypeScript extension client handles spawning the server locally.
 
 ```bash
-# Register wasm32 target
-rustup target add wasm32-unknown-unknown
+# Build the LSP and compile the extension
+cd tooling/vscode
+npm install
+npm run compile
 
-# Quick start (installs node modules, builds WASM, launches Vite)
-./tooling/start
+# Package it into a .vsix for installation
+npx @vscode/vsce package
 
 # Run language service tests
-cargo test -p dream-analyzer
+cargo test -p dream-lsp
 ```
 
 ---
@@ -93,7 +95,7 @@ Adhere to strict software engineering standards to maintain long-term scalabilit
     *   **Code Generation (`codegen/`):** Emits target representation (`.wat`). Expects a fully validated AST and resolved symbols; must never perform type checks or emit compile-time errors.
 *   **Don't Repeat Yourself (DRY):**
     *   Consolidate common type-checking routines, helper operations, or expression evaluations into shared helper traits/methods inside `src/semantics/` or `src/syntax/nodes/`.
-    *   The standard library files in `src/stdlib/*.dream` are the single source of truth. Both the main compiler and the `dream-analyzer` reuse these exact files via `PRELUDE_FILES` to prevent behavior and definitions from drifting.
+    *   The standard library files in `src/stdlib/*.dream` are the single source of truth. Both the main compiler and the `dream-lsp` reuse these exact files via `PRELUDE_FILES` to prevent behavior and definitions from drifting.
 *   **Open/Closed Principle (OCP):**
     *   Compiler passes rely on robust pattern matching over abstract syntax enums (e.g., `ExpressionNode` or `StatementNode`).
     *   When adding a new statement or expression, declare its representation in `src/syntax/nodes/` and let the Rust compiler's exhaustiveness checks guide you through updating the matching blocks across the parser, analyzer, and codegen. This design allows extending the language safely with compile-time correctness guarantees.

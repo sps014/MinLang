@@ -1,13 +1,17 @@
 use std::fs;
 use std::io::Error;
 use std::path::Path;
-use tracing::{info, error};
+use tracing::{error, info};
 
 use crate::syntax::nodes::ProgramNode;
 
 /// Emits a binary `.wasm` next to the `.wat`, plus an `.abi.json` describing the module's
 /// extern imports (for JS interop marshaling) and exported functions.
-pub(crate) fn emit_wasm_and_abi(wat_path: &str, wat_text: &str, program: &ProgramNode) -> Result<(), Error> {
+pub(crate) fn emit_wasm_and_abi(
+    wat_path: &str,
+    wat_text: &str,
+    program: &ProgramNode,
+) -> Result<(), Error> {
     let base = Path::new(wat_path);
 
     let wasm_path = base.with_extension("wasm");
@@ -57,10 +61,20 @@ pub(crate) fn build_abi_json(program: &ProgramNode) -> String {
 
     let mut externs = Vec::new();
     for func in program.functions.iter() {
-        if !func.is_extern { continue; }
-        let module = func.import_module.clone().unwrap_or_else(|| "env".to_string());
-        let field = func.import_name.clone().unwrap_or_else(|| func.name.text.clone());
-        let params: Vec<String> = func.parameters.iter()
+        if !func.is_extern {
+            continue;
+        }
+        let module = func
+            .import_module
+            .clone()
+            .unwrap_or_else(|| "env".to_string());
+        let field = func
+            .import_name
+            .clone()
+            .unwrap_or_else(|| func.name.text.clone());
+        let params: Vec<String> = func
+            .parameters
+            .iter()
             .map(|p| format!("\"{}\"", json_escape(&p.type_.get_type())))
             .collect();
         externs.push(format!(
@@ -76,7 +90,9 @@ pub(crate) fn build_abi_json(program: &ProgramNode) -> String {
 
     let mut exports = Vec::new();
     for func in program.functions.iter() {
-        if func.is_extern || func.generic_parameters.is_some() { continue; }
+        if func.is_extern || func.generic_parameters.is_some() {
+            continue;
+        }
         if func.is_exported || func.name.text == "main" {
             exports.push(format!("\"{}\"", json_escape(&func.name.text)));
         }

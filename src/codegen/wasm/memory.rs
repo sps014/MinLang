@@ -1,7 +1,7 @@
-use std::io::Error;
+use super::WasmGenerator;
 use crate::syntax::nodes::types::{method_fn, release_func_suffix, PRIMITIVE_TYPE_NAMES};
 use crate::syntax::text::indented_text_writer::IndentedTextWriter;
-use super::WasmGenerator;
+use std::io::Error;
 
 /// The minimum heap base address. The heap starts above all string/runtime data, but never below
 /// this historical floor, so small programs stay byte-for-byte unchanged.
@@ -26,7 +26,10 @@ impl<'a> WasmGenerator<'a> {
         // Place the heap above all string/runtime-string data (8-byte aligned), never below the
         // historical floor so small programs are byte-for-byte unchanged.
         let heap_base = std::cmp::max(MIN_HEAP_BASE, (self.ctx.next_string_offset + 7) & !7);
-        writer.write_line(&format!("(global $heap_ptr (mut i32) (i32.const {}))", heap_base));
+        writer.write_line(&format!(
+            "(global $heap_ptr (mut i32) (i32.const {}))",
+            heap_base
+        ));
         writer.write_line("(global $free_list_head (mut i32) (i32.const 0))");
         writer.write_line("");
         writer.write_block(RUNTIME_ALLOCATOR);
@@ -112,11 +115,16 @@ impl<'a> WasmGenerator<'a> {
         }
     }
 
-    fn build_release_func(&self, type_name: &str, struct_info: Option<&crate::semantics::struct_table::StructInfo>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+    fn build_release_func(
+        &self,
+        type_name: &str,
+        struct_info: Option<&crate::semantics::struct_table::StructInfo>,
+        writer: &mut IndentedTextWriter,
+    ) -> Result<(), Error> {
         // Map the type name to its `$release_*` suffix (arrays -> `_array`, `?` dropped).
         // `type_name` here is already normalized to drop `?`, so this matches the call sites.
         let func_name = release_func_suffix(type_name);
-        
+
         writer.write_line(&format!("(func $release_{} (param $ptr i32)", func_name));
         writer.indent();
         writer.write_line("(local $ref_count_ptr i32)");
@@ -126,7 +134,7 @@ impl<'a> WasmGenerator<'a> {
             writer.write_line("(local $i i32)");
             writer.write_line("(local $elem i32)");
         }
-        
+
         // If ptr is 0, do nothing
         writer.write_line("local.get $ptr");
         writer.write_line("i32.eqz");
@@ -175,7 +183,7 @@ impl<'a> WasmGenerator<'a> {
 
         // Deep release logic
         if let Some(info) = struct_info {
-            for (_, field_info) in &info.fields {
+            for field_info in info.fields.values() {
                 let field_type = field_info.type_.get_type();
                 if self.is_reference_type(&field_type) {
                     let release_func = release_func_suffix(&field_type);
@@ -188,30 +196,29 @@ impl<'a> WasmGenerator<'a> {
                     writer.write_line(&format!("call $release_{}", release_func));
                 }
             }
-        } else if type_name.ends_with("[]") {
-            let inner_type = &type_name[..type_name.len() - 2];
+        } else if let Some(inner_type) = type_name.strip_suffix("[]") {
             if self.is_reference_type(inner_type) {
                 let release_func = release_func_suffix(inner_type);
-                
+
                 // Get length
                 writer.write_line("local.get $ptr");
                 writer.write_line("i32.load");
                 writer.write_line("local.set $len");
-                
+
                 // Loop through elements
                 writer.write_line("i32.const 0");
                 writer.write_line("local.set $i");
-                
+
                 writer.write_line("(block $loop_end");
                 writer.indent();
                 writer.write_line("(loop $loop_start");
                 writer.indent();
-                
+
                 writer.write_line("local.get $i");
                 writer.write_line("local.get $len");
                 writer.write_line("i32.ge_s");
                 writer.write_line("br_if $loop_end");
-                
+
                 // Load the element pointer (slots past `count` are null in a grown buffer).
                 writer.write_line("local.get $ptr");
                 writer.write_line("i32.const 4");
@@ -235,13 +242,13 @@ impl<'a> WasmGenerator<'a> {
                 writer.write_line(")");
                 writer.unindent();
                 writer.write_line(")");
-                
+
                 writer.write_line("local.get $i");
                 writer.write_line("i32.const 1");
                 writer.write_line("i32.add");
                 writer.write_line("local.set $i");
                 writer.write_line("br $loop_start");
-                
+
                 writer.unindent();
                 writer.write_line(")");
                 writer.unindent();
@@ -252,7 +259,7 @@ impl<'a> WasmGenerator<'a> {
         // Finally, free the block
         writer.write_line("local.get $ptr");
         writer.write_line("call $free");
-        
+
         writer.unindent();
         writer.write_line(")");
         writer.unindent();
@@ -261,7 +268,7 @@ impl<'a> WasmGenerator<'a> {
         writer.unindent();
         writer.write_line(")");
         writer.write_line("");
-        
+
         Ok(())
     }
 

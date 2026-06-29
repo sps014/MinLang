@@ -1,7 +1,7 @@
-use std::io::Error;
-use crate::syntax::nodes::{ProgramNode, FunctionNode, ParameterNode};
-use crate::syntax::text::indented_text_writer::IndentedTextWriter;
 use super::WasmGenerator;
+use crate::syntax::nodes::{FunctionNode, ParameterNode, ProgramNode};
+use crate::syntax::text::indented_text_writer::IndentedTextWriter;
+use std::io::Error;
 
 /// The reference count stamped into a heap block's header when it is created. Statically
 /// allocated blocks (e.g. string literals) start "live" with a single owning reference.
@@ -28,10 +28,14 @@ impl<'a> WasmGenerator<'a> {
     }
 
     /// Builds the `(module ...)` block and its imports/exports
-    pub fn build_module(&mut self, program: &ProgramNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+    pub fn build_module(
+        &mut self,
+        program: &ProgramNode<'a>,
+        writer: &mut IndentedTextWriter,
+    ) -> Result<(), Error> {
         writer.write_line("(module");
         writer.indent();
-        
+
         // Import the host I/O functions (print_*) plus the importable stdlib functions. Functions
         // flagged `inline` (the string/char runtime helpers, compiled into RUNTIME_STRINGS) are not
         // imported - the `inline` field on StdlibFunction is the single source of truth for that.
@@ -39,31 +43,49 @@ impl<'a> WasmGenerator<'a> {
             .into_iter()
             .chain(crate::stdlib::StdlibFunction::get_all());
         for std_func in imports {
-            if std_func.inline { continue; } // body emitted internally, not imported
-            
+            if std_func.inline {
+                continue;
+            } // body emitted internally, not imported
+
             let mut params_str = String::new();
             for p in &std_func.parameters {
-                params_str.push_str(&format!("{} ", WasmGenerator::get_wasm_type_from(p.clone())?));
+                params_str.push_str(&format!(
+                    "{} ",
+                    WasmGenerator::get_wasm_type_from(p.clone())?
+                ));
             }
-            
+
             let result_str = match &std_func.return_type {
-                Some(t) => format!(" (result {})", WasmGenerator::get_wasm_type_from(t.get_type())?),
-                None => "".to_string()
+                Some(t) => format!(
+                    " (result {})",
+                    WasmGenerator::get_wasm_type_from(t.get_type())?
+                ),
+                None => "".to_string(),
             };
-            
-            writer.write_line(&format!("(import \"env\" \"{}\" (func ${} (param {}){}))", 
-                std_func.name, std_func.name, params_str.trim(), result_str));
+
+            writer.write_line(&format!(
+                "(import \"env\" \"{}\" (func ${} (param {}){}))",
+                std_func.name,
+                std_func.name,
+                params_str.trim(),
+                result_str
+            ));
         }
 
         // User-declared `extern fun` declarations become WASM imports. The import module/field
         // default to `"env"`/<function name> but can be remapped with `@js("mod", "name")`.
         for func in program.functions.iter() {
-            if !func.is_extern { continue; }
+            if !func.is_extern {
+                continue;
+            }
 
             let mut params_str = String::new();
             for p in &func.parameters {
                 let resolved = self.resolve_type(&p.type_.get_type());
-                params_str.push_str(&format!("{} ", WasmGenerator::get_wasm_type_from(resolved)?));
+                params_str.push_str(&format!(
+                    "{} ",
+                    WasmGenerator::get_wasm_type_from(resolved)?
+                ));
             }
 
             let result_str = match &func.return_type {
@@ -82,9 +104,17 @@ impl<'a> WasmGenerator<'a> {
             let field = func.import_name.as_deref().unwrap_or(&func.name.text);
             // Overloaded externs get distinct internal `$key` names but share the imported field,
             // so a single host function can back every signature.
-            let internal = self.function_table.resolve_emitted_name(&func.name.text, &Self::func_param_types(func));
-            writer.write_line(&format!("(import \"{}\" \"{}\" (func ${} (param {}){}))",
-                module, field, internal, params_str.trim(), result_str));
+            let internal = self
+                .function_table
+                .resolve_emitted_name(&func.name.text, &Self::func_param_types(func));
+            writer.write_line(&format!(
+                "(import \"{}\" \"{}\" (func ${} (param {}){}))",
+                module,
+                field,
+                internal,
+                params_str.trim(),
+                result_str
+            ));
         }
 
         // Memory management functions
@@ -100,12 +130,18 @@ impl<'a> WasmGenerator<'a> {
         // top-level function (including externs) gets a stable index.
         let mut indexed_functions: Vec<&str> = Vec::new();
         for func in program.functions.iter() {
-            if func.generic_parameters.is_some() { continue; }
+            if func.generic_parameters.is_some() {
+                continue;
+            }
             let name = func.name.text.as_str();
             // Overloaded names are ambiguous as first-class function values, so they get no slot.
-            if self.function_table.is_overloaded(name) { continue; }
+            if self.function_table.is_overloaded(name) {
+                continue;
+            }
             if !self.ctx.function_indices.contains_key(name) {
-                self.ctx.function_indices.insert(name.to_string(), indexed_functions.len());
+                self.ctx
+                    .function_indices
+                    .insert(name.to_string(), indexed_functions.len());
                 indexed_functions.push(name);
             }
         }
@@ -116,7 +152,9 @@ impl<'a> WasmGenerator<'a> {
             if !func.is_async || func.is_extern || func.generic_parameters.is_some() {
                 continue;
             }
-            let emitted = self.function_table.resolve_emitted_name(&func.name.text, &Self::func_param_types(func));
+            let emitted = self
+                .function_table
+                .resolve_emitted_name(&func.name.text, &Self::func_param_types(func));
             let idx = indexed_functions.len() + poll_refs.len();
             self.ctx.poll_indices.insert(emitted.clone(), idx);
             poll_refs.push(format!("$poll_{}", emitted));
@@ -128,7 +166,9 @@ impl<'a> WasmGenerator<'a> {
             if !method.is_async || method.is_extern {
                 continue;
             }
-            let emitted = self.function_table.resolve_emitted_name(&method.name.text, &Self::func_param_types(method));
+            let emitted = self
+                .function_table
+                .resolve_emitted_name(&method.name.text, &Self::func_param_types(method));
             if self.ctx.poll_indices.contains_key(&emitted) {
                 continue;
             }
@@ -140,7 +180,10 @@ impl<'a> WasmGenerator<'a> {
         let total_table = indexed_functions.len() + poll_refs.len();
         if total_table > 0 {
             writer.write_line(&format!("(table $fn_table {} funcref)", total_table));
-            let mut all_refs: Vec<String> = indexed_functions.iter().map(|n| format!("${}", n)).collect();
+            let mut all_refs: Vec<String> = indexed_functions
+                .iter()
+                .map(|n| format!("${}", n))
+                .collect();
             all_refs.extend(poll_refs);
             writer.write_line(&format!("(elem (i32.const 0) {})", all_refs.join(" ")));
         }
@@ -151,7 +194,7 @@ impl<'a> WasmGenerator<'a> {
         writer.write_line("(memory 10)");
         for (s, offset) in &self.ctx.strings {
             let unquoted = if s.starts_with('"') && s.ends_with('"') {
-                &s[1..s.len()-1]
+                &s[1..s.len() - 1]
             } else {
                 s.as_str()
             };
@@ -160,7 +203,7 @@ impl<'a> WasmGenerator<'a> {
         for (content, offset) in &self.ctx.runtime_strings {
             self.write_string_data(*offset, content, writer);
         }
-        
+
         for i in program.functions.iter() {
             if i.generic_parameters.is_some() {
                 continue;
@@ -170,7 +213,10 @@ impl<'a> WasmGenerator<'a> {
                 continue;
             }
             // Overloaded functions are emitted under their signature-mangled key.
-            self.ctx.current_mangled_name = Some(self.function_table.resolve_emitted_name(&i.name.text, &Self::func_param_types(i)));
+            self.ctx.current_mangled_name = Some(
+                self.function_table
+                    .resolve_emitted_name(&i.name.text, &Self::func_param_types(i)),
+            );
             if i.is_async {
                 self.build_async_function(i, writer)?;
             } else {
@@ -189,7 +235,10 @@ impl<'a> WasmGenerator<'a> {
             self.ctx.current_generic_bindings = bindings.iter().cloned().collect();
             // Overloaded methods are emitted under their signature-mangled key (the parameter
             // list includes the implicit `this`, matching how they were registered).
-            self.ctx.current_mangled_name = Some(self.function_table.resolve_emitted_name(&method.name.text, &Self::func_param_types(method)));
+            self.ctx.current_mangled_name = Some(
+                self.function_table
+                    .resolve_emitted_name(&method.name.text, &Self::func_param_types(method)),
+            );
             if method.is_async {
                 self.build_async_function(method, writer)?;
             } else {
@@ -206,8 +255,16 @@ impl<'a> WasmGenerator<'a> {
     }
 
     /// Builds a single WebAssembly function
-    pub fn build_function(&mut self, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
-        let func_name = self.ctx.current_mangled_name.as_ref().unwrap_or(&function.name.text);
+    pub fn build_function(
+        &mut self,
+        function: &FunctionNode<'a>,
+        writer: &mut IndentedTextWriter,
+    ) -> Result<(), Error> {
+        let func_name = self
+            .ctx
+            .current_mangled_name
+            .as_ref()
+            .unwrap_or(&function.name.text);
         writer.write("(func $");
         writer.write(func_name);
         for i in function.parameters.iter() {
@@ -215,7 +272,7 @@ impl<'a> WasmGenerator<'a> {
         }
         self.build_return_type(function, writer)?;
         self.build_local_variable(function, writer)?;
-        
+
         writer.write(" (local $scratch_ptr i32)");
         writer.write(" (local $scratch_addr i32)");
         writer.write(" (local $scratch_double f64)");
@@ -242,7 +299,11 @@ impl<'a> WasmGenerator<'a> {
         self.build_body(function.body, function, writer)?;
 
         // Release all local reference variables in case the function falls through without a return.
-        let func_name = self.ctx.current_mangled_name.clone().unwrap_or_else(|| function.name.text.clone());
+        let func_name = self
+            .ctx
+            .current_mangled_name
+            .clone()
+            .unwrap_or_else(|| function.name.text.clone());
         self.emit_release_locals(&func_name, writer);
 
         writer.unindent();
@@ -252,7 +313,11 @@ impl<'a> WasmGenerator<'a> {
     }
 
     /// Builds the export declarations for the module
-    pub fn build_export(&self, program: &ProgramNode, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+    pub fn build_export(
+        &self,
+        program: &ProgramNode,
+        writer: &mut IndentedTextWriter,
+    ) -> Result<(), Error> {
         writer.write_line("(export \"memory\" (memory 0))");
         // Export the allocator so the JS interop runtime can build heap values (e.g. strings)
         // to pass back into Dream from extern function implementations.
@@ -275,7 +340,9 @@ impl<'a> WasmGenerator<'a> {
                 continue;
             }
             if i.is_exported || i.name.text == "main" {
-                let emitted = self.function_table.resolve_emitted_name(&i.name.text, &Self::func_param_types(i));
+                let emitted = self
+                    .function_table
+                    .resolve_emitted_name(&i.name.text, &Self::func_param_types(i));
 
                 // An async `main` is invoked as `() -> ()`: spawn the top-level task (the
                 // constructor eagerly enqueues it) and pump the scheduler to completion. Any
@@ -321,7 +388,11 @@ impl<'a> WasmGenerator<'a> {
                     // Forward to the user entry point.
                     writer.write_line("local.get $args");
                     writer.write_line(&format!("call ${}", emitted));
-                    if i.return_type.as_ref().map(|t| t.get_type() != "void").unwrap_or(false) {
+                    if i.return_type
+                        .as_ref()
+                        .map(|t| t.get_type() != "void")
+                        .unwrap_or(false)
+                    {
                         writer.write_line("drop");
                     }
                     writer.write_line("local.get $args");
@@ -337,7 +408,10 @@ impl<'a> WasmGenerator<'a> {
                 } else {
                     i.name.text.clone()
                 };
-                writer.write_line(&format!("(export \"{}\" (func ${}))", export_label, emitted));
+                writer.write_line(&format!(
+                    "(export \"{}\" (func ${}))",
+                    export_label, emitted
+                ));
             }
         }
         Ok(())
@@ -361,21 +435,39 @@ impl<'a> WasmGenerator<'a> {
             le_i32_bytes(super::object::TAG_STRING),
             le_i32_bytes(INITIAL_REF_COUNT),
         );
-        writer.write_line(&format!("(data (i32.const {}) \"{}\")", header_offset, header));
-        writer.write_line(&format!("(data (i32.const {}) \"{}\\00\")", offset, content));
+        writer.write_line(&format!(
+            "(data (i32.const {}) \"{}\")",
+            header_offset, header
+        ));
+        writer.write_line(&format!(
+            "(data (i32.const {}) \"{}\\00\")",
+            offset, content
+        ));
     }
 
     /// Builds a single function parameter
-    pub fn build_parameter(&self, parameter: &ParameterNode, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+    pub fn build_parameter(
+        &self,
+        parameter: &ParameterNode,
+        writer: &mut IndentedTextWriter,
+    ) -> Result<(), Error> {
         writer.write("( ");
         let resolved_type = self.resolve_type(&parameter.type_.get_type());
-        writer.write(&format!("param ${} {}", parameter.name.text, WasmGenerator::get_wasm_type_from(resolved_type)?));
+        writer.write(&format!(
+            "param ${} {}",
+            parameter.name.text,
+            WasmGenerator::get_wasm_type_from(resolved_type)?
+        ));
         writer.write(") ");
         Ok(())
     }
 
     /// Builds the return type of a function
-    pub fn build_return_type(&self, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
+    pub fn build_return_type(
+        &self,
+        function: &FunctionNode<'a>,
+        writer: &mut IndentedTextWriter,
+    ) -> Result<(), Error> {
         if let Some(return_type) = &function.return_type {
             let resolved_type = self.resolve_type(&return_type.get_type());
             if resolved_type != "void" {

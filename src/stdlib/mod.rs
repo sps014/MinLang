@@ -1,9 +1,9 @@
 use crate::syntax::nodes::Type;
+use crate::syntax::text::line_text::LineText;
+use crate::syntax::text::text_span::TextSpan;
 use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
-use crate::syntax::text::text_span::TextSpan;
 use std::rc::Rc;
-use crate::syntax::text::line_text::LineText;
 
 /// The embedded standard-library prelude, in the exact order it must be merged. This is the
 /// single source of truth shared by the compiler's source manager and the `dream-analyzer`
@@ -74,9 +74,11 @@ impl StdlibFunction {
         // Math host functions, reachable only through the `Math.*` namespace. Their names come
         // from the intrinsic registry so the import set never drifts from the recognized set;
         // each takes one `float` and returns a `float`.
-        imports.extend(crate::intrinsics::MATH_FUNCTIONS.iter().map(|name| {
-            Self::imported(name, &["float"], Some(Self::create_type("float")))
-        }));
+        imports.extend(
+            crate::intrinsics::MATH_FUNCTIONS
+                .iter()
+                .map(|name| Self::imported(name, &["float"], Some(Self::create_type("float")))),
+        );
         imports
     }
 
@@ -86,14 +88,26 @@ impl StdlibFunction {
     pub fn get_all() -> Vec<StdlibFunction> {
         vec![
             // String
-            Self::inlined("concat", &["string", "string"], Some(Self::create_type("string"))),
+            Self::inlined(
+                "concat",
+                &["string", "string"],
+                Some(Self::create_type("string")),
+            ),
             Self::inlined("strlen", &["string"], Some(Self::create_type("int"))),
             // Low-level string/char primitives that the primitive "class" prelude (int/char/string
             // .dream) builds on. Their bodies live in `RUNTIME_STRINGS` (see codegen/wasm/memory.rs).
-            Self::inlined("char_at", &["string", "int"], Some(Self::create_type("char"))),
+            Self::inlined(
+                "char_at",
+                &["string", "int"],
+                Some(Self::create_type("char")),
+            ),
             Self::inlined("string_alloc", &["int"], Some(Self::create_type("string"))),
             Self::inlined("string_set", &["string", "int", "char"], None),
-            Self::inlined("debug_get_free_list_head", &[], Some(Self::create_type("int"))),
+            Self::inlined(
+                "debug_get_free_list_head",
+                &[],
+                Some(Self::create_type("int")),
+            ),
         ]
     }
 }

@@ -6,19 +6,19 @@
 //! - [`ownership`]: reference-ownership classification and call argument/result refcount handling.
 //! - [`infer`]: codegen-side best-effort expression type inference.
 
-mod resolve;
-mod ownership;
 mod infer;
+mod ownership;
+mod resolve;
 
+use super::WasmGenerator;
+use crate::semantics::symbol_table::SymbolTable;
+use crate::syntax::nodes::types::{release_func_suffix, strip_nullable, value_size_align};
+use crate::syntax::nodes::{FunctionNode, Type};
+use crate::syntax::text::indented_text_writer::IndentedTextWriter;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Error;
 use std::rc::Rc;
-use std::cell::RefCell;
-use crate::syntax::nodes::{FunctionNode, Type};
-use crate::syntax::nodes::types::{release_func_suffix, strip_nullable, value_size_align};
-use crate::syntax::text::indented_text_writer::IndentedTextWriter;
-use crate::semantics::symbol_table::SymbolTable;
-use super::WasmGenerator;
 
 impl<'a> WasmGenerator<'a> {
     /// The byte size of a single element of the given (non-pointer) type.
@@ -55,7 +55,10 @@ impl<'a> WasmGenerator<'a> {
 
     /// Emits a `$release_*` call for the given (possibly nullable/array) reference type.
     pub fn emit_release(&self, type_name: &str, writer: &mut IndentedTextWriter) {
-        writer.write_line(&format!("call $release_{}", release_func_suffix(strip_nullable(type_name))));
+        writer.write_line(&format!(
+            "call $release_{}",
+            release_func_suffix(strip_nullable(type_name))
+        ));
     }
 
     /// Retains every reference-typed parameter on function entry so the matching releases at
@@ -73,7 +76,12 @@ impl<'a> WasmGenerator<'a> {
     /// Releases every reference-typed local (and parameter) recorded for `func_name`.
     /// Used both on fall-through exit and before an explicit `return`.
     pub fn emit_release_locals(&self, func_name: &str, writer: &mut IndentedTextWriter) {
-        let locals = self.ctx.combined_symbol_lookup.get(func_name).unwrap().clone();
+        let locals = self
+            .ctx
+            .combined_symbol_lookup
+            .get(func_name)
+            .unwrap()
+            .clone();
         for (name, type_) in locals.iter() {
             let base = strip_nullable(&type_.get_type()).to_string();
             if self.is_reference_type(&base) {
@@ -126,15 +134,28 @@ impl<'a> WasmGenerator<'a> {
 
     /// Reads the type of a variable from the symbol table
     pub fn table_read_type(&self, var_name: &String, function: &FunctionNode<'a>) -> String {
-        let func_name = self.ctx.current_mangled_name.as_ref().unwrap_or(&function.name.text);
+        let func_name = self
+            .ctx
+            .current_mangled_name
+            .as_ref()
+            .unwrap_or(&function.name.text);
         let func_lookup = self.ctx.combined_symbol_lookup.get(func_name).unwrap();
         let t = func_lookup.get(var_name).unwrap().clone().get_type();
         self.resolve_type(&t)
     }
 
     /// Builds local variable declarations for a function
-    pub fn build_local_variable(&mut self, function: &FunctionNode<'a>, writer: &mut IndentedTextWriter) -> Result<(), Error> {
-        let func_name = self.ctx.current_mangled_name.as_ref().unwrap_or(&function.name.text).clone();
+    pub fn build_local_variable(
+        &mut self,
+        function: &FunctionNode<'a>,
+        writer: &mut IndentedTextWriter,
+    ) -> Result<(), Error> {
+        let func_name = self
+            .ctx
+            .current_mangled_name
+            .as_ref()
+            .unwrap_or(&function.name.text)
+            .clone();
         let res = self.get_local_variables(self.symbol_map.get(&func_name).unwrap())?;
 
         let mut param_names = std::collections::HashSet::new();
@@ -149,7 +170,11 @@ impl<'a> WasmGenerator<'a> {
             }
             let resolved_type = self.resolve_type(&_type.get_type());
             writer.write(" (local ");
-            writer.write(&format!("${} {}", name, WasmGenerator::get_wasm_type_from(resolved_type)?));
+            writer.write(&format!(
+                "${} {}",
+                name,
+                WasmGenerator::get_wasm_type_from(resolved_type)?
+            ));
             writer.write(") ");
         }
         self.ctx.combined_symbol_lookup.insert(func_name, res);
@@ -157,7 +182,10 @@ impl<'a> WasmGenerator<'a> {
     }
 
     /// Gets all local variables from a symbol table and its children
-    pub fn get_local_variables(&self, symbol: &Rc<RefCell<SymbolTable>>) -> Result<HashMap<String, Type>, Error> {
+    pub fn get_local_variables(
+        &self,
+        symbol: &Rc<RefCell<SymbolTable>>,
+    ) -> Result<HashMap<String, Type>, Error> {
         let mut res = HashMap::new();
         let current_scope = (*symbol).as_ref().borrow();
         let mut local_variables = current_scope.get_all();
@@ -166,7 +194,7 @@ impl<'a> WasmGenerator<'a> {
             let child_local_variables = self.get_local_variables(children)?;
             local_variables.extend(child_local_variables);
         }
-        
+
         for (name, type_) in local_variables.iter() {
             if !res.contains_key(name) {
                 res.insert(name.clone(), type_.clone());

@@ -1,6 +1,6 @@
-use std::rc::Rc;
-use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::nodes::Type;
+use crate::syntax::token::syntax_token::SyntaxToken;
+use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub struct StructFieldNode {
@@ -31,7 +31,21 @@ pub struct StructDeclarationNode<'a> {
 }
 
 impl<'a> StructDeclarationNode<'a> {
-    pub fn new(name: SyntaxToken, generic_parameters: Option<Vec<SyntaxToken>>, fields: Vec<StructFieldNode>, methods: Vec<crate::syntax::nodes::function::FunctionNode<'a>>, is_exported: bool) -> Self {
-        Self { name, generic_parameters, fields, methods, is_exported, is_json: false, file_path: None }
+    pub fn new(
+        name: SyntaxToken,
+        generic_parameters: Option<Vec<SyntaxToken>>,
+        fields: Vec<StructFieldNode>,
+        methods: Vec<crate::syntax::nodes::function::FunctionNode<'a>>,
+        is_exported: bool,
+    ) -> Self {
+        Self {
+            name,
+            generic_parameters,
+            fields,
+            methods,
+            is_exported,
+            is_json: false,
+            file_path: None,
+        }
     }
 }

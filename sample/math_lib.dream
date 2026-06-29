@@ -1,3 +1,24 @@
+/* add_numbers is a function that adds two numbers and returns the result */
 export fun add_numbers(a: int, b: int): int {
     return a + b;
+}
+
+// Test is a class that represents a test object
+export class Test
+{
+    /* name is a string field */
+    name: string;
+    /* age is an integer field */
+    age: int;
+
+    /* constructor is a function that initializes the object */
+    constructor(name: string, age: int) {
+        this.name = name;
+        this.age = age;
+    }
+
+    /* print_name is a function that prints the name of the object */
+    fun print_name() {
+        println(this.name);
+    }
 }

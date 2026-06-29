@@ -1,13 +1,12 @@
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
-use std::rc::{Rc};
 use crate::semantics::errors::SymbolError;
 use crate::syntax::nodes::Type;
 use crate::syntax::token::syntax_token::SyntaxToken;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 #[derive(Debug)]
-pub struct SymbolTable
-{
+pub struct SymbolTable {
     symbols: HashMap<String, Type>,
     /// Names declared with `const` in this scope; reassigning them is an error.
     const_symbols: HashSet<String>,
@@ -15,8 +14,8 @@ pub struct SymbolTable
     pub children: Vec<Rc<RefCell<SymbolTable>>>,
 }
 
-impl SymbolTable{
-    pub fn new(parent:  Option<Rc<RefCell<SymbolTable>>>) -> SymbolTable {
+impl SymbolTable {
+    pub fn new(parent: Option<Rc<RefCell<SymbolTable>>>) -> SymbolTable {
         SymbolTable {
             symbols: HashMap::new(),
             const_symbols: HashSet::new(),
@@ -48,8 +47,7 @@ impl SymbolTable{
     pub fn add_child(&mut self, child: Rc<RefCell<SymbolTable>>) {
         self.children.push(child);
     }
-    pub fn get_all(&self)->Vec<(String,Type)>
-    {
+    pub fn get_all(&self) -> Vec<(String, Type)> {
         let mut result = Vec::new();
         for (key, value) in self.symbols.iter() {
             result.push((key.clone(), value.clone()));
@@ -57,12 +55,13 @@ impl SymbolTable{
         result
     }
 
-    pub fn add_symbol(&mut self, name:String, token: Type) ->Result<(),SymbolError> {
-
-        return match self.symbols.insert(name.clone(),token)
-        {
-            Some(_) => Err(SymbolError::new(format!("variable {} already exists at: {}",name
-                                                               ,self.symbols.get(&name).unwrap().get_line_str()))),
+    pub fn add_symbol(&mut self, name: String, token: Type) -> Result<(), SymbolError> {
+        match self.symbols.insert(name.clone(), token) {
+            Some(_) => Err(SymbolError::new(format!(
+                "variable {} already exists at: {}",
+                name,
+                self.symbols.get(&name).unwrap().get_line_str()
+            ))),
             None => Ok(()),
         }
     }
@@ -73,9 +72,11 @@ impl SymbolTable{
 
         match self.parent {
             Some(ref parent) => parent.as_ref().borrow().get_symbol(name),
-            None => Err(SymbolError::new(
-                format!("variable {} does not exist at: {}", name.text, name.position.get_point_str()),
-            )),
+            None => Err(SymbolError::new(format!(
+                "variable {} does not exist at: {}",
+                name.text,
+                name.position.get_point_str()
+            ))),
         }
     }
 }

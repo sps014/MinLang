@@ -1,98 +1,46 @@
-# Dream tooling
+# Dream Tooling
 
-Browser-based language tooling for Dream. The compiler's front-end (lexer, parser, semantic
-analyzer) is compiled to WebAssembly and wired into a [Monaco](https://microsoft.github.io/monaco-editor/)
-editor, giving a playground with live language features.
+This directory contains developer tooling for the Dream language, focused around the native Language Server Protocol (LSP) and editor extensions.
 
 ## Layout
 
-- [`dream-analyzer/`](dream-analyzer) — a Rust `cdylib` that reuses the `dream` crate's
-  front-end and exposes a language service to JavaScript via `wasm-bindgen`. It runs entirely
-  in the browser; no server is involved.
-- [`web/`](web) — a Vite + TypeScript app embedding Monaco and binding the WASM service to
-  Monaco's provider APIs.
+- [`dream-lsp/`](dream-lsp) — A native Rust Language Server Protocol (LSP) server binary powered by `tower-lsp`. It reuses the compiler's frontend (lexer, parser, semantic analyzer) to provide rich IntelliSense features.
+- [`vscode/`](vscode) — A Visual Studio Code extension client written in TypeScript that connects to the `dream-lsp` server.
 
-## Features
+## Features Supported
 
-- Live diagnostics (lexer/parser/semantic errors and warnings)
-- Syntax highlighting (Monarch grammar) and semantic tokens
-- Hover (function/class/enum/variable signatures and types)
-- Autocomplete (keywords, in-scope symbols, class members, enum members)
-- Go to definition and find all references
-- Document formatting (brace-depth reindentation)
+The `dream-lsp` server provides the following capabilities:
+- **Real-time Diagnostics**: Reports syntax and semantic errors/warnings directly in the editor.
+- **Semantic Tokens**: AST-driven, perfectly accurate syntax highlighting (functions, classes, fields, parameters, etc.).
+- **Autocomplete (IntelliSense)**: Intelligent completions for keywords, data types, and scoped symbols (including cross-file imports).
+- **Hover**: Rich Markdown hover tooltips displaying symbol signatures and documentation comments.
+- **Signature Help**: Pop-up parameter hints and active parameter tracking when writing function or constructor calls.
+- **Go to Definition / Find References**: Jump to or find all usages of a symbol across the project.
+- **Formatting**: Brace-depth indentation.
 
-## Prerequisites
+## Building and Running the Extension
 
-- A Rust toolchain with the `wasm32-unknown-unknown` target:
-  ```bash
-  rustup target add wasm32-unknown-unknown
-  ```
-- [`wasm-pack`](https://rustwasm.github.io/wasm-pack/):
-  ```bash
-  curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-  ```
-- Node.js 18+ and npm.
+To test or develop the VS Code extension:
 
-## Build and run
+1. Ensure you have Node.js, `npm`, and `cargo` installed.
+2. Navigate to the `vscode/` folder:
+   ```bash
+   cd vscode
+   npm install
+   npm run compile
+   ```
+3. You can either open the workspace in VS Code and press **F5** to launch the Extension Development Host, or build a `.vsix` package to install it globally:
+   ```bash
+   npx @vscode/vsce package
+   code --install-extension dream-lang-0.1.0.vsix
+   ```
 
-The quickest way is the `start` script, which installs deps (first run only), builds the
-WebAssembly analyzer, and launches the dev server. It works from any directory:
+*(Note: The VS Code extension automatically attempts to invoke `cargo run` from the `dream-lsp` crate when starting, so you must have the Rust toolchain installed locally).*
 
-```bash
-./tooling/start
-```
+## Testing the LSP Server
 
-Or do it manually from this `tooling/` directory:
-
-```bash
-# 1. Build the WebAssembly language service into web/src/pkg
-cd web
-npm install
-npm run build:wasm
-
-# 2. Start the dev server
-npm run dev
-```
-
-Then open the printed URL (default <http://localhost:5173>).
-
-`npm run build:wasm` is a thin wrapper around:
+The LSP server contains standalone tests to verify the compiler and analysis pipeline works without needing an editor:
 
 ```bash
-wasm-pack build ../dream-analyzer --target web --out-dir ../web/src/pkg --out-name dream_analyzer
-```
-
-The generated `web/src/pkg/` directory is a build artifact (git-ignored); rerun
-`npm run build:wasm` whenever the Rust analyzer changes.
-
-To produce a static production bundle:
-
-```bash
-npm run build      # outputs to web/dist
-npm run preview    # serves the built bundle
-```
-
-## How it works
-
-The `dream` crate is built with `default-features = false`, which drops the native
-`wasmtime`-backed runtime (gated behind the `native` feature) so only the WASM-friendly
-front-end is compiled. `dream-analyzer` adds an in-memory analysis entry point — lex, parse,
-merge the embedded standard-library prelude, then analyze — and a span-indexed symbol model
-that powers navigation. Byte spans from the compiler are converted to LSP/Monaco positions
-(0-based lines, UTF-16 columns) before crossing into JavaScript.
-
-```mermaid
-flowchart LR
-  monaco[Monaco providers] -->|"text, line, col"| svc[dream-analyzer.wasm]
-  svc --> front[dream front-end]
-  svc -->|"JSON results"| monaco
-```
-
-## Tests
-
-The analyzer's exports are plain Rust functions on the host target, so they can be tested
-without a browser:
-
-```bash
-cargo test -p dream-analyzer
+cargo test -p dream-lsp
 ```

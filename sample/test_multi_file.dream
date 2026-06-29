@@ -1,9 +1,14 @@
 import "math_lib.dream"
+import "basic_sum.dream"
 
 export fun main() {
-    let result = add_numbers(10, 20);
+    let result = add_numbers(10,20);
     println(result);
     
     let s = Math.sin(3.14);
     println(s);
+
+    let t = Test("John",20);
+    t.name = "Jane";
+    t.print_name();
 }

@@ -1,5 +1,5 @@
-use crate::syntax::text::text_span::TextSpan;
 use super::token_kind::*;
+use crate::syntax::text::text_span::TextSpan;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SyntaxTrivia {
@@ -10,6 +10,10 @@ pub struct SyntaxTrivia {
 
 impl SyntaxTrivia {
     pub fn new(kind: TokenKind, position: TextSpan, text: String) -> Self {
-        Self { kind, position, text }
+        Self {
+            kind,
+            position,
+            text,
+        }
     }
 }

@@ -1,17 +1,17 @@
+use bumpalo::Bump;
 use std::collections::HashSet;
 use std::fs;
-use std::io::{Error, ErrorKind};
-use bumpalo::Bump;
+use std::io::Error;
 use tracing::info;
 
-use crate::syntax::nodes::ProgramNode;
-use crate::syntax::syntax_tree::SyntaxTree;
 use crate::codegen::wasm::WasmGenerator;
 use crate::codegen::CodeGenerator;
+use crate::driver::abi::emit_wasm_and_abi;
 use crate::driver::diagnostics::{self, DiagnosticBag};
 use crate::driver::source_manager::{generate_json_derives, merge_prelude, parse_file_recursive};
-use crate::driver::abi::emit_wasm_and_abi;
 use crate::semantics::analyzer::Analyzer;
+use crate::syntax::nodes::ProgramNode;
+use crate::syntax::syntax_tree::SyntaxTree;
 
 pub enum Target {
     Wasm,
@@ -41,23 +41,49 @@ impl Compiler {
         let arena = Bump::new();
         let mut diagnostics = DiagnosticBag::new(None);
 
-        parse_file_recursive(main_file_path, &mut visited_files, &mut all_functions, &mut all_structs, &mut all_enums, &mut all_extends, &arena, &mut diagnostics, &mut file_contents)?;
+        parse_file_recursive(
+            main_file_path,
+            &mut visited_files,
+            &mut all_functions,
+            &mut all_structs,
+            &mut all_enums,
+            &mut all_extends,
+            &arena,
+            &mut diagnostics,
+            &mut file_contents,
+        )?;
 
         // The standard collections (List<T>, Map<K, V>) are embedded in the compiler and merged
         // into every program as a prelude. They are generic templates, so they emit no code unless
         // the program actually instantiates them.
-        merge_prelude(&arena, &mut all_functions, &mut all_structs, &mut all_extends, &mut diagnostics, &mut file_contents)?;
+        merge_prelude(
+            &arena,
+            &mut all_functions,
+            &mut all_structs,
+            &mut all_extends,
+            &mut diagnostics,
+            &mut file_contents,
+        )?;
 
         // Auto-derive `to_json`/`from_json` converters for every `@json` class (must run after
         // all classes are collected so `@json` field cross-references resolve).
-        generate_json_derives(&arena, &all_structs, &mut all_extends, &mut diagnostics, &mut file_contents)?;
+        generate_json_derives(
+            &arena,
+            &all_structs,
+            &mut all_extends,
+            &mut diagnostics,
+            &mut file_contents,
+        )?;
 
         if diagnostics.has_errors() {
             diagnostics::render(&diagnostics, &file_contents);
-            return Err(Error::new(ErrorKind::Other, "Syntax errors found during parsing"));
+            return Err(Error::other(
+                "Syntax errors found during parsing",
+            ));
         }
 
-        let combined_program = ProgramNode::new(vec![], all_structs, all_functions, all_enums, all_extends);
+        let combined_program =
+            ProgramNode::new(vec![], all_structs, all_functions, all_enums, all_extends);
         let ast = SyntaxTree::new(combined_program);
 
         info!("finished parsing");
@@ -68,13 +94,13 @@ impl Compiler {
             Ok(info) => info,
             Err(_) => {
                 diagnostics::render(&diagnostics, &file_contents);
-                return Err(Error::new(ErrorKind::Other, "Semantic errors found"));
+                return Err(Error::other("Semantic errors found"));
             }
         };
 
         if diagnostics.has_errors() {
             diagnostics::render(&diagnostics, &file_contents);
-            return Err(Error::new(ErrorKind::Other, "Semantic errors found"));
+            return Err(Error::other("Semantic errors found"));
         }
 
         info!("finished semantic analysis");

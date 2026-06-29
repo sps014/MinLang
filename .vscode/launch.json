@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Dream Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/tooling/vscode"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/tooling/vscode/out/**/*.js"
+      ],
+      "preLaunchTask": "npm: compile - tooling/vscode"
+    }
+  ]
+}

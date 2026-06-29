@@ -6,8 +6,8 @@
 use bumpalo::Bump;
 use dream::driver::diagnostics::DiagnosticBag;
 use dream::syntax::lexer::Lexer;
-use dream::syntax::nodes::{ExpressionNode, FunctionNode, ProgramNode, StatementNode, Type};
 use dream::syntax::nodes::struct_node::StructDeclarationNode;
+use dream::syntax::nodes::{ExpressionNode, FunctionNode, ProgramNode, StatementNode, Type};
 use dream::syntax::parser::Parser;
 use dream::syntax::token::syntax_token::SyntaxToken;
 
@@ -28,29 +28,14 @@ pub enum SymKind {
     Keyword,
 }
 
-impl SymKind {
-    /// Lower-case completion-kind string consumed by the web layer / Monaco.
-    pub fn completion_kind(self) -> &'static str {
-        match self {
-            SymKind::Function => "function",
-            SymKind::Struct => "struct",
-            SymKind::Enum => "enum",
-            SymKind::EnumMember => "enumMember",
-            SymKind::Field => "field",
-            SymKind::Method => "method",
-            SymKind::Variable | SymKind::Param => "variable",
-            SymKind::Type => "type",
-            SymKind::Keyword => "keyword",
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Decl {
     pub name: String,
     pub kind: SymKind,
-    /// Markdown-ready hover/detail text (signature, field type, etc.).
+    /// The signature or type detail (e.g. `fun foo()` or `let x: int`).
     pub detail: String,
+    /// Markdown-ready doc comment extracted from trivia.
+    pub doc_comment: Option<String>,
     pub start: usize,
     pub end: usize,
     /// Function scope id, or [`GLOBAL`] for file-scope declarations.
@@ -84,17 +69,66 @@ pub struct Located {
 impl Index {
     /// Parses `text` and builds the symbol model. Tolerates parse errors by indexing whatever
     /// AST the parser manages to produce.
-    pub fn build(text: &str) -> Index {
+    pub fn build(file_path: Option<&str>, text: &str) -> Index {
         let arena = Bump::new();
         let mut scratch = DiagnosticBag::new(None);
         let lexer = Lexer::new(text.to_string());
         let mut parser = Parser::new(lexer, &arena, &mut scratch);
 
-        let mut builder = Builder { decls: Vec::new(), refs: Vec::new(), next_scope: 0 };
+        let mut builder = Builder {
+            decls: Vec::new(),
+            refs: Vec::new(),
+            next_scope: 0,
+        };
         if let Ok(ast) = parser.parse() {
-            builder.walk_program(ast.get_root());
+            let program = ast.get_root();
+            builder.walk_program(program);
+
+            if let Some(path_str) = file_path {
+                let parent_dir = std::path::Path::new(path_str)
+                    .parent()
+                    .unwrap_or_else(|| std::path::Path::new(""));
+                let mut visited = std::collections::HashSet::new();
+                visited.insert(path_str.to_string());
+
+                let mut all_functions = Vec::new();
+                let mut all_structs = Vec::new();
+                let mut all_enums = Vec::new();
+                let mut all_extends = Vec::new();
+                let mut file_contents = std::collections::HashMap::new();
+
+                for import in &program.imports {
+                    let module_name = import.module_name.text.trim_matches('"');
+                    let mut import_path = parent_dir.join(module_name);
+                    if import_path.extension().is_none() {
+                        import_path.set_extension("dream");
+                    }
+                    if let Some(import_path_str) = import_path.to_str() {
+                        if import_path.exists() {
+                            let _ = dream::driver::source_manager::parse_file_recursive(
+                                &import_path_str.to_string(),
+                                &mut visited,
+                                &mut all_functions,
+                                &mut all_structs,
+                                &mut all_enums,
+                                &mut all_extends,
+                                &arena,
+                                &mut scratch,
+                                &mut file_contents,
+                            );
+                        }
+                    }
+                }
+
+                let combined =
+                    ProgramNode::new(vec![], all_structs, all_functions, all_enums, all_extends);
+                builder.walk_program_for_imports(&combined);
+            }
         }
-        Index { decls: builder.decls, refs: builder.refs }
+        Index {
+            decls: builder.decls,
+            refs: builder.refs,
+        }
     }
 
     fn span_at(start: usize, end: usize, offset: usize) -> bool {
@@ -103,12 +137,16 @@ impl Index {
 
     /// Returns the declaration whose name token is under `offset`, if any.
     fn decl_at(&self, offset: usize) -> Option<&Decl> {
-        self.decls.iter().find(|d| Self::span_at(d.start, d.end, offset))
+        self.decls
+            .iter()
+            .find(|d| Self::span_at(d.start, d.end, offset))
     }
 
     /// Returns the reference whose name token is under `offset`, if any.
     fn ref_at(&self, offset: usize) -> Option<&Ref> {
-        self.refs.iter().find(|r| Self::span_at(r.start, r.end, offset))
+        self.refs
+            .iter()
+            .find(|r| Self::span_at(r.start, r.end, offset))
     }
 
     /// Resolves a name used at `offset` within `scope` to its declaration. Locals (variables and
@@ -128,9 +166,11 @@ impl Index {
         if local.is_some() {
             return local;
         }
-        self.decls
-            .iter()
-            .find(|d| d.name == name && d.scope == GLOBAL && matches!(d.kind, SymKind::Function | SymKind::Struct | SymKind::Enum))
+        self.decls.iter().find(|d| {
+            d.name == name
+                && d.scope == GLOBAL
+                && matches!(d.kind, SymKind::Function | SymKind::Struct | SymKind::Enum)
+        })
     }
 
     /// Resolves any field or method named `name` (the first match across all structs), used as a
@@ -142,15 +182,30 @@ impl Index {
     }
 
     pub fn hover(&self, offset: usize) -> Option<Located> {
-        if let Some(decl) = self.decl_at(offset) {
-            return Some(Located { start: decl.start, end: decl.end, contents: decl.detail.clone() });
+        let (start, end, decl) = if let Some(decl) = self.decl_at(offset) {
+            (decl.start, decl.end, decl)
+        } else {
+            let reference = self.ref_at(offset)?;
+            let decl = match reference.kind {
+                SymKind::Field | SymKind::Method | SymKind::EnumMember => {
+                    self.resolve_member(&reference.name)
+                }
+                _ => self.resolve(&reference.name, reference.scope, reference.start),
+            }?;
+            (reference.start, reference.end, decl)
+        };
+
+        let mut contents = format!("```dream\n{}\n```", decl.detail);
+        if let Some(doc) = &decl.doc_comment {
+            contents.push_str("\n\n---\n\n");
+            contents.push_str(doc);
         }
-        let reference = self.ref_at(offset)?;
-        let decl = match reference.kind {
-            SymKind::Field | SymKind::Method | SymKind::EnumMember => self.resolve_member(&reference.name),
-            _ => self.resolve(&reference.name, reference.scope, reference.start),
-        }?;
-        Some(Located { start: reference.start, end: reference.end, contents: decl.detail.clone() })
+
+        Some(Located {
+            start,
+            end,
+            contents,
+        })
     }
 
     pub fn definition(&self, offset: usize) -> Option<(usize, usize)> {
@@ -159,30 +214,88 @@ impl Index {
         }
         let reference = self.ref_at(offset)?;
         let decl = match reference.kind {
-            SymKind::Field | SymKind::Method | SymKind::EnumMember => self.resolve_member(&reference.name),
+            SymKind::Field | SymKind::Method | SymKind::EnumMember => {
+                self.resolve_member(&reference.name)
+            }
             _ => self.resolve(&reference.name, reference.scope, reference.start),
         }?;
         Some((decl.start, decl.end))
     }
 
-    /// All occurrences (declaration + references) sharing the resolved symbol's name.
-    pub fn references(&self, offset: usize) -> Vec<(usize, usize)> {
-        let name = self
-            .decl_at(offset)
-            .map(|d| d.name.clone())
-            .or_else(|| self.ref_at(offset).map(|r| r.name.clone()));
-        let name = match name {
-            Some(name) => name,
-            None => return Vec::new(),
-        };
-        let mut out = Vec::new();
-        for d in self.decls.iter().filter(|d| d.name == name) {
-            out.push((d.start, d.end));
+    pub fn signature_help(&self, text: &str, offset: usize) -> Option<Decl> {
+        let bytes = text.as_bytes();
+        let mut i = offset;
+        let mut paren_count = 0;
+        let mut open_paren_offset = None;
+
+        while i > 0 {
+            i -= 1;
+            let b = bytes[i];
+            if b == b')' {
+                paren_count += 1;
+            } else if b == b'(' {
+                if paren_count > 0 {
+                    paren_count -= 1;
+                } else {
+                    open_paren_offset = Some(i);
+                    break;
+                }
+            } else if b == b';' || b == b'{' || b == b'}' {
+                return None;
+            }
         }
-        for r in self.refs.iter().filter(|r| r.name == name) {
-            out.push((r.start, r.end));
+
+        let op_idx = open_paren_offset?;
+        let mut j = op_idx;
+        while j > 0 && (bytes[j - 1] == b' ' || bytes[j - 1] == b'\t' || bytes[j - 1] == b'\n') {
+            j -= 1;
         }
-        out
+        let recv_end = j;
+        let mut recv_start = recv_end;
+        while recv_start > 0 && is_ident_byte(bytes[recv_start - 1]) {
+            recv_start -= 1;
+        }
+
+        if recv_start == recv_end {
+            return None;
+        }
+
+        let name = &text[recv_start..recv_end];
+        let scope = self.enclosing_scope(offset);
+
+        let mut k = recv_start;
+        while k > 0 && (bytes[k - 1] == b' ' || bytes[k - 1] == b'\t' || bytes[k - 1] == b'\n') {
+            k -= 1;
+        }
+        if k > 0 && bytes[k - 1] == b'.' {
+            if let Some(decl) = self.resolve_member(name) {
+                return Some(decl.clone());
+            }
+        } else {
+            if let Some(decl) = self.resolve(name, scope, recv_start) {
+                if decl.kind == SymKind::Struct {
+                    if let Some(ctor_decl) = self.decls.iter().find(|d| {
+                        d.name == "constructor"
+                            && d.kind == SymKind::Method
+                            && d.detail.starts_with(&format!("{}.", name))
+                    }) {
+                        return Some(ctor_decl.clone());
+                    }
+                } else {
+                    return Some(decl.clone());
+                }
+            }
+            // For struct initializers where `resolve` failed entirely (e.g. static imports sometimes)
+            if let Some(decl) = self.decls.iter().find(|d| {
+                d.name == "constructor"
+                    && d.kind == SymKind::Method
+                    && d.detail.starts_with(&format!("{}.", name))
+            }) {
+                return Some(decl.clone());
+            }
+        }
+
+        None
     }
 
     /// Type name of a variable/parameter named `name` visible at `before` within `scope`.
@@ -192,9 +305,57 @@ impl Index {
 
     /// Completion proposals at `offset`. After a `.` we attempt member completion against the
     /// receiver's resolved struct type, falling back to all members when the type is unknown.
-    pub fn completions(&self, text: &str, offset: usize) -> Vec<(String, SymKind, String)> {
+    pub fn completions(
+        &self,
+        file_path: Option<&str>,
+        text: &str,
+        offset: usize,
+    ) -> Vec<(String, SymKind, String, Option<String>)> {
         let scope = self.enclosing_scope(offset);
         let bytes = text.as_bytes();
+
+        // Check for import path completion
+        let mut i = offset;
+        while i > 0 && bytes[i - 1] != b'"' && bytes[i - 1] != b'\n' {
+            i -= 1;
+        }
+        if i > 0 && bytes[i - 1] == b'"' {
+            let mut j = i - 1;
+            while j > 0 && (bytes[j - 1] == b' ' || bytes[j - 1] == b'\t') {
+                j -= 1;
+            }
+            if j >= 6 && &text[j - 6..j] == "import" {
+                let mut out = Vec::new();
+                if let Some(path_str) = file_path {
+                    let parent_dir = std::path::Path::new(path_str).parent().unwrap_or_else(|| std::path::Path::new(""));
+                    let current_dir = if offset > i {
+                        parent_dir.join(&text[i..offset])
+                    } else {
+                        parent_dir.to_path_buf()
+                    };
+                    
+                    let search_dir = if current_dir.is_dir() {
+                        current_dir.clone()
+                    } else {
+                        current_dir.parent().unwrap_or_else(|| std::path::Path::new("")).to_path_buf()
+                    };
+
+                    if let Ok(entries) = std::fs::read_dir(&search_dir) {
+                        for entry in entries.flatten() {
+                            if let Ok(file_type) = entry.file_type() {
+                                let name = entry.file_name().to_string_lossy().to_string();
+                                if file_type.is_dir() {
+                                    out.push((name, SymKind::Variable, "directory".to_string(), None));
+                                } else if name.ends_with(".dream") {
+                                    out.push((name, SymKind::Variable, "module".to_string(), None));
+                                }
+                            }
+                        }
+                    }
+                }
+                return out;
+            }
+        }
 
         // Detect `receiver.<partial>` by scanning back over an identifier and a dot.
         let mut i = offset;
@@ -217,15 +378,30 @@ impl Index {
 
         let mut out = Vec::new();
         for kw in KEYWORDS {
-            out.push((kw.to_string(), SymKind::Keyword, "keyword".to_string()));
+            out.push((
+                kw.to_string(),
+                SymKind::Keyword,
+                "keyword".to_string(),
+                None,
+            ));
         }
         for d in &self.decls {
             match d.kind {
                 SymKind::Function | SymKind::Struct | SymKind::Enum => {
-                    out.push((d.name.clone(), d.kind, d.detail.clone()));
+                    out.push((
+                        d.name.clone(),
+                        d.kind,
+                        d.detail.clone(),
+                        d.doc_comment.clone(),
+                    ));
                 }
                 SymKind::Variable | SymKind::Param if d.scope == scope && d.start <= offset => {
-                    out.push((d.name.clone(), d.kind, d.detail.clone()));
+                    out.push((
+                        d.name.clone(),
+                        d.kind,
+                        d.detail.clone(),
+                        d.doc_comment.clone(),
+                    ));
                 }
                 _ => {}
             }
@@ -237,9 +413,18 @@ impl Index {
     /// (including `this`) whose type is a known struct, only that struct's fields and methods are
     /// offered. If `receiver` names an enum, its members are offered. Otherwise nothing is
     /// offered, so member access never dumps unrelated symbols.
-    fn member_completions(&self, receiver: &str, scope: usize, before: usize) -> Vec<(String, SymKind, String)> {
+    fn member_completions(
+        &self,
+        receiver: &str,
+        scope: usize,
+        before: usize,
+    ) -> Vec<(String, SymKind, String, Option<String>)> {
         // `Type.` / `Color.` static or enum access: the receiver itself names a struct or enum.
-        if self.decls.iter().any(|d| d.kind == SymKind::Enum && d.name == receiver) {
+        if self
+            .decls
+            .iter()
+            .any(|d| d.kind == SymKind::Enum && d.name == receiver)
+        {
             return self.members_of_enum(receiver);
         }
 
@@ -249,28 +434,50 @@ impl Index {
         }
 
         // A bare struct name used as a receiver (e.g. static method access `Point.`).
-        if self.decls.iter().any(|d| d.kind == SymKind::Struct && d.name == receiver) {
+        if self
+            .decls
+            .iter()
+            .any(|d| d.kind == SymKind::Struct && d.name == receiver)
+        {
             return self.members_of_struct(receiver);
         }
 
         Vec::new()
     }
 
-    fn members_of_struct(&self, base: &str) -> Vec<(String, SymKind, String)> {
+    fn members_of_struct(&self, base: &str) -> Vec<(String, SymKind, String, Option<String>)> {
         let prefix = format!("{}.", base);
         self.decls
             .iter()
-            .filter(|d| matches!(d.kind, SymKind::Field | SymKind::Method) && d.scope == GLOBAL && d.detail.starts_with(&prefix))
-            .map(|d| (d.name.clone(), d.kind, d.detail.clone()))
+            .filter(|d| {
+                matches!(d.kind, SymKind::Field | SymKind::Method)
+                    && d.scope == GLOBAL
+                    && d.detail.starts_with(&prefix)
+            })
+            .map(|d| {
+                (
+                    d.name.clone(),
+                    d.kind,
+                    d.detail.clone(),
+                    d.doc_comment.clone(),
+                )
+            })
             .collect()
     }
 
-    fn members_of_enum(&self, name: &str) -> Vec<(String, SymKind, String)> {
+    fn members_of_enum(&self, name: &str) -> Vec<(String, SymKind, String, Option<String>)> {
         let prefix = format!("{}.", name);
         self.decls
             .iter()
             .filter(|d| d.kind == SymKind::EnumMember && d.detail.starts_with(&prefix))
-            .map(|d| (d.name.clone(), d.kind, d.detail.clone()))
+            .map(|d| {
+                (
+                    d.name.clone(),
+                    d.kind,
+                    d.detail.clone(),
+                    d.doc_comment.clone(),
+                )
+            })
             .collect()
     }
 
@@ -280,7 +487,10 @@ impl Index {
         // so the latest local/param declared before `offset` identifies the enclosing function.
         let mut best: Option<(usize, usize)> = None; // (scope, name_start)
         for d in &self.decls {
-            if matches!(d.kind, SymKind::Param | SymKind::Variable) && d.scope != GLOBAL && d.start <= offset {
+            if matches!(d.kind, SymKind::Param | SymKind::Variable)
+                && d.scope != GLOBAL
+                && d.start <= offset
+            {
                 match best {
                     Some((_, s)) if s >= d.start => {}
                     _ => best = Some((d.scope, d.start)),
@@ -298,6 +508,48 @@ struct Builder {
 }
 
 impl Builder {
+    fn walk_program_for_imports(&mut self, program: &ProgramNode) {
+        for func in &program.functions {
+            let detail = signature(func);
+            self.push_decl(&func.name, SymKind::Function, detail, GLOBAL, None);
+        }
+        for st in &program.structs {
+            let detail = format!("class {}", st.name.text);
+            self.push_decl(&st.name, SymKind::Struct, detail, GLOBAL, None);
+            for field in &st.fields {
+                let detail = format!(
+                    "{}.{}: {}",
+                    st.name.text, field.name.text, field.type_token.text
+                );
+                self.push_decl(
+                    &field.name,
+                    SymKind::Field,
+                    detail,
+                    GLOBAL,
+                    Some(field.type_token.text.clone()),
+                );
+            }
+            for method in &st.methods {
+                let detail = format!("{}.{}", st.name.text, signature(method));
+                self.push_decl(&method.name, SymKind::Method, detail, GLOBAL, None);
+            }
+        }
+        for en in &program.enums {
+            let detail = format!("enum {}", en.name.text);
+            self.push_decl(&en.name, SymKind::Enum, detail, GLOBAL, None);
+            for (member, value) in &en.members {
+                let detail = format!("{}.{} = {}", en.name.text, member.text, value);
+                self.push_decl(member, SymKind::EnumMember, detail, GLOBAL, None);
+            }
+        }
+        for ext in &program.extends {
+            for method in &ext.methods {
+                let detail = format!("{}.{}", ext.target.text, signature(method));
+                self.push_decl(&method.name, SymKind::Method, detail, GLOBAL, None);
+            }
+        }
+    }
+
     fn walk_program(&mut self, program: &ProgramNode) {
         for func in &program.functions {
             self.walk_function(func, None);
@@ -324,8 +576,17 @@ impl Builder {
         let detail = format!("class {}", st.name.text);
         self.push_decl(&st.name, SymKind::Struct, detail, GLOBAL, None);
         for field in &st.fields {
-            let detail = format!("{}.{}: {}", st.name.text, field.name.text, field.type_token.text);
-            self.push_decl(&field.name, SymKind::Field, detail, GLOBAL, Some(field.type_token.text.clone()));
+            let detail = format!(
+                "{}.{}: {}",
+                st.name.text, field.name.text, field.type_token.text
+            );
+            self.push_decl(
+                &field.name,
+                SymKind::Field,
+                detail,
+                GLOBAL,
+                Some(field.type_token.text.clone()),
+            );
         }
         for method in &st.methods {
             self.walk_method(method, &st.name.text);
@@ -343,6 +604,7 @@ impl Builder {
                 name: "this".to_string(),
                 kind: SymKind::Param,
                 detail: format!("(this) {}", owner),
+                doc_comment: None,
                 start: func.name.position.start,
                 end: func.name.position.end,
                 scope,
@@ -457,6 +719,7 @@ impl Builder {
                 self.walk_block(body, scope);
             }
             StatementNode::Labeled(_, inner) => self.walk_stmt(inner, scope),
+            StatementNode::AwaitStmt(expr) => self.walk_expr(expr, scope),
             StatementNode::Break(_) | StatementNode::Continue(_) => {}
             StatementNode::Switch(subject, cases, default) => {
                 self.walk_expr(subject, scope);
@@ -486,7 +749,9 @@ impl Builder {
                 self.walk_expr(l, scope);
                 self.walk_expr(r, scope);
             }
-            ExpressionNode::Unary(_, e) | ExpressionNode::Parenthesized(e) => self.walk_expr(e, scope),
+            ExpressionNode::Unary(_, e) | ExpressionNode::Parenthesized(e) => {
+                self.walk_expr(e, scope)
+            }
             ExpressionNode::FunctionCall(name, _, args) => {
                 self.add_ref(name, SymKind::Function, scope);
                 for arg in args {
@@ -538,6 +803,7 @@ impl Builder {
                     self.walk_expr(elem, scope);
                 }
             }
+            ExpressionNode::Await(e) => self.walk_expr(e, scope),
             ExpressionNode::Literal(_) => {}
         }
     }
@@ -549,7 +815,9 @@ impl Builder {
     }
 
     fn is_enum(&self, name: &str) -> bool {
-        self.decls.iter().any(|d| d.kind == SymKind::Enum && d.name == name)
+        self.decls
+            .iter()
+            .any(|d| d.kind == SymKind::Enum && d.name == name)
     }
 
     fn fresh_scope(&mut self) -> usize {
@@ -558,14 +826,45 @@ impl Builder {
         scope
     }
 
-    fn push_decl(&mut self, token: &SyntaxToken, kind: SymKind, detail: String, scope: usize, ty: Option<String>) {
+    fn push_decl(
+        &mut self,
+        token: &SyntaxToken,
+        kind: SymKind,
+        detail: String,
+        scope: usize,
+        ty: Option<String>,
+    ) {
         if token.text.is_empty() {
             return;
         }
+
+        let mut doc_comment = None;
+
+        // Append any leading doc comments to the hover detail
+        for trivia in &token.leading_trivia {
+            if trivia.kind == dream::syntax::token::token_kind::TokenKind::LineCommentToken
+                || trivia.kind == dream::syntax::token::token_kind::TokenKind::BlockCommentToken
+            {
+                let mut text = trivia.text.trim();
+                if text.starts_with("//") {
+                    text = text.trim_start_matches("//").trim_start();
+                } else if text.starts_with("/*") {
+                    text = text.trim_start_matches("/*").trim_end_matches("*/").trim();
+                }
+
+                let comment = doc_comment.get_or_insert_with(String::new);
+                if !comment.is_empty() {
+                    comment.push_str("\n\n");
+                }
+                comment.push_str(text);
+            }
+        }
+
         self.decls.push(Decl {
             name: token.text.clone(),
             kind,
             detail,
+            doc_comment,
             start: token.position.start,
             end: token.position.end,
             scope,
@@ -608,7 +907,12 @@ fn signature(func: &FunctionNode) -> String {
         .as_ref()
         .map(|t| t.get_type())
         .unwrap_or_else(|| "void".to_string());
-    format!("fun {}({}): {}", func.name.text, params, ret)
+
+    if func.name.text == "constructor" || func.name.text == "del" {
+        format!("{}({}): {}", func.name.text, params, ret)
+    } else {
+        format!("fun {}({}): {}", func.name.text, params, ret)
+    }
 }
 
 fn is_ident_byte(b: u8) -> bool {
@@ -616,8 +920,42 @@ fn is_ident_byte(b: u8) -> bool {
 }
 
 /// Language keywords offered as completion proposals.
-pub const KEYWORDS: [&str; 29] = [
-    "if", "else", "for", "while", "do", "return", "break", "continue", "let", "const", "fun",
-    "static", "import", "export", "extern", "class", "extend", "enum", "type", "switch", "case",
-    "default", "is", "in", "true", "false", "null", "constructor", "del",
+pub const KEYWORDS: [&str; 37] = [
+    "if",
+    "else",
+    "for",
+    "while",
+    "do",
+    "return",
+    "break",
+    "continue",
+    "let",
+    "const",
+    "fun",
+    "static",
+    "import",
+    "export",
+    "extern",
+    "class",
+    "extend",
+    "enum",
+    "type",
+    "switch",
+    "case",
+    "default",
+    "is",
+    "in",
+    "true",
+    "false",
+    "null",
+    "constructor",
+    "del",
+    "int",
+    "float",
+    "double",
+    "string",
+    "bool",
+    "char",
+    "void",
+    "object",
 ];

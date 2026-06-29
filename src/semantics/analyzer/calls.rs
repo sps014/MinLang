@@ -1,31 +1,47 @@
 //! Analysis of call expressions: free-function and overload resolution, method calls, static /
 //! namespaced calls (`Math.*` / `JSON.*` / async intrinsics / `derive` helpers), and constructors.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-use crate::syntax::nodes::{ExpressionNode, FunctionNode, Type};
-use crate::syntax::nodes::types::{canonical_type_name, constructor_fn, is_numeric_primitive, json_from_json_fn, json_to_json_fn, mangle_generic, method_fn, strip_nullable};
+use super::*;
+use crate::driver::diagnostics::DiagnosticBag;
 use crate::intrinsics;
+use crate::semantics::function_table::{
+    overload_arg_compatible, FunctionTableInfo, OverloadResolution,
+};
+use crate::semantics::symbol_table::SymbolTable;
+use crate::syntax::nodes::types::{
+    canonical_type_name, constructor_fn, is_numeric_primitive, json_from_json_fn, json_to_json_fn,
+    mangle_generic, method_fn, strip_nullable,
+};
+use crate::syntax::nodes::{ExpressionNode, FunctionNode, Type};
 use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
-use crate::semantics::function_table::{FunctionTableInfo, OverloadResolution, overload_arg_compatible};
-use crate::semantics::symbol_table::SymbolTable;
-use crate::driver::diagnostics::DiagnosticBag;
-use super::*;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 impl<'a> Analyzer<'a> {
     /// Resolves an overloaded base name against the concrete `arg_types`, returning the selected
     /// signature or a human-readable error (no match / ambiguous). Used by both free-function and
     /// method call analysis (methods prepend the receiver type as the implicit `this` argument).
-    pub(super) fn select_function_overload(&self, base: &str, arg_types: &[String]) -> Result<FunctionTableInfo, String> {
-        let compat = |param: &str, arg: &str| overload_arg_compatible(param, arg, |t| self.enum_table.contains_key(t));
+    pub(super) fn select_function_overload(
+        &self,
+        base: &str,
+        arg_types: &[String],
+    ) -> Result<FunctionTableInfo, String> {
+        let compat = |param: &str, arg: &str| {
+            overload_arg_compatible(param, arg, |t| self.enum_table.contains_key(t))
+        };
         match self.function_table.select_overload(base, arg_types, compat) {
             OverloadResolution::Unique(key) => Ok(self.function_table.get_function(&key).unwrap()),
             OverloadResolution::None => Err(format!(
-                "No overload of '{}' matches argument types ({})", base, arg_types.join(", ")
+                "No overload of '{}' matches argument types ({})",
+                base,
+                arg_types.join(", ")
             )),
             OverloadResolution::Ambiguous(keys) => Err(format!(
-                "Ambiguous call to '{}' with argument types ({}); candidates: {}", base, arg_types.join(", "), keys.join(", ")
+                "Ambiguous call to '{}' with argument types ({}); candidates: {}",
+                base,
+                arg_types.join(", "),
+                keys.join(", ")
             )),
         }
     }
@@ -33,21 +49,30 @@ impl<'a> Analyzer<'a> {
     /// Analyzes a static-method call `Type.method(args)` (resolved by the caller to the type
     /// `type_name`). Static methods have no implicit `this`, so the explicit arguments map 1:1 to
     /// the declared parameters.
-    pub(super) fn analyze_static_call(&mut self, type_name: &str, method: &SyntaxToken, params: &Vec<ExpressionNode<'a>>,
-                                      parent_function: &FunctionNode<'a>, symbol_table: &Rc<RefCell<SymbolTable>>,
-                                      diagnostics: &mut DiagnosticBag) -> Result<Type, ()> {
+    pub(super) fn analyze_static_call(
+        &mut self,
+        type_name: &str,
+        method: &SyntaxToken,
+        params: &Vec<ExpressionNode<'a>>,
+        parent_function: &FunctionNode<'a>,
+        symbol_table: &Rc<RefCell<SymbolTable>>,
+        diagnostics: &mut DiagnosticBag,
+    ) -> Result<Type, ()> {
         let base = method_fn(type_name, &method.text);
 
         let mut arg_types = Vec::new();
         for param in params.iter() {
-            arg_types.push(self.analyze_expression(param, parent_function, symbol_table, diagnostics)?.get_type());
+            arg_types.push(
+                self.analyze_expression(param, parent_function, symbol_table, diagnostics)?
+                    .get_type(),
+            );
         }
 
         let store_sig = if self.function_table.is_overloaded(&base) {
             match self.select_function_overload(&base, &arg_types) {
                 Ok(sig) => sig,
                 Err(message) => {
-                    diagnostics.report_error(message, Some(method.position.clone()));
+                    diagnostics.report_error(message, Some(method.position));
                     return Ok(Type::Void);
                 }
             }
@@ -56,8 +81,11 @@ impl<'a> Analyzer<'a> {
                 Ok(s) => s.clone(),
                 Err(_) => {
                     diagnostics.report_error(
-                        format!("Type '{}' has no static method '{}'", type_name, method.text),
-                        Some(method.position.clone()),
+                        format!(
+                            "Type '{}' has no static method '{}'",
+                            type_name, method.text
+                        ),
+                        Some(method.position),
                     );
                     return Ok(Type::Void);
                 }
@@ -67,15 +95,20 @@ impl<'a> Analyzer<'a> {
         if method.text.starts_with('_') && !self.in_methods_of(parent_function, type_name) {
             diagnostics.report_error(
                 format!("'{}' is private to '{}'", method.text, type_name),
-                Some(method.position.clone()),
+                Some(method.position),
             );
         }
 
         let expected_params = store_sig.parameters.clone();
         if expected_params.len() != arg_types.len() {
             diagnostics.report_error(
-                format!("static method {} expects {} parameters, got {}", base, expected_params.len(), arg_types.len()),
-                Some(method.position.clone()),
+                format!(
+                    "static method {} expects {} parameters, got {}",
+                    base,
+                    expected_params.len(),
+                    arg_types.len()
+                ),
+                Some(method.position),
             );
             return Ok(store_sig.return_type.unwrap_or(Type::Void));
         }
@@ -89,8 +122,14 @@ impl<'a> Analyzer<'a> {
             }
             if given_type != expected {
                 diagnostics.report_error(
-                    format!("static method {} expects parameter {} to be {}, got {}", base, i + 1, expected, given_type),
-                    Some(method.position.clone()),
+                    format!(
+                        "static method {} expects parameter {} to be {}, got {}",
+                        base,
+                        i + 1,
+                        expected,
+                        given_type
+                    ),
+                    Some(method.position),
                 );
             }
         }
@@ -98,7 +137,9 @@ impl<'a> Analyzer<'a> {
         // An async static method (e.g. `Fetch.get`) eagerly starts a task; the call yields a
         // `Future<T>` that must be `await`ed, just like an async instance method or free function.
         if store_sig.is_async {
-            return Ok(Self::future_type(store_sig.return_type.unwrap_or(Type::Void)));
+            return Ok(Self::future_type(
+                store_sig.return_type.unwrap_or(Type::Void),
+            ));
         }
 
         Ok(store_sig.return_type.unwrap_or(Type::Void))
@@ -107,8 +148,14 @@ impl<'a> Analyzer<'a> {
     /// True when `parent_function` is a method whose implicit `this` receiver has base type
     /// `base_name` (allowing for monomorphized generic variants). Used to gate access to
     /// `_`-prefixed (private) members.
-    pub(super) fn in_methods_of(&self, parent_function: &FunctionNode<'a>, base_name: &str) -> bool {
-        let Some(first) = parent_function.parameters.first() else { return false; };
+    pub(super) fn in_methods_of(
+        &self,
+        parent_function: &FunctionNode<'a>,
+        base_name: &str,
+    ) -> bool {
+        let Some(first) = parent_function.parameters.first() else {
+            return false;
+        };
         if first.name.text != "this" {
             return false;
         }
@@ -120,23 +167,37 @@ impl<'a> Analyzer<'a> {
             || base_name.starts_with(&format!("{}_", this_base))
     }
 
-    pub(super) fn analyze_function_call(&mut self,name:&SyntaxToken,generic_args: &Option<Vec<Type>>,params:&Vec<ExpressionNode<'a>>,
-                                   parent_function:&FunctionNode<'a>,
-                                   symbol_table:&Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag)->Result<Type,()> {
+    pub(super) fn analyze_function_call(
+        &mut self,
+        name: &SyntaxToken,
+        generic_args: &Option<Vec<Type>>,
+        params: &Vec<ExpressionNode<'a>>,
+        parent_function: &FunctionNode<'a>,
+        symbol_table: &Rc<RefCell<SymbolTable>>,
+        diagnostics: &mut DiagnosticBag,
+    ) -> Result<Type, ()> {
         // Object-protocol builtins: accept exactly one argument of any type.
         if intrinsics::is_object_builtin(&name.text) {
             if params.len() != 1 {
                 diagnostics.report_error(
-                    format!("'{}' expects exactly 1 argument, got {}", name.text, params.len()),
-                    Some(name.position.clone()),
+                    format!(
+                        "'{}' expects exactly 1 argument, got {}",
+                        name.text,
+                        params.len()
+                    ),
+                    Some(name.position),
                 );
             }
             for param in params.iter() {
                 self.analyze_expression(param, parent_function, symbol_table, diagnostics)?;
             }
             return Ok(match name.text.as_str() {
-                intrinsics::TO_STRING => Type::String(synthetic_token(TokenKind::DataTypeToken, "string")),
-                intrinsics::HASH_CODE => Type::Integer(synthetic_token(TokenKind::DataTypeToken, "int")),
+                intrinsics::TO_STRING => {
+                    Type::String(synthetic_token(TokenKind::DataTypeToken, "string"))
+                }
+                intrinsics::HASH_CODE => {
+                    Type::Integer(synthetic_token(TokenKind::DataTypeToken, "int"))
+                }
                 _ => Type::Void,
             });
         }
@@ -145,7 +206,13 @@ impl<'a> Analyzer<'a> {
         // its signature is generic over `Future<T>`. The combinators live on the `Promise` static
         // class (`Promise.all/any/race`), handled in `analyze_method_call`.
         if name.text == intrinsics::SLEEP {
-            return self.analyze_async_intrinsic(name, params, parent_function, symbol_table, diagnostics);
+            return self.analyze_async_intrinsic(
+                name,
+                params,
+                parent_function,
+                symbol_table,
+                diagnostics,
+            );
         }
 
         // `array_new<T>(n)`: allocates a fresh, zero-initialized array of `n` elements of type `T`.
@@ -155,35 +222,58 @@ impl<'a> Analyzer<'a> {
             let element = match generic_args.as_ref().and_then(|g| g.first()) {
                 Some(t) => Self::monomorphize_type(t, &self.current_generic_bindings),
                 None => {
-                    diagnostics.report_error("'array_new' requires a type argument, e.g. array_new<int>(n)".to_string(), Some(name.position.clone()));
+                    diagnostics.report_error(
+                        "'array_new' requires a type argument, e.g. array_new<int>(n)".to_string(),
+                        Some(name.position),
+                    );
                     Type::Void
                 }
             };
             if params.len() != 1 {
-                diagnostics.report_error(format!("'array_new' expects exactly 1 argument (length), got {}", params.len()), Some(name.position.clone()));
+                diagnostics.report_error(
+                    format!(
+                        "'array_new' expects exactly 1 argument (length), got {}",
+                        params.len()
+                    ),
+                    Some(name.position),
+                );
             }
             for param in params.iter() {
-                let pt = self.analyze_expression(param, parent_function, symbol_table, diagnostics)?;
+                let pt =
+                    self.analyze_expression(param, parent_function, symbol_table, diagnostics)?;
                 if pt.get_type() != "int" {
-                    diagnostics.report_error(format!("'array_new' length must be int, got {}", pt.get_type()), param.position());
+                    diagnostics.report_error(
+                        format!("'array_new' length must be int, got {}", pt.get_type()),
+                        param.position(),
+                    );
                 }
             }
             return Ok(Type::Array(Box::new(element)));
         }
 
-        let mut function_name=name.text.clone();
-        let mut params_types=vec![];
+        let mut function_name = name.text.clone();
+        let mut params_types = vec![];
         for param in params.iter() {
-            params_types.push(self.analyze_expression(param,parent_function,symbol_table, diagnostics)?.get_type());
+            params_types.push(
+                self.analyze_expression(param, parent_function, symbol_table, diagnostics)?
+                    .get_type(),
+            );
         }
 
         // Indirect call: if the called name is a local variable of function type, validate the
         // arguments against the function-type signature and return its result type.
-        if let Ok(Type::Function(param_types, ret)) = (*symbol_table).as_ref().borrow().get_symbol(name) {
+        if let Ok(Type::Function(param_types, ret)) =
+            (*symbol_table).as_ref().borrow().get_symbol(name)
+        {
             if param_types.len() != params_types.len() {
                 diagnostics.report_error(
-                    format!("function value '{}' expects {} arguments, got {}", name.text, param_types.len(), params_types.len()),
-                    Some(name.position.clone()),
+                    format!(
+                        "function value '{}' expects {} arguments, got {}",
+                        name.text,
+                        param_types.len(),
+                        params_types.len()
+                    ),
+                    Some(name.position),
                 );
                 return Ok((*ret).clone());
             }
@@ -191,8 +281,14 @@ impl<'a> Analyzer<'a> {
                 let expected = param_types[i].get_type();
                 if expected != "object" && expected != params_types[i] {
                     diagnostics.report_error(
-                        format!("function value '{}' expects argument {} to be {}, got {}", name.text, i + 1, expected, params_types[i]),
-                        Some(name.position.clone()),
+                        format!(
+                            "function value '{}' expects argument {} to be {}, got {}",
+                            name.text,
+                            i + 1,
+                            expected,
+                            params_types[i]
+                        ),
+                        Some(name.position),
                     );
                 }
             }
@@ -206,7 +302,8 @@ impl<'a> Analyzer<'a> {
             && !self.function_table.is_overloaded(&function_name)
             && !self.generic_functions.contains_key(&function_name)
             && (self.struct_table.get_struct(&function_name).is_some()
-                || self.generic_structs.contains_key(&function_name)) {
+                || self.generic_structs.contains_key(&function_name))
+        {
             return self.analyze_constructor_call(name, generic_args, &params_types, diagnostics);
         }
 
@@ -214,7 +311,13 @@ impl<'a> Analyzer<'a> {
         // (once) a specialized signature under the mangled name.
         if self.generic_functions.contains_key(&function_name) {
             let template = *self.generic_functions.get(&function_name).unwrap();
-            let bindings = self.infer_generic_bindings(template, generic_args, &params_types, &name.position, diagnostics);
+            let bindings = self.infer_generic_bindings(
+                template,
+                generic_args,
+                &params_types,
+                &name.position,
+                diagnostics,
+            );
             let mangled_name = mangle_bindings(&function_name, &bindings);
 
             if self.function_table.get_function(&mangled_name).is_err() {
@@ -225,14 +328,19 @@ impl<'a> Analyzer<'a> {
                 let mut specialized = template.clone();
                 Self::substitute_generic_signature(&mut specialized, &bindings);
                 let specialized_ref: &'a FunctionNode<'a> = self.arena.alloc(specialized);
-                self.instantiated_generics.insert(mangled_name.clone(), (bindings.clone(), specialized_ref));
+                self.instantiated_generics
+                    .insert(mangled_name.clone(), (bindings.clone(), specialized_ref));
 
                 let info = FunctionTableInfo {
                     name: mangled_name.clone(),
-                    parameters: template.parameters.iter()
+                    parameters: template
+                        .parameters
+                        .iter()
                         .map(|p| Self::monomorphize_type(&p.type_, &bindings).get_type())
                         .collect(),
-                    return_type: template.return_type.as_ref()
+                    return_type: template
+                        .return_type
+                        .as_ref()
                         .map(|ret| Self::monomorphize_type(ret, &bindings)),
                     is_async: template.is_async,
                 };
@@ -248,7 +356,7 @@ impl<'a> Analyzer<'a> {
             match self.select_function_overload(&function_name, &params_types) {
                 Ok(sig) => sig,
                 Err(message) => {
-                    diagnostics.report_error(message, Some(name.position.clone()));
+                    diagnostics.report_error(message, Some(name.position));
                     return Ok(Type::Void);
                 }
             }
@@ -256,31 +364,56 @@ impl<'a> Analyzer<'a> {
             match self.function_table.get_function(&function_name) {
                 Ok(sig) => sig,
                 Err(e) => {
-                    diagnostics.report_error(e.to_string(), Some(name.position.clone()));
+                    diagnostics.report_error(e.to_string(), Some(name.position));
                     return Ok(Type::Void);
                 }
             }
         };
 
-        if store_sig.parameters.len()!=params_types.len() {
-            diagnostics.report_error(format!("Function {} has {} params but {} params are given",
-                                                           function_name,store_sig.parameters.len(),params_types.len()), Some(name.position.clone()));
+        if store_sig.parameters.len() != params_types.len() {
+            diagnostics.report_error(
+                format!(
+                    "Function {} has {} params but {} params are given",
+                    function_name,
+                    store_sig.parameters.len(),
+                    params_types.len()
+                ),
+                Some(name.position),
+            );
             return Ok(Type::Void);
         }
 
         for i in 0..params_types.len() {
             // A parameter declared `object` accepts any argument type (boxing happens in codegen).
-            if store_sig.parameters.get(i).map(|s| s == "object").unwrap_or(false) {
+            if store_sig
+                .parameters
+                .get(i)
+                .map(|s| s == "object")
+                .unwrap_or(false)
+            {
                 continue;
             }
-            if store_sig.parameters.get(i)!=params_types.get(i) {
-                let expected = store_sig.parameters.get(i).map(|s| s.as_str()).unwrap_or("");
+            if store_sig.parameters.get(i) != params_types.get(i) {
+                let expected = store_sig
+                    .parameters
+                    .get(i)
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
                 let given = params_types.get(i).map(|s| s.as_str()).unwrap_or("");
                 if self.enum_int_compatible(expected, given) {
                     continue;
                 }
-                diagnostics.report_error(format!("Function {} has param {} of type {:?} but param {} of type {:?} is given",
-                                                               function_name,i,store_sig.parameters.get(i),i,params_types[i]), Some(name.position.clone()));
+                diagnostics.report_error(
+                    format!(
+                        "Function {} has param {} of type {:?} but param {} of type {:?} is given",
+                        function_name,
+                        i,
+                        store_sig.parameters.get(i),
+                        i,
+                        params_types[i]
+                    ),
+                    Some(name.position),
+                );
             }
         }
 
@@ -288,23 +421,40 @@ impl<'a> Analyzer<'a> {
         // Calling an `async fun` is eager and yields a `Future<T>` handle (where `T` is the
         // declared return type). It is NOT auto-awaited; `await` retrieves the `T`.
         if store_sig.is_async {
-            return Ok(Self::future_type(store_sig.return_type.unwrap_or(Type::Void)));
+            return Ok(Self::future_type(
+                store_sig.return_type.unwrap_or(Type::Void),
+            ));
         }
         Ok(store_sig.return_type.unwrap_or(Type::Void))
     }
 
     /// Types the async intrinsics: `sleep(ms: int): Future<void>`, `all(xs: Future<T>[]):
     /// Future<T[]>`, `any`/`race(xs: Future<T>[]): Future<T>`.
-    pub(super) fn analyze_async_intrinsic(&mut self, name: &SyntaxToken, params: &Vec<ExpressionNode<'a>>,
-                                          parent_function: &FunctionNode<'a>, symbol_table: &Rc<RefCell<SymbolTable>>,
-                                          diagnostics: &mut DiagnosticBag) -> Result<Type, ()> {
+    pub(super) fn analyze_async_intrinsic(
+        &mut self,
+        name: &SyntaxToken,
+        params: &Vec<ExpressionNode<'a>>,
+        parent_function: &FunctionNode<'a>,
+        symbol_table: &Rc<RefCell<SymbolTable>>,
+        diagnostics: &mut DiagnosticBag,
+    ) -> Result<Type, ()> {
         if name.text == intrinsics::SLEEP {
             if params.len() != 1 {
-                diagnostics.report_error(format!("'sleep' expects exactly 1 argument (milliseconds), got {}", params.len()), Some(name.position.clone()));
+                diagnostics.report_error(
+                    format!(
+                        "'sleep' expects exactly 1 argument (milliseconds), got {}",
+                        params.len()
+                    ),
+                    Some(name.position),
+                );
             }
-            for p in params { let pt = self.analyze_expression(p, parent_function, symbol_table, diagnostics)?;
+            for p in params {
+                let pt = self.analyze_expression(p, parent_function, symbol_table, diagnostics)?;
                 if pt.get_type() != "int" {
-                    diagnostics.report_error(format!("'sleep' expects an int argument, got {}", pt.get_type()), p.position());
+                    diagnostics.report_error(
+                        format!("'sleep' expects an int argument, got {}", pt.get_type()),
+                        p.position(),
+                    );
                 }
             }
             return Ok(Self::future_type(Type::Void));
@@ -312,20 +462,42 @@ impl<'a> Analyzer<'a> {
 
         // all/any/race take a single `Future<T>[]` argument.
         if params.len() != 1 {
-            diagnostics.report_error(format!("'{}' expects exactly 1 argument (a Future array), got {}", name.text, params.len()), Some(name.position.clone()));
+            diagnostics.report_error(
+                format!(
+                    "'{}' expects exactly 1 argument (a Future array), got {}",
+                    name.text,
+                    params.len()
+                ),
+                Some(name.position),
+            );
             return Ok(Self::future_type(Type::Void));
         }
-        let arg_type = self.analyze_expression(&params[0], parent_function, symbol_table, diagnostics)?;
+        let arg_type =
+            self.analyze_expression(&params[0], parent_function, symbol_table, diagnostics)?;
         let inner_t = match &arg_type {
             Type::Array(inner) => match Self::future_inner_type(inner) {
                 Some(t) => t,
                 None => {
-                    diagnostics.report_error(format!("'{}' expects an array of Future values, got {}", name.text, arg_type.get_type()), params[0].position());
+                    diagnostics.report_error(
+                        format!(
+                            "'{}' expects an array of Future values, got {}",
+                            name.text,
+                            arg_type.get_type()
+                        ),
+                        params[0].position(),
+                    );
                     Type::Void
                 }
             },
             _ => {
-                diagnostics.report_error(format!("'{}' expects an array of Future values, got {}", name.text, arg_type.get_type()), params[0].position());
+                diagnostics.report_error(
+                    format!(
+                        "'{}' expects an array of Future values, got {}",
+                        name.text,
+                        arg_type.get_type()
+                    ),
+                    params[0].position(),
+                );
                 Type::Void
             }
         };
@@ -341,54 +513,122 @@ impl<'a> Analyzer<'a> {
     /// Type-checks the `@json` auto-derive entry points `JSON.serialize(x)` and
     /// `JSON.deserialize<T>(text)`. These are compiler intrinsics: the actual conversion runs
     /// through the per-class `to_json`/`from_json` methods generated for every `@json` class.
-    pub(super) fn analyze_json_derive_call(&mut self, method: &SyntaxToken, generic_args: &Option<Vec<Type>>,
-                                           params: &Vec<ExpressionNode<'a>>, parent_function: &FunctionNode<'a>,
-                                           symbol_table: &Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag) -> Result<Type, ()> {
-        if method.text == intrinsics::JSON_SERIALIZE || method.text == intrinsics::JSON_SERIALIZE_PRETTY {
+    pub(super) fn analyze_json_derive_call(
+        &mut self,
+        method: &SyntaxToken,
+        generic_args: &Option<Vec<Type>>,
+        params: &[ExpressionNode<'a>],
+        parent_function: &FunctionNode<'a>,
+        symbol_table: &Rc<RefCell<SymbolTable>>,
+        diagnostics: &mut DiagnosticBag,
+    ) -> Result<Type, ()> {
+        if method.text == intrinsics::JSON_SERIALIZE
+            || method.text == intrinsics::JSON_SERIALIZE_PRETTY
+        {
             // `serialize(x)` takes the value; `serialize_pretty(x, indent)` also takes the indent.
-            let expected_args = if method.text == intrinsics::JSON_SERIALIZE_PRETTY { 2 } else { 1 };
+            let expected_args = if method.text == intrinsics::JSON_SERIALIZE_PRETTY {
+                2
+            } else {
+                1
+            };
             if params.len() != expected_args {
-                diagnostics.report_error(format!("'JSON.{}' expects exactly {} argument(s), got {}", method.text, expected_args, params.len()), Some(method.position.clone()));
-                return Ok(Type::String(synthetic_token(TokenKind::DataTypeToken, "string")));
-            }
-            let arg_type = self.analyze_expression(&params[0], parent_function, symbol_table, diagnostics)?;
-            let struct_name = strip_nullable(&arg_type.get_type()).to_string();
-            if self.function_table.get_function(&json_to_json_fn(&struct_name)).is_err() {
                 diagnostics.report_error(
-                    format!("'JSON.{}' requires a @json class, but '{}' has no derived converter", method.text, struct_name),
+                    format!(
+                        "'JSON.{}' expects exactly {} argument(s), got {}",
+                        method.text,
+                        expected_args,
+                        params.len()
+                    ),
+                    Some(method.position),
+                );
+                return Ok(Type::String(synthetic_token(
+                    TokenKind::DataTypeToken,
+                    "string",
+                )));
+            }
+            let arg_type =
+                self.analyze_expression(&params[0], parent_function, symbol_table, diagnostics)?;
+            let struct_name = strip_nullable(&arg_type.get_type()).to_string();
+            if self
+                .function_table
+                .get_function(&json_to_json_fn(&struct_name))
+                .is_err()
+            {
+                diagnostics.report_error(
+                    format!(
+                        "'JSON.{}' requires a @json class, but '{}' has no derived converter",
+                        method.text, struct_name
+                    ),
                     params[0].position(),
                 );
             }
             if method.text == "serialize_pretty" {
-                let indent_type = self.analyze_expression(&params[1], parent_function, symbol_table, diagnostics)?;
+                let indent_type = self.analyze_expression(
+                    &params[1],
+                    parent_function,
+                    symbol_table,
+                    diagnostics,
+                )?;
                 if strip_nullable(&indent_type.get_type()) != "int" {
-                    diagnostics.report_error(format!("'JSON.serialize_pretty' expects an int indent, got {}", indent_type.get_type()), params[1].position());
+                    diagnostics.report_error(
+                        format!(
+                            "'JSON.serialize_pretty' expects an int indent, got {}",
+                            indent_type.get_type()
+                        ),
+                        params[1].position(),
+                    );
                 }
             }
-            return Ok(Type::String(synthetic_token(TokenKind::DataTypeToken, "string")));
+            return Ok(Type::String(synthetic_token(
+                TokenKind::DataTypeToken,
+                "string",
+            )));
         }
 
         // deserialize<T>(text: string): T
         let target = match generic_args.as_ref().and_then(|g| g.first()) {
             Some(t) => t.clone(),
             None => {
-                diagnostics.report_error("'JSON.deserialize' requires an explicit type argument, e.g. JSON.deserialize<User>(text)".to_string(), Some(method.position.clone()));
-                return Ok(Type::Object(synthetic_token(TokenKind::DataTypeToken, "object")));
+                diagnostics.report_error("'JSON.deserialize' requires an explicit type argument, e.g. JSON.deserialize<User>(text)".to_string(), Some(method.position));
+                return Ok(Type::Object(synthetic_token(
+                    TokenKind::DataTypeToken,
+                    "object",
+                )));
             }
         };
         if params.len() != 1 {
-            diagnostics.report_error(format!("'JSON.deserialize' expects exactly 1 argument, got {}", params.len()), Some(method.position.clone()));
+            diagnostics.report_error(
+                format!(
+                    "'JSON.deserialize' expects exactly 1 argument, got {}",
+                    params.len()
+                ),
+                Some(method.position),
+            );
             return Ok(target);
         }
-        let arg_type = self.analyze_expression(&params[0], parent_function, symbol_table, diagnostics)?;
+        let arg_type =
+            self.analyze_expression(&params[0], parent_function, symbol_table, diagnostics)?;
         if strip_nullable(&arg_type.get_type()) != "string" {
-            diagnostics.report_error(format!("'JSON.deserialize' expects a string argument, got {}", arg_type.get_type()), params[0].position());
+            diagnostics.report_error(
+                format!(
+                    "'JSON.deserialize' expects a string argument, got {}",
+                    arg_type.get_type()
+                ),
+                params[0].position(),
+            );
         }
         let struct_name = strip_nullable(&target.get_type()).to_string();
-        if self.function_table.get_function(&json_from_json_fn(&struct_name)).is_err() {
+        if self
+            .function_table
+            .get_function(&json_from_json_fn(&struct_name))
+            .is_err()
+        {
             diagnostics.report_error(
-                format!("'JSON.deserialize' requires a @json class, but '{}' has no derived converter", struct_name),
-                Some(method.position.clone()),
+                format!(
+                    "'JSON.deserialize' requires a @json class, but '{}' has no derived converter",
+                    struct_name
+                ),
+                Some(method.position),
             );
         }
         Ok(target)
@@ -397,7 +637,13 @@ impl<'a> Analyzer<'a> {
     /// Type-checks a constructor call `Struct(args)`. When the struct defines a custom `constructor`
     /// the call is checked against `init`'s parameters; otherwise it is checked positionally
     /// against the struct's fields in declaration order (the auto-generated constructor).
-    pub(super) fn analyze_constructor_call(&mut self, name: &SyntaxToken, generic_args: &Option<Vec<Type>>, params_types: &[String], diagnostics: &mut DiagnosticBag) -> Result<Type, ()> {
+    pub(super) fn analyze_constructor_call(
+        &mut self,
+        name: &SyntaxToken,
+        generic_args: &Option<Vec<Type>>,
+        params_types: &[String],
+        diagnostics: &mut DiagnosticBag,
+    ) -> Result<Type, ()> {
         let struct_name = match generic_args {
             Some(args) if !args.is_empty() => {
                 self.ensure_struct_instantiated(&name.text, args, &name.position, diagnostics);
@@ -406,8 +652,11 @@ impl<'a> Analyzer<'a> {
             _ => {
                 if self.generic_structs.contains_key(&name.text) {
                     diagnostics.report_error(
-                        format!("Generic class '{}' requires type arguments, e.g. {}<int>(...)", name.text, name.text),
-                        Some(name.position.clone()),
+                        format!(
+                            "Generic class '{}' requires type arguments, e.g. {}<int>(...)",
+                            name.text, name.text
+                        ),
+                        Some(name.position),
                     );
                 }
                 name.text.clone()
@@ -429,8 +678,13 @@ impl<'a> Analyzer<'a> {
 
         if expected.len() != params_types.len() {
             diagnostics.report_error(
-                format!("Constructor for '{}' expects {} argument(s), but {} were given", struct_name, expected.len(), params_types.len()),
-                Some(name.position.clone()),
+                format!(
+                    "Constructor for '{}' expects {} argument(s), but {} were given",
+                    struct_name,
+                    expected.len(),
+                    params_types.len()
+                ),
+                Some(name.position),
             );
         } else {
             for i in 0..expected.len() {
@@ -440,47 +694,98 @@ impl<'a> Analyzer<'a> {
                     continue;
                 }
                 diagnostics.report_error(
-                    format!("Constructor for '{}' expects argument {} to be '{}', got '{}'", struct_name, i + 1, e, g),
-                    Some(name.position.clone()),
+                    format!(
+                        "Constructor for '{}' expects argument {} to be '{}', got '{}'",
+                        struct_name,
+                        i + 1,
+                        e,
+                        g
+                    ),
+                    Some(name.position),
                 );
             }
         }
 
-        Ok(Type::Struct(synthetic_token(TokenKind::IdentifierToken, &struct_name), None))
+        Ok(Type::Struct(
+            synthetic_token(TokenKind::IdentifierToken, &struct_name),
+            None,
+        ))
     }
 
-    pub(super) fn analyze_method_call(&mut self, obj: &ExpressionNode<'a>, method: &SyntaxToken, _generic_args: &Option<Vec<Type>>, params: &Vec<ExpressionNode<'a>>, parent_function: &FunctionNode<'a>, symbol_table: &Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag) -> Result<Type, ()> {
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn analyze_method_call(
+        &mut self,
+        obj: &ExpressionNode<'a>,
+        method: &SyntaxToken,
+        _generic_args: &Option<Vec<Type>>,
+        params: &Vec<ExpressionNode<'a>>,
+        parent_function: &FunctionNode<'a>,
+        symbol_table: &Rc<RefCell<SymbolTable>>,
+        diagnostics: &mut DiagnosticBag,
+    ) -> Result<Type, ()> {
         // `Math.<fn>(...)`: the math namespace. `Math` is not a value, so intercept before
         // trying to analyze it as an expression.
         if let ExpressionNode::Identifier(id) = obj {
             if id.text == intrinsics::MATH {
-                return self.analyze_math_call(method, params, parent_function, symbol_table, diagnostics);
+                return self.analyze_math_call(
+                    method,
+                    params,
+                    parent_function,
+                    symbol_table,
+                    diagnostics,
+                );
             }
 
             // `Promise.all/any/race(...)`: the async combinators as static methods.
             if id.text == intrinsics::PROMISE && intrinsics::is_promise_combinator(&method.text) {
                 let is_local = (*symbol_table).as_ref().borrow().get_symbol(id).is_ok();
                 if !is_local {
-                    return self.analyze_async_intrinsic(method, params, parent_function, symbol_table, diagnostics);
+                    return self.analyze_async_intrinsic(
+                        method,
+                        params,
+                        parent_function,
+                        symbol_table,
+                        diagnostics,
+                    );
                 }
             }
 
             // `JSON.serialize(x)` / `JSON.deserialize<T>(text)`: auto-derive entry points. They are
             // compiler intrinsics (no real signature in `json.dream`), backed by per-class
             // `to_json`/`from_json` converters generated for every `@json` class.
-            if id.text == intrinsics::JSON && intrinsics::is_json_derive_method(&method.text)
-                && (*symbol_table).as_ref().borrow().get_symbol(id).is_err() {
-                return self.analyze_json_derive_call(method, _generic_args, params, parent_function, symbol_table, diagnostics);
+            if id.text == intrinsics::JSON
+                && intrinsics::is_json_derive_method(&method.text)
+                && (*symbol_table).as_ref().borrow().get_symbol(id).is_err()
+            {
+                return self.analyze_json_derive_call(
+                    method,
+                    _generic_args,
+                    params,
+                    parent_function,
+                    symbol_table,
+                    diagnostics,
+                );
             }
 
             // `Type.method(args)`: a static-method call. The receiver names a type (not a local
             // variable), so resolve `{type}_{method}` directly with no implicit `this`.
             let is_local = (*symbol_table).as_ref().borrow().get_symbol(id).is_ok();
             if !is_local {
-                let type_name = canonical_type_name(&id.text).unwrap_or(id.text.as_str()).to_string();
+                let type_name = canonical_type_name(&id.text)
+                    .unwrap_or(id.text.as_str())
+                    .to_string();
                 let base = method_fn(&type_name, &method.text);
-                if self.function_table.is_overloaded(&base) || self.function_table.get_function(&base).is_ok() {
-                    return self.analyze_static_call(&type_name, method, params, parent_function, symbol_table, diagnostics);
+                if self.function_table.is_overloaded(&base)
+                    || self.function_table.get_function(&base).is_ok()
+                {
+                    return self.analyze_static_call(
+                        &type_name,
+                        method,
+                        params,
+                        parent_function,
+                        symbol_table,
+                        diagnostics,
+                    );
                 }
             }
         }
@@ -496,7 +801,7 @@ impl<'a> Analyzer<'a> {
             if !self.in_methods_of(parent_function, &base_name) {
                 diagnostics.report_error(
                     format!("'{}' is private to '{}'", method.text, base_name),
-                    Some(method.position.clone()),
+                    Some(method.position),
                 );
             }
         }
@@ -506,9 +811,15 @@ impl<'a> Analyzer<'a> {
             let base = strip_nullable(&obj_type.get_type()).to_string();
             if self.enum_table.contains_key(&base) {
                 if !params.is_empty() {
-                    diagnostics.report_error(format!("'name' takes no arguments, got {}", params.len()), Some(method.position.clone()));
+                    diagnostics.report_error(
+                        format!("'name' takes no arguments, got {}", params.len()),
+                        Some(method.position),
+                    );
                 }
-                return Ok(Type::String(synthetic_token(TokenKind::DataTypeToken, "string")));
+                return Ok(Type::String(synthetic_token(
+                    TokenKind::DataTypeToken,
+                    "string",
+                )));
             }
         }
 
@@ -517,9 +828,15 @@ impl<'a> Analyzer<'a> {
             let base = strip_nullable(&obj_type.get_type()).to_string();
             if base.ends_with("[]") || base == "string" {
                 if !params.is_empty() {
-                    diagnostics.report_error(format!("'len' takes no arguments, got {}", params.len()), Some(method.position.clone()));
+                    diagnostics.report_error(
+                        format!("'len' takes no arguments, got {}", params.len()),
+                        Some(method.position),
+                    );
                 }
-                return Ok(Type::Integer(synthetic_token(TokenKind::DataTypeToken, "int")));
+                return Ok(Type::Integer(synthetic_token(
+                    TokenKind::DataTypeToken,
+                    "int",
+                )));
             }
         }
 
@@ -527,7 +844,12 @@ impl<'a> Analyzer<'a> {
         // receivers (which can carry methods via `extend`) use their canonical type name directly.
         let struct_name = match Self::resolve_struct_parts(&obj_type) {
             Some((base_name, generic_args)) => {
-                self.ensure_struct_instantiated(&base_name, &generic_args, &method.position, diagnostics);
+                self.ensure_struct_instantiated(
+                    &base_name,
+                    &generic_args,
+                    &method.position,
+                    diagnostics,
+                );
                 mangle_generic(&base_name, &generic_args)
             }
             None => strip_nullable(&obj_type.get_type()).to_string(),
@@ -539,7 +861,10 @@ impl<'a> Analyzer<'a> {
         // by argument types, with the receiver supplied as the implicit `this` argument).
         let mut arg_types = Vec::new();
         for param in params.iter() {
-            arg_types.push(self.analyze_expression(param, parent_function, symbol_table, diagnostics)?.get_type());
+            arg_types.push(
+                self.analyze_expression(param, parent_function, symbol_table, diagnostics)?
+                    .get_type(),
+            );
         }
 
         let store_sig = if self.function_table.is_overloaded(&mangled_name) {
@@ -549,7 +874,7 @@ impl<'a> Analyzer<'a> {
             match self.select_function_overload(&mangled_name, &selection_args) {
                 Ok(sig) => sig,
                 Err(message) => {
-                    diagnostics.report_error(message, Some(method.position.clone()));
+                    diagnostics.report_error(message, Some(method.position));
                     return Ok(Type::Void);
                 }
             }
@@ -559,7 +884,7 @@ impl<'a> Analyzer<'a> {
                 Err(_) => {
                     diagnostics.report_error(
                         format!("Type '{}' has no method '{}'", struct_name, method.text),
-                        Some(method.position.clone()),
+                        Some(method.position),
                     );
                     return Ok(Type::Void);
                 }
@@ -567,14 +892,22 @@ impl<'a> Analyzer<'a> {
         };
 
         let mut expected_params = store_sig.parameters.clone();
-        
+
         // Remove 'this' from the expected params check since we supply it implicitly
         if !expected_params.is_empty() {
             expected_params.remove(0);
         }
 
         if expected_params.len() != arg_types.len() {
-            diagnostics.report_error(format!("function {} expects {} parameters, got {}", mangled_name, expected_params.len(), arg_types.len()), Some(method.position.clone()));
+            diagnostics.report_error(
+                format!(
+                    "function {} expects {} parameters, got {}",
+                    mangled_name,
+                    expected_params.len(),
+                    arg_types.len()
+                ),
+                Some(method.position),
+            );
             return Ok(store_sig.return_type.unwrap_or(Type::Void));
         }
 
@@ -590,34 +923,74 @@ impl<'a> Analyzer<'a> {
             }
 
             if given_type != expected_type_str {
-                diagnostics.report_error(format!("function {} expects parameter {} to be {}, got {}", mangled_name, i + 1, expected_type_str, given_type), Some(method.position.clone()));
+                diagnostics.report_error(
+                    format!(
+                        "function {} expects parameter {} to be {}, got {}",
+                        mangled_name,
+                        i + 1,
+                        expected_type_str,
+                        given_type
+                    ),
+                    Some(method.position),
+                );
             }
         }
 
         // Calling an `async` method is eager and yields a `Future<T>` handle (like free async
         // functions); `await` retrieves the `T`.
         if store_sig.is_async {
-            return Ok(Self::future_type(store_sig.return_type.unwrap_or(Type::Void)));
+            return Ok(Self::future_type(
+                store_sig.return_type.unwrap_or(Type::Void),
+            ));
         }
         Ok(store_sig.return_type.unwrap_or(Type::Void))
     }
 
     /// `Math.sin/cos/abs/sqrt(x)`: each takes one numeric argument and yields a `float`.
-    pub(super) fn analyze_math_call(&mut self, method: &SyntaxToken, params: &Vec<ExpressionNode<'a>>, parent_function: &FunctionNode<'a>, symbol_table: &Rc<RefCell<SymbolTable>>, diagnostics: &mut DiagnosticBag) -> Result<Type, ()> {
+    pub(super) fn analyze_math_call(
+        &mut self,
+        method: &SyntaxToken,
+        params: &Vec<ExpressionNode<'a>>,
+        parent_function: &FunctionNode<'a>,
+        symbol_table: &Rc<RefCell<SymbolTable>>,
+        diagnostics: &mut DiagnosticBag,
+    ) -> Result<Type, ()> {
         if !intrinsics::is_math_function(&method.text) {
-            diagnostics.report_error(format!("Unknown math function 'Math.{}'", method.text), Some(method.position.clone()));
-            return Ok(Type::Float(synthetic_token(TokenKind::DataTypeToken, "float")));
+            diagnostics.report_error(
+                format!("Unknown math function 'Math.{}'", method.text),
+                Some(method.position),
+            );
+            return Ok(Type::Float(synthetic_token(
+                TokenKind::DataTypeToken,
+                "float",
+            )));
         }
         if params.len() != 1 {
-            diagnostics.report_error(format!("'Math.{}' expects exactly 1 argument, got {}", method.text, params.len()), Some(method.position.clone()));
+            diagnostics.report_error(
+                format!(
+                    "'Math.{}' expects exactly 1 argument, got {}",
+                    method.text,
+                    params.len()
+                ),
+                Some(method.position),
+            );
         }
         for param in params.iter() {
             let pt = self.analyze_expression(param, parent_function, symbol_table, diagnostics)?;
             if !is_numeric_primitive(&pt.get_type()) {
-                diagnostics.report_error(format!("'Math.{}' expects a numeric argument, got {}", method.text, pt.get_type()), param.position());
+                diagnostics.report_error(
+                    format!(
+                        "'Math.{}' expects a numeric argument, got {}",
+                        method.text,
+                        pt.get_type()
+                    ),
+                    param.position(),
+                );
             }
         }
-        Ok(Type::Float(synthetic_token(TokenKind::DataTypeToken, "float")))
+        Ok(Type::Float(synthetic_token(
+            TokenKind::DataTypeToken,
+            "float",
+        )))
     }
-
 }

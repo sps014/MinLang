@@ -1,31 +1,30 @@
 use logos::Logos;
 
 #[derive(Logos, Debug, PartialEq, Clone, Copy, Hash, Eq)]
-pub enum TokenKind
-{
+pub enum TokenKind {
     EndOfFileToken,
-    
+
     #[regex(r"[ \t\n\f]+")]
     WhiteSpaceToken,
-    
+
     BadToken,
 
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*")]
     IdentifierToken,
-    
+
     #[regex(r"[0-9]+(\.[0-9]+)?([dDfF])?")]
     NumberToken,
-    
+
     #[regex(r#""([^"\\]*(\\.[^"\\]*)*)""#)]
     StringToken,
 
     #[regex(r#"'(\\.|[^'\\])'"#)]
     CharToken,
-    
+
     #[token("true")]
     #[token("false")]
     BooleanToken,
-    
+
     #[token("+")]
     PlusToken,
     #[token("-")]
@@ -38,7 +37,7 @@ pub enum TokenKind
     BangToken,
     #[token("%")]
     ModulusToken,
-    
+
     #[token("+=")]
     PlusEqualToken,
     #[token("-=")]
@@ -94,7 +93,7 @@ pub enum TokenKind
     DotToken,
     #[token("?")]
     QuestionMarkToken,
-    
+
     #[token("(")]
     OpenParenthesisToken,
     #[token(")")]
@@ -180,4 +179,88 @@ pub enum TokenKind
     LineCommentToken,
     #[regex(r"/\*[^*]*\*+(?:[^/*][^*]*\*+)*/")]
     BlockCommentToken,
+}
+
+impl TokenKind {
+    pub fn friendly_name(&self) -> &'static str {
+        match self {
+            TokenKind::EndOfFileToken => "end of file",
+            TokenKind::WhiteSpaceToken => "whitespace",
+            TokenKind::BadToken => "invalid token",
+            TokenKind::IdentifierToken => "identifier",
+            TokenKind::NumberToken => "number",
+            TokenKind::StringToken => "string",
+            TokenKind::CharToken => "character",
+            TokenKind::BooleanToken => "boolean",
+            TokenKind::PlusToken => "'+'",
+            TokenKind::MinusToken => "'-'",
+            TokenKind::SlashToken => "'/'",
+            TokenKind::StarToken => "'*'",
+            TokenKind::BangToken => "'!'",
+            TokenKind::ModulusToken => "'%'",
+            TokenKind::PlusEqualToken => "'+='",
+            TokenKind::MinusEqualToken => "'-='",
+            TokenKind::StarEqualToken => "'*='",
+            TokenKind::SlashEqualToken => "'/='",
+            TokenKind::ModulusEqualToken => "'%='",
+            TokenKind::PlusPlusToken => "'++'",
+            TokenKind::MinusMinusToken => "'--'",
+            TokenKind::EqualEqualToken => "'=='",
+            TokenKind::NotEqualToken => "'!='",
+            TokenKind::AmpersandAmpersandToken => "'&&'",
+            TokenKind::PipePipeToken => "'||'",
+            TokenKind::BitWisePipeToken => "'|'",
+            TokenKind::BitWiseAmpersandToken => "'&'",
+            TokenKind::BitWiseXorToken => "'^'",
+            TokenKind::ShiftLeftToken => "'<<'",
+            TokenKind::ShiftRightToken => "'>>'",
+            TokenKind::QuestionQuestionToken => "'??'",
+            TokenKind::EqualToken => "'='",
+            TokenKind::GreaterThanEqualToken => "'>='",
+            TokenKind::GreaterThanToken => "'>'",
+            TokenKind::SmallerThanToken => "'<'",
+            TokenKind::SmallerThanEqualToken => "'<='",
+            TokenKind::SemicolonToken => "';'",
+            TokenKind::ColonToken => "':'",
+            TokenKind::CommaToken => "','",
+            TokenKind::DotToken => "'.'",
+            TokenKind::QuestionMarkToken => "'?'",
+            TokenKind::OpenParenthesisToken => "'('",
+            TokenKind::CloseParenthesisToken => "')'",
+            TokenKind::CurlyOpenBracketToken => "'{'",
+            TokenKind::CurlyCloseBracketToken => "'}'",
+            TokenKind::OpenBracketToken => "'['",
+            TokenKind::CloseBracketToken => "']'",
+            TokenKind::IfToken => "'if'",
+            TokenKind::ElseToken => "'else'",
+            TokenKind::ForToken => "'for'",
+            TokenKind::WhileToken => "'while'",
+            TokenKind::DoToken => "'do'",
+            TokenKind::ReturnToken => "'return'",
+            TokenKind::BreakToken => "'break'",
+            TokenKind::ContinueToken => "'continue'",
+            TokenKind::LetToken => "'let'",
+            TokenKind::ConstToken => "'const'",
+            TokenKind::FunToken => "'fun'",
+            TokenKind::AsyncToken => "'async'",
+            TokenKind::AwaitToken => "'await'",
+            TokenKind::StaticToken => "'static'",
+            TokenKind::ImportToken => "'import'",
+            TokenKind::ExportToken => "'export'",
+            TokenKind::ExternToken => "'extern'",
+            TokenKind::ClassToken => "'class'",
+            TokenKind::ExtendToken => "'extend'",
+            TokenKind::NullToken => "'null'",
+            TokenKind::IsToken => "'is'",
+            TokenKind::InToken => "'in'",
+            TokenKind::EnumToken => "'enum'",
+            TokenKind::TypeToken => "'type'",
+            TokenKind::SwitchToken => "'switch'",
+            TokenKind::CaseToken => "'case'",
+            TokenKind::DefaultToken => "'default'",
+            TokenKind::AtToken => "'@'",
+            TokenKind::DataTypeToken => "data type",
+            TokenKind::LineCommentToken | TokenKind::BlockCommentToken => "comment",
+        }
+    }
 }

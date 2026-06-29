@@ -26,7 +26,7 @@ native = ["wasmtime"]
 pretty_assertions = "1.4.1"
 
 [workspace]
-members = [".", "tooling/dream-analyzer"]
+members = [".", "tooling/dream-lsp"]
 # v2 resolver so the wasm32 analyzer build does not inherit the root crate's default
 # `native` feature (and therefore never tries to compile wasmtime for wasm).
 resolver = "2"

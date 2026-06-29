@@ -28,6 +28,6 @@ impl std::error::Error for SymbolError {}
 
 impl From<SymbolError> for std::io::Error {
     fn from(err: SymbolError) -> Self {
-        std::io::Error::new(std::io::ErrorKind::Other, err.message)
+        std::io::Error::other(err.message)
     }
 }

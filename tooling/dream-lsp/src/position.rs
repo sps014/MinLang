@@ -33,7 +33,10 @@ impl LineIndex {
                 line_starts.push(i + 1);
             }
         }
-        LineIndex { text: text.to_string(), line_starts }
+        LineIndex {
+            text: text.to_string(),
+            line_starts,
+        }
     }
 
     /// Converts a byte offset into a 0-based line and UTF-16 column. Offsets past the end of
@@ -46,11 +49,17 @@ impl LineIndex {
         };
         let line_start = self.line_starts[line];
         let column = self.utf16_len(&self.text[line_start..offset]);
-        Position { line: line as u32, character: column as u32 }
+        Position {
+            line: line as u32,
+            character: column as u32,
+        }
     }
 
     pub fn range(&self, start: usize, end: usize) -> Range {
-        Range { start: self.position(start), end: self.position(end) }
+        Range {
+            start: self.position(start),
+            end: self.position(end),
+        }
     }
 
     /// Converts a 0-based (line, UTF-16 column) position back into a byte offset, clamping
@@ -65,7 +74,7 @@ impl LineIndex {
             .line_starts
             .get(line + 1)
             .copied()
-            .unwrap_or_else(|| self.text.len());
+            .unwrap_or(self.text.len());
         let mut remaining = character as usize;
         let mut offset = line_start;
         for ch in self.text[line_start..line_end].chars() {

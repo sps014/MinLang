@@ -1,26 +1,25 @@
-use std::collections::HashMap;
-use std::io::Error;
-use bumpalo::Bump;
-use crate::syntax::nodes::{Type, ProgramNode};
+use crate::driver::diagnostics::DiagnosticBag;
+use crate::syntax::lexer::Lexer;
+use crate::syntax::nodes::{ProgramNode, Type};
 use crate::syntax::syntax_tree::SyntaxTree;
 use crate::syntax::text::line_text::LineText;
 use crate::syntax::text::text_span::TextSpan;
 use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
-use crate::syntax::lexer::Lexer;
-use crate::driver::diagnostics::DiagnosticBag;
+use bumpalo::Bump;
+use std::collections::HashMap;
+use std::io::Error;
 
 mod declarations;
-mod statements;
 mod expressions;
+mod statements;
 
 /// The parser is responsible for converting a sequence of tokens into an Abstract Syntax Tree (AST).
 /// It uses a recursive descent parsing strategy.
-pub struct Parser<'a, 'b>
-{
-    lexer:Lexer,
-    tokens:Vec<SyntaxToken>,
-    current_token_index:usize,
+pub struct Parser<'a, 'b> {
+    lexer: Lexer,
+    tokens: Vec<SyntaxToken>,
+    current_token_index: usize,
     arena: &'a Bump,
     diagnostics: &'b mut DiagnosticBag,
     /// Monotonic counter used to generate unique synthetic local names for `for-each` lowering.
@@ -30,67 +29,64 @@ pub struct Parser<'a, 'b>
     type_aliases: HashMap<String, Type>,
 }
 
-impl<'a, 'b> Parser<'a, 'b>
-{
+impl<'a, 'b> Parser<'a, 'b> {
     ///creates a new instance of the parser from a lexer instance
-    pub fn new(lexer:Lexer, arena: &'a Bump, diagnostics: &'b mut DiagnosticBag) -> Self
-    {
-        Self
-        {
+    pub fn new(lexer: Lexer, arena: &'a Bump, diagnostics: &'b mut DiagnosticBag) -> Self {
+        Self {
             lexer,
-            tokens:Vec::new(),
-            current_token_index:0,
+            tokens: Vec::new(),
+            current_token_index: 0,
             arena,
             diagnostics,
-            foreach_counter:0,
+            foreach_counter: 0,
             type_aliases: HashMap::new(),
         }
     }
     //returns the new eof token
-    fn new_eof_token() -> SyntaxToken
-    {
-        SyntaxToken::new(TokenKind::EndOfFileToken,
-                         TextSpan::new((0,0),
-                                       &LineText::new("".to_string())),
-                         "\0".to_string())
+    fn new_eof_token() -> SyntaxToken {
+        SyntaxToken::new(
+            TokenKind::EndOfFileToken,
+            TextSpan::new((0, 0), &LineText::new("".to_string())),
+            "\0".to_string(),
+        )
     }
     ///returns current token if exists or None
-    fn current_token(&self) -> SyntaxToken
-    {
-        if self.current_token_index >= self.tokens.len()
-        {
+    fn current_token(&self) -> SyntaxToken {
+        if self.current_token_index >= self.tokens.len() {
             Parser::new_eof_token()
+        } else {
+            self.tokens[self.current_token_index].clone()
         }
-        else { self.tokens[self.current_token_index].clone() }
     }
     ///returns current token and moves to next token
-    fn next_token(&mut self) -> SyntaxToken
-    {
-        let r=self.current_token();
+    fn next_token(&mut self) -> SyntaxToken {
+        let r = self.current_token();
         self.current_token_index += 1;
         r
     }
     ///return the token at the given index with some offset
-    fn peek_token(&self,offset:usize) -> SyntaxToken
-    {
-        if self.current_token_index + offset >= self.tokens.len(){Parser::new_eof_token()}
-        else { self.tokens[self.current_token_index + offset].clone() }
+    fn peek_token(&self, offset: usize) -> SyntaxToken {
+        if self.current_token_index + offset >= self.tokens.len() {
+            Parser::new_eof_token()
+        } else {
+            self.tokens[self.current_token_index + offset].clone()
+        }
     }
     ///checks if the current token is of the given kind, returns that token, moves to next token else synthesizes one and reports error
-    fn match_token(&mut self,kind:TokenKind) -> SyntaxToken
-    {
-        let token=self.current_token();
-        if token.kind==kind
-        {
+    fn match_token(&mut self, kind: TokenKind) -> SyntaxToken {
+        let token = self.current_token();
+        if token.kind == kind {
             self.next_token()
-        }
-        else
-        {
+        } else {
             self.diagnostics.report_error(
-                format!("Expected token of kind {:?} but found {:?}", kind, token.kind),
-                Some(token.position.clone())
+                format!(
+                    "Expected {} but found {}",
+                    kind.friendly_name(),
+                    token.kind.friendly_name()
+                ),
+                Some(token.position),
             );
-            SyntaxToken::new(kind, token.position.clone(), "".to_string())
+            SyntaxToken::new(kind, token.position, "".to_string())
         }
     }
     /// True if the current token can close a generic argument list: either a plain `>` or the
@@ -183,37 +179,38 @@ impl<'a, 'b> Parser<'a, 'b>
         None
     }
     ///parse all tokens from lexer and returns a syntax tree or error
-    pub fn parse(&mut self)->Result<SyntaxTree<'a>,Error>
-    {
+    pub fn parse(&mut self) -> Result<SyntaxTree<'a>, Error> {
         self.tokens = self.lexer.lex_all(self.diagnostics);
         Ok(SyntaxTree::new(self.parse_program()?))
     }
 
     ///get all functions in the file
-    fn parse_program(&mut self)->Result<ProgramNode<'a>,Error>
-    {
-        let mut imports=vec![];
-        let mut functions=vec![];
-        let mut structs=vec![];
-        let mut enums=vec![];
-        let mut extends=vec![];
-        
+    fn parse_program(&mut self) -> Result<ProgramNode<'a>, Error> {
+        let mut imports = vec![];
+        let mut functions = vec![];
+        let mut structs = vec![];
+        let mut enums = vec![];
+        let mut extends = vec![];
+
         while self.current_token().kind == TokenKind::ImportToken {
             imports.push(self.parse_import()?);
         }
-        
-        while self.current_token().kind!=TokenKind::EndOfFileToken
-        {
+
+        while self.current_token().kind != TokenKind::EndOfFileToken {
             if self.current_token().kind == TokenKind::AtToken
                 && self.peek_token(1).kind == TokenKind::IdentifierToken
-                && self.peek_token(1).text == "json" {
+                && self.peek_token(1).text == "json"
+            {
                 // `@json` class attribute: opt the class into auto-derived JSON converters.
                 self.next_token(); // '@'
                 self.next_token(); // 'json'
                 let mut struct_decl = self.parse_struct_declaration()?;
                 struct_decl.is_json = true;
                 structs.push(struct_decl);
-            } else if self.current_token().kind == TokenKind::ClassToken || (self.current_token().kind == TokenKind::ExportToken && self.peek_token(1).kind == TokenKind::ClassToken) {
+            } else if self.current_token().kind == TokenKind::ClassToken
+                || (self.current_token().kind == TokenKind::ExportToken
+                    && self.peek_token(1).kind == TokenKind::ClassToken)
+            {
                 let struct_decl = self.parse_struct_declaration()?;
                 structs.push(struct_decl);
             } else if self.current_token().kind == TokenKind::EnumToken {
@@ -222,21 +219,32 @@ impl<'a, 'b> Parser<'a, 'b>
                 extends.push(self.parse_extend_declaration()?);
             } else if self.current_token().kind == TokenKind::TypeToken {
                 self.parse_type_alias()?;
-            } else if self.current_token().kind == TokenKind::FunToken || self.current_token().kind == TokenKind::AtToken || self.current_token().kind == TokenKind::ExternToken || self.current_token().kind == TokenKind::AsyncToken || (self.current_token().kind == TokenKind::ExportToken && (self.peek_token(1).kind == TokenKind::FunToken || self.peek_token(1).kind == TokenKind::AsyncToken)) {
-                let function=self.parse_function()?;
+            } else if self.current_token().kind == TokenKind::FunToken
+                || self.current_token().kind == TokenKind::AtToken
+                || self.current_token().kind == TokenKind::ExternToken
+                || self.current_token().kind == TokenKind::AsyncToken
+                || (self.current_token().kind == TokenKind::ExportToken
+                    && (self.peek_token(1).kind == TokenKind::FunToken
+                        || self.peek_token(1).kind == TokenKind::AsyncToken))
+            {
+                let function = self.parse_function()?;
                 functions.push(function);
             } else {
                 let cur = self.current_token();
                 self.diagnostics.report_error(
-                    format!("Expected function, class, or enum declaration but found {:?}", cur.kind),
-                    Some(cur.position.clone())
+                    format!(
+                        "Expected function, class, or enum declaration but found {}",
+                        cur.kind.friendly_name()
+                    ),
+                    Some(cur.position),
                 );
                 self.next_token();
             }
         }
-        Ok(ProgramNode::new(imports, structs, functions, enums, extends))
+        Ok(ProgramNode::new(
+            imports, structs, functions, enums, extends,
+        ))
     }
-
 }
 
 #[cfg(test)]

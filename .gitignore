@@ -11,3 +11,6 @@
 
 # Keep the hand-written runtime WAT assets that the codegen embeds via include_str!.
 !/src/**/*.wat
+
+node_modules/
+.DS_Store

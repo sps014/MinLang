@@ -1,14 +1,14 @@
-pub mod types;
 pub mod expression;
-pub mod statement;
 pub mod function;
 pub mod program;
+pub mod statement;
 pub mod struct_node;
+pub mod types;
 
-pub use types::Type;
 pub use expression::ExpressionNode;
-pub use statement::StatementNode;
 pub use function::{FunctionNode, ParameterNode};
-pub use program::{ProgramNode, ImportNode, EnumDeclarationNode, ExtendNode};
+pub use program::{EnumDeclarationNode, ExtendNode, ImportNode, ProgramNode};
+pub use statement::StatementNode;
 #[allow(unused_imports)]
 pub use struct_node::{StructDeclarationNode, StructFieldNode};
+pub use types::Type;

@@ -1,23 +1,23 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
 use std::io::Error;
+use std::rc::Rc;
 
-use crate::syntax::nodes::Type;
-use crate::syntax::syntax_tree::SyntaxTree;
+use crate::codegen::CodeGenerator;
 use crate::semantics::analyzer::SemanticInfo;
 use crate::semantics::function_table::FunctionTable;
 use crate::semantics::symbol_table::SymbolTable;
-use crate::codegen::CodeGenerator;
+use crate::syntax::nodes::Type;
+use crate::syntax::syntax_tree::SyntaxTree;
 
+pub mod async_support;
 pub mod expression;
+pub mod memory;
 pub mod module;
+pub mod object;
 pub mod statement;
 pub mod strings;
 pub mod utils;
-pub mod memory;
-pub mod object;
-pub mod async_support;
 
 /// Byte size of the universal heap-block header: `[size:i32][tag:i32][ref_count:i32]`.
 /// Allocated pointers point at `data` (block_start + HEAP_HEADER_SIZE).
@@ -99,8 +99,17 @@ pub struct WasmGenerator<'a> {
     pub symbol_map: &'a HashMap<String, Rc<RefCell<SymbolTable>>>,
     pub function_table: &'a FunctionTable,
     pub struct_table: &'a crate::semantics::struct_table::StructTable,
-    pub instantiated_generics: &'a HashMap<String, (crate::semantics::analyzer::GenericBindings, &'a crate::syntax::nodes::FunctionNode<'a>)>,
-    pub struct_methods: &'a Vec<(&'a crate::syntax::nodes::FunctionNode<'a>, crate::semantics::analyzer::GenericBindings)>,
+    pub instantiated_generics: &'a HashMap<
+        String,
+        (
+            crate::semantics::analyzer::GenericBindings,
+            &'a crate::syntax::nodes::FunctionNode<'a>,
+        ),
+    >,
+    pub struct_methods: &'a Vec<(
+        &'a crate::syntax::nodes::FunctionNode<'a>,
+        crate::semantics::analyzer::GenericBindings,
+    )>,
     /// Registered enums: name -> (member -> i32 value). Enum members lower to `i32.const`.
     pub enums: &'a crate::semantics::analyzer::EnumTable,
     /// Mutable working state accumulated during emission.
@@ -120,8 +129,8 @@ impl<'a> WasmGenerator<'a> {
         Self {
             syntax_tree,
             symbol_map: &semantic_info.hash_map,
-            function_table: &semantic_info.function_table,
-            struct_table: &semantic_info.struct_table,
+            function_table: semantic_info.function_table,
+            struct_table: semantic_info.struct_table,
             instantiated_generics: &semantic_info.instantiated_generics,
             struct_methods: &semantic_info.struct_methods,
             enums: &semantic_info.enums,

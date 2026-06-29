@@ -1,12 +1,12 @@
+use bumpalo::Bump;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{Error, ErrorKind, Read};
 use std::path::Path;
-use bumpalo::Bump;
 
+use crate::driver::diagnostics::DiagnosticBag;
 use crate::syntax::lexer::Lexer;
 use crate::syntax::parser::Parser;
-use crate::driver::diagnostics::DiagnosticBag;
 
 /// Parses the embedded standard-collections prelude and merges its declarations into the
 /// program. Uses the same arena as the user's files so all AST nodes share a lifetime.
@@ -113,15 +113,19 @@ fn generate_json_extend(
         // type is `string` or another `@json` class (nullable arrays are out of scope).
         if let Some(base) = ftype.strip_suffix('?') {
             let (to_inner, from_inner) = if base == "string" {
-                (format!("JsonValue.from_string(this.{f} ?? \"\")", f = fname),
-                 format!("__src_{f}.as_string()", f = fname))
+                (
+                    format!("JsonValue.from_string(this.{f} ?? \"\")", f = fname),
+                    format!("__src_{f}.as_string()", f = fname),
+                )
             } else if json_names.contains(base) {
-                (format!("this.{f}.to_json()", f = fname),
-                 format!("{c}.from_json(__src_{f})", c = base, f = fname))
+                (
+                    format!("this.{f}.to_json()", f = fname),
+                    format!("{c}.from_json(__src_{f})", c = base, f = fname),
+                )
             } else {
                 diagnostics.report_error(
                     format!("@json class '{}' field '{}' has unsupported nullable type '{}' (only `string?` and nullable @json classes are supported)", name, fname, ftype),
-                    Some(field.name.position.clone()),
+                    Some(field.name.position),
                 );
                 return None;
             };
@@ -141,7 +145,11 @@ fn generate_json_extend(
             // Array field: serialize/deserialize element-wise. Loop variables are suffixed with the
             // field name because Dream scopes locals per-function (not per-block).
             let to_elem = json_to_expr(elem, &format!("this.{}[__i_{}]", fname, fname), json_names);
-            let from_elem = json_from_expr(elem, &format!("__src_{}.at(__i_{})", fname, fname), json_names);
+            let from_elem = json_from_expr(
+                elem,
+                &format!("__src_{}.at(__i_{})", fname, fname),
+                json_names,
+            );
             match (to_elem, from_elem) {
                 (Some(to_e), Some(from_e)) => {
                     to_body.push_str(&format!(
@@ -156,8 +164,11 @@ fn generate_json_extend(
                 }
                 _ => {
                     diagnostics.report_error(
-                        format!("@json class '{}' field '{}' has unsupported array element type '{}'", name, fname, elem),
-                        Some(field.name.position.clone()),
+                        format!(
+                            "@json class '{}' field '{}' has unsupported array element type '{}'",
+                            name, fname, elem
+                        ),
+                        Some(field.name.position),
                     );
                     return None;
                 }
@@ -167,13 +178,20 @@ fn generate_json_extend(
             let from_e = json_from_expr(ftype, &format!("v.get(\"{}\")", fname), json_names);
             match (to_e, from_e) {
                 (Some(to_e), Some(from_e)) => {
-                    to_body.push_str(&format!("        __o.set(\"{f}\", {to_e});\n", f = fname, to_e = to_e));
+                    to_body.push_str(&format!(
+                        "        __o.set(\"{f}\", {to_e});\n",
+                        f = fname,
+                        to_e = to_e
+                    ));
                     from_fields.push(format!("{f}: {from_e}", f = fname, from_e = from_e));
                 }
                 _ => {
                     diagnostics.report_error(
-                        format!("@json class '{}' field '{}' has unsupported type '{}'", name, fname, ftype),
-                        Some(field.name.position.clone()),
+                        format!(
+                            "@json class '{}' field '{}' has unsupported type '{}'",
+                            name, fname, ftype
+                        ),
+                        Some(field.name.position),
                     );
                     return None;
                 }
@@ -205,7 +223,8 @@ pub(crate) fn generate_json_derives<'a>(
     diagnostics: &mut DiagnosticBag,
     file_contents: &mut HashMap<String, String>,
 ) -> Result<(), Error> {
-    let json_names: HashSet<String> = all_structs.iter()
+    let json_names: HashSet<String> = all_structs
+        .iter()
         .filter(|s| s.is_json)
         .map(|s| s.name.text.clone())
         .collect();
@@ -217,8 +236,11 @@ pub(crate) fn generate_json_derives<'a>(
     for struct_decl in all_structs.iter().filter(|s| s.is_json) {
         if struct_decl.generic_parameters.is_some() {
             diagnostics.report_error(
-                format!("@json is not supported on generic class '{}'", struct_decl.name.text),
-                Some(struct_decl.name.position.clone()),
+                format!(
+                    "@json is not supported on generic class '{}'",
+                    struct_decl.name.text
+                ),
+                Some(struct_decl.name.position),
             );
             continue;
         }
@@ -262,7 +284,8 @@ pub(crate) fn generate_json_derives<'a>(
 /// Recursively parses `file_path` and every file it imports, merging all declarations into the
 /// `all_*` accumulators. Each declaration is tagged with its originating file so semantic
 /// diagnostics (which run on the merged program) can attribute errors correctly.
-pub(crate) fn parse_file_recursive<'a>(
+#[allow(clippy::too_many_arguments)]
+pub fn parse_file_recursive<'a>(
     file_path: &String,
     visited: &mut HashSet<String>,
     all_functions: &mut Vec<crate::syntax::nodes::FunctionNode<'a>>,
@@ -274,8 +297,14 @@ pub(crate) fn parse_file_recursive<'a>(
     file_contents: &mut HashMap<String, String>,
 ) -> Result<(), Error> {
     let path = Path::new(file_path).canonicalize()?;
-    let path_str = path.to_str()
-        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, format!("Non-UTF-8 file path: {:?}", path)))?
+    let path_str = path
+        .to_str()
+        .ok_or_else(|| {
+            Error::new(
+                ErrorKind::InvalidInput,
+                format!("Non-UTF-8 file path: {:?}", path),
+            )
+        })?
         .to_string();
 
     if visited.contains(&path_str) {
@@ -314,22 +343,38 @@ pub(crate) fn parse_file_recursive<'a>(
         let module_name = import.module_name.text.trim_matches('"');
         let mut import_path = parent_dir.join(module_name);
         if import_path.extension().is_none() {
-            import_path.set_extension("ml");
+            import_path.set_extension("dream");
         }
 
         let import_path_str = match import_path.to_str() {
             Some(s) => s.to_string(),
             None => {
-                diagnostics.report_error(format!("Non-UTF-8 import path: {:?}", import_path), Some(import.module_name.position.clone()));
+                diagnostics.report_error(
+                    format!("Non-UTF-8 import path: {:?}", import_path),
+                    Some(import.module_name.position),
+                );
                 continue;
             }
         };
         if !import_path.exists() {
-            diagnostics.report_error(format!("Imported file not found: {}", import_path_str), Some(import.module_name.position.clone()));
+            diagnostics.report_error(
+                format!("Imported file not found: {}", import_path_str),
+                Some(import.module_name.position),
+            );
             continue;
         }
 
-        parse_file_recursive(&import_path_str, visited, all_functions, all_structs, all_enums, all_extends, arena, diagnostics, file_contents)?;
+        parse_file_recursive(
+            &import_path_str,
+            visited,
+            all_functions,
+            all_structs,
+            all_enums,
+            all_extends,
+            arena,
+            diagnostics,
+            file_contents,
+        )?;
     }
 
     // Tag every declaration with its source file so semantic diagnostics (which run on the

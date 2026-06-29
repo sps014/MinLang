@@ -1,8 +1,8 @@
-use std::collections::HashMap;
 use crate::semantics::errors::SymbolError;
-use crate::syntax::nodes::{FunctionNode, Type};
-use crate::syntax::nodes::types::{is_numeric_primitive, strip_nullable};
 use crate::stdlib::StdlibFunction;
+use crate::syntax::nodes::types::{is_numeric_primitive, strip_nullable};
+use crate::syntax::nodes::{FunctionNode, Type};
+use std::collections::HashMap;
 
 /// Whether an argument of type `arg` may bind to a parameter of type `param` for the purpose of
 /// overload *viability* (exactness is scored separately by the caller). Mirrors the implicit
@@ -52,6 +52,11 @@ pub fn overload_key(base: &str, parameters: &[String]) -> String {
     key
 }
 
+impl Default for FunctionTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl FunctionTable {
     pub fn new() -> FunctionTable {
@@ -59,7 +64,7 @@ impl FunctionTable {
             functions: HashMap::new(),
             overloads: HashMap::new(),
         };
-        
+
         for std_func in StdlibFunction::get_all() {
             let info = FunctionTableInfo::new(
                 std_func.name.clone(),
@@ -68,15 +73,20 @@ impl FunctionTable {
             );
             table.functions.insert(std_func.name, info);
         }
-        
+
         table
     }
 
-    pub fn add_function(&mut self, name: String, function_info: FunctionTableInfo) -> Result<(), SymbolError>
-    {
-        if self.functions.contains_key(&name)
-        {
-            return Err(SymbolError::new(format!("Function already exists ({})", name)));
+    pub fn add_function(
+        &mut self,
+        name: String,
+        function_info: FunctionTableInfo,
+    ) -> Result<(), SymbolError> {
+        if self.functions.contains_key(&name) {
+            return Err(SymbolError::new(format!(
+                "Function already exists ({})",
+                name
+            )));
         }
         self.functions.insert(name, function_info);
         Ok(())
@@ -87,11 +97,18 @@ impl FunctionTable {
     /// its signature-mangled key and the new one is mangled too, so non-overloaded code keeps its
     /// original emitted names. Returns the emitted key chosen for `info`, or an error if an
     /// identical signature was already registered under `base`.
-    pub fn add_overload(&mut self, base: &str, mut info: FunctionTableInfo) -> Result<String, SymbolError> {
+    pub fn add_overload(
+        &mut self,
+        base: &str,
+        mut info: FunctionTableInfo,
+    ) -> Result<String, SymbolError> {
         let existing = self.overloads.entry(base.to_string()).or_default();
         if existing.is_empty() {
             if self.functions.contains_key(base) {
-                return Err(SymbolError::new(format!("Function already exists ({})", base)));
+                return Err(SymbolError::new(format!(
+                    "Function already exists ({})",
+                    base
+                )));
             }
             info.name = base.to_string();
             existing.push(base.to_string());
@@ -110,7 +127,8 @@ impl FunctionTable {
         let key = overload_key(base, &info.parameters);
         if self.functions.contains_key(&key) {
             return Err(SymbolError::new(format!(
-                "Duplicate overload: '{}' with the same parameter types is already defined", base
+                "Duplicate overload: '{}' with the same parameter types is already defined",
+                base
             )));
         }
         info.name = key.clone();
@@ -121,7 +139,10 @@ impl FunctionTable {
 
     /// Whether `base` has more than one overload (i.e. its declarations are signature-mangled).
     pub fn is_overloaded(&self, base: &str) -> bool {
-        self.overloads.get(base).map(|v| v.len() > 1).unwrap_or(false)
+        self.overloads
+            .get(base)
+            .map(|v| v.len() > 1)
+            .unwrap_or(false)
     }
 
     /// The emitted name of the declaration of `base` whose parameter list is `parameters`: the
@@ -138,7 +159,12 @@ impl FunctionTable {
     /// `compat` supplies the fallback compatibility (object widening, enum/int, numeric, nullable).
     /// A single best candidate wins; ties yield `Ambiguous`; no viable candidate yields `None`.
     /// When `base` is not an overload set, falls back to the plain function keyed by `base`.
-    pub fn select_overload(&self, base: &str, args: &[String], compat: impl Fn(&str, &str) -> bool) -> OverloadResolution {
+    pub fn select_overload(
+        &self,
+        base: &str,
+        args: &[String],
+        compat: impl Fn(&str, &str) -> bool,
+    ) -> OverloadResolution {
         let keys = match self.overloads.get(base) {
             Some(keys) => keys,
             None => {
@@ -178,7 +204,8 @@ impl FunctionTable {
             Some(max) => max,
             None => return OverloadResolution::None,
         };
-        let best: Vec<String> = scored.iter()
+        let best: Vec<String> = scored
+            .iter()
             .filter(|(s, _)| *s == max_score)
             .map(|(_, k)| (*k).clone())
             .collect();
@@ -189,20 +216,19 @@ impl FunctionTable {
         }
     }
 
-
     pub fn get_function(&self, name: &String) -> Result<FunctionTableInfo, SymbolError> {
-        if !self.functions.contains_key(name)
-        {
-            return Err(SymbolError::new(format!("Function does not exist ({})", name)));
+        if !self.functions.contains_key(name) {
+            return Err(SymbolError::new(format!(
+                "Function does not exist ({})",
+                name
+            )));
         }
         Ok(self.functions.get(name).unwrap().clone())
     }
 }
 
-
-#[derive(Debug,Clone)]
-pub  struct FunctionTableInfo
-{
+#[derive(Debug, Clone)]
+pub struct FunctionTableInfo {
     #[allow(dead_code)]
     pub name: String,
     pub return_type: Option<Type>,
@@ -213,7 +239,11 @@ pub  struct FunctionTableInfo
 }
 
 impl FunctionTableInfo {
-    pub fn new(name: String, return_type: Option<Type>, parameters: Vec<String>) -> FunctionTableInfo {
+    pub fn new(
+        name: String,
+        return_type: Option<Type>,
+        parameters: Vec<String>,
+    ) -> FunctionTableInfo {
         FunctionTableInfo {
             name,
             return_type,
@@ -221,14 +251,12 @@ impl FunctionTableInfo {
             is_async: false,
         }
     }
-    pub fn from(func:&FunctionNode)->Self
-    {
+    pub fn from(func: &FunctionNode) -> Self {
         let name = func.name.clone();
         let return_type = func.return_type.clone();
-        let mut parameters:Vec<String> = vec![];
-        for i in func.parameters.iter()
-        {
-            let j=i.clone();
+        let mut parameters: Vec<String> = vec![];
+        for i in func.parameters.iter() {
+            let j = i.clone();
             parameters.push(j.type_.get_type());
         }
         let mut info = FunctionTableInfo::new(name.text, return_type, parameters);
