@@ -87,8 +87,24 @@ fun main(): void {
 ```
 
 - `JSON.serialize(x): string` — stringifies any `@json` value.
-- `JSON.serialize_pretty(x, indent): string` — like `serialize`, but pretty-printed with `indent` spaces per level.
 - `JSON.deserialize<T>(text): T` — parses `text` and reconstructs a `T`.
+
+### Custom JSON Keys
+
+You can use the `@property_name("new_key")` attribute on a field to map it to a different JSON key:
+
+```ts
+@json
+class Product {
+    @property_name("id")
+    product_id: int;
+
+    @property_name("priceUsd")
+    price: float;
+}
+```
+
+This maps `product_id` to `"id"` and `price` to `"priceUsd"` in the JSON output, while maintaining the Dream field names in code.
 
 ### Nullable fields
 

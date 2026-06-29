@@ -144,10 +144,7 @@ impl<'a> WasmGenerator<'a> {
                         return Ok("float".to_string());
                     }
                     // `JSON.serialize(x): string` and `JSON.deserialize<T>(text): T` intrinsics.
-                    if id.text == intrinsics::JSON
-                        && (method.text == intrinsics::JSON_SERIALIZE
-                            || method.text == intrinsics::JSON_SERIALIZE_PRETTY)
-                    {
+                    if id.text == intrinsics::JSON && method.text == intrinsics::JSON_SERIALIZE {
                         return Ok("string".to_string());
                     }
                     if id.text == intrinsics::JSON && method.text == intrinsics::JSON_DESERIALIZE {

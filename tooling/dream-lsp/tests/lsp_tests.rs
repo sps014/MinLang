@@ -345,3 +345,19 @@ export fun main() {
     assert!(has_name, "Expected 'name' in completions");
     assert!(has_print_name, "Expected 'print_name' in completions");
 }
+
+#[test]
+fn hover_on_builtin_list_push() {
+    let src = "
+fun main(): void {
+    let xs = List<int>();
+    xs.pu|sh(1);
+}
+";
+    let harness = TestHarness::new(src);
+    let index = harness.index();
+    
+    let hover = index.hover(harness.offset).expect("Expected hover info on builtin method");
+    assert!(hover.contents.contains("push(value: T)"));
+    assert!(hover.contents.contains("Appends a value to the end"));
+}

@@ -214,20 +214,14 @@ impl<'a, 'b> Parser<'a, 'b> {
         }
 
         while self.current_token().kind != TokenKind::EndOfFileToken {
-            if self.current_token().kind == TokenKind::AtToken
-                && self.peek_token(1).kind == TokenKind::IdentifierToken
-                && self.peek_token(1).text == "json"
-            {
-                // `@json` class attribute: opt the class into auto-derived JSON converters.
-                self.next_token(); // '@'
-                self.next_token(); // 'json'
-                let mut struct_decl = self.parse_struct_declaration()?;
-                struct_decl.is_json = true;
-                structs.push(struct_decl);
-            } else if self.current_token().kind == TokenKind::ClassToken
+            if self.current_token().kind == TokenKind::ClassToken
                 || (self.current_token().kind == TokenKind::ExportToken
                     && self.peek_token(1).kind == TokenKind::ClassToken)
+                || (self.current_token().kind == TokenKind::AtToken
+                    && self.peek_token(1).kind == TokenKind::IdentifierToken
+                    && (self.peek_token(2).kind == TokenKind::ClassToken || self.peek_token(3).kind == TokenKind::ClassToken))
             {
+                // We let `parse_struct_declaration` handle `@` tokens now.
                 let struct_decl = self.parse_struct_declaration()?;
                 structs.push(struct_decl);
             } else if self.current_token().kind == TokenKind::EnumToken {
@@ -244,7 +238,7 @@ impl<'a, 'b> Parser<'a, 'b> {
                     && (self.peek_token(1).kind == TokenKind::FunToken
                         || self.peek_token(1).kind == TokenKind::AsyncToken))
             {
-                let function = self.parse_function()?;
+                let function = self.parse_function(None)?;
                 functions.push(function);
             } else {
                 let cur = self.current_token();

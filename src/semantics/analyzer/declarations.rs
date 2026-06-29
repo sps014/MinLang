@@ -288,10 +288,11 @@ impl<'a> Analyzer<'a> {
         }
         let bindings = generic_bindings(params, args);
 
-        let new_fields = template
+        let new_fields: Vec<StructFieldNode> = template
             .fields
             .iter()
             .map(|field| StructFieldNode {
+                attributes: field.attributes.clone(),
                 name: field.name.clone(),
                 type_token: substitute_generic_token(&field.type_token, &bindings),
                 field_type: substitute_generic_type(&field.field_type, &bindings),
@@ -301,6 +302,7 @@ impl<'a> Analyzer<'a> {
         let mut new_name_token = template.name.clone();
         new_name_token.text = mangled_name.clone();
         let new_decl = StructDeclarationNode::new(
+            template.attributes.clone(),
             new_name_token,
             None,
             new_fields,
@@ -440,7 +442,9 @@ impl<'a> Analyzer<'a> {
 
         let is_protocol = name == "to_string" || name == "hash_code";
 
-        if method.is_override && !is_protocol {
+        let is_override = method.attributes.iter().any(|a| a.name.text == "override");
+
+        if is_override && !is_protocol {
             diagnostics.report_error(
                 format!("'@override' can only be applied to object-protocol methods (to_string, hash_code), not '{}'", name),
                 Some(method.name.position),
@@ -448,7 +452,7 @@ impl<'a> Analyzer<'a> {
             return;
         }
 
-        if is_protocol && !method.is_override {
+        if is_protocol && !is_override {
             diagnostics.report_error(
                 format!(
                     "method '{}' overrides an object-protocol method; mark it with '@override'",
@@ -459,7 +463,7 @@ impl<'a> Analyzer<'a> {
             return;
         }
 
-        if method.is_override && is_protocol {
+        if is_override && is_protocol {
             if !method.is_exported {
                 diagnostics.report_error(
                     format!(

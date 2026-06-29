@@ -54,4 +54,4 @@ echo "==> Packaging extension into .vsix..."
 npx @vscode/vsce package
 
 echo "==> Done! You can install the extension with:"
-echo "    code --install-extension tooling/vscode/$(ls *.vsix | head -n 1)"
+echo "    code --install-extension tooling/vscode/$(ls -t *.vsix | head -n 1)"

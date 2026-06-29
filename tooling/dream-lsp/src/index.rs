@@ -88,12 +88,24 @@ impl Index {
             // Pass 1: Declare all file-level symbols for the main program
             builder.walk_program_for_imports(program);
 
+            let mut acc = dream::driver::source_manager::ProgramAccumulator::default();
+
+            // Inject standard library (prelude) symbols
+            let mut file_contents = std::collections::HashMap::new();
+            let _ = dream::driver::source_manager::merge_prelude(
+                &arena,
+                &mut acc.all_functions,
+                &mut acc.all_structs,
+                &mut acc.all_extends,
+                &mut scratch,
+                &mut file_contents,
+            );
+
             if let Some(path_str) = file_path {
                 let parent_dir = std::path::Path::new(path_str)
                     .parent()
                     .unwrap_or_else(|| std::path::Path::new(""));
 
-                let mut acc = dream::driver::source_manager::ProgramAccumulator::default();
                 acc.visited.insert(path_str.to_string());
 
                 for import in &program.imports {
@@ -112,17 +124,17 @@ impl Index {
                         }
                     }
                 }
-
-                let combined = ProgramNode::new(
-                    vec![],
-                    acc.all_structs,
-                    acc.all_functions,
-                    acc.all_enums,
-                    acc.all_extends,
-                );
-                // Pass 1.5: Declare all imported symbols
-                builder.walk_program_for_imports(&combined);
             }
+
+            let combined = dream::syntax::nodes::ProgramNode::new(
+                vec![],
+                acc.all_structs,
+                acc.all_functions,
+                acc.all_enums,
+                acc.all_extends,
+            );
+            // Pass 1.5: Declare all imported and prelude symbols
+            builder.walk_program_for_imports(&combined);
             
             // Pass 2: Walk function/method bodies
             builder.walk_program(program);
@@ -649,11 +661,29 @@ impl Builder {
         }
     }
 
+    fn walk_attributes(&mut self, attributes: &[dream::syntax::nodes::AttributeNode], scope: usize) {
+        for attr in attributes {
+            // Treat the attribute name as a reference to a struct/class (even if it's currently a built-in).
+            self.add_ref(&attr.name, SymKind::Struct, scope);
+            for arg in &attr.args {
+                // If the argument is an identifier (e.g. referencing a constant), record it.
+                if arg.kind == dream::syntax::token::token_kind::TokenKind::IdentifierToken {
+                    self.add_ref(arg, SymKind::Variable, scope);
+                }
+            }
+        }
+    }
+
     fn walk_program(&mut self, program: &ProgramNode) {
         for func in &program.functions {
+            self.walk_attributes(&func.attributes, GLOBAL);
             self.walk_function(func, None);
         }
         for st in &program.structs {
+            self.walk_attributes(&st.attributes, GLOBAL);
+            for field in &st.fields {
+                self.walk_attributes(&field.attributes, GLOBAL);
+            }
             self.walk_struct(st);
         }
         for _en in &program.enums {
@@ -661,6 +691,7 @@ impl Builder {
         }
         for ext in &program.extends {
             for method in &ext.methods {
+                self.walk_attributes(&method.attributes, GLOBAL);
                 self.walk_method(method, &ext.target.text);
             }
         }

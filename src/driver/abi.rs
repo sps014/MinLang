@@ -64,14 +64,18 @@ pub(crate) fn build_abi_json(program: &ProgramNode) -> String {
         if !func.is_extern {
             continue;
         }
-        let module = func
-            .import_module
-            .clone()
-            .unwrap_or_else(|| "env".to_string());
-        let field = func
-            .import_name
-            .clone()
-            .unwrap_or_else(|| func.name.text.clone());
+        let mut import_module = "env".to_string();
+        let mut import_name = func.name.text.clone();
+        if let Some(js_attr) = func.attributes.iter().find(|a| a.name.text == "js") {
+            if let Some(arg) = js_attr.args.get(0) {
+                import_module = arg.text.trim_matches('"').to_string();
+            }
+            if let Some(arg) = js_attr.args.get(1) {
+                import_name = arg.text.trim_matches('"').to_string();
+            }
+        }
+        let module = import_module;
+        let field = import_name;
         let params: Vec<String> = func
             .parameters
             .iter()

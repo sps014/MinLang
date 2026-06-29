@@ -522,21 +522,12 @@ impl<'a> Analyzer<'a> {
         symbol_table: &Rc<RefCell<SymbolTable>>,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<Type, ()> {
-        if method.text == intrinsics::JSON_SERIALIZE
-            || method.text == intrinsics::JSON_SERIALIZE_PRETTY
-        {
-            // `serialize(x)` takes the value; `serialize_pretty(x, indent)` also takes the indent.
-            let expected_args = if method.text == intrinsics::JSON_SERIALIZE_PRETTY {
-                2
-            } else {
-                1
-            };
-            if params.len() != expected_args {
+        if method.text == intrinsics::JSON_SERIALIZE {
+            if params.len() != 1 {
                 diagnostics.report_error(
                     format!(
-                        "'JSON.{}' expects exactly {} argument(s), got {}",
+                        "'JSON.{}' expects exactly 1 argument(s), got {}",
                         method.text,
-                        expected_args,
                         params.len()
                     ),
                     Some(method.position),
@@ -561,23 +552,6 @@ impl<'a> Analyzer<'a> {
                     ),
                     params[0].position(),
                 );
-            }
-            if method.text == "serialize_pretty" {
-                let indent_type = self.analyze_expression(
-                    &params[1],
-                    parent_function,
-                    symbol_table,
-                    diagnostics,
-                )?;
-                if strip_nullable(&indent_type.get_type()) != "int" {
-                    diagnostics.report_error(
-                        format!(
-                            "'JSON.serialize_pretty' expects an int indent, got {}",
-                            indent_type.get_type()
-                        ),
-                        params[1].position(),
-                    );
-                }
             }
             return Ok(Type::String(synthetic_token(
                 TokenKind::DataTypeToken,

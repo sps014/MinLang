@@ -71,6 +71,9 @@ impl<'a, 'b> Parser<'a, 'b> {
         &mut self,
     ) -> Result<crate::syntax::nodes::struct_node::StructDeclarationNode<'a>, Error> {
         let first_trivia = self.current_token().leading_trivia.clone();
+        
+        let attributes = self.parse_attributes();
+        
         let mut is_exported = false;
         if self.current_token().kind == TokenKind::ExportToken {
             self.match_token(TokenKind::ExportToken);
@@ -109,6 +112,8 @@ impl<'a, 'b> Parser<'a, 'b> {
             && self.current_token().kind != TokenKind::EndOfFileToken
         {
             let iter = self.current_token_index;
+            let field_attributes = self.parse_attributes();
+            
             // `constructor(...)` / `del(...)` without a leading `export` still declare a
             // constructor/destructor method rather than a field.
             let is_ctor_dtor = self.current_token().kind == TokenKind::IdentifierToken
@@ -116,12 +121,11 @@ impl<'a, 'b> Parser<'a, 'b> {
                 && self.peek_token(1).kind == TokenKind::OpenParenthesisToken;
             if self.current_token().kind == TokenKind::FunToken
                 || self.current_token().kind == TokenKind::ExportToken
-                || self.current_token().kind == TokenKind::AtToken
                 || self.current_token().kind == TokenKind::StaticToken
                 || self.current_token().kind == TokenKind::AsyncToken
                 || is_ctor_dtor
             {
-                methods.push(self.parse_function()?);
+                methods.push(self.parse_function(Some(field_attributes))?);
             } else {
                 let field_name = self.match_token(TokenKind::IdentifierToken);
                 self.match_token(TokenKind::ColonToken);
@@ -138,6 +142,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 
                 self.match_token(TokenKind::SemicolonToken);
                 fields.push(crate::syntax::nodes::struct_node::StructFieldNode {
+                    attributes: field_attributes,
                     name: field_name,
                     type_token: field_type_token,
                     field_type: parsed_type,
@@ -149,6 +154,7 @@ impl<'a, 'b> Parser<'a, 'b> {
         self.match_token(TokenKind::CurlyCloseBracketToken);
         Ok(
             crate::syntax::nodes::struct_node::StructDeclarationNode::new(
+                attributes,
                 struct_name,
                 generic_parameters,
                 fields,
@@ -201,13 +207,13 @@ impl<'a, 'b> Parser<'a, 'b> {
             && self.current_token().kind != TokenKind::EndOfFileToken
         {
             let iter = self.current_token_index;
+            let field_attributes = self.parse_attributes();
             if self.current_token().kind == TokenKind::FunToken
                 || self.current_token().kind == TokenKind::ExportToken
-                || self.current_token().kind == TokenKind::AtToken
                 || self.current_token().kind == TokenKind::StaticToken
                 || self.current_token().kind == TokenKind::AsyncToken
             {
-                methods.push(self.parse_function()?);
+                methods.push(self.parse_function(Some(field_attributes))?);
             } else {
                 let cur = self.current_token();
                 self.diagnostics.report_error(
@@ -306,31 +312,37 @@ impl<'a, 'b> Parser<'a, 'b> {
         Ok(parsed_type)
     }
 
-    /// Parses a function declaration
-    pub(super) fn parse_function(&mut self) -> Result<FunctionNode<'a>, Error> {
-        let first_trivia = self.current_token().leading_trivia.clone();
-        // Optional attributes precede `export`/`extern`/`fun`:
-        //   `@override`           - object-protocol method override
-        //   `@js("mod", "name")`  - remap an `extern` import's module/field name
-        let mut is_override = false;
-        let mut import_module: Option<String> = None;
-        let mut import_name: Option<String> = None;
+    pub(super) fn parse_attributes(&mut self) -> Vec<crate::syntax::nodes::AttributeNode> {
+        let mut attributes = Vec::new();
         while self.current_token().kind == TokenKind::AtToken {
             self.match_token(TokenKind::AtToken);
-            let attr = self.match_token(TokenKind::IdentifierToken);
-            if attr.text == "override" {
-                is_override = true;
-            } else if attr.text == "js" {
-                let (module, name) = self.parse_js_attribute_args();
-                import_module = module;
-                import_name = name;
-            } else {
-                self.diagnostics.report_error(
-                    format!("Unknown attribute '@{}'", attr.text),
-                    Some(attr.position),
-                );
+            let name = self.match_token(TokenKind::IdentifierToken);
+            let mut args = Vec::new();
+            if self.current_token().kind == TokenKind::OpenParenthesisToken {
+                self.match_token(TokenKind::OpenParenthesisToken);
+                while self.current_token().kind != TokenKind::CloseParenthesisToken
+                    && self.current_token().kind != TokenKind::EndOfFileToken
+                {
+                    let iter = self.current_token_index;
+                    args.push(self.current_token().clone());
+                    self.next_token();
+                    if self.current_token().kind == TokenKind::CommaToken {
+                        self.match_token(TokenKind::CommaToken);
+                    }
+                    self.ensure_progress(iter);
+                }
+                self.match_token(TokenKind::CloseParenthesisToken);
             }
+            attributes.push(crate::syntax::nodes::AttributeNode { name, args });
         }
+        attributes
+    }
+
+    /// Parses a function declaration
+    pub(super) fn parse_function(&mut self, pre_parsed_attributes: Option<Vec<crate::syntax::nodes::AttributeNode>>) -> Result<FunctionNode<'a>, Error> {
+        let first_trivia = self.current_token().leading_trivia.clone();
+        
+        let attributes = pre_parsed_attributes.unwrap_or_else(|| self.parse_attributes());
 
         // `async` may appear before or after `export` (e.g. `async fun`, `export async fun`,
         // `async export fun`). Calling such a function eagerly starts a task and yields `Future<T>`.
@@ -399,6 +411,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             let params = self.parse_formal_parameters()?;
             let block = self.parse_block()?;
             return Ok(FunctionNode::new(
+                attributes,
                 ctor_name, None, None, params, block, false,
             ));
         }
@@ -448,6 +461,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             let empty: &'a [StatementNode<'a>] =
                 self.arena.alloc_slice_fill_iter(std::iter::empty());
             let mut node = FunctionNode::new(
+                attributes,
                 function_name.clone(),
                 generic_parameters,
                 return_type,
@@ -458,13 +472,12 @@ impl<'a, 'b> Parser<'a, 'b> {
             node.is_extern = true;
             node.is_static = is_static;
             node.is_async = is_async;
-            node.import_module = import_module.or_else(|| Some("env".to_string()));
-            node.import_name = import_name.or_else(|| Some(function_name.text.clone()));
             return Ok(node);
         }
 
         let block = self.parse_block()?;
         let mut node = FunctionNode::new(
+            attributes,
             function_name,
             generic_parameters,
             return_type,
@@ -472,42 +485,11 @@ impl<'a, 'b> Parser<'a, 'b> {
             block,
             is_exported,
         );
-        node.is_override = is_override;
         node.is_static = is_static;
         node.is_async = is_async;
         Ok(node)
     }
 
-    /// Parses the arguments of a `@js(...)` attribute: `("module")` or `("module", "name")`.
-    /// Returns `(module, name)`, each `None` if absent. String literals are unquoted.
-    pub(super) fn parse_js_attribute_args(&mut self) -> (Option<String>, Option<String>) {
-        let mut module = None;
-        let mut name = None;
-        if self.current_token().kind == TokenKind::OpenParenthesisToken {
-            self.match_token(TokenKind::OpenParenthesisToken);
-            if self.current_token().kind == TokenKind::StringToken {
-                module = Some(
-                    self.match_token(TokenKind::StringToken)
-                        .text
-                        .trim_matches('"')
-                        .to_string(),
-                );
-                if self.current_token().kind == TokenKind::CommaToken {
-                    self.match_token(TokenKind::CommaToken);
-                    if self.current_token().kind == TokenKind::StringToken {
-                        name = Some(
-                            self.match_token(TokenKind::StringToken)
-                                .text
-                                .trim_matches('"')
-                                .to_string(),
-                        );
-                    }
-                }
-            }
-            self.match_token(TokenKind::CloseParenthesisToken);
-        }
-        (module, name)
-    }
     /// Parses formal parameters for a function declaration
     pub(super) fn parse_formal_parameters(&mut self) -> Result<Vec<ParameterNode>, Error> {
         let mut params = vec![];

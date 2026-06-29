@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub struct StructFieldNode {
+    pub attributes: Vec<crate::syntax::nodes::AttributeNode>,
     pub name: SyntaxToken,
     /// The field type's canonical spelling as a token (carries the source position and a flat
     /// display name like `List_JsonValue`). For the structured type (which preserves generic
@@ -17,14 +18,12 @@ pub struct StructFieldNode {
 
 #[derive(Debug, Clone)]
 pub struct StructDeclarationNode<'a> {
+    pub attributes: Vec<crate::syntax::nodes::AttributeNode>,
     pub name: SyntaxToken,
     pub generic_parameters: Option<Vec<SyntaxToken>>,
     pub fields: Vec<StructFieldNode>,
     pub methods: Vec<crate::syntax::nodes::function::FunctionNode<'a>>,
     pub is_exported: bool,
-    /// Marked with the `@json` attribute: the compiler auto-derives `to_json`/`from_json`
-    /// converters so the class round-trips through `JSON.serialize`/`JSON.deserialize`.
-    pub is_json: bool,
     /// Source file this declaration came from; set during multi-file merge so semantic
     /// diagnostics can report the correct file. `None` for synthesized nodes.
     pub file_path: Option<Rc<str>>,
@@ -32,6 +31,7 @@ pub struct StructDeclarationNode<'a> {
 
 impl<'a> StructDeclarationNode<'a> {
     pub fn new(
+        attributes: Vec<crate::syntax::nodes::AttributeNode>,
         name: SyntaxToken,
         generic_parameters: Option<Vec<SyntaxToken>>,
         fields: Vec<StructFieldNode>,
@@ -39,12 +39,12 @@ impl<'a> StructDeclarationNode<'a> {
         is_exported: bool,
     ) -> Self {
         Self {
+            attributes,
             name,
             generic_parameters,
             fields,
             methods,
             is_exported,
-            is_json: false,
             file_path: None,
         }
     }

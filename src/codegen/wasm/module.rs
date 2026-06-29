@@ -100,8 +100,18 @@ impl<'a> WasmGenerator<'a> {
                 None => String::new(),
             };
 
-            let module = func.import_module.as_deref().unwrap_or("env");
-            let field = func.import_name.as_deref().unwrap_or(&func.name.text);
+            let mut import_module = "env";
+            let mut import_name = func.name.text.as_str();
+            if let Some(js_attr) = func.attributes.iter().find(|a| a.name.text == "js") {
+                if let Some(arg) = js_attr.args.get(0) {
+                    import_module = arg.text.trim_matches('"');
+                }
+                if let Some(arg) = js_attr.args.get(1) {
+                    import_name = arg.text.trim_matches('"');
+                }
+            }
+            let module = import_module;
+            let field = import_name;
             // Overloaded externs get distinct internal `$key` names but share the imported field,
             // so a single host function can back every signature.
             let internal = self

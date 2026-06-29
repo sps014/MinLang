@@ -10,7 +10,7 @@ use crate::syntax::parser::Parser;
 
 /// Parses the embedded standard-collections prelude and merges its declarations into the
 /// program. Uses the same arena as the user's files so all AST nodes share a lifetime.
-pub(crate) fn merge_prelude<'a>(
+pub fn merge_prelude<'a>(
     arena: &'a Bump,
     all_functions: &mut Vec<crate::syntax::nodes::FunctionNode<'a>>,
     all_structs: &mut Vec<crate::syntax::nodes::struct_node::StructDeclarationNode<'a>>,
@@ -107,6 +107,13 @@ fn generate_json_extend(
     for field in &struct_decl.fields {
         let fname = &field.name.text;
         let ftype = field.type_token.text.as_str();
+        
+        let mut json_key = fname.to_string();
+        if let Some(prop_attr) = field.attributes.iter().find(|a| a.name.text == "property_name") {
+            if let Some(arg) = prop_attr.args.first() {
+                json_key = arg.text.trim_matches('"').to_string();
+            }
+        }
 
         // Nullable field (`T?`): a JSON `null` maps to/from the Dream `null`, otherwise the inner
         // value is converted as usual. Only reference types can be nullable in Dream, so the inner
@@ -130,12 +137,12 @@ fn generate_json_extend(
                 return None;
             };
             to_body.push_str(&format!(
-                "        if (this.{f} == null) {{\n            __o.set(\"{f}\", JsonValue.none());\n        }} else {{\n            __o.set(\"{f}\", {to_inner});\n        }}\n",
-                f = fname, to_inner = to_inner
+                "        if (this.{f} == null) {{\n            __o.set(\"{k}\", JsonValue.none());\n        }} else {{\n            __o.set(\"{k}\", {to_inner});\n        }}\n",
+                f = fname, k = json_key, to_inner = to_inner
             ));
             from_prelude.push_str(&format!(
-                "        let __{f}: {ty} = null;\n        let __src_{f} = v.get(\"{f}\");\n        if (__src_{f}.is_null() == false) {{\n            __{f} = {from_inner};\n        }}\n",
-                f = fname, ty = ftype, from_inner = from_inner
+                "        let __{f}: {ty} = null;\n        let __src_{f} = v.get(\"{k}\");\n        if (__src_{f}.is_null() == false) {{\n            __{f} = {from_inner};\n        }}\n",
+                f = fname, k = json_key, ty = ftype, from_inner = from_inner
             ));
             from_fields.push(format!("{f}: __{f}", f = fname));
             continue;
@@ -153,12 +160,12 @@ fn generate_json_extend(
             match (to_elem, from_elem) {
                 (Some(to_e), Some(from_e)) => {
                     to_body.push_str(&format!(
-                        "        let __arr_{f} = JsonValue.array();\n        let __i_{f} = 0;\n        while (__i_{f} < this.{f}.len()) {{\n            __arr_{f}.push({to_e});\n            __i_{f} = __i_{f} + 1;\n        }}\n        __o.set(\"{f}\", __arr_{f});\n",
-                        f = fname, to_e = to_e
+                        "        let __arr_{f} = JsonValue.array();\n        let __i_{f} = 0;\n        while (__i_{f} < this.{f}.len()) {{\n            __arr_{f}.push({to_e});\n            __i_{f} = __i_{f} + 1;\n        }}\n        __o.set(\"{k}\", __arr_{f});\n",
+                        f = fname, k = json_key, to_e = to_e
                     ));
                     from_prelude.push_str(&format!(
-                        "        let __src_{f} = v.get(\"{f}\");\n        let __{f} = array_new<{elem}>(__src_{f}.size());\n        let __i_{f} = 0;\n        while (__i_{f} < __src_{f}.size()) {{\n            __{f}[__i_{f}] = {from_e};\n            __i_{f} = __i_{f} + 1;\n        }}\n",
-                        f = fname, elem = elem, from_e = from_e
+                        "        let __src_{f} = v.get(\"{k}\");\n        let __{f} = array_new<{elem}>(__src_{f}.size());\n        let __i_{f} = 0;\n        while (__i_{f} < __src_{f}.size()) {{\n            __{f}[__i_{f}] = {from_e};\n            __i_{f} = __i_{f} + 1;\n        }}\n",
+                        f = fname, k = json_key, elem = elem, from_e = from_e
                     ));
                     from_fields.push(format!("{f}: __{f}", f = fname));
                 }
@@ -175,12 +182,12 @@ fn generate_json_extend(
             }
         } else {
             let to_e = json_to_expr(ftype, &format!("this.{}", fname), json_names);
-            let from_e = json_from_expr(ftype, &format!("v.get(\"{}\")", fname), json_names);
+            let from_e = json_from_expr(ftype, &format!("v.get(\"{}\")", json_key), json_names);
             match (to_e, from_e) {
                 (Some(to_e), Some(from_e)) => {
                     to_body.push_str(&format!(
-                        "        __o.set(\"{f}\", {to_e});\n",
-                        f = fname,
+                        "        __o.set(\"{k}\", {to_e});\n",
+                        k = json_key,
                         to_e = to_e
                     ));
                     from_fields.push(format!("{f}: {from_e}", f = fname, from_e = from_e));
@@ -225,7 +232,7 @@ pub(crate) fn generate_json_derives<'a>(
 ) -> Result<(), Error> {
     let json_names: HashSet<String> = all_structs
         .iter()
-        .filter(|s| s.is_json)
+        .filter(|s| s.attributes.iter().any(|a| a.name.text == "json"))
         .map(|s| s.name.text.clone())
         .collect();
     if json_names.is_empty() {
@@ -233,7 +240,7 @@ pub(crate) fn generate_json_derives<'a>(
     }
 
     let mut source = String::new();
-    for struct_decl in all_structs.iter().filter(|s| s.is_json) {
+    for struct_decl in all_structs.iter().filter(|s| s.attributes.iter().any(|a| a.name.text == "json")) {
         if struct_decl.generic_parameters.is_some() {
             diagnostics.report_error(
                 format!(

@@ -11,7 +11,7 @@ fun main(): void {
         tags: ["dev", "math"],
     };
 
-    println(JSON.serialize_pretty(u, 2));
+    println(JSON.stringify_pretty(u.to_json(), 2));
 
     let v = JSON.parse("{\"a\":[1,2],\"b\":{\"c\":true},\"d\":[]}");
     println(JSON.stringify_pretty(v, 4));

@@ -115,8 +115,8 @@ fn test_parse_extern_function() {
     assert_eq!(func.body.len(), 0);
     assert_eq!(func.parameters.len(), 1);
     // Defaults: import module "env", import name = function name.
-    assert_eq!(func.import_module.as_deref(), Some("env"));
-    assert_eq!(func.import_name.as_deref(), Some("alert"));
+    let js_attr = func.attributes.iter().find(|a| a.name.text == "js");
+    assert!(js_attr.is_none());
 }
 
 #[test]
@@ -128,8 +128,9 @@ fn test_parse_extern_with_js_attribute() {
     assert_eq!(diagnostics.has_errors(), false);
     let func = &program.functions[0];
     assert!(func.is_extern);
-    assert_eq!(func.import_module.as_deref(), Some("dom"));
-    assert_eq!(func.import_name.as_deref(), Some("setText"));
+    let js_attr = func.attributes.iter().find(|a| a.name.text == "js").unwrap();
+    assert_eq!(js_attr.args.get(0).unwrap().text, "\"dom\"");
+    assert_eq!(js_attr.args.get(1).unwrap().text, "\"setText\"");
 }
 
 #[test]
