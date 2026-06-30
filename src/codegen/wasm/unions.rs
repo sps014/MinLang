@@ -11,6 +11,17 @@ use std::io::Error;
 /// The byte-offset chain (each step is "+offset, then load") that reaches the union pointer of the
 /// value currently under a pattern. `leaf = Some(off)` means the value is field `off` of the
 /// pointer reached by `parent_chain`; `None` means the value is the pointer/primitive itself.
+/// Recursion-invariant inputs for [`WasmGenerator::build_match_arms`]. Only `index` and the
+/// `writer` change as the nested `if/else` chain is emitted, so everything else is bundled here and
+/// passed by shared reference.
+struct MatchArmsCtx<'a, 'b> {
+    subj_local: &'b str,
+    base_type: &'b str,
+    arms: &'b [MatchArm<'a>],
+    value_type: Option<&'b str>,
+    function: &'b FunctionNode<'a>,
+}
+
 fn cur_ptr_chain(parent_chain: &[usize], leaf: Option<usize>) -> Vec<usize> {
     match leaf {
         Some(off) => {
@@ -131,41 +142,35 @@ impl<'a> WasmGenerator<'a> {
         self.build_expression(subject, &subject_type, function, writer)?;
         writer.write_line(&format!("local.set {}", subj_local));
 
-        let result = self.build_match_arms(
-            &subj_local,
-            &base_type,
+        let arms_ctx = MatchArmsCtx {
+            subj_local: &subj_local,
+            base_type: &base_type,
             arms,
-            0,
-            value_type.as_deref(),
+            value_type: value_type.as_deref(),
             function,
-            writer,
-        );
+        };
+        let result = self.build_match_arms(&arms_ctx, 0, writer);
         self.ctx.match_depth -= 1;
         result
     }
 
     /// Recursively emits the nested `if/else` chain for `match` arms starting at `index`.
-    #[allow(clippy::too_many_arguments)]
     fn build_match_arms(
         &mut self,
-        subj_local: &str,
-        base_type: &str,
-        arms: &[MatchArm<'a>],
+        ctx: &MatchArmsCtx<'a, '_>,
         index: usize,
-        value_type: Option<&str>,
-        function: &FunctionNode<'a>,
         writer: &mut IndentedTextWriter,
     ) -> Result<(), Error> {
-        if index == arms.len() {
+        if index == ctx.arms.len() {
             // Exhaustiveness is enforced by the analyzer, so reaching here is impossible.
-            if value_type.is_some() {
+            if ctx.value_type.is_some() {
                 writer.write_line("unreachable");
             }
             return Ok(());
         }
 
-        let arm = &arms[index];
-        let result_clause = match value_type {
+        let arm = &ctx.arms[index];
+        let result_clause = match ctx.value_type {
             Some(vt) => {
                 let wasm = WasmGenerator::get_wasm_type_from(self.resolve_type(vt))?;
                 format!("(if (result {})", wasm)
@@ -174,72 +179,40 @@ impl<'a> WasmGenerator<'a> {
         };
 
         // Pattern discriminant/literal test (pure: performs no bindings).
-        self.emit_pattern_condition(
-            &arm.pattern,
-            subj_local,
-            &[],
-            None,
-            base_type,
-            function,
-            writer,
-        )?;
+        self.emit_pattern_condition(&arm.pattern, ctx.subj_local, &[], None, ctx.base_type, writer)?;
         writer.write_line(&result_clause);
         writer.indent();
         writer.write_line("(then");
         writer.indent();
 
         // Bind pattern variables now that the pattern matched, so the guard and body can use them.
-        self.emit_pattern_bindings(
-            &arm.pattern,
-            subj_local,
-            &[],
-            None,
-            base_type,
-            function,
-            writer,
-        )?;
+        self.emit_pattern_bindings(&arm.pattern, ctx.subj_local, &[], None, ctx.base_type, writer)?;
 
         if let Some(guard) = &arm.guard {
-            self.build_expression(guard, &"int".to_string(), function, writer)?;
+            self.build_expression(guard, &"int".to_string(), ctx.function, writer)?;
             writer.write_line(&result_clause);
             writer.indent();
             writer.write_line("(then");
             writer.indent();
-            self.emit_arm_body(arm, value_type, function, writer)?;
+            self.emit_arm_body(arm, ctx.value_type, ctx.function, writer)?;
             writer.unindent();
             writer.write_line(")");
             writer.write_line("(else");
             writer.indent();
-            self.build_match_arms(
-                subj_local,
-                base_type,
-                arms,
-                index + 1,
-                value_type,
-                function,
-                writer,
-            )?;
+            self.build_match_arms(ctx, index + 1, writer)?;
             writer.unindent();
             writer.write_line(")");
             writer.unindent();
             writer.write_line(")");
         } else {
-            self.emit_arm_body(arm, value_type, function, writer)?;
+            self.emit_arm_body(arm, ctx.value_type, ctx.function, writer)?;
         }
 
         writer.unindent();
         writer.write_line(")");
         writer.write_line("(else");
         writer.indent();
-        self.build_match_arms(
-            subj_local,
-            base_type,
-            arms,
-            index + 1,
-            value_type,
-            function,
-            writer,
-        )?;
+        self.build_match_arms(ctx, index + 1, writer)?;
         writer.unindent();
         writer.write_line(")");
         writer.unindent();
@@ -324,7 +297,6 @@ impl<'a> WasmGenerator<'a> {
         parent_chain: &[usize],
         leaf: Option<usize>,
         value_type: &str,
-        function: &FunctionNode<'a>,
         writer: &mut IndentedTextWriter,
     ) -> Result<(), Error> {
         let base_type = strip_nullable(value_type).to_string();
@@ -393,7 +365,6 @@ impl<'a> WasmGenerator<'a> {
                             &ptr_chain,
                             Some(field.offset),
                             &field.type_.get_type(),
-                            function,
                             writer,
                         )?;
                         if i > 0 {
@@ -421,7 +392,6 @@ impl<'a> WasmGenerator<'a> {
         parent_chain: &[usize],
         leaf: Option<usize>,
         value_type: &str,
-        function: &FunctionNode<'a>,
         writer: &mut IndentedTextWriter,
     ) -> Result<(), Error> {
         let base_type = strip_nullable(value_type).to_string();
@@ -464,7 +434,6 @@ impl<'a> WasmGenerator<'a> {
                             &ptr_chain,
                             Some(field.offset),
                             &field.type_.get_type(),
-                            function,
                             writer,
                         )?;
                     }

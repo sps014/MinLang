@@ -24,16 +24,14 @@ impl<'a> Analyzer<'a> {
         match formal {
             Type::Struct(token, None) if token.text == param_name => Some(arg.to_string()),
             Type::Array(inner) => {
-                if arg.ends_with("[]") {
-                    let arg_inner = &arg[..arg.len() - 2];
+                if let Some(arg_inner) = arg.strip_suffix("[]") {
                     Self::match_generic_type(inner, arg_inner, param_name)
                 } else {
                     None
                 }
             }
             Type::Nullable(inner) => {
-                if arg.ends_with('?') {
-                    let arg_inner = &arg[..arg.len() - 1];
+                if let Some(arg_inner) = arg.strip_suffix('?') {
                     Self::match_generic_type(inner, arg_inner, param_name)
                 } else {
                     Self::match_generic_type(inner, arg, param_name)

@@ -1,3 +1,4 @@
+use indexmap::IndexMap;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Error;
@@ -27,14 +28,17 @@ pub const HEAP_HEADER_SIZE: usize = 12;
 /// Mutable working state accumulated while lowering a module to WAT. Separated from the
 /// borrowed, read-only inputs on [`WasmGenerator`] so the generator cleanly distinguishes
 /// "what we read" (syntax tree, semantic tables) from "what we mutate" during emission.
-#[allow(dead_code)]
 pub struct CodegenContext {
-    // key 1: function name, key 2: parameter name
-    pub combined_symbol_lookup: HashMap<String, HashMap<String, Type>>,
-    pub strings: HashMap<String, usize>,
+    // key 1: function name, key 2: parameter name. Inner map is insertion-ordered (declaration
+    // order) so function-exit local releases emit deterministically.
+    pub combined_symbol_lookup: HashMap<String, IndexMap<String, Type>>,
+    /// String literal -> data-segment offset. Insertion-ordered so the emitted `(data ...)`
+    /// segments come out in a deterministic (first-seen) order.
+    pub strings: IndexMap<String, usize>,
     /// Runtime-only string literals (e.g. "true", "null", struct labels) interned by the object
-    /// protocol; maps raw (already unquoted) content -> data-segment offset.
-    pub runtime_strings: HashMap<String, usize>,
+    /// protocol; maps raw (already unquoted) content -> data-segment offset. Insertion-ordered for
+    /// deterministic emission.
+    pub runtime_strings: IndexMap<String, usize>,
     pub next_string_offset: usize,
     pub loop_counter: usize,
     /// Stack of active loops as `(loop_id, optional_label)` so labeled `break`/`continue` can
@@ -47,8 +51,9 @@ pub struct CodegenContext {
     pub current_generic_bindings: HashMap<String, String>,
     pub current_mangled_name: Option<String>,
     /// Stable function-table index assigned to each indexable (non-generic) top-level function.
-    /// Used to lower first-class function values and `call_indirect`.
-    pub function_indices: HashMap<String, usize>,
+    /// Used to lower first-class function values and `call_indirect`. Insertion-ordered for
+    /// deterministic table emission.
+    pub function_indices: IndexMap<String, usize>,
     /// Current nesting depth of heap constructors (struct instantiations / array literals).
     /// Each level borrows a distinct `$ctor_base{depth}` local to hold its allocation pointer
     /// across sub-expression evaluation, so nested literals (`[P{...}]`, `Box<Box<int>>`) do
@@ -64,8 +69,9 @@ pub struct CodegenContext {
     pub tmp_depth: usize,
     /// Function-table index assigned to each `async fun`'s `$poll_<name>` state-machine function
     /// (keyed by the constructor's emitted name). Stored in the `Future`'s `poll` field so the
-    /// scheduler can dispatch resumes via `call_indirect`.
-    pub poll_indices: HashMap<String, usize>,
+    /// scheduler can dispatch resumes via `call_indirect`. Insertion-ordered for deterministic
+    /// table emission.
+    pub poll_indices: IndexMap<String, usize>,
     /// While emitting an `async` poll body, the name of the `Future` self local (`"self"`). When
     /// set, `build_return` completes the future instead of returning a plain value.
     pub current_async_self: Option<String>,
@@ -74,7 +80,8 @@ pub struct CodegenContext {
     pub has_async: bool,
     /// Top-level variable name -> resolved type name. Identifiers and assignments that name a
     /// global lower to `global.get`/`global.set` instead of `local.get`/`local.set`.
-    pub globals: HashMap<String, String>,
+    /// Insertion-ordered so iteration matches the ordered `program.globals` Vec it is zipped with.
+    pub globals: IndexMap<String, String>,
     /// When `true`, the allocator emits live-object/total-allocation counter updates in
     /// `$malloc`/`$free` so `Debug.live_objects()`/`Debug.total_allocations()` report real values.
     /// Off by default so normal (release) builds carry zero allocator overhead.
@@ -85,8 +92,8 @@ impl CodegenContext {
     fn new() -> Self {
         Self {
             combined_symbol_lookup: HashMap::new(),
-            strings: HashMap::new(),
-            runtime_strings: HashMap::new(),
+            strings: IndexMap::new(),
+            runtime_strings: IndexMap::new(),
             // Start past the null word (0..4) and the first block's 12-byte header (4..16).
             next_string_offset: 4 + HEAP_HEADER_SIZE,
             loop_counter: 0,
@@ -94,14 +101,14 @@ impl CodegenContext {
             pending_loop_label: None,
             current_generic_bindings: HashMap::new(),
             current_mangled_name: None,
-            function_indices: HashMap::new(),
+            function_indices: IndexMap::new(),
             alloc_depth: 0,
             match_depth: 0,
             tmp_depth: 0,
-            poll_indices: HashMap::new(),
+            poll_indices: IndexMap::new(),
             current_async_self: None,
             has_async: false,
-            globals: HashMap::new(),
+            globals: IndexMap::new(),
             debug_alloc: false,
         }
     }
@@ -113,7 +120,7 @@ pub struct WasmGenerator<'a> {
     pub symbol_map: &'a HashMap<String, Rc<RefCell<SymbolTable>>>,
     pub function_table: &'a FunctionTable,
     pub struct_table: &'a crate::semantics::struct_table::StructTable,
-    pub instantiated_generics: &'a HashMap<
+    pub instantiated_generics: &'a IndexMap<
         String,
         (
             crate::semantics::analyzer::GenericBindings,

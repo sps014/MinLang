@@ -51,8 +51,9 @@ impl<'a> Analyzer<'a> {
                 continue;
             }
 
-            // C-style integer enum: members lower to plain `i32` constants.
-            let mut members = HashMap::new();
+            // C-style integer enum: members lower to plain `i32` constants. Insertion-ordered so
+            // codegen interns the variant names deterministically.
+            let mut members = indexmap::IndexMap::new();
             for variant in enum_decl.variants.iter() {
                 if members.contains_key(&variant.name.text) {
                     diagnostics.report_error(
@@ -140,7 +141,7 @@ impl<'a> Analyzer<'a> {
         }
 
         // Align the block to 8 bytes so a `double` payload stays naturally aligned.
-        let size = (block_end + 7) / 8 * 8;
+        let size = block_end.div_ceil(8) * 8;
 
         if let Err(e) = self.struct_table.add_union(union_name, size, true) {
             diagnostics.report_error(e, None);

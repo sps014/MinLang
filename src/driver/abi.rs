@@ -69,7 +69,7 @@ pub(crate) fn build_abi_json(program: &ProgramNode) -> String {
         let mut import_module = "env".to_string();
         let mut import_name = func.name.text.clone();
         if let Some(js_attr) = func.attributes.iter().find(|a| a.name.text == "js") {
-            if let Some(arg) = js_attr.args.get(0) {
+            if let Some(arg) = js_attr.args.first() {
                 import_module = arg.text.trim_matches('"').to_string();
             }
             if let Some(arg) = js_attr.args.get(1) {

@@ -609,7 +609,6 @@ impl<'a> Analyzer<'a> {
     /// static methods (including the `Array.new` and promise-combinator intrinsics), and plain
     /// static-method resolution. Returns `Ok(Some(type))` when handled, `Ok(None)` when `id` is a
     /// local or names no static member (so the caller falls through to instance dispatch).
-    #[allow(clippy::too_many_arguments)]
     fn try_analyze_static_method(
         &mut self,
         id: &SyntaxToken,

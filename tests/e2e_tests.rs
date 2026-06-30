@@ -199,3 +199,49 @@ fn run_all_e2e_cases() {
         println!("No .dream files found in tests/cases/");
     }
 }
+
+/// Codegen must be reproducible: compiling the same program twice (each compile uses fresh,
+/// independently-seeded `HashMap`s within this process) must yield byte-identical `.wat`. This
+/// guards the `IndexMap` conversion of the emission-driving tables against regressions that would
+/// reintroduce `HashMap`-iteration nondeterminism.
+#[test]
+fn codegen_is_deterministic() {
+    let cases_dir = Path::new("tests/cases");
+    if !cases_dir.exists() {
+        return;
+    }
+    // Exercise structs, enums, discriminated unions, generics, strings, and the object protocol.
+    let fixtures = [
+        "structs",
+        "enum_basic",
+        "union_to_string",
+        "generic_structs",
+        "json_derive",
+    ];
+    for name in fixtures {
+        let src = cases_dir.join(format!("{}.dream", name));
+        if !src.exists() {
+            continue;
+        }
+        let src_str = src.to_str().unwrap().to_string();
+        let mut prev: Option<String> = None;
+        for run in 0..4 {
+            let out = std::env::temp_dir().join(format!("dream_det_{}_{}.wat", name, run));
+            let out_str = out.to_str().unwrap().to_string();
+            Compiler::new(Target::Wasm)
+                .compile(&src_str, &out_str)
+                .unwrap_or_else(|_| panic!("Compilation failed for {}", name));
+            let wat = fs::read_to_string(&out).unwrap();
+            let _ = fs::remove_file(&out);
+            if let Some(ref first) = prev {
+                assert_eq!(
+                    first, &wat,
+                    "Nondeterministic codegen for {} (run {})",
+                    name, run
+                );
+            } else {
+                prev = Some(wat);
+            }
+        }
+    }
+}

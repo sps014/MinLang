@@ -5,7 +5,7 @@
 //! variant is identified solely by the discriminant.
 
 use crate::syntax::nodes::Type;
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
 /// Byte offset of the discriminant word; payload fields start immediately after it.
 pub const DISCRIMINANT_SIZE: usize = 4;
@@ -43,5 +43,6 @@ impl UnionInfo {
     }
 }
 
-/// Registered (monomorphized) unions: name -> layout.
-pub type UnionTable = HashMap<String, UnionInfo>;
+/// Registered (monomorphized) unions: name -> layout. Insertion-ordered so the union protocol
+/// defaults and release code emit in a deterministic (registration) order.
+pub type UnionTable = IndexMap<String, UnionInfo>;

@@ -18,7 +18,6 @@ use crate::syntax::nodes::types::{release_func_suffix, strip_nullable, value_siz
 use crate::syntax::nodes::{FunctionNode, Type};
 use crate::syntax::text::indented_text_writer::IndentedTextWriter;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::io::Error;
 use std::rc::Rc;
 
@@ -211,8 +210,8 @@ impl<'a> WasmGenerator<'a> {
     pub fn get_local_variables(
         &self,
         symbol: &Rc<RefCell<SymbolTable>>,
-    ) -> Result<HashMap<String, Type>, Error> {
-        let mut res = HashMap::new();
+    ) -> Result<indexmap::IndexMap<String, Type>, Error> {
+        let mut res = indexmap::IndexMap::new();
         let current_scope = (*symbol).as_ref().borrow();
         let mut local_variables = current_scope.get_all();
 

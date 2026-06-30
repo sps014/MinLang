@@ -33,8 +33,7 @@ pub(crate) struct Builder {
 
 impl Builder {
     fn infer_type(&self, expr: &ExpressionNode, scope: usize) -> Option<String> {
-        let ty = self.infer_type_internal(expr, scope);
-        ty
+        self.infer_type_internal(expr, scope)
     }
 
     fn infer_type_internal(&self, expr: &ExpressionNode, scope: usize) -> Option<String> {
@@ -117,11 +116,9 @@ impl Builder {
                         } else {
                             d.detail.clone()
                         };
-                        if let Some(colon_idx) = detail.rfind(':') {
-                            Some(detail[colon_idx + 1..].trim().to_string())
-                        } else {
-                            None
-                        }
+                        detail
+                            .rfind(':')
+                            .map(|colon_idx| detail[colon_idx + 1..].trim().to_string())
                     })
             }
             ExpressionNode::Parenthesized(inner) => self.infer_type(inner, scope),

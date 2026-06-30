@@ -18,7 +18,7 @@ fun main(): void {
     let index = harness.index();
 
     let hover = index
-        .hover(harness.offset, &src)
+        .hover(harness.offset, src)
         .expect("Expected hover info");
     assert!(hover.contents.contains("fun add"));
 }
@@ -182,7 +182,7 @@ fun main(): void {
     let index = harness.index();
 
     let hover = index
-        .hover(harness.offset, &src)
+        .hover(harness.offset, src)
         .expect("Expected hover info");
     assert!(
         hover.contents.contains("int"),
@@ -353,7 +353,7 @@ class User { age: int; }
 
     // Check hover for the reference
     let hover_ref = index
-        .hover(harness.offset - 1, &src)
+        .hover(harness.offset - 1, src)
         .expect("Expected hover info on ref");
     assert!(
         hover_ref.contents.contains("User"),
@@ -377,7 +377,7 @@ class User { age: int; }
 
     // Check hover for the reference
     let hover_ref = index
-        .hover(harness.offset - 1, &src)
+        .hover(harness.offset - 1, src)
         .expect("Expected hover info on ref");
     assert!(
         hover_ref.contents.contains("User"),
@@ -507,7 +507,7 @@ fun main(): void {
     let index = harness.index();
 
     let hover = index
-        .hover(harness.offset, &src)
+        .hover(harness.offset, src)
         .expect("Expected hover info on builtin method");
     println!("HOVER CONTENTS: {}", hover.contents);
     // With generic substitution, it should show 'push(value: int)' instead of 'push(value: T)'
@@ -525,7 +525,7 @@ fun main(): void {
     let harness = TestHarness::new(src);
     let index = harness.index();
     let hover = index
-        .hover(harness.offset, &src)
+        .hover(harness.offset, src)
         .expect("Expected hover info on Math.floor");
     println!("HOVER CONTENTS MATH.FLOOR: {}", hover.contents);
 }

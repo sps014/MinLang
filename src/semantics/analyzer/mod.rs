@@ -13,6 +13,7 @@ use crate::syntax::text::text_span::TextSpan;
 use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
 use bumpalo::Bump;
+use indexmap::IndexMap;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -142,8 +143,9 @@ fn bind_concrete(name: &str, bindings: &[(String, String)]) -> Option<Type> {
 /// Maps each generic parameter name to the concrete type bound to it for one monomorphization.
 pub type GenericBindings = Vec<(String, String)>;
 
-/// Enum name -> (member name -> integer value).
-pub type EnumTable = HashMap<String, HashMap<String, i32>>;
+/// Enum name -> (member name -> integer value). Insertion-ordered at both levels so the enum
+/// variant-name interning that feeds emitted output happens in a deterministic (declaration) order.
+pub type EnumTable = IndexMap<String, IndexMap<String, i32>>;
 
 /// A resolved top-level variable, carried from semantic analysis into code generation so the
 /// generator can emit the corresponding WASM global and the module-init store (and decide whether
@@ -162,38 +164,13 @@ pub struct SemanticInfo<'a> {
     pub hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>,
     pub function_table: &'a FunctionTable,
     pub struct_table: &'a StructTable,
-    pub instantiated_generics: HashMap<String, (GenericBindings, &'a FunctionNode<'a>)>,
+    pub instantiated_generics: IndexMap<String, (GenericBindings, &'a FunctionNode<'a>)>,
     pub struct_methods: Vec<(&'a FunctionNode<'a>, GenericBindings)>,
     pub enums: EnumTable,
     /// Layout of every (monomorphized) discriminated union, surfaced to codegen so it can
     /// allocate variant blocks, lower `match`, and emit discriminant-aware releases.
     pub unions: UnionTable,
     pub globals: Vec<GlobalSymbol>,
-}
-
-impl<'a> SemanticInfo<'a> {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        hash_map: HashMap<String, Rc<RefCell<SymbolTable>>>,
-        function_table: &'a FunctionTable,
-        struct_table: &'a StructTable,
-        instantiated_generics: HashMap<String, (GenericBindings, &'a FunctionNode<'a>)>,
-        struct_methods: Vec<(&'a FunctionNode<'a>, GenericBindings)>,
-        enums: EnumTable,
-        unions: UnionTable,
-        globals: Vec<GlobalSymbol>,
-    ) -> SemanticInfo<'a> {
-        SemanticInfo {
-            hash_map,
-            function_table,
-            struct_table,
-            instantiated_generics,
-            struct_methods,
-            enums,
-            unions,
-            globals,
-        }
-    }
 }
 
 /// Groups context arguments frequently passed together to simplify function signatures.
@@ -208,7 +185,7 @@ pub struct Analyzer<'a> {
     struct_table: StructTable,
     arena: &'a Bump,
     generic_functions: HashMap<String, &'a FunctionNode<'a>>,
-    instantiated_generics: HashMap<String, (GenericBindings, &'a FunctionNode<'a>)>,
+    instantiated_generics: IndexMap<String, (GenericBindings, &'a FunctionNode<'a>)>,
     generic_structs:
         HashMap<String, &'a crate::syntax::nodes::struct_node::StructDeclarationNode<'a>>,
     struct_methods: Vec<(&'a FunctionNode<'a>, GenericBindings)>,
@@ -251,11 +228,11 @@ impl<'a> Analyzer<'a> {
             struct_table: StructTable::new(),
             arena,
             generic_functions: HashMap::new(),
-            instantiated_generics: HashMap::new(),
+            instantiated_generics: IndexMap::new(),
             generic_structs: HashMap::new(),
             struct_methods: Vec::new(),
-            enum_table: HashMap::new(),
-            union_table: HashMap::new(),
+            enum_table: IndexMap::new(),
+            union_table: IndexMap::new(),
             generic_unions: HashMap::new(),
             generic_extends: HashMap::new(),
             current_expected_type: None,
@@ -383,16 +360,16 @@ impl<'a> Analyzer<'a> {
             return Err(SemanticError::AnalysisFailed);
         }
 
-        Ok(SemanticInfo::new(
-            symbol_table_map,
-            &self.function_table,
-            &self.struct_table,
-            self.instantiated_generics.clone(),
-            self.struct_methods.clone(),
-            self.enum_table.clone(),
-            self.union_table.clone(),
-            self.globals.clone(),
-        ))
+        Ok(SemanticInfo {
+            hash_map: symbol_table_map,
+            function_table: &self.function_table,
+            struct_table: &self.struct_table,
+            instantiated_generics: self.instantiated_generics.clone(),
+            struct_methods: self.struct_methods.clone(),
+            enums: self.enum_table.clone(),
+            unions: self.union_table.clone(),
+            globals: self.globals.clone(),
+        })
     }
 }
 

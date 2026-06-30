@@ -176,7 +176,7 @@ impl<'a> WasmGenerator<'a> {
         let mut import_module = "env";
         let mut import_name = func.name.text.as_str();
         if let Some(js_attr) = func.attributes.iter().find(|a| a.name.text == "js") {
-            if let Some(arg) = js_attr.args.get(0) {
+            if let Some(arg) = js_attr.args.first() {
                 import_module = arg.text.trim_matches('"');
             }
             if let Some(arg) = js_attr.args.get(1) {
@@ -305,7 +305,7 @@ impl<'a> WasmGenerator<'a> {
             }
             self.with_function_scope(
                 mangled_name.clone(),
-                bindings.iter().cloned().collect(),
+                bindings.to_vec(),
                 writer,
                 |g, w| g.build_function(template, w),
             )?;
@@ -319,7 +319,7 @@ impl<'a> WasmGenerator<'a> {
             let mangled = self
                 .function_table
                 .resolve_emitted_name(&method.name.text, &Self::func_param_types(method));
-            self.with_function_scope(mangled, bindings.iter().cloned().collect(), writer, |g, w| {
+            self.with_function_scope(mangled, bindings.to_vec(), writer, |g, w| {
                 if method.is_async {
                     g.build_async_function(method, w)
                 } else {
@@ -403,7 +403,7 @@ impl<'a> WasmGenerator<'a> {
         );
         self.ctx
             .combined_symbol_lookup
-            .insert("__dream_init".to_string(), std::collections::HashMap::new());
+            .insert("__dream_init".to_string(), indexmap::IndexMap::new());
 
         writer.write("(func $__dream_init");
         writer.write(" (local $scratch_ptr i32)");

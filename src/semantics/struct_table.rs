@@ -1,7 +1,7 @@
 use crate::syntax::nodes::struct_node::StructDeclarationNode;
 use crate::syntax::nodes::types::value_size_align;
 use crate::syntax::nodes::Type;
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
 #[derive(Debug, Clone)]
 pub struct StructFieldInfo {
@@ -15,14 +15,17 @@ pub struct StructFieldInfo {
 #[derive(Debug, Clone)]
 pub struct StructInfo {
     pub name: String,
-    pub fields: HashMap<String, StructFieldInfo>,
+    /// Insertion-ordered (declaration order) so field-release emission is deterministic. Field
+    /// emission that must follow byte-offset order uses [`crate::codegen::wasm::WasmGenerator::sorted_fields`].
+    pub fields: IndexMap<String, StructFieldInfo>,
     pub size: usize,
     pub is_public: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct StructTable {
-    pub structs: HashMap<String, StructInfo>,
+    /// Insertion-ordered (registration order) so codegen iterates types deterministically.
+    pub structs: IndexMap<String, StructInfo>,
 }
 
 impl Default for StructTable {
@@ -34,7 +37,7 @@ impl Default for StructTable {
 impl StructTable {
     pub fn new() -> Self {
         Self {
-            structs: HashMap::new(),
+            structs: IndexMap::new(),
         }
     }
 
@@ -44,7 +47,7 @@ impl StructTable {
             return Err(format!("Struct '{}' is already defined", name));
         }
 
-        let mut fields = HashMap::new();
+        let mut fields = IndexMap::new();
         let mut current_offset = 0;
 
         for field in &struct_decl.fields {
@@ -116,7 +119,7 @@ impl StructTable {
             name.to_string(),
             StructInfo {
                 name: name.to_string(),
-                fields: HashMap::new(),
+                fields: IndexMap::new(),
                 size,
                 is_public,
             },

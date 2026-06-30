@@ -1,9 +1,4 @@
 use crate::syntax::nodes::Type;
-use crate::syntax::text::line_text::LineText;
-use crate::syntax::text::text_span::TextSpan;
-use crate::syntax::token::syntax_token::SyntaxToken;
-use crate::syntax::token::token_kind::TokenKind;
-use std::rc::Rc;
 
 /// The embedded standard-library prelude, in the exact order it must be merged. This is the
 /// single source of truth shared by the compiler's source manager and the `dream-analyzer`
@@ -46,13 +41,6 @@ pub struct StdlibFunction {
 }
 
 impl StdlibFunction {
-    #[allow(dead_code)]
-    fn create_type(type_str: &str) -> Type {
-        let dummy_span = TextSpan::new((0, 0), &Rc::new(LineText::new("".to_string())));
-        let token = SyntaxToken::new(TokenKind::DataTypeToken, dummy_span, type_str.to_string());
-        crate::syntax::nodes::types::primitive_type(type_str, token).unwrap_or(Type::Void)
-    }
-
     /// A host-imported stdlib function (lowered to a WASM `(import "env" ...)`).
     fn imported(name: &str, parameters: &[&str], return_type: Option<Type>) -> Self {
         Self {
@@ -60,17 +48,6 @@ impl StdlibFunction {
             parameters: parameters.iter().map(|s| s.to_string()).collect(),
             return_type,
             inline: false,
-        }
-    }
-
-    /// A stdlib function whose body codegen emits inline rather than importing.
-    #[allow(dead_code)]
-    fn inlined(name: &str, parameters: &[&str], return_type: Option<Type>) -> Self {
-        Self {
-            name: name.to_string(),
-            parameters: parameters.iter().map(|s| s.to_string()).collect(),
-            return_type,
-            inline: true,
         }
     }
 

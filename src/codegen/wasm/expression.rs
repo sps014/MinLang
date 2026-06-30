@@ -11,6 +11,18 @@ use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
 use std::io::Error;
 
+/// A `obj.method[<generic_args>](params)` call site, bundled so the method-dispatch helpers take a
+/// single descriptor instead of a long positional argument list. `left_side` is the expected type
+/// of the surrounding context (used to resolve a generic union's name). `'a` is the AST arena
+/// lifetime; `'b` borrows the nodes for the duration of the call.
+pub struct MethodCall<'a, 'b> {
+    pub obj: &'b ExpressionNode<'a>,
+    pub method: &'b SyntaxToken,
+    pub generic_args: &'b Option<Vec<Type>>,
+    pub params: &'b Vec<ExpressionNode<'a>>,
+    pub left_side: &'b str,
+}
+
 impl<'a> WasmGenerator<'a> {
     /// Builds an expression, applying the two implicit coercions the analyzer permits at value
     /// sinks (assignments, call arguments, returns): boxing a primitive into an `object` context,
@@ -105,7 +117,16 @@ impl<'a> WasmGenerator<'a> {
                     writer.write_line("i32.const 0");
                 }
             },
-            ExpressionNode::MethodCall(obj, method, generic_args, params) => self.build_method_call(obj, method, generic_args, params, left_side, function, writer)?,
+            ExpressionNode::MethodCall(obj, method, generic_args, params) => {
+                let call = MethodCall {
+                    obj,
+                    method,
+                    generic_args,
+                    params,
+                    left_side: left_side.as_str(),
+                };
+                self.build_method_call(&call, function, writer)?
+            }
             ExpressionNode::Match(subject, arms) => self.build_match(subject, arms, Some(left_side.clone()), function, writer)?,
             ExpressionNode::Ternary(cond, then_e, else_e) => self.build_ternary(cond, then_e, else_e, left_side, function, writer)?,
             // `await` only ever appears at allowed statement positions in v1, which the async
@@ -990,22 +1011,24 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn build_method_call(
         &mut self,
-        obj: &ExpressionNode<'a>,
-        method: &SyntaxToken,
-        _generic_args: &Option<Vec<Type>>,
-        params: &Vec<ExpressionNode<'a>>,
-        _left_side: &String,
+        call: &MethodCall<'a, '_>,
         function: &FunctionNode<'a>,
         writer: &mut IndentedTextWriter,
     ) -> Result<(), Error> {
+        let MethodCall {
+            obj,
+            method,
+            params,
+            left_side,
+            ..
+        } = *call;
         // Data-variant construction `Union.Variant(args)` (e.g. `Option.Some(42)`) allocates a
         // tagged block holding the discriminant and payload. Checked before static dispatch so a
         // union name never collides with a class's static method.
         if let ExpressionNode::Identifier(id) = obj {
-            if let Some(union_name) = self.resolve_union_name(&id.text, _left_side) {
+            if let Some(union_name) = self.resolve_union_name(&id.text, left_side) {
                 let is_variant = self
                     .unions
                     .get(&union_name)
@@ -1023,7 +1046,7 @@ impl<'a> WasmGenerator<'a> {
             }
         }
 
-        if self.try_build_static_call(obj, method, _generic_args, params, function, writer)? {
+        if self.try_build_static_call(call, function, writer)? {
             return Ok(());
         }
 
@@ -1034,16 +1057,19 @@ impl<'a> WasmGenerator<'a> {
     /// `Array.new`, JSON (de)serialization, the async combinators, and the string/allocator-probe
     /// runtime helpers). Returns `Ok(true)` when the receiver named a type and the call was emitted,
     /// `Ok(false)` when it is not a static call (so the caller falls through to instance dispatch).
-    #[allow(clippy::too_many_arguments)]
     fn try_build_static_call(
         &mut self,
-        obj: &ExpressionNode<'a>,
-        method: &SyntaxToken,
-        generic_args: &Option<Vec<Type>>,
-        params: &Vec<ExpressionNode<'a>>,
+        call: &MethodCall<'a, '_>,
         function: &FunctionNode<'a>,
         writer: &mut IndentedTextWriter,
     ) -> Result<bool, Error> {
+        let MethodCall {
+            obj,
+            method,
+            generic_args,
+            params,
+            ..
+        } = *call;
         // Arguments map 1:1 to the parameters (no implicit `this`).
         let Some(key) = self.resolve_static_call(obj, &method.text, params, function) else {
             return Ok(false);

@@ -449,6 +449,7 @@ name = "dream"
 version = "0.1.0"
 dependencies = [
  "bumpalo",
+ "indexmap",
  "logos",
  "pretty_assertions",
  "regex",

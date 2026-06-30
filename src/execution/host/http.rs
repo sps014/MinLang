@@ -86,9 +86,8 @@ fn perform_http(method: &str, url: &str, headers_json: &str, body: Vec<u8>) -> V
             }
             head.push('\n'); // blank line separating head from body
             let mut out = head.into_bytes();
-            match response.bytes() {
-                Ok(body_bytes) => out.extend_from_slice(&body_bytes),
-                Err(_) => {}
+            if let Ok(body_bytes) = response.bytes() {
+                out.extend_from_slice(&body_bytes);
             }
             out
         }

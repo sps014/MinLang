@@ -162,18 +162,14 @@ impl<'a> Analyzer<'a> {
                 self.compare_data_type(&subject_type, &label_type, &empty_span(), diagnostics)?;
 
                 let key = match label {
-                    ExpressionNode::Literal(lit) =>
-                    {
-                        #[allow(clippy::collapsible_match)]
-                        match lit {
-                            Type::Integer(t)
-                            | Type::Float(t)
-                            | Type::Double(t)
-                            | Type::String(t)
-                            | Type::Boolean(t) => Some(t.text.clone()),
-                            _ => None,
-                        }
-                    }
+                    ExpressionNode::Literal(
+                        Type::Integer(t)
+                        | Type::Float(t)
+                        | Type::Double(t)
+                        | Type::String(t)
+                        | Type::Boolean(t),
+                    ) => Some(t.text.clone()),
+                    ExpressionNode::Literal(_) => None,
                     ExpressionNode::MemberAccess(_, m) => Some(m.text.clone()),
                     _ => None,
                 };

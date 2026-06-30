@@ -1,13 +1,16 @@
 use crate::semantics::errors::SymbolError;
 use crate::syntax::nodes::Type;
 use crate::syntax::token::syntax_token::SyntaxToken;
+use indexmap::IndexMap;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct SymbolTable {
-    symbols: HashMap<String, Type>,
+    /// Insertion-ordered (declaration order) so codegen emits each function's `(local ...)`
+    /// declarations and function-exit releases in a deterministic order.
+    symbols: IndexMap<String, Type>,
     /// Names declared with `const` in this scope; reassigning them is an error.
     const_symbols: HashSet<String>,
     parent: Option<Rc<RefCell<SymbolTable>>>,
@@ -17,7 +20,7 @@ pub struct SymbolTable {
 impl SymbolTable {
     pub fn new(parent: Option<Rc<RefCell<SymbolTable>>>) -> SymbolTable {
         SymbolTable {
-            symbols: HashMap::new(),
+            symbols: IndexMap::new(),
             const_symbols: HashSet::new(),
             parent,
             children: Vec::new(),

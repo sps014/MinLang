@@ -134,7 +134,7 @@ fn test_parse_extern_with_js_attribute() {
         .iter()
         .find(|a| a.name.text == "js")
         .unwrap();
-    assert_eq!(js_attr.args.get(0).unwrap().text, "\"dom\"");
+    assert_eq!(js_attr.args.first().unwrap().text, "\"dom\"");
     assert_eq!(js_attr.args.get(1).unwrap().text, "\"setText\"");
 }
 

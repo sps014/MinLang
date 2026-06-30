@@ -8,6 +8,7 @@ edition = "2018"
 
 [dependencies]
 bumpalo = "3.20.3"
+indexmap = "2"
 logos = "0.16.1"
 regex = "1.5.5"
 tracing = "0.1.44"

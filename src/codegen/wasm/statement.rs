@@ -7,6 +7,17 @@ use crate::syntax::text::indented_text_writer::IndentedTextWriter;
 use crate::syntax::token::syntax_token::SyntaxToken;
 use std::io::Error;
 
+/// The pieces of a `for (element in iterable)` loop, bundled so [`WasmGenerator::build_foreach`]
+/// takes a single descriptor instead of a long positional argument list. `'a` is the AST arena
+/// lifetime; `'b` borrows the individual nodes for the duration of the call.
+pub struct ForeachLoop<'a, 'b> {
+    pub element: &'b SyntaxToken,
+    pub iterable: &'b ExpressionNode<'a>,
+    pub index_name: &'b str,
+    pub array_name: &'b str,
+    pub body: &'b [StatementNode<'a>],
+}
+
 impl<'a> WasmGenerator<'a> {
     /// Builds the body of a function
     pub fn build_body(
@@ -47,10 +58,16 @@ impl<'a> WasmGenerator<'a> {
             StatementNode::For(init, cond, inc, body) => {
                 self.build_for(init, cond, inc, body, function, writer)?
             }
-            StatementNode::ForEach(element, iterable, index_name, array_name, body) => self
-                .build_foreach(
-                    element, iterable, index_name, array_name, body, function, writer,
-                )?,
+            StatementNode::ForEach(element, iterable, index_name, array_name, body) => {
+                let foreach = ForeachLoop {
+                    element,
+                    iterable,
+                    index_name,
+                    array_name,
+                    body,
+                };
+                self.build_foreach(&foreach, function, writer)?
+            }
             StatementNode::Switch(subject, cases, default_body) => {
                 self.build_switch(subject, cases, default_body, function, writer)?
             }
@@ -131,15 +148,14 @@ impl<'a> WasmGenerator<'a> {
                 // stack stays balanced. A user method returns an owned +1 (release it); builtin
                 // `.name()` returns a borrowed interned string and `.len()` an int (just drop).
                 let ret = self.method_return_type(obj, method, params, function)?;
-                self.build_method_call(
+                let call = super::expression::MethodCall {
                     obj,
                     method,
                     generic_args,
                     params,
-                    &"void".to_string(),
-                    function,
-                    writer,
-                )?;
+                    left_side: "void",
+                };
+                self.build_method_call(&call, function, writer)?;
                 match ret {
                     Some(t)
                         if self.is_reference_type(strip_nullable(&t))
@@ -581,17 +597,19 @@ impl<'a> WasmGenerator<'a> {
     /// temp (retained for the loop's lifetime); an integer index walks `0..len`, loading each
     /// element into the user's loop variable. Lowers to the same loop scaffolding as `for`/`while`
     /// so `break`/`continue` work.
-    #[allow(clippy::too_many_arguments)]
     pub fn build_foreach(
         &mut self,
-        element: &SyntaxToken,
-        iterable: &ExpressionNode<'a>,
-        index_name: &str,
-        array_name: &str,
-        body: &[StatementNode<'a>],
+        foreach: &ForeachLoop<'a, '_>,
         function: &FunctionNode<'a>,
         writer: &mut IndentedTextWriter,
     ) -> Result<(), Error> {
+        let ForeachLoop {
+            element,
+            iterable,
+            index_name,
+            array_name,
+            body,
+        } = *foreach;
         let array_type = self.infer_expression_type(iterable, function)?;
         let element_type = if array_type.ends_with("[]") {
             array_type[..array_type.len() - 2].to_string()
