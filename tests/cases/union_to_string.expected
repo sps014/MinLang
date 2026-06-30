@@ -1,0 +1,6 @@
+Circle(radius: 5)
+Rect(width: 3, height: 4)
+Empty
+Circle(radius: 9)
+Some(value: 42)
+None

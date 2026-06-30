@@ -29,6 +29,33 @@
     "strings": {
       "patterns": [
         {
+          "name": "string.interpolated.dream",
+          "begin": "\\$\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.dream",
+              "match": "\\\\."
+            },
+            {
+              "name": "constant.character.escape.brace.dream",
+              "match": "\\{\\{|\\}\\}"
+            },
+            {
+              "name": "meta.interpolation.dream",
+              "begin": "\\{",
+              "end": "\\}",
+              "beginCaptures": {
+                "0": { "name": "punctuation.section.interpolation.begin.dream" }
+              },
+              "endCaptures": {
+                "0": { "name": "punctuation.section.interpolation.end.dream" }
+              },
+              "patterns": [{ "include": "$self" }]
+            }
+          ]
+        },
+        {
           "name": "string.quoted.double.dream",
           "begin": "\"",
           "end": "\"",

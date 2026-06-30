@@ -1,0 +1,8 @@
+{"type":"Circle","radius":7}
+Circle(radius: 7)
+{"type":"Rect","width":3,"height":4}
+Rect(width: 3, height: 4)
+{"type":"Empty"}
+Empty
+{"type":"Located","at":{"x":1,"y":2}}
+Located(at: Point { x: 1, y: 2 })

@@ -2,6 +2,8 @@
 
 `string` is a built-in reference type (heap-allocated, null-terminated UTF-8). It is available in every program with no import. These methods are available on any string value.
 
+Strings can be built with `+` concatenation or [string interpolation](../language/operators.md#string-interpolation) (`$"hi {name}"`).
+
 ## len
 
 Returns the number of characters. This is the same as `length()`.

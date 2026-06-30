@@ -21,6 +21,12 @@ impl Lexer {
         }
     }
 
+    /// Returns this lexer's line/column index, shared so callers (e.g. the parser when lowering an
+    /// interpolated string) can compute absolute file positions for tokens lexed out of a substring.
+    pub fn line_text(&self) -> Rc<LineText> {
+        self.line_text.clone()
+    }
+
     //get all token
     pub fn lex_all(&mut self, diagnostics: &mut DiagnosticBag) -> Vec<SyntaxToken> {
         let mut res: Vec<SyntaxToken> = vec![];

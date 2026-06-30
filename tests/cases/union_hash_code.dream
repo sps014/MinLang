@@ -1,0 +1,15 @@
+enum Shape {
+    Circle(radius: int),
+    Rect(width: int, height: int),
+    Empty,
+}
+
+fun main(): void {
+    // Equal values hash equally.
+    System.println(Shape.Circle(5).hash_code() == Shape.Circle(5).hash_code());
+    // Different payloads differ.
+    System.println(Shape.Circle(5).hash_code() == Shape.Circle(6).hash_code());
+    // Different variants differ (no longer a constant).
+    System.println(Shape.Circle(5).hash_code() == Shape.Empty.hash_code());
+    System.println(Shape.Rect(3, 4).hash_code() == Shape.Rect(4, 3).hash_code());
+}

@@ -262,6 +262,29 @@ fn test_parse_interpolated_string() {
 }
 
 #[test]
+fn test_interpolation_hole_spans_are_absolute() {
+    // The identifier `x` inside the hole must carry a file-relative span (not hole-relative) so
+    // IDE features (hover, go-to-definition) resolve at the cursor.
+    let code = "fun f(x: int): string { return $\"v={x}\"; }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    let func = &program.functions[0];
+    let StatementNode::Return(Some(ExpressionNode::Binary(_, _, right))) = &func.body[0] else {
+        panic!("expected a binary concat chain");
+    };
+    let ExpressionNode::Identifier(tok) = &**right else {
+        panic!("expected the `x` hole identifier on the right");
+    };
+    // `x` in the hole is the second `x` in the source (after the parameter `x`).
+    let expected = code.rfind('x').unwrap();
+    assert_eq!(tok.text, "x");
+    assert_eq!(tok.position.start, expected);
+    assert_eq!(tok.position.end, expected + 1);
+}
+
+#[test]
 fn test_parse_interpolated_string_brace_escapes() {
     // `{{` / `}}` are literal braces and must not open a hole, so this has no embedded expression.
     let code = "fun f(): string { return $\"{{x}}\"; }";

@@ -234,21 +234,139 @@ fn generate_json_extend(
     ))
 }
 
-/// For every `@json` class, generates and parses its `to_json`/`from_json` converter `extend`
-/// block and appends the methods to `all_extends`. Runs after all user/prelude declarations are
-/// collected so cross-class (`@json` field) references resolve.
+/// Generates `extend <Union> { fun to_json(): JsonValue {...} static fun from_json(v): <Union> {...} }`
+/// source for a single `@json` discriminated union, or `None` (after reporting a diagnostic) if a
+/// variant payload field type is unsupported. Values are tagged internally with a `"type"` key
+/// naming the active variant; unit variants serialize to `{ "type": "<Variant>" }`.
+fn generate_json_union(
+    enum_decl: &crate::syntax::nodes::EnumDeclarationNode,
+    json_names: &HashSet<String>,
+    diagnostics: &mut DiagnosticBag,
+) -> Option<String> {
+    let name = &enum_decl.name.text;
+
+    // `to_json`: a `match` over the variant fills a tagged dict. Block arms run for effect.
+    let mut to_body = String::from("        let __o = JsonValue.dict();\n        match (this) {\n");
+    // `from_json`: dispatch on the `"type"` tag, reconstructing the matching variant.
+    let mut from_arms = String::new();
+
+    for variant in &enum_decl.variants {
+        let vname = &variant.name.text;
+        let bindings: Vec<String> = variant.fields.iter().map(|f| f.name.text.clone()).collect();
+
+        // to_json arm
+        let pattern = if bindings.is_empty() {
+            vname.clone()
+        } else {
+            format!("{}({})", vname, bindings.join(", "))
+        };
+        to_body.push_str(&format!("            {} => {{\n", pattern));
+        to_body.push_str(&format!(
+            "                __o.set(\"type\", JsonValue.from_string(\"{}\"));\n",
+            vname
+        ));
+        for field in &variant.fields {
+            let fname = &field.name.text;
+            let ftype = field.type_token.text.as_str();
+            match json_to_expr(ftype, fname, json_names) {
+                Some(expr) => {
+                    to_body.push_str(&format!("                __o.set(\"{}\", {});\n", fname, expr));
+                }
+                None => {
+                    diagnostics.report_error(
+                        format!(
+                            "@json union '{}' variant '{}' field '{}' has unsupported type '{}'",
+                            name, vname, fname, ftype
+                        ),
+                        Some(field.name.position),
+                    );
+                    return None;
+                }
+            }
+        }
+        to_body.push_str("            }\n");
+
+        // from_json reconstruction expression for this variant
+        let ctor = if variant.fields.is_empty() {
+            format!("{}.{}", name, vname)
+        } else {
+            let mut args = Vec::new();
+            for field in &variant.fields {
+                let fname = &field.name.text;
+                let ftype = field.type_token.text.as_str();
+                let jexpr = format!("v.get(\"{}\").unwrap_or(JsonValue.none())", fname);
+                match json_from_expr(ftype, &jexpr, json_names) {
+                    Some(expr) => args.push(expr),
+                    None => {
+                        diagnostics.report_error(
+                            format!(
+                                "@json union '{}' variant '{}' field '{}' has unsupported type '{}'",
+                                name, vname, fname, ftype
+                            ),
+                            Some(field.name.position),
+                        );
+                        return None;
+                    }
+                }
+            }
+            format!("{}.{}({})", name, vname, args.join(", "))
+        };
+        from_arms.push_str(&format!(
+            "        if (__t == \"{}\") {{\n            return {};\n        }}\n",
+            vname, ctor
+        ));
+    }
+    to_body.push_str("        }\n        return __o;\n");
+
+    // Fallback: reconstruct the first variant for an unrecognized tag (only hit on malformed input).
+    let first = &enum_decl.variants[0];
+    let fallback = if first.fields.is_empty() {
+        format!("{}.{}", name, first.name.text)
+    } else {
+        let mut args = Vec::new();
+        for field in &first.fields {
+            let jexpr = format!("v.get(\"{}\").unwrap_or(JsonValue.none())", field.name.text);
+            // Field types were already validated in the loop above.
+            args.push(json_from_expr(field.type_token.text.as_str(), &jexpr, json_names)?);
+        }
+        format!("{}.{}({})", name, first.name.text, args.join(", "))
+    };
+
+    let from_body = format!(
+        "        let __t = v.get(\"type\").unwrap_or(JsonValue.none()).as_string();\n{arms}        return {fallback};\n",
+        arms = from_arms,
+        fallback = fallback
+    );
+
+    Some(format!(
+        "extend {name} {{\n    public fun to_json(): JsonValue {{\n{to_body}    }}\n    public static fun from_json(v: JsonValue): {name} {{\n{from_body}    }}\n}}\n",
+        name = name, to_body = to_body, from_body = from_body
+    ))
+}
+
+/// For every `@json` class and discriminated union, generates and parses its `to_json`/`from_json`
+/// converter `extend` block and appends the methods to `all_extends`. Runs after all user/prelude
+/// declarations are collected so cross-type (`@json` field) references resolve.
 pub(crate) fn generate_json_derives<'a>(
     arena: &'a Bump,
     all_structs: &[crate::syntax::nodes::struct_node::StructDeclarationNode<'a>],
+    all_enums: &[crate::syntax::nodes::EnumDeclarationNode],
     all_extends: &mut Vec<crate::syntax::nodes::ExtendNode<'a>>,
     diagnostics: &mut DiagnosticBag,
     file_contents: &mut HashMap<String, String>,
 ) -> Result<(), Error> {
-    let json_names: HashSet<String> = all_structs
+    let mut json_names: HashSet<String> = all_structs
         .iter()
         .filter(|s| s.attributes.iter().any(|a| a.name.text == "json"))
         .map(|s| s.name.text.clone())
         .collect();
+    // `@json` discriminated unions participate too, so nested `@json` fields can reference them.
+    json_names.extend(
+        all_enums
+            .iter()
+            .filter(|e| e.attributes.iter().any(|a| a.name.text == "json"))
+            .map(|e| e.name.text.clone()),
+    );
     if json_names.is_empty() {
         return Ok(());
     }
@@ -269,6 +387,36 @@ pub(crate) fn generate_json_derives<'a>(
             continue;
         }
         if let Some(block) = generate_json_extend(struct_decl, &json_names, diagnostics) {
+            source.push_str(&block);
+            source.push('\n');
+        }
+    }
+
+    for enum_decl in all_enums
+        .iter()
+        .filter(|e| e.attributes.iter().any(|a| a.name.text == "json"))
+    {
+        if enum_decl.generic_parameters.is_some() {
+            diagnostics.report_error(
+                format!(
+                    "@json is not supported on generic union '{}'",
+                    enum_decl.name.text
+                ),
+                Some(enum_decl.name.position),
+            );
+            continue;
+        }
+        if !enum_decl.is_data_enum() {
+            diagnostics.report_error(
+                format!(
+                    "@json is only supported on discriminated unions, not the plain enum '{}'",
+                    enum_decl.name.text
+                ),
+                Some(enum_decl.name.position),
+            );
+            continue;
+        }
+        if let Some(block) = generate_json_union(enum_decl, &json_names, diagnostics) {
             source.push_str(&block);
             source.push('\n');
         }

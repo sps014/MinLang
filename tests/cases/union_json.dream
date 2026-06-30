@@ -1,0 +1,31 @@
+@json
+class Point {
+    public x: int;
+    public y: int;
+}
+
+@json
+enum Shape {
+    Circle(radius: int),
+    Rect(width: int, height: int),
+    Located(at: Point),
+    Empty,
+}
+
+fun main(): void {
+    let c = Shape.Circle(7);
+    System.println(JSON.serialize(c));
+    System.println(JSON.deserialize<Shape>(JSON.serialize(c)).to_string());
+
+    let r = Shape.Rect(3, 4);
+    System.println(JSON.serialize(r));
+    System.println(JSON.deserialize<Shape>(JSON.serialize(r)).to_string());
+
+    let e = Shape.Empty;
+    System.println(JSON.serialize(e));
+    System.println(JSON.deserialize<Shape>(JSON.serialize(e)).to_string());
+
+    let l = Shape.Located(Point(1, 2));
+    System.println(JSON.serialize(l));
+    System.println(JSON.deserialize<Shape>(JSON.serialize(l)).to_string());
+}

@@ -59,6 +59,8 @@ pub struct EnumVariantNode {
 ///   generic `enum Option<T> { Some(value: T), None }` (at least one variant carries a payload).
 #[derive(Debug, Clone)]
 pub struct EnumDeclarationNode {
+    /// Leading attributes (`@json`, ...). Carried so derives like `@json` can target unions.
+    pub attributes: Vec<crate::syntax::nodes::AttributeNode>,
     pub name: SyntaxToken,
     /// Generic type parameters for a generic discriminated union (`enum Option<T> { ... }`).
     pub generic_parameters: Option<Vec<SyntaxToken>>,
@@ -67,11 +69,13 @@ pub struct EnumDeclarationNode {
 
 impl EnumDeclarationNode {
     pub fn new(
+        attributes: Vec<crate::syntax::nodes::AttributeNode>,
         name: SyntaxToken,
         generic_parameters: Option<Vec<SyntaxToken>>,
         variants: Vec<EnumVariantNode>,
     ) -> EnumDeclarationNode {
         EnumDeclarationNode {
+            attributes,
             name,
             generic_parameters,
             variants,

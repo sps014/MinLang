@@ -7,7 +7,7 @@ which happens before any page is rendered, so no package install or entry
 point is required.
 """
 
-from pygments.lexer import RegexLexer, bygroups, words
+from pygments.lexer import RegexLexer, bygroups, include, words
 from pygments.token import (
     Comment,
     Keyword,
@@ -48,6 +48,8 @@ class DreamLexer(RegexLexer):
             (r"/\*", Comment.Multiline, "comment"),
             # Attributes: @json, @override, @js, @property_name, ...
             (r"@[A-Za-z_]\w*", Name.Decorator),
+            # Interpolated string `$"...{expr}..."` (must precede the plain string rule).
+            (r'\$"', String.Interpol, "interpstring"),
             (r'"', String.Double, "dqstring"),
             (r"'", String.Char, "sqstring"),
             # Declarations that introduce a named entity.
@@ -89,6 +91,19 @@ class DreamLexer(RegexLexer):
             (r"\\.", String.Escape),
             (r"'", String.Char, "#pop"),
             (r"[^'\\]+", String.Char),
+        ],
+        # `$"..."` body: literal text plus `{expr}` holes. `{{`/`}}` are literal braces.
+        "interpstring": [
+            (r"\\.", String.Escape),
+            (r"\{\{|\}\}", String.Escape),
+            (r"\{", String.Interpol, "interp"),
+            (r'"', String.Interpol, "#pop"),
+            (r'[^"\\{}]+', String.Double),
+        ],
+        # A single interpolation hole, highlighted as ordinary Dream code until `}`.
+        "interp": [
+            (r"\}", String.Interpol, "#pop"),
+            include("root"),
         ],
     }
 

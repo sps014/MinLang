@@ -32,6 +32,7 @@ impl<'a, 'b> Parser<'a, 'b> {
         &mut self,
     ) -> Result<crate::syntax::nodes::EnumDeclarationNode, Error> {
         let first_trivia = self.current_token().leading_trivia.clone();
+        let attributes = self.parse_attributes();
         self.match_token(TokenKind::EnumToken);
         let mut name = self.match_token(TokenKind::IdentifierToken);
         if !first_trivia.is_empty() {
@@ -109,6 +110,7 @@ impl<'a, 'b> Parser<'a, 'b> {
         }
         self.match_token(TokenKind::CurlyCloseBracketToken);
         Ok(crate::syntax::nodes::EnumDeclarationNode::new(
+            attributes,
             name,
             generic_parameters,
             variants,

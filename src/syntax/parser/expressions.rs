@@ -601,11 +601,17 @@ impl<'a, 'b> Parser<'a, 'b> {
             .and_then(|s| s.strip_suffix('"'))
             .unwrap_or("");
 
+        // Byte offset (in the original file) of the first character of `body`: skip `$"`.
+        let body_base = pos.start + 2;
+
         let chars: Vec<char> = body.chars().collect();
         let mut i = 0;
+        // Byte offset of `chars[i]` within `body`, kept in lockstep with `i` so hole sources can be
+        // mapped back to absolute file positions for IDE navigation.
+        let mut byte_pos = 0usize;
         let mut text_buf = String::new();
-        // Each segment is either literal text (`Ok`) or hole source to parse (`Err`).
-        let mut segments: Vec<Result<String, String>> = Vec::new();
+        // Each segment is either literal text (`Ok`) or a hole `(source, byte offset in body)`.
+        let mut segments: Vec<Result<String, (String, usize)>> = Vec::new();
 
         while i < chars.len() {
             let c = chars[i];
@@ -613,6 +619,7 @@ impl<'a, 'b> Parser<'a, 'b> {
                 // `{{` is an escaped literal `{`.
                 if i + 1 < chars.len() && chars[i + 1] == '{' {
                     text_buf.push('{');
+                    byte_pos += 2;
                     i += 2;
                     continue;
                 }
@@ -620,24 +627,29 @@ impl<'a, 'b> Parser<'a, 'b> {
                 if !text_buf.is_empty() {
                     segments.push(Ok(std::mem::take(&mut text_buf)));
                 }
-                i += 1; // consume `{`
+                byte_pos += 1; // consume `{`
+                i += 1;
+                let hole_byte_start = byte_pos;
                 let mut depth = 1;
                 let mut hole = String::new();
                 while i < chars.len() && depth > 0 {
                     let h = chars[i];
+                    let advance = h.len_utf8();
                     if h == '{' {
                         depth += 1;
                         hole.push(h);
                     } else if h == '}' {
                         depth -= 1;
                         if depth == 0 {
-                            i += 1; // consume the matching `}`
+                            byte_pos += advance; // consume the matching `}`
+                            i += 1;
                             break;
                         }
                         hole.push(h);
                     } else {
                         hole.push(h);
                     }
+                    byte_pos += advance;
                     i += 1;
                 }
                 if depth > 0 {
@@ -646,11 +658,12 @@ impl<'a, 'b> Parser<'a, 'b> {
                         Some(pos),
                     );
                 }
-                segments.push(Err(hole));
+                segments.push(Err((hole, hole_byte_start)));
             } else if c == '}' {
                 // `}}` is an escaped literal `}`.
                 if i + 1 < chars.len() && chars[i + 1] == '}' {
                     text_buf.push('}');
+                    byte_pos += 2;
                     i += 2;
                     continue;
                 }
@@ -660,9 +673,11 @@ impl<'a, 'b> Parser<'a, 'b> {
                     Some(pos),
                 );
                 text_buf.push('}');
+                byte_pos += 1;
                 i += 1;
             } else {
                 text_buf.push(c);
+                byte_pos += c.len_utf8();
                 i += 1;
             }
         }
@@ -675,7 +690,9 @@ impl<'a, 'b> Parser<'a, 'b> {
         for segment in segments {
             let right = match segment {
                 Ok(text) => self.make_string_literal(text, pos),
-                Err(hole) => self.parse_interpolation_hole(hole, pos)?,
+                Err((hole, hole_byte_start)) => {
+                    self.parse_interpolation_hole(hole, body_base + hole_byte_start, pos)?
+                }
             };
             let left_ref = self.arena.alloc(acc);
             let right_ref = self.arena.alloc(right);
@@ -699,10 +716,13 @@ impl<'a, 'b> Parser<'a, 'b> {
 
     /// Parses the source of a single `{...}` hole into an expression using a child parser that
     /// shares this parser's arena and diagnostics (so allocated nodes live in the same arena and
-    /// errors surface on the same bag). Spans inside the hole are relative to the hole text.
+    /// errors surface on the same bag). `abs_offset` is the byte position of the hole's first
+    /// character in the original file; sub-token spans are remapped to absolute file coordinates so
+    /// IDE features (hover, go-to-definition, references) resolve correctly inside `{holes}`.
     fn parse_interpolation_hole(
         &mut self,
         source: String,
+        abs_offset: usize,
         pos: crate::syntax::text::text_span::TextSpan,
     ) -> Result<ExpressionNode<'a>, Error> {
         if source.trim().is_empty() {
@@ -713,8 +733,19 @@ impl<'a, 'b> Parser<'a, 'b> {
             return Ok(self.make_string_literal(String::new(), pos));
         }
 
+        let parent_line_text = self.lexer.line_text();
         let mut lexer = Lexer::new(source);
-        let tokens = lexer.lex_all(self.diagnostics);
+        let mut tokens = lexer.lex_all(self.diagnostics);
+        // Translate hole-relative byte spans to absolute file positions.
+        for token in tokens.iter_mut() {
+            token.position = crate::syntax::text::text_span::TextSpan::new(
+                (
+                    abs_offset + token.position.start,
+                    abs_offset + token.position.end,
+                ),
+                &parent_line_text,
+            );
+        }
         let mut sub: Parser<'a, '_> = Parser {
             lexer,
             tokens,

@@ -240,6 +240,37 @@ impl<'a, 'b> Parser<'a, 'b> {
         }
     }
 
+    /// Like [`first_keyword_after_modifiers`], but also skips leading attribute groups
+    /// (`@name` optionally followed by a balanced `( ... )`). Used to classify a declaration that
+    /// may be preceded by attributes, e.g. `@json enum Shape { ... }`.
+    fn core_keyword_after_attrs(&self) -> TokenKind {
+        let mut i = 0;
+        loop {
+            match self.peek_token(i).kind {
+                TokenKind::PublicToken | TokenKind::StaticToken | TokenKind::AsyncToken => i += 1,
+                TokenKind::AtToken => {
+                    i += 1; // `@`
+                    if self.peek_token(i).kind == TokenKind::IdentifierToken {
+                        i += 1; // attribute name
+                    }
+                    if self.peek_token(i).kind == TokenKind::OpenParenthesisToken {
+                        let mut depth = 1;
+                        i += 1;
+                        while depth > 0 && self.peek_token(i).kind != TokenKind::EndOfFileToken {
+                            match self.peek_token(i).kind {
+                                TokenKind::OpenParenthesisToken => depth += 1,
+                                TokenKind::CloseParenthesisToken => depth -= 1,
+                                _ => {}
+                            }
+                            i += 1;
+                        }
+                    }
+                }
+                other => return other,
+            }
+        }
+    }
+
     ///get all functions in the file
     fn parse_program(&mut self) -> Result<ProgramNode<'a>, Error> {
         let mut imports = vec![];
@@ -272,7 +303,10 @@ impl<'a, 'b> Parser<'a, 'b> {
                     Ok(struct_decl) => structs.push(struct_decl),
                     Err(_) => self.recover_to_next_declaration(),
                 }
-            } else if cur == TokenKind::EnumToken {
+            } else if cur == TokenKind::EnumToken
+                || (cur == TokenKind::AtToken
+                    && self.core_keyword_after_attrs() == TokenKind::EnumToken)
+            {
                 match self.parse_enum_declaration() {
                     Ok(enum_decl) => enums.push(enum_decl),
                     Err(_) => self.recover_to_next_declaration(),

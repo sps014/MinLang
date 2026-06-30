@@ -73,6 +73,9 @@ pub fn compute(file_path: Option<&str>, text: &str) -> Vec<SemanticToken> {
                     Some(kind)
                 }
                 TokenKind::NumberToken => Some(12),
+                TokenKind::StringToken | TokenKind::InterpolatedStringToken | TokenKind::CharToken => {
+                    Some(11)
+                }
                 TokenKind::BooleanToken | TokenKind::NullToken => Some(0),
                 TokenKind::IfToken
                 | TokenKind::ElseToken

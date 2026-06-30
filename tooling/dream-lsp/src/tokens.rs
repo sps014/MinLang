@@ -52,7 +52,7 @@ fn category(kind: TokenKind) -> Option<&'static str> {
         IdentifierToken => "variable",
         DataTypeToken => "type",
         NumberToken => "number",
-        StringToken | CharToken => "string",
+        StringToken | InterpolatedStringToken | CharToken => "string",
         BooleanToken | NullToken => "keyword",
         IfToken | ElseToken | ForToken | WhileToken | DoToken | ReturnToken | BreakToken
         | ContinueToken | LetToken | ConstToken | FunToken | StaticToken | ImportToken

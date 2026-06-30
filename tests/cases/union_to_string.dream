@@ -1,0 +1,20 @@
+enum Shape {
+    Circle(radius: int),
+    Rect(width: int, height: int),
+    Empty,
+}
+
+fun main(): void {
+    System.println(Shape.Circle(5).to_string());
+    System.println(Shape.Rect(3, 4).to_string());
+    System.println(Shape.Empty.to_string());
+
+    // Via the universal `object` type (tag dispatch through the object protocol).
+    let o: object = Shape.Circle(9);
+    System.println(o.to_string());
+
+    // Prelude unions participate too.
+    System.println(Option.Some(42).to_string());
+    let none: Option<int> = Option.None;
+    System.println(none.to_string());
+}

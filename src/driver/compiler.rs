@@ -68,6 +68,7 @@ impl Compiler {
         generate_json_derives(
             &arena,
             &acc.all_structs,
+            &acc.all_enums,
             &mut acc.all_extends,
             &mut diagnostics,
             &mut acc.file_contents,

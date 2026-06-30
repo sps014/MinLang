@@ -9,7 +9,7 @@
 | `double` | 64-bit floating point              | `3.14d`, `1.0d`  |
 | `bool`   | Boolean (`true` or `false`)        | `true`           |
 | `char`   | A single character (code point)    | `'A'`, `'\n'`    |
-| `string` | UTF-8 text, heap allocated         | `"hello"`        |
+| `string` | UTF-8 text, heap allocated         | `"hello"`, `$"hi {name}"` |
 | `void`   | No value — only valid as a return type | —            |
 
 ## Arrays

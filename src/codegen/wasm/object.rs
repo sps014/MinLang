@@ -134,6 +134,21 @@ impl<'a> WasmGenerator<'a> {
             }
             self.intern_runtime_string(&suffix);
         }
+        // Discriminated-union default `to_string` pieces (per variant), since unions get
+        // variant-aware defaults rather than the (empty) struct field rendering.
+        let union_infos: Vec<crate::semantics::union_table::UnionInfo> =
+            self.unions.values().cloned().collect();
+        for union_info in &union_infos {
+            for variant in &union_info.variants {
+                let (prefix, labels, suffix) = Self::union_variant_to_string_pieces(variant);
+                self.intern_runtime_string(&prefix);
+                for label in &labels {
+                    self.intern_runtime_string(label);
+                }
+                self.intern_runtime_string(&suffix);
+            }
+        }
+
         // Every enum variant name, returned by `EnumValue.name()`.
         let member_names: Vec<String> = self
             .enums
@@ -392,6 +407,18 @@ impl<'a> WasmGenerator<'a> {
     fn build_struct_protocol_defaults(&self, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let infos: Vec<StructInfo> = self.struct_table.structs.values().cloned().collect();
         for info in &infos {
+            // Discriminated unions are registered in the struct table too (for tagging/release),
+            // but their payload lives in the union table. Use variant-aware defaults that read the
+            // discriminant and active payload instead of the (empty) struct field map.
+            if let Some(union_info) = self.unions.get(&info.name) {
+                if !self.has_protocol_override(&info.name, "to_string") {
+                    self.build_default_union_to_string(union_info, writer)?;
+                }
+                if !self.has_protocol_override(&info.name, "hash_code") {
+                    self.build_default_union_hash_code(union_info, writer)?;
+                }
+                continue;
+            }
             if !self.has_protocol_override(&info.name, "to_string") {
                 self.build_default_struct_to_string(info, writer)?;
             }
@@ -399,6 +426,141 @@ impl<'a> WasmGenerator<'a> {
                 self.build_default_struct_hash_code(info, writer)?;
             }
         }
+        Ok(())
+    }
+
+    /// The `(prefix, field-labels, suffix)` literal pieces for one union variant's `to_string`.
+    /// Data variants render as `Variant(a: <a>, b: <b>)`; unit variants render as just `Variant`.
+    fn union_variant_to_string_pieces(
+        variant: &crate::semantics::union_table::UnionVariantInfo,
+    ) -> (String, Vec<String>, String) {
+        if variant.fields.is_empty() {
+            return (variant.name.clone(), Vec::new(), String::new());
+        }
+        let prefix = format!("{}(", variant.name);
+        let labels = variant
+            .fields
+            .iter()
+            .enumerate()
+            .map(|(i, f)| {
+                if i == 0 {
+                    format!("{}: ", f.name)
+                } else {
+                    format!(", {}: ", f.name)
+                }
+            })
+            .collect();
+        (prefix, labels, ")".to_string())
+    }
+
+    fn build_default_union_to_string(
+        &self,
+        union_info: &crate::semantics::union_table::UnionInfo,
+        writer: &mut IndentedTextWriter,
+    ) -> Result<(), Error> {
+        writer.write_line(&format!(
+            "(func ${}_to_string (param $this i32) (result i32)",
+            union_info.name
+        ));
+        writer.indent();
+        writer.write_line("(local $res i32)");
+        writer.write_line("(local $d i32)");
+        // Default to "<object>" so an out-of-range discriminant still yields a valid string.
+        writer.write_line(&format!("i32.const {}", self.rstr("<object>")));
+        writer.write_line("local.set $res");
+        writer.write_line("local.get $this");
+        writer.write_line("i32.load");
+        writer.write_line("local.set $d");
+
+        for variant in &union_info.variants {
+            let (prefix, labels, suffix) = Self::union_variant_to_string_pieces(variant);
+            writer.write_line("local.get $d");
+            writer.write_line(&format!("i32.const {}", variant.discriminant));
+            writer.write_line("i32.eq");
+            writer.write_line("if");
+            writer.indent();
+            writer.write_line(&format!("i32.const {}", self.rstr(&prefix)));
+            writer.write_line("local.set $res");
+            for (idx, field) in variant.fields.iter().enumerate() {
+                let field_type = field.type_.get_type();
+                // res = concat(res, label)
+                writer.write_line("local.get $res");
+                writer.write_line(&format!("i32.const {}", self.rstr(&labels[idx])));
+                writer.write_line("call $concat_strings");
+                writer.write_line("local.set $res");
+                // res = concat(res, to_string(field))
+                writer.write_line("local.get $res");
+                writer.write_line("local.get $this");
+                writer.write_line(&format!("i32.const {}", field.offset));
+                writer.write_line("i32.add");
+                WasmGenerator::emit_load(&field_type, writer)?;
+                Self::emit_value_to_string(&field_type, writer);
+                writer.write_line("call $concat_strings");
+                writer.write_line("local.set $res");
+            }
+            // res = concat(res, suffix)
+            writer.write_line("local.get $res");
+            writer.write_line(&format!("i32.const {}", self.rstr(&suffix)));
+            writer.write_line("call $concat_strings");
+            writer.write_line("local.set $res");
+            writer.unindent();
+            writer.write_line("end");
+        }
+
+        writer.write_line("local.get $res");
+        writer.unindent();
+        writer.write_line(")");
+        Ok(())
+    }
+
+    fn build_default_union_hash_code(
+        &self,
+        union_info: &crate::semantics::union_table::UnionInfo,
+        writer: &mut IndentedTextWriter,
+    ) -> Result<(), Error> {
+        writer.write_line(&format!(
+            "(func ${}_hash_code (param $this i32) (result i32)",
+            union_info.name
+        ));
+        writer.indent();
+        writer.write_line("(local $h i32)");
+        writer.write_line("(local $d i32)");
+        writer.write_line("local.get $this");
+        writer.write_line("i32.load");
+        writer.write_line("local.set $d");
+        // Seed with the discriminant so distinct variants hash differently even with no payload.
+        writer.write_line("local.get $d");
+        writer.write_line("local.set $h");
+
+        for variant in &union_info.variants {
+            if variant.fields.is_empty() {
+                continue;
+            }
+            writer.write_line("local.get $d");
+            writer.write_line(&format!("i32.const {}", variant.discriminant));
+            writer.write_line("i32.eq");
+            writer.write_line("if");
+            writer.indent();
+            for field in &variant.fields {
+                let field_type = field.type_.get_type();
+                writer.write_line("local.get $h");
+                writer.write_line("i32.const 31");
+                writer.write_line("i32.mul");
+                writer.write_line("local.get $this");
+                writer.write_line(&format!("i32.const {}", field.offset));
+                writer.write_line("i32.add");
+                WasmGenerator::emit_load(&field_type, writer)?;
+                Self::emit_value_to_hash(&field_type, writer);
+                writer.write_line("i32.add");
+                writer.write_line("local.set $h");
+            }
+            writer.unindent();
+            writer.write_line("end");
+        }
+
+        writer.write_line("local.get $h");
+        writer.unindent();
+        writer.write_line(")");
         Ok(())
     }
 

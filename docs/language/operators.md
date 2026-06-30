@@ -22,6 +22,27 @@ String concatenation uses `+`:
 let msg = "Hello, " + name + "!";
 ```
 
+## String interpolation
+
+An interpolated string is written with a `$` prefix: `$"..."`. Any expression wrapped in `{ ... }` (a *hole*) is evaluated and spliced into the string. Non-string values are converted automatically through the [`to_string`](../stdlib/builtins.md) object protocol, exactly like the `+` form:
+
+```dream
+let name = "Ada";
+let count = 3;
+let msg = $"{name} has {count + 1} items";   // "Ada has 4 items"
+```
+
+Interpolation simply desugars to a `+` concatenation chain, so `$"{name} has {count + 1} items"` is equivalent to `"" + name + " has " + (count + 1) + " items"`.
+
+Write a literal brace by doubling it: `{{` produces `{` and `}}` produces `}`.
+
+```dream
+let x = 5;
+let s = $"{{literal}} and {x}";   // "{literal} and 5"
+```
+
+A hole cannot contain a string literal (the whole `$"..."` is a single token, so an inner `"` would end it). Build such strings with `+` instead.
+
 ## Comparison
 
 All comparison operators return `bool`.

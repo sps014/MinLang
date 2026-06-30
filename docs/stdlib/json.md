@@ -132,8 +132,34 @@ class Profile { name: string; nickname: string?; address: Address?; }
 // a missing key     ->  the field is null too
 ```
 
+### Unions
+
+`@json` also works on [discriminated unions](../language/discriminated-unions.md). A value is
+serialized as an object tagged with a `"type"` key naming the active variant, followed by that
+variant's payload fields; a unit variant becomes just `{ "type": "<Variant>" }`:
+
+```dream
+@json
+enum Shape {
+    Circle(radius: int),
+    Rect(width: int, height: int),
+    Empty,
+}
+
+fun main(): void {
+    let text = JSON.serialize(Shape.Rect(3, 4));   // {"type":"Rect","width":3,"height":4}
+    let back = JSON.deserialize<Shape>(text);       // Shape.Rect(3, 4)
+
+    println(JSON.serialize(Shape.Empty));           // {"type":"Empty"}
+}
+```
+
+Payload field types follow the same rules as class fields (primitives, `string`, and other `@json`
+classes/unions). On deserialize, an unrecognized `"type"` falls back to the first variant.
+
 !!! note "v1 limits"
-    `@json` classes must be non-generic. Fields are limited to primitives, `string`, arrays of
-    those, other `@json` classes, and nullable `string?` / nullable `@json` classes (nullable
-    arrays are not supported). Calling `JSON.serialize` or `JSON.deserialize` on a type without a
-    derived converter is a compile-time error.
+    `@json` classes and unions must be non-generic. Class field and union payload types are limited
+    to primitives, `string`, other `@json` classes/unions, and (for classes) arrays of those and
+    nullable `string?` / nullable `@json` classes (nullable arrays, and arrays in union payloads,
+    are not supported). Calling `JSON.serialize` or `JSON.deserialize` on a type without a derived
+    converter is a compile-time error.

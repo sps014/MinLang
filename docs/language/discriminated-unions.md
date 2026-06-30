@@ -169,6 +169,40 @@ Use `Option<T>` for a value that may be absent and `Result<T, E>` for an operati
 Because they are ordinary discriminated unions, you read them back with `match` exactly as above.
 (Do not redeclare them in your own program — that is a duplicate-definition error.)
 
+## `to_string`, `hash_code`, and `object`
+
+Unions take part in the [object protocol](../stdlib/builtins.md) like every other type. The default
+`to_string` is variant-aware: a data variant renders as `Variant(field: value, ...)` and a unit
+variant as just its name. `hash_code` mixes in the active variant's discriminant and payload, so
+different variants (and different payloads) hash differently.
+
+```dream
+enum Shape { Circle(radius: int), Rect(width: int, height: int), Empty }
+
+let c = Shape.Circle(5);
+println(c.to_string());            // Circle(radius: 5)
+println(Shape.Empty.to_string());  // Empty
+
+let o: object = c;                 // a union is already a tagged heap value
+println(o.to_string());            // Circle(radius: 5)
+```
+
+Provide an `@override public fun to_string(): string` (or `hash_code`) in an `extend` block to
+replace the default.
+
+## JSON with `@json`
+
+Mark a discriminated union `@json` to derive [`to_json` / `from_json`](../stdlib/json.md#unions)
+converters. Each value serializes to an object tagged with a `"type"` key naming the active variant:
+
+```dream
+@json
+enum Shape { Circle(radius: int), Rect(width: int, height: int), Empty }
+
+let text = JSON.serialize(Shape.Circle(7));   // {"type":"Circle","radius":7}
+let back = JSON.deserialize<Shape>(text);      // Shape.Circle(7)
+```
+
 ## When to use `match` vs `switch`
 
 Use [`switch`](control-flow.md#switch) for plain C-style enums and integer/string values. Use
