@@ -1,0 +1,17 @@
+[package]
+name = "dream-syntax"
+version = "0.1.0"
+edition = "2018"
+
+[lib]
+name = "dream_syntax"
+path = "src/lib.rs"
+
+[dependencies]
+dream-text = { path = "../dream-text" }
+dream-diagnostics = { path = "../dream-diagnostics" }
+bumpalo = "3.20.3"
+logos = "0.16.1"
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"

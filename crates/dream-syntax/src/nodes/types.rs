@@ -1,0 +1,473 @@
+use crate::token::syntax_token::SyntaxToken;
+use std::io::Error;
+
+/// Returns the given type name with a single trailing nullable (`?`) suffix removed.
+pub fn strip_nullable(type_name: &str) -> &str {
+    type_name.strip_suffix('?').unwrap_or(type_name)
+}
+
+/// Single source of truth for name mangling: joins `base` with each suffix using `_`
+/// separators, e.g. base `Pair` with `["int", "string"]` becomes `Pair_int_string`.
+/// With no suffixes the base name is returned unchanged.
+///
+/// The array suffix `[]` is rewritten to `Array` (so `char[]` -> `charArray`) because `[` and `]`
+/// are not valid in a generated WASM identifier; a generic instantiated with an array type
+/// argument (e.g. `Result<char[], string>`) would otherwise produce an unassemblable function
+/// name. This rewrite is purely on the mangled name and is applied uniformly to type identity and
+/// codegen, so the two never disagree.
+pub fn mangle_with_suffixes<S: AsRef<str>>(
+    base: &str,
+    suffixes: impl IntoIterator<Item = S>,
+) -> String {
+    let mut name = base.to_string();
+    for suffix in suffixes {
+        name.push('_');
+        name.push_str(&suffix.as_ref().replace("[]", "Array"));
+    }
+    name
+}
+
+/// Builds the monomorphized name for a generic instantiation by appending every concrete
+/// type argument, e.g. base `Pair` with `[int, string]` becomes `Pair_int_string`. With no
+/// arguments the base name is returned unchanged.
+pub fn mangle_generic(base: &str, args: &[Type]) -> String {
+    mangle_with_suffixes(base, args.iter().map(|arg| arg.get_type()))
+}
+
+/// Maps a C#/.NET-style type name to its canonical Dream primitive spelling, or returns
+/// `None` if `name` is not a recognized alias. `String`/`Int32`/... become
+/// `string`/`int`/..., so the two spellings are fully interchangeable while every
+/// downstream stage continues to see the lowercase canonical names.
+pub fn canonical_type_name(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "String" => "string",
+        "Int32" => "int",
+        "Int64" => "long",
+        "UInt32" => "uint",
+        "UInt64" => "ulong",
+        "Byte" => "byte",
+        "Single" => "float",
+        "Double" => "double",
+        "Boolean" => "bool",
+        "Char" => "char",
+        "Object" => "object",
+        "Void" => "void",
+        _ => return None,
+    })
+}
+
+/// Constructs the primitive `Type` named by `name`, backed by `token`, or returns `None`
+/// if `name` does not denote a primitive. Single source of truth for primitive construction.
+pub fn primitive_type(name: &str, token: SyntaxToken) -> Option<Type> {
+    Some(match name {
+        "int" => Type::Integer(token),
+        "float" => Type::Float(token),
+        "double" => Type::Double(token),
+        "string" => Type::String(token),
+        "bool" => Type::Boolean(token),
+        "char" => Type::Char(token),
+        "long" => Type::Long(token),
+        "uint" => Type::UInt(token),
+        "ulong" => Type::ULong(token),
+        "byte" => Type::Byte(token),
+        _ => return None,
+    })
+}
+
+/// The scalar primitive type names that own runtime metadata (boxing, array helpers, tags).
+/// `string` is included here because it is a first-class value type even though it is a heap
+/// reference; it is excluded from [`is_boxable_primitive`]. Single source of truth for the
+/// repeated `"int" | "float" | ...` lists that were previously copied across codegen modules.
+pub const PRIMITIVE_TYPE_NAMES: [&str; 10] = [
+    "int", "float", "double", "bool", "char", "string", "long", "uint", "ulong", "byte",
+];
+
+/// True for the scalar primitives that are boxed into a small tagged heap block when widened to
+/// `object` (everything except `string`, which is already a heap reference).
+pub fn is_boxable_primitive(name: &str) -> bool {
+    matches!(
+        name,
+        "int" | "float" | "double" | "bool" | "char" | "long" | "uint" | "ulong" | "byte"
+    )
+}
+
+/// True for the numeric primitives that participate in implicit widening. The single predicate
+/// behind overload viability and assignment/cast compatibility.
+pub fn is_numeric_primitive(name: &str) -> bool {
+    matches!(
+        name,
+        "int" | "float" | "double" | "long" | "uint" | "ulong" | "byte"
+    )
+}
+
+/// True for the unsigned integer primitives (`byte`/`uint`/`ulong`). Drives the choice of
+/// signed vs unsigned WASM instructions (`div_u`/`lt_u`/...) in codegen.
+pub fn is_unsigned_integer(name: &str) -> bool {
+    matches!(name, "byte" | "uint" | "ulong")
+}
+
+/// True if a value of numeric type `from` may implicitly widen to numeric type `to` without an
+/// explicit cast (narrowing always requires a cast). Encodes the full widening lattice:
+/// `byte -> int -> long -> float -> double` and `byte -> uint -> ulong`, plus the safe
+/// cross-edges (`uint -> long`, unsigned ints -> float/double). Same-width opposite-sign pairs
+/// (`int`<->`uint`, `long`<->`ulong`) are intentionally excluded. `from == to` returns false
+/// (it is an identity, not a widening); callers handle equality separately.
+pub fn numeric_widen(from: &str, to: &str) -> bool {
+    matches!(
+        (from, to),
+        ("byte", "int")
+            | ("byte", "uint")
+            | ("byte", "long")
+            | ("byte", "ulong")
+            | ("byte", "float")
+            | ("byte", "double")
+            | ("int", "long")
+            | ("int", "float")
+            | ("int", "double")
+            | ("uint", "long")
+            | ("uint", "ulong")
+            | ("uint", "float")
+            | ("uint", "double")
+            | ("long", "float")
+            | ("long", "double")
+            | ("ulong", "float")
+            | ("ulong", "double")
+            | ("float", "double")
+    )
+}
+
+/// Byte size and alignment of a value of `type_name` when stored inline (array element or struct
+/// field). `bool`/`char`/`byte` occupy a single byte; `double`/`long`/`ulong` are 8 bytes;
+/// everything else - `int`, `uint`, `float`, and all heap references - is a 4-byte word/pointer.
+pub fn value_size_align(type_name: &str) -> (usize, usize) {
+    match type_name {
+        "bool" | "char" | "byte" => (1, 1),
+        "double" | "long" | "ulong" => (8, 8),
+        _ => (4, 4),
+    }
+}
+
+/// Returns the given type name with a single trailing array (`[]`) suffix removed.
+pub fn strip_array(type_name: &str) -> &str {
+    type_name.strip_suffix("[]").unwrap_or(type_name)
+}
+
+/// The internal name under which a struct method is registered in the function table and
+/// emitted in codegen: the struct name and method name joined with `_` (e.g. `User_greet`).
+/// Single source of truth for method-name mangling; the derived-method helpers below build on it.
+pub fn method_fn(struct_name: &str, method_name: &str) -> String {
+    format!("{}_{}", struct_name, method_name)
+}
+
+/// The name of the compiler-derived `to_json` converter for a `@json` struct (e.g.
+/// `User_to_json`). Single source of truth for the implicit naming contract shared by the
+/// `@json` source generator, the type checker, and the codegen backend.
+pub fn json_to_json_fn(struct_name: &str) -> String {
+    method_fn(struct_name, "to_json")
+}
+
+/// The name of the compiler-derived `from_json` converter for a `@json` struct (e.g.
+/// `User_from_json`). See [`json_to_json_fn`].
+pub fn json_from_json_fn(struct_name: &str) -> String {
+    method_fn(struct_name, "from_json")
+}
+
+/// The reserved member name of a type's constructor declaration (`constructor(...) { ... }`).
+/// The parser recognizes it, semantics validates it, and codegen mangles it via
+/// [`constructor_fn`]. Single source of truth so the spelling never drifts between layers.
+pub const CONSTRUCTOR_NAME: &str = "constructor";
+
+/// The reserved member name of a type's destructor declaration (`del() { ... }`), run on
+/// scope exit. Single source of truth shared by parser/semantics/codegen.
+pub const DESTRUCTOR_NAME: &str = "del";
+
+/// True if `name` is a reserved member declaration keyword (`constructor`/`del`) that the parser
+/// accepts without the leading `fun` and that cannot be marked `public` or carry a return type.
+pub fn is_special_member_name(name: &str) -> bool {
+    name == CONSTRUCTOR_NAME || name == DESTRUCTOR_NAME
+}
+
+/// The synthetic loop-index local the parser emits when lowering a `for-each`; `n` is a
+/// per-loop counter that keeps nested loops from colliding. Centralized so the parser is the
+/// only place that knows the spelling.
+pub fn foreach_index_local(n: usize) -> String {
+    format!("__foreach_idx_{}", n)
+}
+
+/// The synthetic array-holder local the parser emits when lowering a `for-each`. See
+/// [`foreach_index_local`].
+pub fn foreach_array_local(n: usize) -> String {
+    format!("__foreach_arr_{}", n)
+}
+
+/// The internal name under which a struct's user-defined constructor is registered/emitted
+/// (e.g. `User_constructor`). Single source of truth for the constructor naming convention.
+pub fn constructor_fn(struct_name: &str) -> String {
+    method_fn(struct_name, CONSTRUCTOR_NAME)
+}
+
+/// The base type name of the async handle `Future<T>`. Single source of truth for the identifier
+/// the async machinery keys on (the structured `Future<T>` type and its `Future_<inner>` mangling).
+pub const FUTURE_TYPE: &str = "Future";
+
+/// The canonical type-name string for a `Future<T>` whose inner type is `inner`
+/// (e.g. `Future_int`). `Future` is the storable, ref-light handle returned by async calls.
+pub fn future_type_name(inner: &str) -> String {
+    format!("{}_{}", FUTURE_TYPE, inner)
+}
+
+/// If `type_name` denotes a `Future<T>` (i.e. `Future_<inner>`), returns the inner type name,
+/// otherwise `None`. Used to type `await` (unwrap) and async-call results (wrap).
+pub fn future_inner(type_name: &str) -> Option<&str> {
+    type_name.strip_prefix("Future_")
+}
+
+/// Maps a type name to the suffix used in its generated `$release_*` runtime helper.
+/// Arrays become `_array` and nullable markers are dropped (e.g. `Node[]?` -> `Node_array`).
+pub fn release_func_suffix(type_name: &str) -> String {
+    type_name.replace("[]", "_array").replace('?', "")
+}
+
+/// Returns true if a type name denotes a heap-allocated, reference-counted value
+/// (strings, arrays, and structs). `known_struct` decides whether a bare name is a struct.
+pub fn is_reference_type_name(type_name: &str, known_struct: impl Fn(&str) -> bool) -> bool {
+    let base = strip_nullable(type_name);
+    base == "string" || base == "object" || base.ends_with("[]") || known_struct(base)
+}
+
+/// Represents a data type in the language
+#[derive(Debug, Clone, PartialEq)]
+pub enum Type {
+    Integer(SyntaxToken),
+    Float(SyntaxToken),
+    Double(SyntaxToken),
+    String(SyntaxToken),
+    Boolean(SyntaxToken),
+    /// A single character. Stored as an `i32` code point on the stack but only one byte in
+    /// memory (arrays/fields use `i32.load8_u`/`i32.store8`). A value type (not ref-counted).
+    Char(SyntaxToken),
+    /// A signed 64-bit integer. Represented as an `i64` on the stack and 8 bytes in memory.
+    Long(SyntaxToken),
+    /// An unsigned 32-bit integer. Represented as an `i32` on the stack (4 bytes in memory) but
+    /// uses unsigned WASM ops (`div_u`/`lt_u`/...).
+    UInt(SyntaxToken),
+    /// An unsigned 64-bit integer. Represented as an `i64` on the stack (8 bytes in memory) and
+    /// uses unsigned WASM ops.
+    ULong(SyntaxToken),
+    /// An unsigned 8-bit integer. Stored as an `i32` on the stack but only one byte in memory
+    /// (`i32.load8_u`/`i32.store8`, like `char`). A value type (not ref-counted).
+    Byte(SyntaxToken),
+    /// The universal top type. At runtime an `object` is an `i32` pointer to a tagged heap
+    /// block: primitives are boxed, reference types are stored directly (their block carries
+    /// the tag in its header).
+    Object(SyntaxToken),
+    Array(Box<Type>),
+    Struct(SyntaxToken, Option<Vec<Type>>),
+    Generic(String),
+    Nullable(Box<Type>),
+    /// A first-class function value `fun(params...): ret`. Represented at runtime as an `i32`
+    /// index into the module's function table (used with `call_indirect`).
+    Function(Vec<Type>, Box<Type>),
+    Void,
+    /// The "poison" type produced on a semantic error (e.g. an unresolved identifier or call).
+    /// It is assignable to and from every type so a single mistake does not cascade into a flood
+    /// of follow-on diagnostics. It exists only during analysis of erroneous programs; codegen
+    /// never runs once any error is reported, so it never has to be lowered.
+    Unknown,
+}
+
+/// The sentinel type name carried by [`Type::Unknown`]. Chosen with angle brackets so it can never
+/// collide with a user-declared identifier.
+pub const UNKNOWN_TYPE_NAME: &str = "<unknown>";
+
+/// True if `name` is the poison sentinel produced on type errors (see [`Type::Unknown`]).
+pub fn is_unknown_type_name(name: &str) -> bool {
+    // Strip any nullable/array suffixes a caller may have appended before comparing.
+    let base = strip_array(strip_nullable(name));
+    base == UNKNOWN_TYPE_NAME
+}
+
+impl Type {
+    /// Returns the string representation of the type
+    pub fn get_type(&self) -> String {
+        match self {
+            Type::Integer(_) => "int".to_string(),
+            Type::Float(_) => "float".to_string(),
+            Type::Double(_) => "double".to_string(),
+            Type::String(_) => "string".to_string(),
+            Type::Object(_) => "object".to_string(),
+            Type::Void => "void".to_string(),
+            Type::Boolean(_) => "bool".to_string(),
+            Type::Char(_) => "char".to_string(),
+            Type::Long(_) => "long".to_string(),
+            Type::UInt(_) => "uint".to_string(),
+            Type::ULong(_) => "ulong".to_string(),
+            Type::Byte(_) => "byte".to_string(),
+            Type::Array(inner) => format!("{}[]", inner.get_type()),
+            Type::Struct(token, generic_args) => match generic_args {
+                Some(args) => mangle_generic(&token.text, args),
+                None => token.text.clone(),
+            },
+            Type::Generic(name) => name.clone(),
+            Type::Nullable(inner) => format!("{}?", inner.get_type()),
+            Type::Function(params, ret) => {
+                let params_str = params
+                    .iter()
+                    .map(|p| p.get_type())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                format!("fun({}):{}", params_str, ret.get_type())
+            }
+            Type::Unknown => UNKNOWN_TYPE_NAME.to_string(),
+        }
+    }
+
+    /// Human-readable spelling of the type, the inverse of how it is written in source. Unlike
+    /// [`get_type`](Self::get_type), generic instantiations render with angle brackets
+    /// (`Box<int>`, `Pair<int, string>`, `Box<Box<int>>`) rather than the `_`-mangled monomorphized
+    /// name (`Box_int`). Use this anywhere a type is shown to a human (hovers, inlay hints,
+    /// signatures); use `get_type` for internal identity/mangling.
+    pub fn display_name(&self) -> String {
+        match self {
+            Type::Array(inner) => format!("{}[]", inner.display_name()),
+            Type::Struct(token, generic_args) => match generic_args {
+                Some(args) => {
+                    let args_str = args
+                        .iter()
+                        .map(|a| a.display_name())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("{}<{}>", token.text, args_str)
+                }
+                None => token.text.clone(),
+            },
+            Type::Nullable(inner) => format!("{}?", inner.display_name()),
+            Type::Function(params, ret) => {
+                let params_str = params
+                    .iter()
+                    .map(|p| p.display_name())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("fun({}): {}", params_str, ret.display_name())
+            }
+            Type::Unknown => "unknown".to_string(),
+            // Primitives and bare generic parameters spell the same either way.
+            _ => self.get_type(),
+        }
+    }
+
+    /// True if this is the poison [`Type::Unknown`] produced on a semantic error.
+    pub fn is_unknown(&self) -> bool {
+        matches!(self, Type::Unknown)
+    }
+
+    /// Returns true if this type is a nullable (`T?`) type.
+    pub fn is_nullable(&self) -> bool {
+        matches!(self, Type::Nullable(_))
+    }
+
+    /// Returns true if this type is an array (`T[]`) type.
+    pub fn is_array(&self) -> bool {
+        matches!(self, Type::Array(_))
+    }
+
+    /// Returns the type name with any trailing nullable (`?`) suffix removed.
+    pub fn base_name(&self) -> String {
+        strip_nullable(&self.get_type()).to_string()
+    }
+
+    /// Returns the source span of the token backing this type, if any.
+    /// Composite types (arrays, nullables) defer to their inner type; `Void`/`Generic`
+    /// have no backing token and return `None`.
+    pub fn get_span(&self) -> Option<dream_text::text_span::TextSpan> {
+        match self {
+            Type::Integer(token)
+            | Type::Float(token)
+            | Type::Double(token)
+            | Type::String(token)
+            | Type::Boolean(token)
+            | Type::Char(token)
+            | Type::Long(token)
+            | Type::UInt(token)
+            | Type::ULong(token)
+            | Type::Byte(token)
+            | Type::Object(token)
+            | Type::Struct(token, _) => Some(token.position),
+            Type::Array(inner) | Type::Nullable(inner) => inner.get_span(),
+            Type::Void | Type::Generic(_) | Type::Function(_, _) | Type::Unknown => None,
+        }
+    }
+
+    /// Returns the line and column string of the type token
+    pub fn get_line_str(&self) -> String {
+        match self {
+            Type::Integer(token) => token.position.get_point_str(),
+            Type::Float(token) => token.position.get_point_str(),
+            Type::Double(token) => token.position.get_point_str(),
+            Type::String(token) => token.position.get_point_str(),
+            Type::Object(token) => token.position.get_point_str(),
+            Type::Void => "".to_string(),
+            Type::Boolean(token) => token.position.get_point_str(),
+            Type::Char(token) => token.position.get_point_str(),
+            Type::Long(token) => token.position.get_point_str(),
+            Type::UInt(token) => token.position.get_point_str(),
+            Type::ULong(token) => token.position.get_point_str(),
+            Type::Byte(token) => token.position.get_point_str(),
+            Type::Array(inner) => inner.get_line_str(),
+            Type::Struct(token, _) => token.position.get_point_str(),
+            Type::Generic(_) => "".to_string(), // Can be improved
+            Type::Nullable(inner) => inner.get_line_str(),
+            Type::Function(_, _) => "".to_string(),
+            Type::Unknown => "".to_string(),
+        }
+    }
+
+    /// Parses a Type from a given SyntaxToken
+    pub fn from_token(mut token: SyntaxToken) -> Result<Type, Error> {
+        // Normalize C#/.NET-style type names (String, Int32, ...) to their canonical Dream
+        // primitive spelling before any further classification, so the two are interchangeable.
+        if let Some(canonical) = canonical_type_name(&token.text) {
+            token.text = canonical.to_string();
+        }
+        if let Some(primitive) = primitive_type(&token.text, token.clone()) {
+            return Ok(primitive);
+        }
+        let r = match token.text.as_str() {
+            "object" => Type::Object(token),
+            "void" => Type::Void,
+            _ => {
+                if token.text.ends_with("?") {
+                    let base_type_str = &token.text[0..token.text.len() - 1];
+                    let mut base_token = token.clone();
+                    base_token.text = base_type_str.to_string();
+                    let base_type = Type::from_token(base_token)?;
+
+                    // Restrict nullable to reference types
+                    match &base_type {
+                        Type::String(_)
+                        | Type::Object(_)
+                        | Type::Array(_)
+                        | Type::Struct(_, _)
+                        | Type::Void => {
+                            return Ok(Type::Nullable(Box::new(base_type)));
+                        }
+                        _ => {
+                            return Err(Error::other(format!("Type '{}' cannot be nullable. Only reference types (string, arrays, structs) can be nullable.", base_type.get_type())));
+                        }
+                    }
+                }
+                // Handle array types like "int[]" or "Point[]"
+                if token.text.ends_with("[]") {
+                    let base_type_str = &token.text[0..token.text.len() - 2];
+                    let mut base_token = token.clone();
+                    base_token.text = base_type_str.to_string();
+                    let base_type = Type::from_token(base_token)?;
+                    return Ok(Type::Array(Box::new(base_type)));
+                }
+                // If it's not a built-in type or array, assume it's a struct type
+                return Ok(Type::Struct(token, None));
+            }
+        };
+        Ok(r)
+    }
+}

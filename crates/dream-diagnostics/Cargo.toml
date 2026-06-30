@@ -1,0 +1,12 @@
+[package]
+name = "dream-diagnostics"
+version = "0.1.0"
+edition = "2018"
+
+[lib]
+name = "dream_diagnostics"
+path = "src/lib.rs"
+
+[dependencies]
+dream-text = { path = "../dream-text" }
+tracing = "0.1.44"

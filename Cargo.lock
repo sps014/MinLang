@@ -449,6 +449,9 @@ name = "dream"
 version = "0.1.0"
 dependencies = [
  "bumpalo",
+ "dream-diagnostics",
+ "dream-syntax",
+ "dream-text",
  "indexmap",
  "logos",
  "pretty_assertions",
@@ -459,6 +462,14 @@ dependencies = [
  "tracing-subscriber",
  "wasmtime",
  "wat",
+]
+
+[[package]]
+name = "dream-diagnostics"
+version = "0.1.0"
+dependencies = [
+ "dream-text",
+ "tracing",
 ]
 
 [[package]]
@@ -473,6 +484,21 @@ dependencies = [
  "tokio",
  "tower-lsp",
 ]
+
+[[package]]
+name = "dream-syntax"
+version = "0.1.0"
+dependencies = [
+ "bumpalo",
+ "dream-diagnostics",
+ "dream-text",
+ "logos",
+ "pretty_assertions",
+]
+
+[[package]]
+name = "dream-text"
+version = "0.1.0"
 
 [[package]]
 name = "either"

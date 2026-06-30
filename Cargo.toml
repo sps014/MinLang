@@ -7,7 +7,15 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+# Front-end crates: the source-text primitives, diagnostics, and the lexer/parser/AST live in
+# their own layered crates and are re-exported from `lib.rs` so existing
+# `crate::{syntax, diagnostics, text}::...` paths keep resolving.
+dream-text = { path = "crates/dream-text" }
+dream-diagnostics = { path = "crates/dream-diagnostics" }
+dream-syntax = { path = "crates/dream-syntax" }
 bumpalo = "3.20.3"
+# Insertion-ordered map used for the codegen tables whose iteration order reaches emitted
+# `.wat` output, so compilation is reproducible (std `HashMap` randomizes iteration per run).
 indexmap = "2"
 logos = "0.16.1"
 regex = "1.5.5"
@@ -31,7 +39,13 @@ native = ["wasmtime", "reqwest", "serde_json"]
 pretty_assertions = "1.4.1"
 
 [workspace]
-members = [".", "tooling/dream-lsp"]
+members = [
+    ".",
+    "crates/dream-text",
+    "crates/dream-diagnostics",
+    "crates/dream-syntax",
+    "tooling/dream-lsp",
+]
 # v2 resolver so the wasm32 analyzer build does not inherit the root crate's default
 # `native` feature (and therefore never tries to compile wasmtime for wasm).
 resolver = "2"

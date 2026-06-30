@@ -17,11 +17,13 @@ The repository is structured as a Rust-centric multi-component monorepo:
 
 ## 2. Directory Layout & Key Modules
 
+*   **`crates/` (Front-end crates):** The front-end is split into three layered library crates so the layering (`dream-text` <- `dream-diagnostics` <- `dream-syntax`) is enforced by the crate graph rather than convention. The root `dream` crate depends on all three and re-exports them from `lib.rs` (`pub use dream_syntax as syntax;`, etc.) so every existing `crate::{syntax,diagnostics,text}::...` path keeps resolving.
+    *   `crates/dream-text/`: Leaf crate for source-position primitives (`text_span.rs`, `line_text.rs`, `indented_text_writer.rs`); depends on nothing else in the workspace.
+    *   `crates/dream-diagnostics/`: Collects, stores, and pretty-prints errors and warnings with inline source excerpts and squigglies. Depends only on `dream-text`.
+    *   `crates/dream-syntax/`: Lexer, AST node definitions, parser, and syntax tree. Depends on `dream-text` and `dream-diagnostics` (and `logos`/`bumpalo`). Re-exports the text primitives as a `text` submodule for back-compat (`syntax::text::*`).
 *   **`src/` (Core Compiler):**
     *   `main.rs`: Entry point for the compiler CLI. Manages verbosity, compilation target selection, and invoking the runner.
-    *   `lib.rs`: Exposes parser, semantic analyzer, codegen, and driver APIs.
-    *   `diagnostics.rs`: Crate-root leaf module that collects, stores, and pretty-prints errors and warnings with inline source code excerpts and squigglies. Lives at the crate root (re-exported as `driver::diagnostics` for compatibility) so the front-end can report diagnostics without a `syntax` <-> `driver` module cycle.
-    *   `text/`: Crate-root leaf module for source-position primitives (`text_span.rs`, `line_text.rs`, `indented_text_writer.rs`); depended on by `diagnostics`, `syntax`, and `codegen`.
+    *   `lib.rs`: Re-exports the front-end crates (`syntax`, `diagnostics`, `text`) and exposes the semantic analyzer, codegen, and driver APIs.
     *   `driver/`: Orchestrates the compiler lifecycle.
         *   `source_loader.rs`: Recursively resolves imports, parses multiple files, and merges every file's declarations into a `ProgramAccumulator`.
         *   `prelude.rs`: Merges the embedded standard-library prelude.
@@ -29,10 +31,7 @@ The repository is structured as a Rust-centric multi-component monorepo:
         *   `source_manager.rs`: Thin compatibility facade re-exporting the three modules above.
         *   `error.rs`: Top-level `CompileError` enum returned by the pipeline.
         *   `compiler.rs`: High-level orchestrator starting with parsing and concluding with code generation and artifact emission.
-    *   `syntax/`: Parsing stage.
-        *   `lexer.rs`: Tokenizes stream using `logos`.
-        *   `parser/`: Implements recursive descent parsing for declarations, statements, and expressions.
-        *   `nodes/`: Defines AST node types (`ProgramNode`, `Type`, `ExpressionNode`, `StatementNode`, etc.).
+    *   *Parsing stage:* lives in the `crates/dream-syntax/` crate (re-exported as `crate::syntax`). `lexer.rs` tokenizes with `logos`; `parser/` is recursive descent over declarations/statements/expressions; `nodes/` defines the AST (`ProgramNode`, `Type`, `ExpressionNode`, `StatementNode`, etc.).
     *   `semantics/`: Semantic analysis stage.
         *   `analyzer/`: Implements type check, scope validation, `async`/`await` compliance, and generic instantiation.
         *   `symbol_table.rs`, `function_table.rs`, & `struct_table.rs`: Context-tracking databases for semantic validation.
@@ -99,13 +98,13 @@ Adhere to strict software engineering standards to maintain long-term scalabilit
     *   **Semantic Analyzer (`analyzer/`):** Validates type correctness, variable scopes, and async constraints. Must not modify AST structure or introduce target code generation.
     *   **Code Generation (`codegen/`):** Emits target representation (`.wat`). Expects a fully validated AST and resolved symbols; must never perform type checks or emit compile-time errors.
 *   **Don't Repeat Yourself (DRY):**
-    *   Consolidate common type-checking routines, helper operations, or expression evaluations into shared helper traits/methods inside `src/semantics/` or `src/syntax/nodes/`.
+    *   Consolidate common type-checking routines, helper operations, or expression evaluations into shared helper traits/methods inside `src/semantics/` or `crates/dream-syntax/src/nodes/`.
     *   The standard library files in `src/stdlib/*.dream` are the single source of truth. Both the main compiler and the `dream-lsp` reuse these exact files via `PRELUDE_FILES` to prevent behavior and definitions from drifting.
     *   **Intrinsics registry (`src/intrinsics.rs`):** the builtins/`@intrinsic`-tagged stdlib operations the compiler special-cases live in one place. Recognize them through the registry's constants/predicates and classify `@intrinsic("…")` static methods via `IntrinsicOp::from_key`/`from_attributes` — never re-match bare strings like `"print"`, `"len"`, or `"promise_all"` in the analyzer or codegen.
-    *   **Reserved names (`src/syntax/nodes/types.rs`):** special member names (`constructor`/`del` via `is_special_member_name`), the `@intrinsic` attribute name, and synthetic `for-each` locals are defined once and reused by parser/semantics/codegen rather than re-spelled as literals.
+    *   **Reserved names (`crates/dream-syntax/src/nodes/types.rs`):** special member names (`constructor`/`del` via `is_special_member_name`), the `@intrinsic` attribute name, and synthetic `for-each` locals are defined once and reused by parser/semantics/codegen rather than re-spelled as literals.
 *   **Open/Closed Principle (OCP):**
     *   Compiler passes rely on robust pattern matching over abstract syntax enums (e.g., `ExpressionNode` or `StatementNode`).
-    *   When adding a new statement or expression, declare its representation in `src/syntax/nodes/` and let the Rust compiler's exhaustiveness checks guide you through updating the matching blocks across the parser, analyzer, and codegen. This design allows extending the language safely with compile-time correctness guarantees.
+    *   When adding a new statement or expression, declare its representation in `crates/dream-syntax/src/nodes/` and let the Rust compiler's exhaustiveness checks guide you through updating the matching blocks across the parser, analyzer, and codegen. This design allows extending the language safely with compile-time correctness guarantees.
 *   **Interface Segregation & Loose Coupling:**
     *   The core compilation workflow (`Compiler`) is decoupled from runtime host integration. Native execution details remain isolated in `src/execution/host.rs`, and browser playground details are separated into JS runtime wrappers within Vite.
 
@@ -118,7 +117,7 @@ Adhere to strict software engineering standards to maintain long-term scalabilit
     ```rust
     diagnostics.report_error("Message text".to_string(), Some(node_span));
     ```
-*   **Parser is recover-and-continue.** `match_token` synthesizes a placeholder token (and reports an error) instead of bailing, and `parse_program`/`parse_block` recover at declaration/statement boundaries, so `parse()` *always* returns a `ProgramNode` regardless of how malformed the input is. Every token-consuming loop must keep its `ensure_progress` guard so recovery can never spin forever. The fuzz/property tests in `src/syntax/tests/parser_tests.rs` (`fuzz_*`) lock in the "never panics, always returns a ProgramNode" guarantee — keep them green when touching the parser.
+*   **Parser is recover-and-continue.** `match_token` synthesizes a placeholder token (and reports an error) instead of bailing, and `parse_program`/`parse_block` recover at declaration/statement boundaries, so `parse()` *always* returns a `ProgramNode` regardless of how malformed the input is. Every token-consuming loop must keep its `ensure_progress` guard so recovery can never spin forever. The fuzz/property tests in `crates/dream-syntax/src/tests/parser_tests.rs` (`fuzz_*`) lock in the "never panics, always returns a ProgramNode" guarantee — keep them green when touching the parser.
 *   **Semantics use a poison type to stop cascades.** On a type error (unresolved identifier, unknown call/member, etc.) the analyzer reports once and returns `Type::Unknown`. `Unknown` unifies with every type (`compare_data_type`, `type_str_assignable`, `overload_arg_compatible` all short-circuit on it), so a single mistake never snowballs into a flood of follow-on diagnostics. New analyzer arms should return `Type::Unknown` on error (not `Type::Void`) and skip their own checks when an operand `is_unknown()`. Codegen never runs once any error is reported, so `Unknown` never needs lowering.
 
 ### 4.4. Standard Library (Prelude)
