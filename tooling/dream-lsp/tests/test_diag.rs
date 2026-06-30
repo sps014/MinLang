@@ -20,6 +20,22 @@ fn clean_program_has_no_errors() {
 }
 
 #[test]
+fn debug_probes_analyze_cleanly() {
+    // The `Debug.*` allocator probes are stdlib intrinsics; calling them (including the
+    // `ref_count(object)` probe with a reference argument) must not produce "variable Debug does
+    // not exist" or any other error. Guards against the prelude/analyzer drifting.
+    let harness = TestHarness::new(
+        "fun main(): void {\n    let n = [1, 2];\n    let a: int = Debug.free_list_head();\n    let b: int = Debug.heap_ptr();\n    let c: int = Debug.live_objects();\n    let d: int = Debug.total_allocations();\n    let e: int = Debug.ref_count(n);\n}\n|",
+    );
+    let diagnostics = harness.diagnostics();
+    assert!(
+        diagnostics.iter().all(|d| d.severity != "error"),
+        "Debug probes should analyze without errors, got: {:?}",
+        diagnostics
+    );
+}
+
+#[test]
 fn unknown_identifier_is_flagged() {
     let harness = TestHarness::new("fun main(): void {\n    let y: int = nope + 1;\n}\n|");
     let diagnostics = harness.diagnostics();

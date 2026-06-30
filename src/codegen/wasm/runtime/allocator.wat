@@ -4,16 +4,7 @@
     (local $next i32)
     (local $block_size i32)
     (local $new_ptr i32)
-    ;; debug counters: every malloc hands out one block (it always succeeds via the bump
-    ;; fallback), so bump both the live-object count and the monotonic allocation total here.
-    global.get $live_objects
-    i32.const 1
-    i32.add
-    global.set $live_objects
-    global.get $total_allocations
-    i32.const 1
-    i32.add
-    global.set $total_allocations
+    ;;@DEBUG_ALLOC_COUNT@
     ;; round size up to a multiple of 4, then reserve 12 bytes for the header
     local.get $size
     i32.const 3
@@ -123,11 +114,7 @@
     local.get $ptr
     i32.eqz
     br_if 0
-    ;; debug counter: a real block is being reclaimed (the null guard above already returned).
-    global.get $live_objects
-    i32.const 1
-    i32.sub
-    global.set $live_objects
+    ;;@DEBUG_FREE_COUNT@
     local.get $ptr
     i32.const 12
     i32.sub

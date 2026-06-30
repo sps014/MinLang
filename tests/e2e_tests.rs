@@ -30,7 +30,10 @@ fn run_test_case(dream_file: &Path) {
     let expected_file = dream_file.with_extension("expected");
     let expected_error_file = dream_file.with_extension("expected_error");
 
-    let compiler = Compiler::new(Target::Wasm);
+    // Enable allocator instrumentation for the whole suite so the GC/leak cases (e.g.
+    // `gc_complete.dream`) get real `Debug.live_objects()`/`total_allocations()` counts. It is a
+    // no-op for cases that never read those probes.
+    let compiler = Compiler::new(Target::Wasm).with_debug_alloc(true);
     let wat_path = dream_file.with_extension("wat");
 
     let dream_file_str = dream_file.to_str().unwrap().to_string();

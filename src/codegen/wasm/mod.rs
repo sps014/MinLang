@@ -70,6 +70,10 @@ pub struct CodegenContext {
     /// Top-level variable name -> resolved type name. Identifiers and assignments that name a
     /// global lower to `global.get`/`global.set` instead of `local.get`/`local.set`.
     pub globals: HashMap<String, String>,
+    /// When `true`, the allocator emits live-object/total-allocation counter updates in
+    /// `$malloc`/`$free` so `Debug.live_objects()`/`Debug.total_allocations()` report real values.
+    /// Off by default so normal (release) builds carry zero allocator overhead.
+    pub debug_alloc: bool,
 }
 
 impl CodegenContext {
@@ -92,6 +96,7 @@ impl CodegenContext {
             current_async_self: None,
             has_async: false,
             globals: HashMap::new(),
+            debug_alloc: false,
         }
     }
 }
@@ -146,6 +151,14 @@ impl<'a> WasmGenerator<'a> {
             globals: &semantic_info.globals,
             ctx,
         }
+    }
+
+    /// Enables (or disables) allocator instrumentation: when on, `$malloc`/`$free` update the
+    /// live-object and total-allocation counters that back `Debug.live_objects()` /
+    /// `Debug.total_allocations()`. Off by default so release builds pay no per-allocation cost.
+    pub fn with_debug_alloc(mut self, on: bool) -> Self {
+        self.ctx.debug_alloc = on;
+        self
     }
 
     /// Number of `$ctor_base{n}` scratch locals declared per function. Bounds the supported

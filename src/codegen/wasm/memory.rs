@@ -33,14 +33,36 @@ impl<'a> WasmGenerator<'a> {
         writer.write_line("(global $free_list_head (mut i32) (i32.const 0))");
         // Allocator introspection counters (surfaced via the `Debug` intrinsics). `$live_objects`
         // is the number of blocks currently handed out (++ in `$malloc`, -- in `$free`);
-        // `$total_allocations` is the monotonic count of every `$malloc` ever made.
+        // `$total_allocations` is the monotonic count of every `$malloc` ever made. The globals are
+        // always declared so the `$debug_get_*` helpers compile, but they are only updated when
+        // allocator instrumentation is enabled (see `debug_alloc`); otherwise they stay 0 and the
+        // allocator fast path carries no extra instructions.
         writer.write_line("(global $live_objects (mut i32) (i32.const 0))");
         writer.write_line("(global $total_allocations (mut i32) (i32.const 0))");
         writer.write_line("");
-        writer.write_block(RUNTIME_ALLOCATOR);
+        writer.write_block(&self.allocator_runtime());
         self.build_type_specific_releases(writer)?;
         writer.write_block(RUNTIME_STRINGS);
         Ok(())
+    }
+
+    /// The allocator runtime with its debug-counter placeholders resolved. When `debug_alloc` is
+    /// on, `$malloc` bumps `$live_objects`/`$total_allocations` and `$free` decrements
+    /// `$live_objects`; otherwise the placeholders expand to nothing, so the hot allocation path
+    /// is byte-for-byte the same as before instrumentation existed.
+    fn allocator_runtime(&self) -> String {
+        let (malloc_count, free_count) = if self.ctx.debug_alloc {
+            (
+                "global.get $live_objects\n    i32.const 1\n    i32.add\n    global.set $live_objects\n    \
+                 global.get $total_allocations\n    i32.const 1\n    i32.add\n    global.set $total_allocations",
+                "global.get $live_objects\n    i32.const 1\n    i32.sub\n    global.set $live_objects",
+            )
+        } else {
+            ("", "")
+        };
+        RUNTIME_ALLOCATOR
+            .replace(";;@DEBUG_ALLOC_COUNT@", malloc_count)
+            .replace(";;@DEBUG_FREE_COUNT@", free_count)
     }
 
     fn build_type_specific_releases(&self, writer: &mut IndentedTextWriter) -> Result<(), Error> {

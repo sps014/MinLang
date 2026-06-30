@@ -21,11 +21,24 @@ pub enum Target {
 /// rendering is delegated to the `diagnostics` module.
 pub struct Compiler {
     target: Target,
+    /// When `true`, codegen emits allocator instrumentation so the `Debug.live_objects()` /
+    /// `Debug.total_allocations()` probes report real values. Off by default (release builds pay
+    /// no per-allocation cost); enabled via the CLI `--debug` flag or [`Compiler::with_debug_alloc`].
+    debug_alloc: bool,
 }
 
 impl Compiler {
     pub fn new(target: Target) -> Self {
-        Self { target }
+        Self {
+            target,
+            debug_alloc: false,
+        }
+    }
+
+    /// Builder: enable allocator instrumentation for this compilation.
+    pub fn with_debug_alloc(mut self, on: bool) -> Self {
+        self.debug_alloc = on;
+        self
     }
 
     pub fn compile(&self, main_file_path: &String, out_path: &String) -> Result<(), Error> {
@@ -95,7 +108,9 @@ impl Compiler {
         info!("starting code generation");
 
         let mut generator: Box<dyn CodeGenerator> = match self.target {
-            Target::Wasm => Box::new(WasmGenerator::new(&ast, &symbol_info)),
+            Target::Wasm => {
+                Box::new(WasmGenerator::new(&ast, &symbol_info).with_debug_alloc(self.debug_alloc))
+            }
         };
 
         let text = generator.generate()?;
