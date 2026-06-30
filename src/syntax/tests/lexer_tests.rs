@@ -93,6 +93,24 @@ fn test_lex_literals() {
 }
 
 #[test]
+fn test_lex_interpolated_string() {
+    let mut lexer = Lexer::new("$\"hi {x}\"".to_string());
+    let mut diagnostics = DiagnosticBag::new(None);
+    let tokens = lexer.lex_all(&mut diagnostics);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    let kinds: Vec<TokenKind> = tokens.iter().map(|t| t.kind).collect();
+    assert_eq!(
+        kinds,
+        vec![
+            TokenKind::InterpolatedStringToken,
+            TokenKind::EndOfFileToken,
+        ]
+    );
+    assert_eq!(tokens[0].text, "$\"hi {x}\"");
+}
+
+#[test]
 fn test_lex_bad_token() {
     let mut lexer = Lexer::new("let # = 5;".to_string());
     let mut diagnostics = DiagnosticBag::new(None);

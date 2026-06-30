@@ -1,0 +1,16 @@
+fun main(): void {
+    let x = 5;
+    let y = 2;
+
+    // Basic holes with an arithmetic expression and a variable.
+    System.println($"{y+68} is {x}");
+
+    // Expression inside a hole.
+    System.println($"sum = {x + y}");
+
+    // `{{` / `}}` escape to literal braces; the trailing hole is still interpolated.
+    System.println($"{{literal braces}} and {x}");
+
+    // Method call inside a hole, auto-converted via the to_string protocol.
+    System.println($"squared {x.pow(2)}");
+}

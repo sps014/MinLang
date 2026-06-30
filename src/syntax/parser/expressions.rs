@@ -1,4 +1,5 @@
 use super::Parser;
+use crate::syntax::lexer::Lexer;
 use crate::syntax::nodes::{ExpressionNode, MatchArm, MatchArmBody, PatternNode, Type};
 use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
@@ -298,6 +299,9 @@ impl<'a, 'b> Parser<'a, 'b> {
             }
         } else if self.current_token().kind == TokenKind::StringToken {
             return Ok(ExpressionNode::Literal(Type::String(self.next_token())));
+        } else if self.current_token().kind == TokenKind::InterpolatedStringToken {
+            let tok = self.next_token();
+            return self.parse_interpolated_string(tok);
         } else if self.current_token().kind == TokenKind::CharToken {
             // A char literal `'a'` is a `char` whose backing token text is the (ASCII/code point)
             // value, so codegen can emit `i32.const <value>`. Escapes like '\n', '\t', '\\', '\''
@@ -578,5 +582,159 @@ impl<'a, 'b> Parser<'a, 'b> {
                 Ok(Type::Unknown)
             }
         }
+    }
+
+    /// Lowers an interpolated string literal `$"...{expr}..."` into the existing string
+    /// concatenation chain. `$"{y+68} is {x}"` becomes `"" + (y + 68) + " is " + (x)`, reusing
+    /// the analyzer/codegen `string + T` path that auto-converts each non-string operand through
+    /// the `to_string` object protocol. The chain is seeded with an empty string literal so the
+    /// whole expression is always typed `string`, even for a lone hole like `$"{x}"`.
+    fn parse_interpolated_string(
+        &mut self,
+        token: SyntaxToken,
+    ) -> Result<ExpressionNode<'a>, Error> {
+        let pos = token.position;
+        // Strip the leading `$"` and trailing `"`. The lexer guarantees this shape.
+        let raw = token.text.as_str();
+        let body = raw
+            .strip_prefix("$\"")
+            .and_then(|s| s.strip_suffix('"'))
+            .unwrap_or("");
+
+        let chars: Vec<char> = body.chars().collect();
+        let mut i = 0;
+        let mut text_buf = String::new();
+        // Each segment is either literal text (`Ok`) or hole source to parse (`Err`).
+        let mut segments: Vec<Result<String, String>> = Vec::new();
+
+        while i < chars.len() {
+            let c = chars[i];
+            if c == '{' {
+                // `{{` is an escaped literal `{`.
+                if i + 1 < chars.len() && chars[i + 1] == '{' {
+                    text_buf.push('{');
+                    i += 2;
+                    continue;
+                }
+                // Open a hole: flush any pending literal text first.
+                if !text_buf.is_empty() {
+                    segments.push(Ok(std::mem::take(&mut text_buf)));
+                }
+                i += 1; // consume `{`
+                let mut depth = 1;
+                let mut hole = String::new();
+                while i < chars.len() && depth > 0 {
+                    let h = chars[i];
+                    if h == '{' {
+                        depth += 1;
+                        hole.push(h);
+                    } else if h == '}' {
+                        depth -= 1;
+                        if depth == 0 {
+                            i += 1; // consume the matching `}`
+                            break;
+                        }
+                        hole.push(h);
+                    } else {
+                        hole.push(h);
+                    }
+                    i += 1;
+                }
+                if depth > 0 {
+                    self.diagnostics.report_error(
+                        "unterminated '{' in interpolated string".to_string(),
+                        Some(pos),
+                    );
+                }
+                segments.push(Err(hole));
+            } else if c == '}' {
+                // `}}` is an escaped literal `}`.
+                if i + 1 < chars.len() && chars[i + 1] == '}' {
+                    text_buf.push('}');
+                    i += 2;
+                    continue;
+                }
+                self.diagnostics.report_error(
+                    "unmatched '}' in interpolated string; use '}}' for a literal brace"
+                        .to_string(),
+                    Some(pos),
+                );
+                text_buf.push('}');
+                i += 1;
+            } else {
+                text_buf.push(c);
+                i += 1;
+            }
+        }
+        if !text_buf.is_empty() {
+            segments.push(Ok(text_buf));
+        }
+
+        // Seed with an empty string literal so the result is always `string`.
+        let mut acc = self.make_string_literal(String::new(), pos);
+        for segment in segments {
+            let right = match segment {
+                Ok(text) => self.make_string_literal(text, pos),
+                Err(hole) => self.parse_interpolation_hole(hole, pos)?,
+            };
+            let left_ref = self.arena.alloc(acc);
+            let right_ref = self.arena.alloc(right);
+            let plus = SyntaxToken::new(TokenKind::PlusToken, pos, "+".to_string());
+            acc = ExpressionNode::Binary(left_ref, plus, right_ref);
+        }
+        Ok(acc)
+    }
+
+    /// Builds a string literal AST node from raw (already-escaped) inner text by re-adding the
+    /// surrounding quotes that codegen strips. Any backslash escapes carried over from the
+    /// interpolated literal are preserved verbatim, matching plain string literals.
+    fn make_string_literal(
+        &self,
+        text: String,
+        pos: crate::syntax::text::text_span::TextSpan,
+    ) -> ExpressionNode<'a> {
+        let tok = SyntaxToken::new(TokenKind::StringToken, pos, format!("\"{}\"", text));
+        ExpressionNode::Literal(Type::String(tok))
+    }
+
+    /// Parses the source of a single `{...}` hole into an expression using a child parser that
+    /// shares this parser's arena and diagnostics (so allocated nodes live in the same arena and
+    /// errors surface on the same bag). Spans inside the hole are relative to the hole text.
+    fn parse_interpolation_hole(
+        &mut self,
+        source: String,
+        pos: crate::syntax::text::text_span::TextSpan,
+    ) -> Result<ExpressionNode<'a>, Error> {
+        if source.trim().is_empty() {
+            self.diagnostics.report_error(
+                "empty '{}' interpolation hole in string".to_string(),
+                Some(pos),
+            );
+            return Ok(self.make_string_literal(String::new(), pos));
+        }
+
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.lex_all(self.diagnostics);
+        let mut sub: Parser<'a, '_> = Parser {
+            lexer,
+            tokens,
+            current_token_index: 0,
+            arena: self.arena,
+            diagnostics: &mut *self.diagnostics,
+            foreach_counter: 0,
+            type_aliases: self.type_aliases.clone(),
+        };
+        let expr = sub.parse_expression(0)?;
+        if sub.current_token().kind != EndOfFileToken {
+            let extra = sub.current_token();
+            sub.diagnostics.report_error(
+                format!(
+                    "unexpected {} after expression in interpolation hole",
+                    extra.kind.friendly_name()
+                ),
+                Some(pos),
+            );
+        }
+        Ok(expr)
     }
 }

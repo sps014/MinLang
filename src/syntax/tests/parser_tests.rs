@@ -227,6 +227,58 @@ fn test_parse_match_arm_guard() {
 }
 
 #[test]
+fn test_parse_interpolated_string() {
+    // `$"{y+68} is {x}"` desugars to `"" + (y + 68) + " is " + (x)`.
+    let code = "fun f(x: int, y: int): string { return $\"{y+68} is {x}\"; }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    let func = &program.functions[0];
+    let StatementNode::Return(Some(ExpressionNode::Binary(left, opr, right))) = &func.body[0] else {
+        panic!("expected a binary concat chain");
+    };
+    assert_eq!(opr.kind, TokenKind::PlusToken);
+    // Rightmost segment is the `{x}` hole.
+    assert!(matches!(&**right, ExpressionNode::Identifier(t) if t.text == "x"));
+
+    // Next on the left spine is the `" is "` literal text segment.
+    let ExpressionNode::Binary(l2, _, mid) = &**left else {
+        panic!("expected nested binary for ' is ' literal");
+    };
+    assert!(matches!(&**mid, ExpressionNode::Literal(Type::String(t)) if t.text == "\" is \""));
+
+    // Then the empty-string seed and the `y + 68` hole.
+    let ExpressionNode::Binary(seed, _, y_expr) = &**l2 else {
+        panic!("expected nested binary for seed + (y + 68)");
+    };
+    assert!(matches!(&**seed, ExpressionNode::Literal(Type::String(t)) if t.text == "\"\""));
+    let ExpressionNode::Binary(y_left, y_opr, y_right) = &**y_expr else {
+        panic!("expected the embedded y + 68 binary");
+    };
+    assert_eq!(y_opr.kind, TokenKind::PlusToken);
+    assert!(matches!(&**y_left, ExpressionNode::Identifier(t) if t.text == "y"));
+    assert!(matches!(&**y_right, ExpressionNode::Literal(Type::Integer(t)) if t.text == "68"));
+}
+
+#[test]
+fn test_parse_interpolated_string_brace_escapes() {
+    // `{{` / `}}` are literal braces and must not open a hole, so this has no embedded expression.
+    let code = "fun f(): string { return $\"{{x}}\"; }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    let func = &program.functions[0];
+    let StatementNode::Return(Some(ExpressionNode::Binary(_, opr, right))) = &func.body[0] else {
+        panic!("expected a binary concat chain");
+    };
+    assert_eq!(opr.kind, TokenKind::PlusToken);
+    // The whole body collapses to the literal text `{x}` (escapes unwrapped), no hole.
+    assert!(matches!(&**right, ExpressionNode::Literal(Type::String(t)) if t.text == "\"{x}\""));
+}
+
+#[test]
 fn test_match_is_a_soft_keyword() {
     // `match` remains usable as a method name (the stdlib `regex.match`).
     let code = "fun f(r: Regex): string[] { return r.match(\"x\"); }";

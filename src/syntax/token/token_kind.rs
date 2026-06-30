@@ -18,6 +18,9 @@ pub enum TokenKind {
     #[regex(r#""([^"\\]*(\\.[^"\\]*)*)""#)]
     StringToken,
 
+    #[regex(r#"\$"([^"\\]*(\\.[^"\\]*)*)""#)]
+    InterpolatedStringToken,
+
     #[regex(r#"'(\\.|[^'\\])'"#)]
     CharToken,
 
@@ -194,6 +197,7 @@ impl TokenKind {
             TokenKind::IdentifierToken => "identifier",
             TokenKind::NumberToken => "number",
             TokenKind::StringToken => "string",
+            TokenKind::InterpolatedStringToken => "interpolated string",
             TokenKind::CharToken => "character",
             TokenKind::BooleanToken => "boolean",
             TokenKind::PlusToken => "'+'",
