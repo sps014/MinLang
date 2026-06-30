@@ -1,5 +1,6 @@
 use super::*;
 use crate::driver::diagnostics::DiagnosticBag;
+use crate::semantics::errors::SemanticError;
 use crate::semantics::function_table::FunctionTableInfo;
 use crate::semantics::symbol_table::SymbolTable;
 use crate::semantics::union_table::{
@@ -433,7 +434,7 @@ impl<'a> Analyzer<'a> {
         node: &'a ProgramNode<'a>,
         symbol_table_map: &mut HashMap<String, Rc<RefCell<SymbolTable>>>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<(), ()> {
+    ) -> Result<(), SemanticError> {
         for function in node.functions.iter() {
             if function.generic_parameters.is_some() {
                 continue;
@@ -472,7 +473,7 @@ impl<'a> Analyzer<'a> {
         &mut self,
         symbol_table_map: &mut HashMap<String, Rc<RefCell<SymbolTable>>>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<(), ()> {
+    ) -> Result<(), SemanticError> {
         let mut processed_generics: std::collections::HashSet<String> =
             std::collections::HashSet::new();
         let mut method_index = 0;

@@ -4,6 +4,7 @@
 use super::*;
 use crate::driver::diagnostics::DiagnosticBag;
 use crate::intrinsics;
+use crate::semantics::errors::SemanticError;
 use crate::semantics::function_table::{
     overload_arg_compatible, FunctionTableInfo, OverloadResolution,
 };
@@ -57,7 +58,7 @@ impl<'a> Analyzer<'a> {
         parent_function: &FunctionNode<'a>,
         symbol_table: &Rc<RefCell<SymbolTable>>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<Type, ()> {
+    ) -> Result<Type, SemanticError> {
         let base = method_fn(type_name, &method.text);
 
         let mut arg_types = Vec::new();
@@ -72,22 +73,21 @@ impl<'a> Analyzer<'a> {
             match self.select_function_overload(&base, &arg_types) {
                 Ok(sig) => sig,
                 Err(message) => {
-                    diagnostics.report_error(message, Some(method.position));
-                    return Ok(Type::Unknown);
+                    return Err(report(diagnostics, message, Some(method.position)));
                 }
             }
         } else {
             match self.function_table.get_function(&base) {
                 Ok(s) => s.clone(),
                 Err(_) => {
-                    diagnostics.report_error(
+                    return Err(report(
+                        diagnostics,
                         format!(
                             "Type '{}' has no static method '{}'",
                             type_name, method.text
                         ),
                         Some(method.position),
-                    );
-                    return Ok(Type::Unknown);
+                    ));
                 }
             }
         };
@@ -184,7 +184,7 @@ impl<'a> Analyzer<'a> {
         parent_function: &FunctionNode<'a>,
         symbol_table: &Rc<RefCell<SymbolTable>>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<Type, ()> {
+    ) -> Result<Type, SemanticError> {
         let mut function_name = name.text.clone();
         let mut params_types = vec![];
         for param in params.iter() {
@@ -292,16 +292,14 @@ impl<'a> Analyzer<'a> {
             match self.select_function_overload(&function_name, &params_types) {
                 Ok(sig) => sig,
                 Err(message) => {
-                    diagnostics.report_error(message, Some(name.position));
-                    return Ok(Type::Unknown);
+                    return Err(report(diagnostics, message, Some(name.position)));
                 }
             }
         } else {
             match self.function_table.get_function(&function_name) {
                 Ok(sig) => sig,
                 Err(e) => {
-                    diagnostics.report_error(e.to_string(), Some(name.position));
-                    return Ok(Type::Unknown);
+                    return Err(report(diagnostics, e.to_string(), Some(name.position)));
                 }
             }
         };
@@ -377,7 +375,7 @@ impl<'a> Analyzer<'a> {
         parent_function: &FunctionNode<'a>,
         symbol_table: &Rc<RefCell<SymbolTable>>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<Type, ()> {
+    ) -> Result<Type, SemanticError> {
         if name.text == intrinsics::SLEEP {
             if params.len() != 1 {
                 diagnostics.report_error(
@@ -496,7 +494,7 @@ impl<'a> Analyzer<'a> {
         generic_args: &Option<Vec<Type>>,
         params_types: &[String],
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<Type, ()> {
+    ) -> Result<Type, SemanticError> {
         let struct_name = match generic_args {
             Some(args) if !args.is_empty() => {
                 self.ensure_struct_instantiated(&name.text, args, &name.position, diagnostics);
@@ -573,7 +571,7 @@ impl<'a> Analyzer<'a> {
         params: &Vec<ExpressionNode<'a>>,
         ctx: &super::AnalyzerContext<'a, '_>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<Type, ()> {
+    ) -> Result<Type, SemanticError> {
         if let ExpressionNode::Identifier(id) = obj {
             if let Some(t) =
                 self.try_analyze_static_method(id, method, _generic_args, params, ctx, diagnostics)?
@@ -620,7 +618,7 @@ impl<'a> Analyzer<'a> {
         params: &Vec<ExpressionNode<'a>>,
         ctx: &super::AnalyzerContext<'a, '_>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<Option<Type>, ()> {
+    ) -> Result<Option<Type>, SemanticError> {
         // The receiver names a type (not a local variable), so resolve `{type}_{method}` directly
         // with no implicit `this`.
         let is_local = (*ctx.symbol_table).as_ref().borrow().get_symbol(id).is_ok();
@@ -766,7 +764,7 @@ impl<'a> Analyzer<'a> {
         params: &Vec<ExpressionNode<'a>>,
         ctx: &super::AnalyzerContext<'a, '_>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<Option<Type>, ()> {
+    ) -> Result<Option<Type>, SemanticError> {
         // `EnumValue.name()`: built-in accessor returning the variant name as a string.
         if method.text == intrinsics::ENUM_NAME {
             let base = strip_nullable(&obj_type.get_type()).to_string();
@@ -877,7 +875,7 @@ impl<'a> Analyzer<'a> {
         params: &Vec<ExpressionNode<'a>>,
         ctx: &super::AnalyzerContext<'a, '_>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<Type, ()> {
+    ) -> Result<Type, SemanticError> {
         // Struct receivers are monomorphized to their concrete type name; primitive/`object`
         // receivers (which can carry methods via `extend`) use their canonical type name directly.
         let struct_name = match Self::resolve_struct_parts(obj_type) {
@@ -914,19 +912,18 @@ impl<'a> Analyzer<'a> {
             match self.select_function_overload(&mangled_name, &selection_args) {
                 Ok(sig) => sig,
                 Err(message) => {
-                    diagnostics.report_error(message, Some(method.position));
-                    return Ok(Type::Unknown);
+                    return Err(report(diagnostics, message, Some(method.position)));
                 }
             }
         } else {
             match self.function_table.get_function(&mangled_name) {
                 Ok(s) => s.clone(),
                 Err(_) => {
-                    diagnostics.report_error(
+                    return Err(report(
+                        diagnostics,
                         format!("Type '{}' has no method '{}'", struct_name, method.text),
                         Some(method.position),
-                    );
-                    return Ok(Type::Unknown);
+                    ));
                 }
             }
         };

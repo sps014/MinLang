@@ -1,13 +1,15 @@
 use bumpalo::Bump;
 use std::fs;
-use std::io::Error;
 use tracing::info;
 
 use crate::codegen::wasm::WasmGenerator;
 use crate::codegen::CodeGenerator;
+use crate::diagnostics::{render, DiagnosticBag};
 use crate::driver::abi::emit_wasm_and_abi;
-use crate::driver::diagnostics::DiagnosticBag;
-use crate::driver::source_manager::{generate_json_derives, merge_prelude, parse_file_recursive};
+use crate::driver::error::CompileError;
+use crate::driver::json_derive::generate_json_derives;
+use crate::driver::prelude::merge_prelude;
+use crate::driver::source_loader::{parse_file_recursive, ProgramAccumulator};
 use crate::semantics::analyzer::Analyzer;
 use crate::syntax::nodes::ProgramNode;
 use crate::syntax::syntax_tree::SyntaxTree;
@@ -41,9 +43,9 @@ impl Compiler {
         self
     }
 
-    pub fn compile(&self, main_file_path: &String, out_path: &String) -> Result<(), Error> {
+    pub fn compile(&self, main_file_path: &String, out_path: &String) -> Result<(), CompileError> {
         info!("starting parsing and multi-file resolution");
-        let mut acc = crate::driver::source_manager::ProgramAccumulator::default();
+        let mut acc = ProgramAccumulator::default();
 
         let arena = Bump::new();
         let mut diagnostics = DiagnosticBag::new(None);
@@ -75,8 +77,8 @@ impl Compiler {
         )?;
 
         if diagnostics.has_errors() {
-            crate::driver::diagnostics::render(&diagnostics, &acc.file_contents);
-            return Err(Error::other("Syntax errors found during parsing"));
+            render(&diagnostics, &acc.file_contents);
+            return Err(CompileError::Syntax);
         }
 
         let combined_program = ProgramNode::new(
@@ -93,18 +95,15 @@ impl Compiler {
         info!("starting semantic analysis");
 
         let mut analyzer = Analyzer::new(&ast, &arena);
+        // `analyze` reports each error into the bag and returns a typed failure once any error was
+        // recorded, short-circuiting before code generation runs on a poisoned program.
         let symbol_info = match analyzer.analyze(&mut diagnostics) {
             Ok(info) => info,
             Err(_) => {
-                crate::driver::diagnostics::render(&diagnostics, &acc.file_contents);
-                return Err(Error::other("Semantic errors found"));
+                render(&diagnostics, &acc.file_contents);
+                return Err(CompileError::Semantic);
             }
         };
-
-        if diagnostics.has_errors() {
-            crate::driver::diagnostics::render(&diagnostics, &acc.file_contents);
-            return Err(Error::other("Semantic errors found"));
-        }
 
         info!("finished semantic analysis");
         info!("starting code generation");

@@ -1,7 +1,7 @@
 (func $box_int (param $v i32) (result i32)
     (local $p i32)
     i32.const 4
-    i32.const 1
+    i32.const {TAG_INT}
     call $malloc
     local.set $p
     local.get $p
@@ -12,7 +12,7 @@
 (func $box_float (param $v f32) (result i32)
     (local $p i32)
     i32.const 4
-    i32.const 2
+    i32.const {TAG_FLOAT}
     call $malloc
     local.set $p
     local.get $p
@@ -23,7 +23,7 @@
 (func $box_double (param $v f64) (result i32)
     (local $p i32)
     i32.const 8
-    i32.const 3
+    i32.const {TAG_DOUBLE}
     call $malloc
     local.set $p
     local.get $p
@@ -34,7 +34,7 @@
 (func $box_bool (param $v i32) (result i32)
     (local $p i32)
     i32.const 4
-    i32.const 4
+    i32.const {TAG_BOOL}
     call $malloc
     local.set $p
     local.get $p
@@ -117,7 +117,7 @@
     (local $tmp i32)
     (local $digit i32)
     i32.const 16
-    i32.const 5
+    i32.const {TAG_STRING}
     call $malloc
     local.set $p
     local.get $v
@@ -239,7 +239,7 @@
 (func $box_char (param $v i32) (result i32)
     (local $p i32)
     i32.const 4
-    i32.const 7
+    i32.const {TAG_CHAR}
     call $malloc
     local.set $p
     local.get $p
@@ -254,7 +254,7 @@
 (func $char_to_string (param $v i32) (result i32)
     (local $p i32)
     i32.const 2
-    i32.const 5
+    i32.const {TAG_STRING}
     call $malloc
     local.set $p
     local.get $p
@@ -273,7 +273,7 @@
 (func $box_byte (param $v i32) (result i32)
     (local $p i32)
     i32.const 4
-    i32.const 11
+    i32.const {TAG_BYTE}
     call $malloc
     local.set $p
     local.get $p
@@ -284,7 +284,7 @@
 (func $box_uint (param $v i32) (result i32)
     (local $p i32)
     i32.const 4
-    i32.const 9
+    i32.const {TAG_UINT}
     call $malloc
     local.set $p
     local.get $p
@@ -295,7 +295,7 @@
 (func $box_long (param $v i64) (result i32)
     (local $p i32)
     i32.const 8
-    i32.const 8
+    i32.const {TAG_LONG}
     call $malloc
     local.set $p
     local.get $p
@@ -306,7 +306,7 @@
 (func $box_ulong (param $v i64) (result i32)
     (local $p i32)
     i32.const 8
-    i32.const 10
+    i32.const {TAG_ULONG}
     call $malloc
     local.set $p
     local.get $p
@@ -361,7 +361,7 @@
     (local $tmp i32)
     (local $digit i32)
     i32.const 24
-    i32.const 5
+    i32.const {TAG_STRING}
     call $malloc
     local.set $p
     local.get $v
@@ -490,7 +490,7 @@
     (local $tmp i32)
     (local $digit i32)
     i32.const 24
-    i32.const 5
+    i32.const {TAG_STRING}
     call $malloc
     local.set $p
     local.get $v

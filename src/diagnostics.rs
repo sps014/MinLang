@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use tracing::error;
 
-use crate::syntax::text::text_span::TextSpan;
+use crate::text::text_span::TextSpan;
 
 /// Severity of a reported [`Diagnostic`]. Used to distinguish fatal errors from
 /// non-fatal warnings so that callers can decide whether compilation should abort.

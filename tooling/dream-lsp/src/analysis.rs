@@ -2,16 +2,13 @@
 //! prelude -> semantic analysis, collecting diagnostics for a single document. No filesystem
 //! access is involved (the prelude is embedded with `include_str!`), so it runs in the browser.
 
-use std::rc::Rc;
-
 use bumpalo::Bump;
 use dream::driver::diagnostics::{DiagnosticBag, Severity};
+use dream::driver::source_loader::collect_declarations;
 use dream::semantics::analyzer::Analyzer;
 use dream::syntax::lexer::Lexer;
 use dream::syntax::nodes::struct_node::StructDeclarationNode;
-use dream::syntax::nodes::{
-    EnumDeclarationNode, ExtendNode, FunctionNode, GlobalVariableNode, ProgramNode,
-};
+use dream::syntax::nodes::{ExtendNode, FunctionNode, ProgramNode};
 use dream::syntax::parser::Parser;
 use dream::syntax::syntax_tree::SyntaxTree;
 
@@ -195,47 +192,3 @@ fn merge_prelude<'a>(
     }
 }
 
-/// Clones every top-level declaration of `program` into the accumulators, tagging each with
-/// `file_tag` so semantic diagnostics can be attributed to the right source. Mirrors the
-/// tagging the compiler's `source_manager` performs.
-fn collect_declarations<'a>(
-    program: &ProgramNode<'a>,
-    file_tag: &str,
-    all_functions: &mut Vec<FunctionNode<'a>>,
-    all_structs: &mut Vec<StructDeclarationNode<'a>>,
-    all_enums: &mut Vec<EnumDeclarationNode>,
-    all_extends: &mut Vec<ExtendNode<'a>>,
-    all_globals: &mut Vec<GlobalVariableNode<'a>>,
-) {
-    let tag: Rc<str> = Rc::from(file_tag);
-
-    for function in program.functions.iter().cloned() {
-        let mut function = function;
-        function.file_path = Some(tag.clone());
-        all_functions.push(function);
-    }
-    for struct_decl in program.structs.iter().cloned() {
-        let mut struct_decl = struct_decl;
-        struct_decl.file_path = Some(tag.clone());
-        for method in struct_decl.methods.iter_mut() {
-            method.file_path = Some(tag.clone());
-        }
-        all_structs.push(struct_decl);
-    }
-    for enum_decl in program.enums.iter().cloned() {
-        all_enums.push(enum_decl);
-    }
-    for extend_decl in program.extends.iter().cloned() {
-        let mut extend_decl = extend_decl;
-        extend_decl.file_path = Some(tag.clone());
-        for method in extend_decl.methods.iter_mut() {
-            method.file_path = Some(tag.clone());
-        }
-        all_extends.push(extend_decl);
-    }
-    for global in program.globals.iter().cloned() {
-        let mut global = global;
-        global.file_path = Some(tag.clone());
-        all_globals.push(global);
-    }
-}

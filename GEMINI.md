@@ -20,10 +20,15 @@ The repository is structured as a Rust-centric multi-component monorepo:
 *   **`src/` (Core Compiler):**
     *   `main.rs`: Entry point for the compiler CLI. Manages verbosity, compilation target selection, and invoking the runner.
     *   `lib.rs`: Exposes parser, semantic analyzer, codegen, and driver APIs.
+    *   `diagnostics.rs`: Crate-root leaf module that collects, stores, and pretty-prints errors and warnings with inline source code excerpts and squigglies. Lives at the crate root (re-exported as `driver::diagnostics` for compatibility) so the front-end can report diagnostics without a `syntax` <-> `driver` module cycle.
+    *   `text/`: Crate-root leaf module for source-position primitives (`text_span.rs`, `line_text.rs`, `indented_text_writer.rs`); depended on by `diagnostics`, `syntax`, and `codegen`.
     *   `driver/`: Orchestrates the compiler lifecycle.
-        *   `source_manager.rs`: Recursively resolves imports, parses multiple files, merges the standard-library prelude, and handles `@json` derivations.
+        *   `source_loader.rs`: Recursively resolves imports, parses multiple files, and merges every file's declarations into a `ProgramAccumulator`.
+        *   `prelude.rs`: Merges the embedded standard-library prelude.
+        *   `json_derive.rs`: Generates `to_json`/`from_json` `extend` blocks for `@json` classes and discriminated unions.
+        *   `source_manager.rs`: Thin compatibility facade re-exporting the three modules above.
+        *   `error.rs`: Top-level `CompileError` enum returned by the pipeline.
         *   `compiler.rs`: High-level orchestrator starting with parsing and concluding with code generation and artifact emission.
-        *   `diagnostics.rs`: Collects, stores, and pretty-prints errors and warnings with inline source code excerpts and squigglies.
     *   `syntax/`: Parsing stage.
         *   `lexer.rs`: Tokenizes stream using `logos`.
         *   `parser/`: Implements recursive descent parsing for declarations, statements, and expressions.

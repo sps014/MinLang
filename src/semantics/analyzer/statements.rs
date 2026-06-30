@@ -4,6 +4,7 @@
 use super::*;
 use crate::driver::diagnostics::DiagnosticBag;
 use crate::intrinsics;
+use crate::semantics::errors::SemanticError;
 use crate::semantics::symbol_table::SymbolTable;
 use crate::syntax::nodes::types::mangle_generic;
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, StatementNode, Type};
@@ -19,7 +20,7 @@ impl<'a> Analyzer<'a> {
         parent_function: &FunctionNode<'a>,
         has_parent_while: bool,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<(), ()> {
+    ) -> Result<(), SemanticError> {
         if !has_parent_while {
             diagnostics.report_error(
                 format!(
@@ -45,7 +46,7 @@ impl<'a> Analyzer<'a> {
         parent_function: &FunctionNode<'a>,
         has_parent_while: bool,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<(), ()> {
+    ) -> Result<(), SemanticError> {
         if !has_parent_while {
             diagnostics.report_error(
                 format!(
@@ -70,13 +71,14 @@ impl<'a> Analyzer<'a> {
         statement: &StatementNode<'a>,
         ctx: &super::AnalyzerContext<'a, '_>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<(), ()> {
+    ) -> Result<(), SemanticError> {
         let StatementNode::ForEach(element, iterable, index_name, array_name, body) = statement
         else {
             unreachable!()
         };
-        let iterable_type =
-            self.analyze_expression(iterable, ctx.parent_function, ctx.symbol_table, diagnostics)?;
+        let iterable_type = self
+            .analyze_expression(iterable, ctx.parent_function, ctx.symbol_table, diagnostics)
+            .unwrap_or(Type::Unknown);
         let element_type = match &iterable_type {
             Type::Array(inner) => (**inner).clone(),
             _ => {
@@ -126,9 +128,10 @@ impl<'a> Analyzer<'a> {
         ctx: &super::AnalyzerContext<'a, '_>,
         has_parent_while: bool,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<(), ()> {
-        let subject_type =
-            self.analyze_expression(subject, ctx.parent_function, ctx.symbol_table, diagnostics)?;
+    ) -> Result<(), SemanticError> {
+        let subject_type = self
+            .analyze_expression(subject, ctx.parent_function, ctx.symbol_table, diagnostics)
+            .unwrap_or(Type::Unknown);
         let subject_name = subject_type.get_type();
         let subject_is_enum = self.enum_table.contains_key(&subject_name);
         if !matches!(subject_name.as_str(), "int" | "string" | "bool") && !subject_is_enum {
@@ -153,12 +156,9 @@ impl<'a> Analyzer<'a> {
                         label.position(),
                     );
                 }
-                let label_type = self.analyze_expression(
-                    label,
-                    ctx.parent_function,
-                    ctx.symbol_table,
-                    diagnostics,
-                )?;
+                let label_type = self
+                    .analyze_expression(label, ctx.parent_function, ctx.symbol_table, diagnostics)
+                    .unwrap_or(Type::Unknown);
                 self.compare_data_type(&subject_type, &label_type, &empty_span(), diagnostics)?;
 
                 let key = match label {
@@ -213,9 +213,10 @@ impl<'a> Analyzer<'a> {
         parent_function: &FunctionNode<'a>,
         symbol_table: &Rc<RefCell<SymbolTable>>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<(), ()> {
-        let cond_type =
-            self.analyze_expression(condition, parent_function, symbol_table, diagnostics)?;
+    ) -> Result<(), SemanticError> {
+        let cond_type = self
+            .analyze_expression(condition, parent_function, symbol_table, diagnostics)
+            .unwrap_or(Type::Unknown);
         if !cond_type.is_unknown() && cond_type.get_type() != "bool" {
             diagnostics.report_error(
                 format!("while condition must be bool, got {}", cond_type.get_type()),
@@ -233,7 +234,7 @@ impl<'a> Analyzer<'a> {
         body: &[StatementNode<'a>],
         ctx: &super::AnalyzerContext<'a, '_>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<(), ()> {
+    ) -> Result<(), SemanticError> {
         let for_scope = Rc::new(RefCell::new(SymbolTable::new(Some(
             ctx.symbol_table.clone(),
         ))));
@@ -251,8 +252,9 @@ impl<'a> Analyzer<'a> {
             )?;
         }
         if let Some(cond_expr) = condition {
-            let cond_type =
-                self.analyze_expression(cond_expr, ctx.parent_function, &for_scope, diagnostics)?;
+            let cond_type = self
+                .analyze_expression(cond_expr, ctx.parent_function, &for_scope, diagnostics)
+                .unwrap_or(Type::Unknown);
             if !cond_type.is_unknown() && cond_type.get_type() != "bool" {
                 diagnostics.report_error(
                     format!("for condition must be bool, got {}", cond_type.get_type()),
@@ -318,7 +320,7 @@ impl<'a> Analyzer<'a> {
         is_const: bool,
         ctx: &super::AnalyzerContext<'a, '_>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<(), ()> {
+    ) -> Result<(), SemanticError> {
         self.check_reserved_name(left, "variable", diagnostics);
         // Empty array literals carry no element type, so the declaration must supply one via an
         // array-typed annotation (e.g. `let xs: int[] = [];`).
@@ -355,8 +357,12 @@ impl<'a> Analyzer<'a> {
         // union's nullary variant (`let o: Option<int> = Option.None;`) can resolve its arguments.
         let saved_expected = self.current_expected_type.take();
         self.current_expected_type = type_annotation.clone();
-        let right_type =
-            self.analyze_expression(right, ctx.parent_function, ctx.symbol_table, diagnostics)?;
+        // Recover at the binding site: even when the initializer short-circuits, fall back to the
+        // poison type so the variable is still registered (with its annotated type, if any) and
+        // later uses of it don't spuriously report "does not exist".
+        let right_type = self
+            .analyze_expression(right, ctx.parent_function, ctx.symbol_table, diagnostics)
+            .unwrap_or(Type::Unknown);
         self.current_expected_type = saved_expected;
 
         let var_type = if let Some(t) = type_annotation {
@@ -388,7 +394,7 @@ impl<'a> Analyzer<'a> {
         parent_function: &FunctionNode<'a>,
         symbol_table: &Rc<RefCell<SymbolTable>>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<(), ()> {
+    ) -> Result<(), SemanticError> {
         if (*symbol_table).as_ref().borrow().is_const(&left.text) {
             diagnostics.report_error(
                 format!(
@@ -398,7 +404,9 @@ impl<'a> Analyzer<'a> {
                 Some(left.position),
             );
         }
-        let r = self.analyze_expression(right, parent_function, symbol_table, diagnostics)?;
+        let r = self
+            .analyze_expression(right, parent_function, symbol_table, diagnostics)
+            .unwrap_or(Type::Unknown);
         let l = match (*symbol_table).as_ref().borrow().get_symbol(left) {
             Ok(sym) => sym,
             Err(e) => {
@@ -418,9 +426,10 @@ impl<'a> Analyzer<'a> {
         parent_function: &FunctionNode<'a>,
         symbol_table: &Rc<RefCell<SymbolTable>>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<(), ()> {
-        let array_type =
-            self.analyze_expression(arr, parent_function, symbol_table, diagnostics)?;
+    ) -> Result<(), SemanticError> {
+        let array_type = self
+            .analyze_expression(arr, parent_function, symbol_table, diagnostics)
+            .unwrap_or(Type::Unknown);
 
         let inner_type = match array_type {
             Type::Array(inner) => *inner,
@@ -433,8 +442,9 @@ impl<'a> Analyzer<'a> {
             }
         };
 
-        let index_type =
-            self.analyze_expression(index, parent_function, symbol_table, diagnostics)?;
+        let index_type = self
+            .analyze_expression(index, parent_function, symbol_table, diagnostics)
+            .unwrap_or(Type::Unknown);
         if !index_type.is_unknown() && index_type.get_type() != "int" {
             diagnostics.report_error(
                 format!(
@@ -445,8 +455,9 @@ impl<'a> Analyzer<'a> {
             );
         }
 
-        let right_type =
-            self.analyze_expression(right, parent_function, symbol_table, diagnostics)?;
+        let right_type = self
+            .analyze_expression(right, parent_function, symbol_table, diagnostics)
+            .unwrap_or(Type::Unknown);
         self.compare_data_type(&inner_type, &right_type, &empty_span(), diagnostics)?;
 
         Ok(())
@@ -460,8 +471,10 @@ impl<'a> Analyzer<'a> {
         parent_function: &FunctionNode<'a>,
         symbol_table: &Rc<RefCell<SymbolTable>>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<(), ()> {
-        let obj_type = self.analyze_expression(obj, parent_function, symbol_table, diagnostics)?;
+    ) -> Result<(), SemanticError> {
+        let obj_type = self
+            .analyze_expression(obj, parent_function, symbol_table, diagnostics)
+            .unwrap_or(Type::Unknown);
 
         let (base_name, generic_args) = match Self::resolve_struct_parts(&obj_type) {
             Some(parts) => parts,
@@ -516,8 +529,9 @@ impl<'a> Analyzer<'a> {
             );
         }
 
-        let right_type =
-            self.analyze_expression(right, parent_function, symbol_table, diagnostics)?;
+        let right_type = self
+            .analyze_expression(right, parent_function, symbol_table, diagnostics)
+            .unwrap_or(Type::Unknown);
         self.compare_data_type(&field_type, &right_type, &member.position, diagnostics)?;
 
         Ok(())
@@ -528,7 +542,7 @@ impl<'a> Analyzer<'a> {
         ctx: &super::AnalyzerContext<'a, '_>,
         has_parent_while: bool,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<(), ()> {
+    ) -> Result<(), SemanticError> {
         let StatementNode::IfElse(condition, if_body, else_if, else_body) = statement else {
             unreachable!()
         };
@@ -537,8 +551,9 @@ impl<'a> Analyzer<'a> {
         let mut is_constant_false = false;
 
         if let ExpressionNode::IsExpression(left, right_type) = condition {
-            let left_t =
-                self.analyze_expression(left, ctx.parent_function, ctx.symbol_table, diagnostics)?;
+            let left_t = self
+                .analyze_expression(left, ctx.parent_function, ctx.symbol_table, diagnostics)
+                .unwrap_or(Type::Unknown);
             // `is` on an `object` is a runtime check; only non-object operands fold to a constant.
             if left_t.get_type() != "object" {
                 if left_t.get_type() == right_type.get_type() {
@@ -551,12 +566,9 @@ impl<'a> Analyzer<'a> {
 
         if !is_constant_false {
             //if condition
-            let cond_type = self.analyze_expression(
-                condition,
-                ctx.parent_function,
-                ctx.symbol_table,
-                diagnostics,
-            )?;
+            let cond_type = self
+                .analyze_expression(condition, ctx.parent_function, ctx.symbol_table, diagnostics)
+                .unwrap_or(Type::Unknown);
             if !cond_type.is_unknown() && cond_type.get_type() != "bool" {
                 diagnostics.report_error(
                     format!("if condition must be bool, got {}", cond_type.get_type()),
@@ -582,12 +594,9 @@ impl<'a> Analyzer<'a> {
             let mut elif_constant_true = false;
             let mut elif_constant_false = false;
             if let ExpressionNode::IsExpression(left, right_type) = &i.0 {
-                let left_t = self.analyze_expression(
-                    left,
-                    ctx.parent_function,
-                    ctx.symbol_table,
-                    diagnostics,
-                )?;
+                let left_t = self
+                    .analyze_expression(left, ctx.parent_function, ctx.symbol_table, diagnostics)
+                    .unwrap_or(Type::Unknown);
                 if left_t.get_type() != "object" {
                     if left_t.get_type() == right_type.get_type() {
                         elif_constant_true = true;
@@ -598,12 +607,9 @@ impl<'a> Analyzer<'a> {
             }
 
             if !elif_constant_false {
-                let elif_cond_type = self.analyze_expression(
-                    &i.0,
-                    ctx.parent_function,
-                    ctx.symbol_table,
-                    diagnostics,
-                )?;
+                let elif_cond_type = self
+                    .analyze_expression(&i.0, ctx.parent_function, ctx.symbol_table, diagnostics)
+                    .unwrap_or(Type::Unknown);
                 if !elif_cond_type.is_unknown() && elif_cond_type.get_type() != "bool" {
                     diagnostics.report_error(
                         format!(
@@ -644,17 +650,14 @@ impl<'a> Analyzer<'a> {
         parent_function: &FunctionNode<'a>,
         symbol_table: &Rc<RefCell<SymbolTable>>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<(), ()> {
+    ) -> Result<(), SemanticError> {
         match (expression, &parent_function.return_type) {
             (Some(expression), Some(return_type)) => {
                 let saved_expected = self.current_expected_type.take();
                 self.current_expected_type = Some(return_type.clone());
-                let r = self.analyze_expression(
-                    expression,
-                    parent_function,
-                    symbol_table,
-                    diagnostics,
-                )?;
+                let r = self
+                    .analyze_expression(expression, parent_function, symbol_table, diagnostics)
+                    .unwrap_or(Type::Unknown);
                 self.current_expected_type = saved_expected;
                 self.compare_data_type(
                     return_type,

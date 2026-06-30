@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::driver::diagnostics::DiagnosticBag;
+use crate::semantics::errors::SemanticError;
 use crate::semantics::symbol_table::SymbolTable;
 use crate::syntax::nodes::types::{
     is_numeric_primitive, mangle_generic, numeric_widen, strip_nullable,
@@ -21,7 +22,7 @@ impl<'a> Analyzer<'a> {
         parent_function: &FunctionNode<'a>,
         symbol_table: &Rc<RefCell<SymbolTable>>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<Type, ()> {
+    ) -> Result<Type, SemanticError> {
         match expression {
             ExpressionNode::Literal(number) => Ok(number.clone()),
             ExpressionNode::ArrayLiteral(elements) => {
@@ -204,13 +205,11 @@ impl<'a> Analyzer<'a> {
                 }
                 match Self::future_inner_type(&fut) {
                     Some(t) => Ok(t),
-                    None => {
-                        diagnostics.report_error(
-                            format!("'await' expects a Future value, got {}", fut.get_type()),
-                            inner.position(),
-                        );
-                        Ok(Type::Unknown)
-                    }
+                    None => Err(report(
+                        diagnostics,
+                        format!("'await' expects a Future value, got {}", fut.get_type()),
+                        inner.position(),
+                    )),
                 }
             }
         }
@@ -226,7 +225,7 @@ impl<'a> Analyzer<'a> {
         parent_function: &FunctionNode<'a>,
         symbol_table: &Rc<RefCell<SymbolTable>>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<Type, ()> {
+    ) -> Result<Type, SemanticError> {
         // A unit variant of a discriminated union (`Shape.Empty`, `Option.None`) constructs
         // a heap union value rather than resolving to an integer enum member.
         if let ExpressionNode::Identifier(id) = obj {
@@ -264,14 +263,14 @@ impl<'a> Analyzer<'a> {
         let (base_name, generic_args) = match Self::resolve_struct_parts(&obj_type) {
             Some(parts) => parts,
             None => {
-                diagnostics.report_error(
+                return Err(report(
+                    diagnostics,
                     format!(
                         "Cannot access member of non-class type {}",
                         obj_type.get_type()
                     ),
                     Some(member.position),
-                );
-                return Ok(Type::Unknown);
+                ));
             }
         };
 
@@ -286,25 +285,25 @@ impl<'a> Analyzer<'a> {
         let struct_info = match self.struct_table.get_struct(&struct_name) {
             Some(info) => info,
             None => {
-                diagnostics.report_error(
+                return Err(report(
+                    diagnostics,
                     format!("Struct '{}' not found", struct_name),
                     Some(member.position),
-                );
-                return Ok(Type::Unknown);
+                ));
             }
         };
 
         let field_info = match struct_info.fields.get(&member.text) {
             Some(info) => info,
             None => {
-                diagnostics.report_error(
+                return Err(report(
+                    diagnostics,
                     format!(
                         "Field '{}' not found in class '{}'",
                         member.text, struct_name
                     ),
                     Some(member.position),
-                );
-                return Ok(Type::Unknown);
+                ));
             }
         };
 
@@ -334,7 +333,7 @@ impl<'a> Analyzer<'a> {
         parent_function: &FunctionNode<'a>,
         symbol_table: &Rc<RefCell<SymbolTable>>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<Type, ()> {
+    ) -> Result<Type, SemanticError> {
         let expr_type =
             self.analyze_expression(expr, parent_function, symbol_table, diagnostics)?;
 
@@ -390,7 +389,7 @@ impl<'a> Analyzer<'a> {
         parent_function: &FunctionNode<'a>,
         symbol_table: &Rc<RefCell<SymbolTable>>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<Type, ()> {
+    ) -> Result<Type, SemanticError> {
         let left_value =
             self.analyze_expression(left, parent_function, symbol_table, diagnostics)?;
         let right_value =
@@ -459,7 +458,7 @@ impl<'a> Analyzer<'a> {
         right: &Type,
         position: &TextSpan,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<(), ()> {
+    ) -> Result<(), SemanticError> {
         // A poison operand (from an earlier reported error) is compatible with anything, so we
         // never emit a follow-on mismatch for it.
         if left.is_unknown() || right.is_unknown() {
@@ -539,7 +538,7 @@ impl<'a> Analyzer<'a> {
         id: &SyntaxToken,
         symbol_table: &Rc<RefCell<SymbolTable>>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<Type, ()> {
+    ) -> Result<Type, SemanticError> {
         let r = match (*symbol_table).as_ref().borrow().get_symbol(id) {
             Ok(t) => t,
             Err(e) => {
@@ -553,9 +552,9 @@ impl<'a> Analyzer<'a> {
                     let ret = sig.return_type.clone().unwrap_or(Type::Void);
                     return Ok(Type::Function(params, Box::new(ret)));
                 }
-                diagnostics.report_error(e.to_string(), Some(id.position));
-                // Poison the result so uses of this unresolved name don't cascade further errors.
-                Type::Unknown
+                // Unresolved name: report and short-circuit. Statement-level callers recover
+                // (poisoning the binding with `Type::Unknown`) so sibling errors still surface.
+                return Err(report(diagnostics, e.to_string(), Some(id.position)));
             }
         };
         Ok(r)

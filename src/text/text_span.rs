@@ -1,4 +1,4 @@
-use crate::syntax::text::line_text::LineText;
+use crate::text::line_text::LineText;
 
 /// a struct representing start and end of a token
 /// contains 2 fields of type usize

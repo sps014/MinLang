@@ -1,9 +1,47 @@
 use super::Parser;
-use crate::syntax::nodes::{FunctionNode, ImportNode, ParameterNode, StatementNode, Type};
+use crate::syntax::nodes::{AttributeNode, FunctionNode, ImportNode, ParameterNode, StatementNode, Type};
+use crate::syntax::token::syntax_token::SyntaxToken;
+use crate::syntax::token::syntax_trivia::SyntaxTrivia;
 use crate::syntax::token::token_kind::TokenKind;
 use std::io::Error;
 
+/// The four boolean modifiers a `fun`/`constructor`/`del` declaration may carry, parsed from the
+/// flexible `async`/`public`/`static`/`extern` prefix (which may appear in several orders).
+#[derive(Default)]
+struct FunctionModifiers {
+    is_async: bool,
+    is_public: bool,
+    is_static: bool,
+    is_extern: bool,
+}
+
 impl<'a, 'b> Parser<'a, 'b> {
+    /// Recovers a doc comment that was attached to a leading attribute. When `first_trivia` (the
+    /// trivia captured before attribute parsing) is empty but the first attribute carries leading
+    /// trivia (the doc comment was consumed together with `@attr`), returns the attribute's trivia
+    /// so it can still be threaded onto the declaration name for hover/LSP.
+    fn recover_doc_trivia(
+        first_trivia: Vec<SyntaxTrivia>,
+        attributes: &[AttributeNode],
+    ) -> Vec<SyntaxTrivia> {
+        if first_trivia.is_empty() {
+            if let Some(first_attr) = attributes.first() {
+                if !first_attr.name.leading_trivia.is_empty() {
+                    return first_attr.name.leading_trivia.clone();
+                }
+            }
+        }
+        first_trivia
+    }
+
+    /// Splices recovered doc-comment trivia onto the front of a declaration's name token so tooling
+    /// sees the comment on the name even though it lexically preceded attributes/modifiers.
+    fn splice_leading_trivia(name: &mut SyntaxToken, trivia: Vec<SyntaxTrivia>) {
+        if !trivia.is_empty() {
+            name.leading_trivia.splice(0..0, trivia);
+        }
+    }
+
     /// Parses a type alias: `type Name = ExistingType;`. The alias is recorded and resolved
     /// (erased) during `parse_type`, so it must be declared before use.
     pub(super) fn parse_type_alias(&mut self) -> Result<(), Error> {
@@ -31,43 +69,19 @@ impl<'a, 'b> Parser<'a, 'b> {
     pub(super) fn parse_enum_declaration(
         &mut self,
     ) -> Result<crate::syntax::nodes::EnumDeclarationNode, Error> {
-        let mut first_trivia = self.current_token().leading_trivia.clone();
+        let first_trivia = self.current_token().leading_trivia.clone();
         let attributes = self.parse_attributes();
 
         // A doc comment that preceded the first attribute (e.g. above `@json`) is consumed with the
         // attribute. Recover it so the comment still reaches the enum name token for hover/LSP.
-        if first_trivia.is_empty() {
-            if let Some(first_attr) = attributes.first() {
-                if !first_attr.name.leading_trivia.is_empty() {
-                    first_trivia = first_attr.name.leading_trivia.clone();
-                }
-            }
-        }
+        let doc_trivia = Self::recover_doc_trivia(first_trivia, &attributes);
 
         self.match_token(TokenKind::EnumToken);
         let mut name = self.match_token(TokenKind::IdentifierToken);
-        if !first_trivia.is_empty() {
-            name.leading_trivia.splice(0..0, first_trivia);
-        }
+        Self::splice_leading_trivia(&mut name, doc_trivia);
 
         // Optional generic parameters: `enum Option<T> { ... }`.
-        let mut generic_parameters = None;
-        if self.current_token().kind == TokenKind::SmallerThanToken {
-            self.match_token(TokenKind::SmallerThanToken);
-            let mut params = Vec::new();
-            while self.current_token().kind != TokenKind::GreaterThanToken
-                && self.current_token().kind != TokenKind::EndOfFileToken
-            {
-                let iter = self.current_token_index;
-                params.push(self.match_token(TokenKind::IdentifierToken));
-                if self.current_token().kind == TokenKind::CommaToken {
-                    self.match_token(TokenKind::CommaToken);
-                }
-                self.ensure_progress(iter);
-            }
-            self.match_token(TokenKind::GreaterThanToken);
-            generic_parameters = Some(params);
-        }
+        let generic_parameters = self.parse_identifier_generic_params();
 
         self.match_token(TokenKind::CurlyOpenBracketToken);
 
@@ -83,17 +97,9 @@ impl<'a, 'b> Parser<'a, 'b> {
             let mut fields = Vec::new();
             if self.current_token().kind == TokenKind::OpenParenthesisToken {
                 self.match_token(TokenKind::OpenParenthesisToken);
-                while self.current_token().kind != TokenKind::CloseParenthesisToken
-                    && self.current_token().kind != TokenKind::EndOfFileToken
-                {
-                    let iter = self.current_token_index;
-                    fields.push(self.parse_variant_field()?);
-                    if self.current_token().kind == TokenKind::CommaToken {
-                        self.match_token(TokenKind::CommaToken);
-                    }
-                    self.ensure_progress(iter);
-                }
-                self.match_token(TokenKind::CloseParenthesisToken);
+                fields = self.parse_delimited_list(TokenKind::CloseParenthesisToken, |p| {
+                    p.parse_variant_field()
+                })?;
             }
 
             // C-style explicit value (`Green = 5`); only meaningful for payload-less variants.
@@ -166,27 +172,9 @@ impl<'a, 'b> Parser<'a, 'b> {
 
         self.match_token(TokenKind::ClassToken);
         let mut struct_name = self.match_token(TokenKind::IdentifierToken);
-        if !first_trivia.is_empty() {
-            struct_name.leading_trivia.splice(0..0, first_trivia);
-        }
+        Self::splice_leading_trivia(&mut struct_name, first_trivia);
 
-        let mut generic_parameters = None;
-        if self.current_token().kind == TokenKind::SmallerThanToken {
-            self.match_token(TokenKind::SmallerThanToken);
-            let mut params = Vec::new();
-            while self.current_token().kind != TokenKind::GreaterThanToken
-                && self.current_token().kind != TokenKind::EndOfFileToken
-            {
-                let iter = self.current_token_index;
-                params.push(self.match_token(TokenKind::IdentifierToken));
-                if self.current_token().kind == TokenKind::CommaToken {
-                    self.match_token(TokenKind::CommaToken);
-                }
-                self.ensure_progress(iter);
-            }
-            self.match_token(TokenKind::GreaterThanToken);
-            generic_parameters = Some(params);
-        }
+        let generic_parameters = self.parse_identifier_generic_params();
 
         self.match_token(TokenKind::CurlyOpenBracketToken);
 
@@ -280,23 +268,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             target.text = canonical.to_string();
         }
 
-        let mut generic_parameters = None;
-        if self.current_token().kind == TokenKind::SmallerThanToken {
-            self.match_token(TokenKind::SmallerThanToken);
-            let mut params = Vec::new();
-            while self.current_token().kind != TokenKind::GreaterThanToken
-                && self.current_token().kind != TokenKind::EndOfFileToken
-            {
-                let iter = self.current_token_index;
-                params.push(self.match_token(TokenKind::IdentifierToken));
-                if self.current_token().kind == TokenKind::CommaToken {
-                    self.match_token(TokenKind::CommaToken);
-                }
-                self.ensure_progress(iter);
-            }
-            self.match_token(TokenKind::GreaterThanToken);
-            generic_parameters = Some(params);
-        }
+        let generic_parameters = self.parse_identifier_generic_params();
 
         self.match_token(TokenKind::CurlyOpenBracketToken);
 
@@ -347,18 +319,8 @@ impl<'a, 'b> Parser<'a, 'b> {
         if self.current_token().kind == TokenKind::FunToken {
             self.match_token(TokenKind::FunToken);
             self.match_token(TokenKind::OpenParenthesisToken);
-            let mut params = Vec::new();
-            while self.current_token().kind != TokenKind::CloseParenthesisToken
-                && self.current_token().kind != TokenKind::EndOfFileToken
-            {
-                let iter = self.current_token_index;
-                params.push(self.parse_type()?);
-                if self.current_token().kind == TokenKind::CommaToken {
-                    self.match_token(TokenKind::CommaToken);
-                }
-                self.ensure_progress(iter);
-            }
-            self.match_token(TokenKind::CloseParenthesisToken);
+            let params =
+                self.parse_delimited_list(TokenKind::CloseParenthesisToken, |p| p.parse_type())?;
             let ret = if self.current_token().kind == TokenKind::ColonToken {
                 self.match_token(TokenKind::ColonToken);
                 self.parse_type()?
@@ -373,7 +335,19 @@ impl<'a, 'b> Parser<'a, 'b> {
         } else {
             self.match_token(TokenKind::IdentifierToken)
         };
-        let mut parsed_type = Type::from_token(type_token)?;
+        // `from_token` only rejects one syntactic shape: a non-reference nullable such as `int?`.
+        // Route that through the diagnostics bag (syntax's single error channel) and recover with a
+        // poison type so parsing continues, rather than fabricating an `io::Error` that aborts the
+        // whole parse.
+        let type_position = type_token.position;
+        let mut parsed_type = match Type::from_token(type_token) {
+            Ok(t) => t,
+            Err(e) => {
+                self.diagnostics
+                    .report_error(e.to_string(), Some(type_position));
+                Type::Unknown
+            }
+        };
 
         // Resolve a type alias to its underlying type (unless generic args follow). Array/nullable
         // suffixes below still apply to the resolved type.
@@ -442,58 +416,39 @@ impl<'a, 'b> Parser<'a, 'b> {
         attributes
     }
 
-    /// Parses a function declaration
-    pub(super) fn parse_function(
-        &mut self,
-        pre_parsed_attributes: Option<Vec<crate::syntax::nodes::AttributeNode>>,
-    ) -> Result<FunctionNode<'a>, Error> {
-        let mut first_trivia = self.current_token().leading_trivia.clone();
-
-        let attributes = pre_parsed_attributes.unwrap_or_else(|| self.parse_attributes());
-
-        // When attributes were parsed by the caller (e.g. struct members), the doc comment that
-        // preceded the first attribute was consumed with it. Recover it from the attribute so the
-        // comment still reaches the function name token below. (Whitespace is not trivia, so an
-        // empty `first_trivia` reliably means "nothing but the attribute came before us".)
-        if first_trivia.is_empty() {
-            if let Some(first_attr) = attributes.first() {
-                if !first_attr.name.leading_trivia.is_empty() {
-                    first_trivia = first_attr.name.leading_trivia.clone();
-                }
-            }
-        }
+    /// Parses the flexible function-modifier prefix (`async`/`public`/`static`/`extern`, which may
+    /// appear in several orders) and reports the `public`+`extern` conflict. Consumes exactly the
+    /// modifier tokens, leaving the cursor on the `fun`/constructor/`del` token.
+    fn parse_function_modifiers(&mut self) -> FunctionModifiers {
+        let mut m = FunctionModifiers::default();
 
         // `async` may appear before or after `public` (e.g. `async fun`, `public async fun`,
         // `async public fun`). Calling such a function eagerly starts a task and yields `Future<T>`.
-        let mut is_async = false;
         if self.current_token().kind == TokenKind::AsyncToken {
             self.match_token(TokenKind::AsyncToken);
-            is_async = true;
+            m.is_async = true;
         }
 
-        let mut is_public = false;
         if self.current_token().kind == TokenKind::PublicToken {
             self.match_token(TokenKind::PublicToken);
-            is_public = true;
+            m.is_public = true;
         }
 
         if self.current_token().kind == TokenKind::AsyncToken {
             self.match_token(TokenKind::AsyncToken);
-            is_async = true;
+            m.is_async = true;
         }
 
         // `static fun ...`: a method with no implicit `this`, called as `Type.method(...)`.
-        let mut is_static = false;
         if self.current_token().kind == TokenKind::StaticToken {
             self.match_token(TokenKind::StaticToken);
-            is_static = true;
+            m.is_static = true;
         }
 
-        let mut is_extern = false;
         if self.current_token().kind == TokenKind::ExternToken {
             self.match_token(TokenKind::ExternToken);
-            is_extern = true;
-            if is_public {
+            m.is_extern = true;
+            if m.is_public {
                 self.diagnostics.report_error(
                     "A function cannot be both 'public' and 'extern'".to_string(),
                     Some(self.current_token().position),
@@ -504,14 +459,39 @@ impl<'a, 'b> Parser<'a, 'b> {
         // allow `static` again in case order was reversed
         if self.current_token().kind == TokenKind::StaticToken {
             self.match_token(TokenKind::StaticToken);
-            is_static = true;
+            m.is_static = true;
         }
 
         // `static async fun ...`: allow `async` to follow `static` as well as precede it.
         if self.current_token().kind == TokenKind::AsyncToken {
             self.match_token(TokenKind::AsyncToken);
-            is_async = true;
+            m.is_async = true;
         }
+
+        m
+    }
+
+    /// Parses a function declaration
+    pub(super) fn parse_function(
+        &mut self,
+        pre_parsed_attributes: Option<Vec<crate::syntax::nodes::AttributeNode>>,
+    ) -> Result<FunctionNode<'a>, Error> {
+        let first_trivia = self.current_token().leading_trivia.clone();
+
+        let attributes = pre_parsed_attributes.unwrap_or_else(|| self.parse_attributes());
+
+        // When attributes were parsed by the caller (e.g. struct members), the doc comment that
+        // preceded the first attribute was consumed with it. Recover it from the attribute so the
+        // comment still reaches the function name token below. (Whitespace is not trivia, so an
+        // empty `first_trivia` reliably means "nothing but the attribute came before us".)
+        let first_trivia = Self::recover_doc_trivia(first_trivia, &attributes);
+
+        let FunctionModifiers {
+            is_async,
+            is_public,
+            is_static,
+            is_extern,
+        } = self.parse_function_modifiers();
 
         // Constructor (`constructor`) / destructor (`del`) declarations omit the `fun` keyword and
         // the return type; they are lowered to ordinary methods named `constructor`/`del` and
@@ -539,27 +519,9 @@ impl<'a, 'b> Parser<'a, 'b> {
         // `match` is a soft keyword, so it remains a legal function/method name (e.g. the stdlib
         // `regex.match`).
         let mut function_name = self.match_name_token();
-        if !first_trivia.is_empty() {
-            function_name.leading_trivia.splice(0..0, first_trivia);
-        }
+        Self::splice_leading_trivia(&mut function_name, first_trivia);
 
-        let mut generic_parameters = None;
-        if self.current_token().kind == TokenKind::SmallerThanToken {
-            self.match_token(TokenKind::SmallerThanToken);
-            let mut params = Vec::new();
-            while self.current_token().kind != TokenKind::GreaterThanToken
-                && self.current_token().kind != TokenKind::EndOfFileToken
-            {
-                let iter = self.current_token_index;
-                params.push(self.match_token(TokenKind::IdentifierToken));
-                if self.current_token().kind == TokenKind::CommaToken {
-                    self.match_token(TokenKind::CommaToken);
-                }
-                self.ensure_progress(iter);
-            }
-            self.match_token(TokenKind::GreaterThanToken);
-            generic_parameters = Some(params);
-        }
+        let generic_parameters = self.parse_identifier_generic_params();
 
         let params = self.parse_formal_parameters()?;
         let mut return_type: Option<Type> = None;
@@ -645,9 +607,7 @@ impl<'a, 'b> Parser<'a, 'b> {
         }
 
         let mut name = self.match_token(TokenKind::IdentifierToken);
-        if !first_trivia.is_empty() {
-            name.leading_trivia.splice(0..0, first_trivia);
-        }
+        Self::splice_leading_trivia(&mut name, first_trivia);
 
         let declared_type = if self.current_token().kind == TokenKind::ColonToken {
             self.match_token(TokenKind::ColonToken);

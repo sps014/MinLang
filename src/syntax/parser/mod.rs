@@ -180,6 +180,54 @@ impl<'a, 'b> Parser<'a, 'b> {
         self.match_generic_close();
         Ok(args)
     }
+    /// Parses a comma-separated list of elements terminated by `close`, assuming the opening
+    /// delimiter has already been consumed, and consumes the matching `close`. A trailing comma is
+    /// permitted and [`ensure_progress`] guards against spinning on malformed input. Centralizes the
+    /// ~half-dozen identical "while not close { elem; optional comma } close" loops (array literals,
+    /// call arguments, variant fields, pattern args, function-type params, match arms).
+    fn parse_delimited_list<T>(
+        &mut self,
+        close: TokenKind,
+        mut parse_elem: impl FnMut(&mut Self) -> Result<T, Error>,
+    ) -> Result<Vec<T>, Error> {
+        let mut items = Vec::new();
+        while self.current_token().kind != close
+            && self.current_token().kind != TokenKind::EndOfFileToken
+        {
+            let iter = self.current_token_index;
+            items.push(parse_elem(self)?);
+            if self.current_token().kind == TokenKind::CommaToken {
+                self.match_token(TokenKind::CommaToken);
+            }
+            self.ensure_progress(iter);
+        }
+        self.match_token(close);
+        Ok(items)
+    }
+
+    /// Parses an optional generic *parameter* declaration list `<T, U, ...>` of bare identifiers
+    /// (the declaration side; [`parse_generic_args`] parses concrete type *arguments*). Returns
+    /// `None` when no `<` follows. Shared by enum/struct/extend/function declarations.
+    fn parse_identifier_generic_params(&mut self) -> Option<Vec<SyntaxToken>> {
+        if self.current_token().kind != TokenKind::SmallerThanToken {
+            return None;
+        }
+        self.match_token(TokenKind::SmallerThanToken);
+        let mut params = Vec::new();
+        while self.current_token().kind != TokenKind::GreaterThanToken
+            && self.current_token().kind != TokenKind::EndOfFileToken
+        {
+            let iter = self.current_token_index;
+            params.push(self.match_token(TokenKind::IdentifierToken));
+            if self.current_token().kind == TokenKind::CommaToken {
+                self.match_token(TokenKind::CommaToken);
+            }
+            self.ensure_progress(iter);
+        }
+        self.match_token(TokenKind::GreaterThanToken);
+        Some(params)
+    }
+
     /// Recovery guard for token-consuming loops: if no token has been consumed since `mark`,
     /// skip one token so malformed input surfaces an error (already reported by the failing
     /// `match_token`) instead of spinning forever. Never advances past end-of-file.

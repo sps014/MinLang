@@ -1,5 +1,6 @@
 use super::*;
 use crate::driver::diagnostics::DiagnosticBag;
+use crate::semantics::errors::SemanticError;
 use crate::semantics::function_control_flow::FunctionControlGraph;
 use crate::semantics::symbol_table::SymbolTable;
 use crate::syntax::nodes::{FunctionNode, StatementNode};
@@ -11,7 +12,7 @@ impl<'a> Analyzer<'a> {
         &mut self,
         function: &FunctionNode<'a>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<Rc<RefCell<SymbolTable>>, ()> {
+    ) -> Result<Rc<RefCell<SymbolTable>>, SemanticError> {
         let param_table = Rc::new(RefCell::new(
             self.add_function_param_table(function, diagnostics)?,
         ));
@@ -40,7 +41,7 @@ impl<'a> Analyzer<'a> {
         &mut self,
         function: &FunctionNode<'a>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<SymbolTable, ()> {
+    ) -> Result<SymbolTable, SemanticError> {
         // Parent the parameter table off the module-global scope so function bodies resolve
         // top-level variables (and their `const`-ness) through ordinary lexical lookup.
         let mut param_table = SymbolTable::new(Some(self.global_symbol_table.clone()));
@@ -60,7 +61,7 @@ impl<'a> Analyzer<'a> {
         parent_table: Option<&Rc<RefCell<SymbolTable>>>,
         has_parent_loop: bool,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<(), ()> {
+    ) -> Result<(), SemanticError> {
         let parent_scope = match parent_table {
             Some(t) => Some(Rc::clone(t)),
             None => None,
@@ -71,13 +72,16 @@ impl<'a> Analyzer<'a> {
         }
         for statement in body.iter() {
             let clone = &symbol_table.clone();
-            self.analyze_statement(
+            // Recover at the statement boundary: a short-circuited statement leaves its diagnostic
+            // in the bag, and we move on to the next sibling so every independent error in the
+            // block is still reported (matching the previous poison-and-continue behavior).
+            let _ = self.analyze_statement(
                 statement,
                 parent_function,
                 clone,
                 has_parent_loop,
                 diagnostics,
-            )?;
+            );
         }
         Ok(())
     }
@@ -88,7 +92,7 @@ impl<'a> Analyzer<'a> {
         symbol_table: &Rc<RefCell<SymbolTable>>,
         has_parent_while: bool,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<(), ()> {
+    ) -> Result<(), SemanticError> {
         let ctx = super::AnalyzerContext {
             parent_function,
             symbol_table,
@@ -158,40 +162,39 @@ impl<'a> Analyzer<'a> {
                 self.analyze_continue(label, parent_function, has_parent_while, diagnostics)?
             }
             StatementNode::FunctionInvocation(name, generic_args, params) => {
-                self.analyze_function_call(
+                let _ = self.analyze_function_call(
                     name,
                     generic_args,
                     params,
                     parent_function,
                     symbol_table,
                     diagnostics,
-                )?;
+                );
             }
             StatementNode::ExpressionStatement(expr) => {
                 // A statement-position `match` allows block arms and yields no value.
                 if let crate::syntax::nodes::ExpressionNode::Match(subject, arms) = expr {
-                    self.analyze_match(
+                    let _ = self.analyze_match(
                         subject,
                         arms,
                         parent_function,
                         symbol_table,
                         false,
                         diagnostics,
-                    )?;
+                    );
                 } else {
-                    self.analyze_expression(expr, parent_function, symbol_table, diagnostics)?;
+                    let _ =
+                        self.analyze_expression(expr, parent_function, symbol_table, diagnostics);
                 }
             }
             StatementNode::MethodInvocation(obj, method, generic_args, params) => {
-                self.analyze_method_call(obj, method, generic_args, params, &ctx, diagnostics)?;
+                let _ =
+                    self.analyze_method_call(obj, method, generic_args, params, &ctx, diagnostics);
             }
             StatementNode::AwaitStmt(future_expr) => {
-                let fut = self.analyze_expression(
-                    future_expr,
-                    parent_function,
-                    symbol_table,
-                    diagnostics,
-                )?;
+                let fut = self
+                    .analyze_expression(future_expr, parent_function, symbol_table, diagnostics)
+                    .unwrap_or(Type::Unknown);
                 if Self::future_inner_type(&fut).is_none() {
                     diagnostics.report_error(
                         format!("'await' expects a Future value, got {}", fut.get_type()),

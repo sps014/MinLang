@@ -1,4 +1,5 @@
-use crate::driver::diagnostics::DiagnosticBag;
+use crate::diagnostics::DiagnosticBag;
+use crate::semantics::errors::SemanticError;
 use crate::semantics::function_table::FunctionTable;
 use crate::semantics::struct_table::StructTable;
 use crate::semantics::symbol_table::SymbolTable;
@@ -29,6 +30,15 @@ mod type_checker;
 /// diagnostic bag (used to attribute each semantic error to its originating file).
 fn file_path_string(file_path: &Option<Rc<str>>) -> Option<String> {
     file_path.as_ref().map(|p| p.to_string())
+}
+
+/// Reports `message` at `span` into the bag and returns the matching typed [`SemanticError`], so a
+/// failing analysis site can `return Err(report(diagnostics, msg, span))` in a single step. The
+/// pushed diagnostic is what the user sees; the returned error drives `?`-based short-circuiting of
+/// the rest of the offending expression.
+fn report(diagnostics: &mut DiagnosticBag, message: String, span: Option<TextSpan>) -> SemanticError {
+    diagnostics.report_error(message.clone(), span);
+    SemanticError::reported(message, span)
 }
 
 /// An empty source span, used for diagnostics on synthesized nodes that have no real
@@ -275,8 +285,10 @@ impl<'a> Analyzer<'a> {
             _ => None,
         }
     }
-    #[allow(clippy::result_unit_err)]
-    pub fn analyze(&mut self, diagnostics: &mut DiagnosticBag) -> Result<SemanticInfo<'_>, ()> {
+    pub fn analyze(
+        &mut self,
+        diagnostics: &mut DiagnosticBag,
+    ) -> Result<SemanticInfo<'_>, SemanticError> {
         let pgm = self.syntax_tree.get_root();
         self.analyze_pgm(pgm, diagnostics)
     }
@@ -346,7 +358,7 @@ impl<'a> Analyzer<'a> {
         &mut self,
         node: &'a ProgramNode<'a>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<SemanticInfo<'_>, ()> {
+    ) -> Result<SemanticInfo<'_>, SemanticError> {
         let mut symbol_table_map = HashMap::new();
 
         // Stash generic `extend` templates before any type instantiation can occur (a concrete
@@ -362,6 +374,14 @@ impl<'a> Analyzer<'a> {
         self.register_globals(node, diagnostics);
         self.analyze_function_bodies(node, &mut symbol_table_map, diagnostics)?;
         self.analyze_pending_instantiations(&mut symbol_table_map, diagnostics)?;
+
+        // Per-statement/expression analysis recovers locally (reporting into the bag and poisoning
+        // with `Type::Unknown`) so every independent error in the program is surfaced. The typed
+        // boundary failure is raised once here, from the aggregate error state, so the driver can
+        // abort before code generation.
+        if diagnostics.has_errors() {
+            return Err(SemanticError::AnalysisFailed);
+        }
 
         Ok(SemanticInfo::new(
             symbol_table_map,

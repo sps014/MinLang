@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::driver::diagnostics::DiagnosticBag;
+use crate::semantics::errors::SemanticError;
 use crate::semantics::symbol_table::SymbolTable;
 use crate::semantics::union_table::UnionInfo;
 use crate::syntax::nodes::types::strip_nullable;
@@ -38,7 +39,7 @@ impl<'a> Analyzer<'a> {
         parent_function: &FunctionNode<'a>,
         symbol_table: &Rc<RefCell<SymbolTable>>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<Option<Type>, ()> {
+    ) -> Result<Option<Type>, SemanticError> {
         let is_generic = self.generic_unions.contains_key(enum_name);
         let is_concrete = self.union_table.contains_key(enum_name);
         if !is_generic && !is_concrete {
@@ -55,11 +56,11 @@ impl<'a> Analyzer<'a> {
             {
                 Some(v) => v.fields.iter().map(|f| f.field_type.clone()).collect(),
                 None => {
-                    diagnostics.report_error(
+                    return Err(report(
+                        diagnostics,
                         format!("Enum '{}' has no variant '{}'", enum_name, variant.text),
                         Some(variant.position),
-                    );
-                    return Ok(Some(Type::Unknown));
+                    ));
                 }
             }
         } else {
@@ -67,11 +68,11 @@ impl<'a> Analyzer<'a> {
             match info.variant(&variant.text) {
                 Some(v) => v.fields.iter().map(|f| f.type_.clone()).collect(),
                 None => {
-                    diagnostics.report_error(
+                    return Err(report(
+                        diagnostics,
                         format!("Enum '{}' has no variant '{}'", enum_name, variant.text),
                         Some(variant.position),
-                    );
-                    return Ok(Some(Type::Unknown));
+                    ));
                 }
             }
         };
@@ -158,14 +159,14 @@ impl<'a> Analyzer<'a> {
         let concrete_args = match concrete_args {
             Some(a) => a,
             None => {
-                diagnostics.report_error(
+                return Err(report(
+                    diagnostics,
                     format!(
                         "Cannot infer type arguments for '{}.{}'; add a type annotation (e.g. `let x: {}<...> = ...`)",
                         enum_name, variant.text, enum_name
                     ),
                     Some(variant.position),
-                );
-                return Ok(Some(Type::Unknown));
+                ));
             }
         };
 
@@ -210,7 +211,7 @@ impl<'a> Analyzer<'a> {
         symbol_table: &Rc<RefCell<SymbolTable>>,
         is_expression: bool,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<Type, ()> {
+    ) -> Result<Type, SemanticError> {
         let subject_type =
             self.analyze_expression(subject, parent_function, symbol_table, diagnostics)?;
         // The subject's union may be a generic instantiation that has not been constructed yet
@@ -338,7 +339,7 @@ impl<'a> Analyzer<'a> {
         expected: &Type,
         scope: &Rc<RefCell<SymbolTable>>,
         diagnostics: &mut DiagnosticBag,
-    ) -> Result<PatternInfo, ()> {
+    ) -> Result<PatternInfo, SemanticError> {
         let expected_base = strip_nullable(&expected.get_type()).to_string();
         let union_info: Option<UnionInfo> = self.union_table.get(&expected_base).cloned();
 

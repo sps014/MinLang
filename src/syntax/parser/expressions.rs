@@ -71,72 +71,12 @@ impl<'a, 'b> Parser<'a, 'b> {
         }
         //parse parenthesized expressions or cast
         if self.current_token().kind == TokenKind::OpenParenthesisToken {
-            let is_cast = if self.peek_token(1).kind == TokenKind::DataTypeToken {
-                true
-            } else if self.peek_token(1).kind == TokenKind::IdentifierToken {
-                // Could be `(Node)0` or `(x) + 1`
-                // Let's check token after `)`
-                let mut i = 2;
-                while self.peek_token(i).kind == TokenKind::OpenBracketToken {
-                    i += 2; // skip `[` and `]`
-                }
-                if self.peek_token(i).kind == TokenKind::CloseParenthesisToken {
-                    let next_kind = self.peek_token(i + 1).kind;
-                    // If the token after `)` is an expression starter, it's a cast
-                    matches!(
-                        next_kind,
-                        TokenKind::NumberToken
-                            | TokenKind::StringToken
-                            | TokenKind::BooleanToken
-                            | TokenKind::IdentifierToken
-                            | TokenKind::OpenParenthesisToken
-                            | TokenKind::OpenBracketToken
-                            | TokenKind::MinusToken
-                            | TokenKind::BangToken
-                    )
-                } else {
-                    false
-                }
-            } else {
-                false
-            };
-
-            if is_cast {
-                self.match_token(TokenKind::OpenParenthesisToken);
-                let cast_type = self.parse_type()?;
-                self.match_token(TokenKind::CloseParenthesisToken);
-                let expression = self.parse_primary_expression()?;
-                return Ok(ExpressionNode::Cast(
-                    cast_type,
-                    self.arena.alloc(expression),
-                ));
-            }
-
-            //eat the open parenthesis
-            self.match_token(TokenKind::OpenParenthesisToken);
-            let expression = self.parse_expression(0)?;
-            //eat the close parenthesis
-            self.match_token(TokenKind::CloseParenthesisToken);
-            // Allow postfix access on a parenthesized expression, e.g. `(7).hash_code()`,
-            // `("x" + y).len()`, or `(arr)[0]`. This is required for method calls on literals
-            // whose bare form would mis-lex (`7.hash_code()` reads `7.` as a float).
-            let parenthesized = ExpressionNode::Parenthesized(self.arena.alloc(expression));
-            return self.parse_postfix_chain(parenthesized);
+            return self.parse_paren_or_cast();
         } else if self.current_token().kind == TokenKind::OpenBracketToken {
             // Array literal
             self.match_token(TokenKind::OpenBracketToken);
-            let mut elements = Vec::new();
-            while self.current_token().kind != TokenKind::CloseBracketToken
-                && self.current_token().kind != TokenKind::EndOfFileToken
-            {
-                let iter = self.current_token_index;
-                elements.push(self.parse_expression(0)?);
-                if self.current_token().kind == TokenKind::CommaToken {
-                    self.match_token(TokenKind::CommaToken);
-                }
-                self.ensure_progress(iter);
-            }
-            self.match_token(TokenKind::CloseBracketToken);
+            let elements =
+                self.parse_delimited_list(TokenKind::CloseBracketToken, |p| p.parse_expression(0))?;
             return Ok(ExpressionNode::ArrayLiteral(elements));
         } else if self.current_token().kind == TokenKind::BooleanToken {
             return Ok(ExpressionNode::Literal(Type::Boolean(
@@ -155,44 +95,12 @@ impl<'a, 'b> Parser<'a, 'b> {
         else if self.current_token().kind == TokenKind::DataTypeToken
             && self.peek_token(1).kind == TokenKind::DotToken
         {
+            // A primitive type name used as a static-call receiver only supports `.member`
+            // access (no index suffix), so the dot-chain is parsed directly rather than via
+            // the full postfix chain.
             let mut expr = ExpressionNode::Identifier(self.next_token());
             while self.current_token().kind == TokenKind::DotToken {
-                self.match_token(TokenKind::DotToken);
-                let member = self.match_name_token();
-                let mut generic_args = None;
-                if self.current_token().kind == TokenKind::SmallerThanToken {
-                    let is_generic = self
-                        .scan_generic_args(1)
-                        .map(|after| self.peek_token(after).kind == TokenKind::OpenParenthesisToken)
-                        .unwrap_or(false);
-                    if is_generic {
-                        self.match_token(TokenKind::SmallerThanToken);
-                        generic_args = Some(self.parse_generic_args()?);
-                    }
-                }
-                if self.current_token().kind == TokenKind::OpenParenthesisToken {
-                    self.match_token(TokenKind::OpenParenthesisToken);
-                    let mut params = Vec::new();
-                    while self.current_token().kind != TokenKind::CloseParenthesisToken
-                        && self.current_token().kind != TokenKind::EndOfFileToken
-                    {
-                        let iter = self.current_token_index;
-                        params.push(self.parse_expression(0)?);
-                        if self.current_token().kind == TokenKind::CommaToken {
-                            self.match_token(TokenKind::CommaToken);
-                        }
-                        self.ensure_progress(iter);
-                    }
-                    self.match_token(TokenKind::CloseParenthesisToken);
-                    expr = ExpressionNode::MethodCall(
-                        self.arena.alloc(expr),
-                        member,
-                        generic_args,
-                        params,
-                    );
-                } else {
-                    expr = ExpressionNode::MemberAccess(self.arena.alloc(expr), member);
-                }
+                expr = self.parse_member_access_step(expr)?;
             }
             return Ok(expr);
         }
@@ -219,68 +127,9 @@ impl<'a, 'b> Parser<'a, 'b> {
                 let expr = self.parse_invocation_expression()?;
                 return self.parse_postfix_chain(expr);
             } else {
-                let mut expr = ExpressionNode::Identifier(self.next_token());
-
-                // Check for index access or member access
-                loop {
-                    if self.current_token().kind == TokenKind::OpenBracketToken {
-                        self.match_token(TokenKind::OpenBracketToken);
-                        let index = self.parse_expression(0)?;
-                        self.match_token(TokenKind::CloseBracketToken);
-                        expr = ExpressionNode::IndexAccess(
-                            self.arena.alloc(expr),
-                            self.arena.alloc(index),
-                        );
-                    } else if self.current_token().kind == TokenKind::DotToken {
-                        self.match_token(TokenKind::DotToken);
-                        let member = self.match_name_token();
-
-                        let mut generic_args = None;
-                        if self.current_token().kind == TokenKind::SmallerThanToken {
-                            // Method generic args, e.g. `obj.cast<Foo<int>>()`. Only treat as
-                            // generic when the balanced `<...>` is immediately followed by `(`.
-                            let is_generic = self
-                                .scan_generic_args(1)
-                                .map(|after| {
-                                    self.peek_token(after).kind == TokenKind::OpenParenthesisToken
-                                })
-                                .unwrap_or(false);
-                            if is_generic {
-                                self.match_token(TokenKind::SmallerThanToken);
-                                generic_args = Some(self.parse_generic_args()?);
-                            }
-                        }
-
-                        if self.current_token().kind == TokenKind::OpenParenthesisToken {
-                            self.match_token(TokenKind::OpenParenthesisToken);
-                            let mut params = Vec::new();
-                            while self.current_token().kind != TokenKind::CloseParenthesisToken
-                                && self.current_token().kind != TokenKind::EndOfFileToken
-                            {
-                                let iter = self.current_token_index;
-                                params.push(self.parse_expression(0)?);
-                                if self.current_token().kind == TokenKind::CommaToken {
-                                    self.match_token(TokenKind::CommaToken);
-                                }
-                                self.ensure_progress(iter);
-                            }
-                            self.match_token(TokenKind::CloseParenthesisToken);
-
-                            expr = ExpressionNode::MethodCall(
-                                self.arena.alloc(expr),
-                                member,
-                                generic_args,
-                                params,
-                            );
-                        } else {
-                            expr = ExpressionNode::MemberAccess(self.arena.alloc(expr), member);
-                        }
-                    } else {
-                        break;
-                    }
-                }
-
-                return Ok(expr);
+                // A bare identifier may be followed by an index/member/method postfix chain.
+                let expr = ExpressionNode::Identifier(self.next_token());
+                return self.parse_postfix_chain(expr);
             }
         } else if self.current_token().kind == TokenKind::NumberToken {
             let token = self.next_token();
@@ -320,6 +169,65 @@ impl<'a, 'b> Parser<'a, 'b> {
         let identifier = self.match_token(TokenKind::IdentifierToken);
         Ok(ExpressionNode::Identifier(identifier))
     }
+    /// Disambiguates a leading `(` between a cast (`(Type)expr`) and a parenthesized expression
+    /// (`(expr)`), assuming the cursor is on the `(`. A cast is recognized when the parenthesized
+    /// content is a type name (`(int)`, `(Node)`, `(Foo[])`) immediately followed by an
+    /// expression-starting token. Parenthesized expressions allow a postfix chain so method calls
+    /// on literals work (e.g. `(7).hash_code()`, `(arr)[0]`).
+    fn parse_paren_or_cast(&mut self) -> Result<ExpressionNode<'a>, Error> {
+        let is_cast = if self.peek_token(1).kind == TokenKind::DataTypeToken {
+            true
+        } else if self.peek_token(1).kind == TokenKind::IdentifierToken {
+            // Could be `(Node)0` or `(x) + 1`
+            // Let's check token after `)`
+            let mut i = 2;
+            while self.peek_token(i).kind == TokenKind::OpenBracketToken {
+                i += 2; // skip `[` and `]`
+            }
+            if self.peek_token(i).kind == TokenKind::CloseParenthesisToken {
+                let next_kind = self.peek_token(i + 1).kind;
+                // If the token after `)` is an expression starter, it's a cast
+                matches!(
+                    next_kind,
+                    TokenKind::NumberToken
+                        | TokenKind::StringToken
+                        | TokenKind::BooleanToken
+                        | TokenKind::IdentifierToken
+                        | TokenKind::OpenParenthesisToken
+                        | TokenKind::OpenBracketToken
+                        | TokenKind::MinusToken
+                        | TokenKind::BangToken
+                )
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        if is_cast {
+            self.match_token(TokenKind::OpenParenthesisToken);
+            let cast_type = self.parse_type()?;
+            self.match_token(TokenKind::CloseParenthesisToken);
+            let expression = self.parse_primary_expression()?;
+            return Ok(ExpressionNode::Cast(
+                cast_type,
+                self.arena.alloc(expression),
+            ));
+        }
+
+        //eat the open parenthesis
+        self.match_token(TokenKind::OpenParenthesisToken);
+        let expression = self.parse_expression(0)?;
+        //eat the close parenthesis
+        self.match_token(TokenKind::CloseParenthesisToken);
+        // Allow postfix access on a parenthesized expression, e.g. `(7).hash_code()`,
+        // `("x" + y).len()`, or `(arr)[0]`. This is required for method calls on literals
+        // whose bare form would mis-lex (`7.hash_code()` reads `7.` as a float).
+        let parenthesized = ExpressionNode::Parenthesized(self.arena.alloc(expression));
+        self.parse_postfix_chain(parenthesized)
+    }
+
     /// Continues parsing index (`[...]`) and member/method (`.name` / `.name(...)`) accesses onto an
     /// already-parsed base expression. Used so a call on a bare identifier (e.g. a constructor like
     /// `HttpClient(url)`) can be chained: `HttpClient(url).set_header(...)`.
@@ -335,49 +243,53 @@ impl<'a, 'b> Parser<'a, 'b> {
                 self.match_token(TokenKind::CloseBracketToken);
                 expr = ExpressionNode::IndexAccess(self.arena.alloc(expr), self.arena.alloc(index));
             } else if self.current_token().kind == TokenKind::DotToken {
-                self.match_token(TokenKind::DotToken);
-                let member = self.match_name_token();
-
-                let mut generic_args = None;
-                if self.current_token().kind == TokenKind::SmallerThanToken {
-                    let is_generic = self
-                        .scan_generic_args(1)
-                        .map(|after| self.peek_token(after).kind == TokenKind::OpenParenthesisToken)
-                        .unwrap_or(false);
-                    if is_generic {
-                        self.match_token(TokenKind::SmallerThanToken);
-                        generic_args = Some(self.parse_generic_args()?);
-                    }
-                }
-
-                if self.current_token().kind == TokenKind::OpenParenthesisToken {
-                    self.match_token(TokenKind::OpenParenthesisToken);
-                    let mut params = Vec::new();
-                    while self.current_token().kind != TokenKind::CloseParenthesisToken
-                        && self.current_token().kind != TokenKind::EndOfFileToken
-                    {
-                        let iter = self.current_token_index;
-                        params.push(self.parse_expression(0)?);
-                        if self.current_token().kind == TokenKind::CommaToken {
-                            self.match_token(TokenKind::CommaToken);
-                        }
-                        self.ensure_progress(iter);
-                    }
-                    self.match_token(TokenKind::CloseParenthesisToken);
-                    expr = ExpressionNode::MethodCall(
-                        self.arena.alloc(expr),
-                        member,
-                        generic_args,
-                        params,
-                    );
-                } else {
-                    expr = ExpressionNode::MemberAccess(self.arena.alloc(expr), member);
-                }
+                expr = self.parse_member_access_step(expr)?;
             } else {
                 break;
             }
         }
         Ok(expr)
+    }
+
+    /// Parses a single `.member` access step onto `base`, consuming the `.`, an optional method
+    /// generic-argument list (`<...>` immediately followed by `(`), and—when a `(` follows—the
+    /// call-argument list, producing a [`ExpressionNode::MethodCall`]; otherwise a plain
+    /// [`ExpressionNode::MemberAccess`]. Shared by every dot/method site (postfix chain, bare
+    /// identifier chain, and primitive static-call receiver).
+    fn parse_member_access_step(
+        &mut self,
+        base: ExpressionNode<'a>,
+    ) -> Result<ExpressionNode<'a>, Error> {
+        self.match_token(TokenKind::DotToken);
+        let member = self.match_name_token();
+
+        let mut generic_args = None;
+        if self.current_token().kind == TokenKind::SmallerThanToken {
+            // Method generic args, e.g. `obj.cast<Foo<int>>()`. Only treat as generic when the
+            // balanced `<...>` is immediately followed by `(`.
+            let is_generic = self
+                .scan_generic_args(1)
+                .map(|after| self.peek_token(after).kind == TokenKind::OpenParenthesisToken)
+                .unwrap_or(false);
+            if is_generic {
+                self.match_token(TokenKind::SmallerThanToken);
+                generic_args = Some(self.parse_generic_args()?);
+            }
+        }
+
+        if self.current_token().kind == TokenKind::OpenParenthesisToken {
+            self.match_token(TokenKind::OpenParenthesisToken);
+            let params =
+                self.parse_delimited_list(TokenKind::CloseParenthesisToken, |p| p.parse_expression(0))?;
+            Ok(ExpressionNode::MethodCall(
+                self.arena.alloc(base),
+                member,
+                generic_args,
+                params,
+            ))
+        } else {
+            Ok(ExpressionNode::MemberAccess(self.arena.alloc(base), member))
+        }
     }
 
     /// Parses a function invocation expression
@@ -427,42 +339,31 @@ impl<'a, 'b> Parser<'a, 'b> {
         self.match_token(TokenKind::CloseParenthesisToken);
         self.match_token(TokenKind::CurlyOpenBracketToken);
 
-        let mut arms = Vec::new();
-        while self.current_token().kind != TokenKind::CurlyCloseBracketToken
-            && self.current_token().kind != EndOfFileToken
-        {
-            let iter = self.current_token_index;
-            let pattern = self.parse_pattern()?;
+        let arms = self.parse_delimited_list(TokenKind::CurlyCloseBracketToken, |p| {
+            let pattern = p.parse_pattern()?;
 
             // Optional `if <guard>` after the pattern.
-            let guard = if self.current_token().kind == TokenKind::IfToken {
-                self.match_token(TokenKind::IfToken);
-                Some(self.parse_expression(0)?)
+            let guard = if p.current_token().kind == TokenKind::IfToken {
+                p.match_token(TokenKind::IfToken);
+                Some(p.parse_expression(0)?)
             } else {
                 None
             };
 
-            self.match_token(TokenKind::FatArrowToken);
+            p.match_token(TokenKind::FatArrowToken);
 
-            let body = if self.current_token().kind == TokenKind::CurlyOpenBracketToken {
-                MatchArmBody::Block(self.parse_block()?)
+            let body = if p.current_token().kind == TokenKind::CurlyOpenBracketToken {
+                MatchArmBody::Block(p.parse_block()?)
             } else {
-                MatchArmBody::Expr(self.parse_expression(0)?)
+                MatchArmBody::Expr(p.parse_expression(0)?)
             };
 
-            // A trailing comma between arms is optional.
-            if self.current_token().kind == TokenKind::CommaToken {
-                self.match_token(TokenKind::CommaToken);
-            }
-
-            arms.push(MatchArm {
+            Ok(MatchArm {
                 pattern,
                 guard,
                 body,
-            });
-            self.ensure_progress(iter);
-        }
-        self.match_token(TokenKind::CurlyCloseBracketToken);
+            })
+        })?;
         Ok(ExpressionNode::Match(self.arena.alloc(subject), arms))
     }
 
@@ -503,17 +404,7 @@ impl<'a, 'b> Parser<'a, 'b> {
         let mut subs = Vec::new();
         if self.current_token().kind == TokenKind::OpenParenthesisToken {
             self.match_token(TokenKind::OpenParenthesisToken);
-            while self.current_token().kind != TokenKind::CloseParenthesisToken
-                && self.current_token().kind != EndOfFileToken
-            {
-                let iter = self.current_token_index;
-                subs.push(self.parse_pattern()?);
-                if self.current_token().kind == TokenKind::CommaToken {
-                    self.match_token(TokenKind::CommaToken);
-                }
-                self.ensure_progress(iter);
-            }
-            self.match_token(TokenKind::CloseParenthesisToken);
+            subs = self.parse_delimited_list(TokenKind::CloseParenthesisToken, |p| p.parse_pattern())?;
         }
         Ok(subs)
     }
