@@ -46,21 +46,32 @@ class List<T> {
         this.count = this.count + 1;
     }
 
-    // Returns the element at `index` (no bounds checking).
-    public fun get(index: int): T {
-        return this.items[index];
+    // Returns the element at `index`, or `None` if `index` is out of range.
+    public fun get(index: int): Option<T> {
+        if ((index < 0) || (index >= this.count)) {
+            return Option.None;
+        }
+        return Option.Some(this.items[index]);
     }
 
-    // Overwrites the element at `index`.
-    public fun set(index: int, value: T): void {
+    // Overwrites the element at `index`, returning true on success or false if `index` is out of
+    // range (no value is written in that case).
+    public fun set(index: int, value: T): bool {
+        if ((index < 0) || (index >= this.count)) {
+            return false;
+        }
         this.items[index] = value;
+        return true;
     }
 
-    // Removes and returns the last element.
-    public fun pop(): T {
+    // Removes and returns the last element, or `None` if the list is empty.
+    public fun pop(): Option<T> {
+        if (this.count == 0) {
+            return Option.None;
+        }
         let last = this.items[this.count - 1];
         this.count = this.count - 1;
-        return last;
+        return Option.Some(last);
     }
 
     // True if `value` is present (uses value equality, including string contents).
@@ -76,19 +87,16 @@ class List<T> {
         return found;
     }
 
-    // Index of the first matching element, or -1.
-    public fun index_of(value: T): int {
+    // Index of the first matching element (by value equality), or `None` if absent.
+    public fun index_of(value: T): Option<int> {
         let i = 0;
-        let result = -1;
         while (i < this.count) {
-            if (result < 0) {
-                if (this.items[i] == value) {
-                    result = i;
-                }
+            if (this.items[i] == value) {
+                return Option.Some(i);
             }
             i = i + 1;
         }
-        return result;
+        return Option.None;
     }
 
     // Logically empties the list.
@@ -96,13 +104,18 @@ class List<T> {
         this.count = 0;
     }
 
-    // Removes the element at `index`, shifting later elements left.
-    public fun remove_at(index: int): void {
+    // Removes the element at `index`, shifting later elements left. Returns true on success, or
+    // false if `index` is out of range (the list is left unchanged in that case).
+    public fun remove_at(index: int): bool {
+        if ((index < 0) || (index >= this.count)) {
+            return false;
+        }
         let i = index;
         while (i < this.count - 1) {
             this.items[i] = this.items[i + 1];
             i = i + 1;
         }
         this.count = this.count - 1;
+        return true;
     }
 }

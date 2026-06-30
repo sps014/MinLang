@@ -70,8 +70,11 @@ Math functions are static methods on the `Math` class. Each function accepts num
 | `Math.ceil`  | Ceiling          |
 | `Math.round` | Round to nearest |
 
+`Math.sqrt` returns an `Option<double>` — `None` for a negative argument (which has no real square root), otherwise `Some(root)`. The other functions above return a plain `double`.
+
 ```dream
-let hyp = Math.sqrt(3.0 * 3.0 + 4.0 * 4.0);         // 5.0
+let hyp = Math.sqrt(3.0 * 3.0 + 4.0 * 4.0).unwrap_or(0.0d);  // 5.0
+let bad = Math.sqrt(-1.0d).is_none();                        // true
 let s = Math.sin(0);                                // 0.0 (int argument coerced to double)
 let p = Math.pow(2.0, 3.0);                         // 8.0
 ```

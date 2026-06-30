@@ -17,3 +17,31 @@ enum Result<T, E> {
     Ok(value: T),
     Err(error: E),
 }
+
+// Ergonomic accessors so callers can read a `Result` without writing a full `match` each time.
+// These are ordinary methods (made possible by generic `extend` blocks) and never panic.
+extend Result<T, E> {
+    // True when this is `Ok`.
+    public fun is_ok(): bool {
+        return match (this) {
+            Ok(v)  => true,
+            Err(e) => false,
+        };
+    }
+
+    // True when this is `Err`.
+    public fun is_err(): bool {
+        return match (this) {
+            Ok(v)  => false,
+            Err(e) => true,
+        };
+    }
+
+    // The success value when `Ok`, otherwise `fallback`.
+    public fun unwrap_or(fallback: T): T {
+        return match (this) {
+            Ok(v)  => v,
+            Err(e) => fallback,
+        };
+    }
+}

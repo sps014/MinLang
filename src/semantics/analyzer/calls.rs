@@ -811,7 +811,9 @@ impl<'a> Analyzer<'a> {
         // receivers (which can carry methods via `extend`) use their canonical type name directly.
         let struct_name = match Self::resolve_struct_parts(&obj_type) {
             Some((base_name, generic_args)) => {
-                self.ensure_struct_instantiated(
+                // A generic union receiver (e.g. `Option<int>`) is instantiated through the union
+                // path so its extension methods are registered; everything else is a struct.
+                self.ensure_type_instantiated(
                     &base_name,
                     &generic_args,
                     &method.position,

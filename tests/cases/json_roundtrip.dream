@@ -11,9 +11,10 @@ fun main(): void {
     System.println(JSON.stringify(user));
 
     let parsed = JSON.parse(JSON.stringify(user));
-    System.println(parsed.get("name").as_string());
-    System.println(parsed.get("age").as_int());
-    System.println(parsed.get("tags").at(1).as_string());
-    System.println(parsed.get("active").as_bool());
-    System.println(parsed.get("tags").size());
+    let none = JsonValue.none();
+    System.println(parsed.get("name").unwrap_or(none).as_string());
+    System.println(parsed.get("age").unwrap_or(none).as_int());
+    System.println(parsed.get("tags").unwrap_or(none).at(1).unwrap_or(none).as_string());
+    System.println(parsed.get("active").unwrap_or(none).as_bool());
+    System.println(parsed.get("tags").unwrap_or(none).size());
 }

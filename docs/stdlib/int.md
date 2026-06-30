@@ -60,10 +60,12 @@ println(7.signum());       // 1
 
 ## int.parse (static)
 
-Parses a signed decimal integer from a string. Non-digit characters are ignored; an empty or all-non-digit string yields `0`.
+Parses a signed decimal integer from a string, returning a `Result<int, string>`: `Ok(value)` on success, or `Err(message)` for an empty string, a bare sign, or any non-digit character. Use `unwrap_or` (or `match`) to read the value.
 
 ```dream
-let n = int.parse("42");     // 42
-let m = int.parse("-7");     // -7
-let k = int.parse("abc");    // 0
+let n = int.parse("42").unwrap_or(0);     // 42
+let m = int.parse("-7").unwrap_or(0);     // -7
+let k = int.parse("abc").unwrap_or(0);    // 0 (Err -> fallback)
+
+println(int.parse("abc").is_err());       // true
 ```

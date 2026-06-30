@@ -16,7 +16,7 @@ The API is identical across all three; only the browser differs in that writes l
 
 ## Reading and writing text
 
-`File.read` returns the whole file as a UTF-8 string; `File.write` replaces its contents and `File.append` adds to the end. Each resolves a `Future`, so `await` them inside an `async fun`:
+`File.read` returns the whole file as a UTF-8 string; `File.write` replaces its contents and `File.append` adds to the end. Each resolves a `Future`, so `await` them inside an `async fun`. Fallible operations resolve with a `Result`, so a failure is explicit — read the value with `unwrap_or` (or `match`):
 
 ```dream
 async fun main(): void {
@@ -24,21 +24,21 @@ async fun main(): void {
     await File.append("notes.txt", "world\n");
 
     let text = await File.read("notes.txt");
-    System.print(text);                 // "hello\nworld\n"
+    System.print(text.unwrap_or(""));    // "hello\nworld\n"
 }
 ```
 
-`write` and `append` resolve with the number of bytes written (`-1` on error).
+`read` and `read_bytes` resolve with `Err` when the file does not exist; `write`, `append`, and `write_bytes` resolve with `Ok(bytes_written)` or `Err` on failure.
 
 ## Metadata
 
-`exists`, `size`, and `is_dir` are cheap and synchronous — no `await`:
+`exists`, `size`, and `is_dir` are cheap and synchronous — no `await`. `size` is an `Option<int>` (`None` if the path is missing):
 
 ```dream
 async fun main(): void {
     if (File.exists("notes.txt")) {
         System.print("size = ");
-        System.println(File.size("notes.txt"));   // bytes; -1 if missing
+        System.println(File.size("notes.txt").unwrap_or(0 - 1));   // bytes; -1 if missing
     }
 }
 ```
@@ -60,8 +60,8 @@ For non-text data, `read_bytes`/`write_bytes` move raw bytes directly between th
 
 ```dream
 async fun main(): void {
-    let bytes = await File.read_bytes("image.png");   // char[]
-    await File.write_bytes("copy.png", bytes);
+    let bytes = await File.read_bytes("image.png");   // Result<char[], string>
+    await File.write_bytes("copy.png", bytes.unwrap_or(Array.new<char>(0)));
 }
 ```
 
@@ -71,7 +71,8 @@ async fun main(): void {
 
 ```dream
 async fun main(): void {
-    let stream = await File.open("notes.txt");
+    let opened = await File.open("notes.txt");           // Result<FileStream, string>
+    let stream = opened.unwrap_or(FileStream(Array.new<char>(0)));
 
     System.println(stream.read(5));        // first 5 bytes as text
     System.println(stream.position());     // 5
@@ -92,17 +93,17 @@ async fun main(): void {
 
 | Member | Description |
 | --- | --- |
-| `File.read(path): Future<string>` | read the whole file as UTF-8 text |
-| `File.write(path, content): Future<int>` | overwrite `path`; resolves with bytes written (`-1` on error) |
-| `File.append(path, content): Future<int>` | append to `path`; resolves with bytes written |
-| `File.read_bytes(path): Future<char[]>` | read the whole file as raw bytes (binary-safe) |
-| `File.write_bytes(path, data): Future<int>` | write raw bytes; resolves with bytes written |
+| `File.read(path): Future<Result<string, string>>` | read the whole file as UTF-8 text; `Err` if missing |
+| `File.write(path, content): Future<Result<int, string>>` | overwrite `path`; `Ok(bytes_written)` or `Err` |
+| `File.append(path, content): Future<Result<int, string>>` | append to `path`; `Ok(bytes_written)` or `Err` |
+| `File.read_bytes(path): Future<Result<char[], string>>` | read the whole file as raw bytes (binary-safe); `Err` if missing |
+| `File.write_bytes(path, data): Future<Result<int, string>>` | write raw bytes; `Ok(bytes_written)` or `Err` |
 | `File.delete(path): Future<bool>` | delete `path`; resolves `true` on success |
 | `File.list(path): Future<string[]>` | directory entry names (empty if not a directory) |
 | `File.exists(path): bool` | true if `path` exists (synchronous) |
-| `File.size(path): int` | size in bytes, or `-1` if missing (synchronous) |
+| `File.size(path): Option<int>` | size in bytes, or `None` if missing (synchronous) |
 | `File.is_dir(path): bool` | true if `path` is a directory (synchronous) |
-| `File.open(path): Future<FileStream>` | open a buffered read stream |
+| `File.open(path): Future<Result<FileStream, string>>` | open a buffered read stream; `Err` if missing |
 
 ### FileStream
 

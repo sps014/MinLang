@@ -14,7 +14,7 @@ fun main(): void {
     let a = Math.abs(-42.5d);
     System.println(a);
     
-    let s = Math.sqrt(16.0d);
+    let s = Math.sqrt(16.0d).unwrap_or(0.0d);
     System.println(s);
 
     let z = Math.sin(0.0d);

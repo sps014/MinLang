@@ -8,18 +8,20 @@ async fun main(): void {
     await File.write(path, "Dream\n");
     await File.append(path, "rocks\n");
 
-    // Metadata (synchronous predicates).
+    // Metadata (synchronous predicates). `size` is an `Option<int>` (`None` if absent).
     if (File.exists(path)) {
         System.print("size = ");
-        System.println(File.size(path));
+        System.println(File.size(path).unwrap_or(0 - 1));
     }
 
-    // Read the whole thing.
+    // Read the whole thing. `read` resolves with a `Result<string, string>`.
     let text = await File.read(path);
-    System.print(text);
+    System.print(text.unwrap_or(""));
 
-    // Buffered, seekable streaming.
-    let stream = await File.open(path);
+    // Buffered, seekable streaming. `open` resolves with a `Result<FileStream, string>`; the empty
+    // stream is a harmless fallback that the existence check above rules out in practice.
+    let stream_result = await File.open(path);
+    let stream = stream_result.unwrap_or(FileStream(Array.new<char>(0)));
     System.print("first 5: ");
     System.println(stream.read(5));     // "Dream"
     System.print("at pos: ");
@@ -30,12 +32,13 @@ async fun main(): void {
     stream.close();
 
     // Raw byte round-trip: read 5 bytes, write them to a second file.
-    let head = await File.open(path);
+    let head_result = await File.open(path);
+    let head = head_result.unwrap_or(FileStream(Array.new<char>(0)));
     let bytes = head.read_bytes(5);     // ['D','r','e','a','m']
     await File.write_bytes("scratch_head.bin", bytes);
     let echoed = await File.read("scratch_head.bin");
     System.print("bytes -> ");
-    System.println(echoed);             // "Dream"
+    System.println(echoed.unwrap_or(""));   // "Dream"
 
     // List the current directory.
     let entries = await File.list(".");

@@ -20,5 +20,5 @@ fun main(): void {
     System.println(o.sum());
     let p = Vec2.of(3, 4);
     System.println(p.sum());
-    System.println(int.parse("100"));
+    System.println(int.parse("100").unwrap_or(0));
 }

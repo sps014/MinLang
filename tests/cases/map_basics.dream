@@ -4,23 +4,23 @@ fun main(): void {
     m.put("two", 2);
     m.put("three", 3);
     System.println(m.size());
-    System.println(m.get("one"));
-    System.println(m.get("three"));
+    System.println(m.get("one").unwrap_or(0));
+    System.println(m.get("three").unwrap_or(0));
     System.print(m.contains("two"));
     System.print("\n");
     System.print(m.contains("nope"));
     System.print("\n");
-    System.println(m.get("missing"));
+    System.println(m.get("missing").unwrap_or(0));
     System.println(m.get_or("missing", -1));
     m.put("two", 22);
-    System.println(m.get("two"));
+    System.println(m.get("two").unwrap_or(0));
     System.println(m.size());
     System.print(m.remove("two"));
     System.print("\n");
     System.println(m.size());
     System.print(m.contains("two"));
     System.print("\n");
-    System.println(m.get("two"));
+    System.println(m.get("two").unwrap_or(0));
 
     let counts = Map<int, int>();
     let i = 0;
@@ -29,8 +29,8 @@ fun main(): void {
         i = i + 1;
     }
     System.println(counts.size());
-    System.println(counts.get(7));
-    System.println(counts.get(39));
+    System.println(counts.get(7).unwrap_or(0));
+    System.println(counts.get(39).unwrap_or(0));
     System.print(counts.contains(40));
     System.print("\n");
     System.println(counts.get_or(40, -7));

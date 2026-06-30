@@ -28,9 +28,13 @@ extend double {
 
     // Parses a decimal double from `text`, supporting an optional sign, a fractional part, and a
     // `e`/`E` exponent (e.g. "-3.14", "1.5e-3"). Parsing stops at the first character that does not
-    // fit the grammar; an empty or non-numeric string yields 0.0.
-    public static fun parse(text: string): double {
+    // fit the grammar. Returns `Err` for an empty string or one containing no digits; otherwise
+    // `Ok` with the value.
+    public static fun parse(text: string): Result<double, string> {
         let n = text.len();
+        if (n == 0) {
+            return Result.Err("cannot parse double from empty string");
+        }
         let i = 0;
         let neg = false;
         if (i < n) {
@@ -43,6 +47,7 @@ extend double {
                 i = i + 1;
             }
         }
+        let digits_seen = false;
         let result = 0.0d;
         // Integer part.
         while (i < n) {
@@ -50,6 +55,7 @@ extend double {
             if ((c < '0') || (c > '9')) {
                 break;
             }
+            digits_seen = true;
             result = result * 10.0d + (double)((int)c - 48);
             i = i + 1;
         }
@@ -63,6 +69,7 @@ extend double {
                     if ((c < '0') || (c > '9')) {
                         break;
                     }
+                    digits_seen = true;
                     scale = scale / 10.0d;
                     result = result + (double)((int)c - 48) * scale;
                     i = i + 1;
@@ -108,9 +115,12 @@ extend double {
                 }
             }
         }
-        if (neg == true) {
-            return 0.0d - result;
+        if (digits_seen == false) {
+            return Result.Err("cannot parse double: no digits");
         }
-        return result;
+        if (neg == true) {
+            return Result.Ok(0.0d - result);
+        }
+        return Result.Ok(result);
     }
 }

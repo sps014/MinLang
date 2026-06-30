@@ -34,13 +34,14 @@ class Math {
         return Math.ceil(x - 0.5d);
     }
 
-    /// Returns the square root of `x` using the Newton-Raphson method.
-    public static fun sqrt(x: double): double {
+    /// Returns the square root of `x` using the Newton-Raphson method, or `None` when `x` is
+    /// negative (which has no real square root).
+    public static fun sqrt(x: double): Option<double> {
         if (x < 0.0d) {
-            return 0.0d; // Error case, usually NaN but Dream doesn't have NaN literal
+            return Option.None;
         }
         if ((x == 0.0d) || (x == 1.0d)) {
-            return x;
+            return Option.Some(x);
         }
         let guess = x / 2.0d;
         let prev = 0.0d;
@@ -48,7 +49,7 @@ class Math {
             prev = guess;
             guess = (guess + (x / guess)) / 2.0d;
         }
-        return guess;
+        return Option.Some(guess);
     }
 
     /// Returns `base` to the exponent power (integer exponents only for simplicity in basic implementation).

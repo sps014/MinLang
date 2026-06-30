@@ -60,29 +60,35 @@ extend int {
         return 0;
     }
 
-    // Parses a (possibly signed) decimal integer from `text`. Non-digit characters are ignored;
-    // an empty or all-non-digit string yields 0. Called as `int.parse("42")`.
-    public static fun parse(text: string): int {
+    // Parses a (possibly signed) decimal integer from `text`. Returns `Err` for an empty string,
+    // a bare sign, or any non-digit character; otherwise `Ok` with the value. Called as
+    // `int.parse("42")`.
+    public static fun parse(text: string): Result<int, string> {
         let n = text.len();
+        if (n == 0) {
+            return Result.Err("cannot parse int from empty string");
+        }
         let i = 0;
         let neg = false;
-        if (n > 0) {
-            if (text.char_at(0) == '-') {
-                neg = true;
-                i = 1;
-            }
+        if (text.char_at(0) == '-') {
+            neg = true;
+            i = 1;
+        }
+        if (i >= n) {
+            return Result.Err("cannot parse int: no digits");
         }
         let result = 0;
         while (i < n) {
             let c = text.char_at(i);
-            if ((c >= '0') && (c <= '9')) {
-                result = result * 10 + ((int)c - 48);
+            if ((c < '0') || (c > '9')) {
+                return Result.Err("cannot parse int: invalid digit");
             }
+            result = result * 10 + ((int)c - 48);
             i = i + 1;
         }
         if (neg == true) {
-            return 0 - result;
+            return Result.Ok(0 - result);
         }
-        return result;
+        return Result.Ok(result);
     }
 }

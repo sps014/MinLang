@@ -4,13 +4,13 @@ fun main(): void {
     xs.push(20);
     xs.push(30);
     System.println(xs.size());
-    System.println(xs.get(0));
-    System.println(xs.get(2));
+    System.println(xs.get(0).unwrap_or(0 - 1));
+    System.println(xs.get(2).unwrap_or(0 - 1));
     xs.set(1, 99);
-    System.println(xs.get(1));
-    System.println(xs.pop());
+    System.println(xs.get(1).unwrap_or(0 - 1));
+    System.println(xs.pop().unwrap_or(0 - 1));
     System.println(xs.size());
-    System.println(xs.index_of(99));
+    System.println(xs.index_of(99).unwrap_or(0 - 1));
     System.print(xs.contains(99));
     System.print("\n");
     System.print(xs.contains(12345));
@@ -22,18 +22,18 @@ fun main(): void {
         i = i + 1;
     }
     System.println(xs.size());
-    System.println(xs.get(51));
+    System.println(xs.get(51).unwrap_or(0 - 1));
 
     xs.remove_at(0);
-    System.println(xs.get(0));
+    System.println(xs.get(0).unwrap_or(0 - 1));
     System.println(xs.size());
 
     let names = List<string>();
     names.push("alpha");
     names.push("beta");
-    System.print(names.get(0));
+    System.print(names.get(0).unwrap_or(""));
     System.print("\n");
     System.print(names.contains("beta"));
     System.print("\n");
-    System.println(names.index_of("beta"));
+    System.println(names.index_of("beta").unwrap_or(0 - 1));
 }

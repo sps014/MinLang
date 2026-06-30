@@ -23,16 +23,16 @@ scores.put("alice", 100);   // overwrites 95
 
 ### get
 
-Returns the value for `key`. If the key is absent, returns the zero value of `V` (`0` for `int`, `null` for references).
+Returns the value for `key` as an `Option<V>`: `Some(value)` when present, or `None` when the key is absent.
 
 ```dream
-println(scores.get("alice"));   // 100
-println(scores.get("nobody"));  // 0
+println(scores.get("alice").unwrap_or(0));   // 100
+println(scores.get("nobody").unwrap_or(0));  // 0 (absent)
 ```
 
 ### get_or
 
-Returns the value for `key`, or `fallback` if the key is absent.
+Returns the value for `key`, or `fallback` if the key is absent. A convenience for the common `get(key).unwrap_or(fallback)` pattern.
 
 ```dream
 let v = scores.get_or("nobody", -1);   // -1
@@ -105,12 +105,12 @@ fun main() {
     let i = 0;
     while (i < words.len()) {
         let w = words[i];
-        freq.put(w, freq.get(w) + 1);
+        freq.put(w, freq.get_or(w, 0) + 1);
         i = i + 1;
     }
-    println(freq.get("the"));   // 2
-    println(freq.get("cat"));   // 1
-    println(freq.size());       // 5
+    println(freq.get_or("the", 0));   // 2
+    println(freq.get_or("cat", 0));   // 1
+    println(freq.size());             // 5
 }
 ```
 

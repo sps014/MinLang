@@ -98,7 +98,7 @@ class JsonValue {
     fun _find_key(key: string): int {
         let i = 0;
         while (i < this.obj_keys.size()) {
-            if (this.obj_keys.get(i) == key) {
+            if (this.obj_keys.get(i).unwrap_or("") == key) {
                 return i;
             }
             i = i + 1;
@@ -109,12 +109,13 @@ class JsonValue {
     public fun has(key: string): bool {
         return this._find_key(key) >= 0;
     }
-    public fun get(key: string): JsonValue {
+    // The value for `key`, or `None` if this object has no such key.
+    public fun get(key: string): Option<JsonValue> {
         let idx = this._find_key(key);
         if (idx >= 0) {
             return this.obj_vals.get(idx);
         }
-        return JsonValue.none();
+        return Option.None;
     }
     public fun set(key: string, value: JsonValue): void {
         let idx = this._find_key(key);
@@ -125,7 +126,8 @@ class JsonValue {
             this.obj_vals.push(value);
         }
     }
-    public fun key_at(index: int): string {
+    // The object key at insertion index `index`, or `None` if out of range.
+    public fun key_at(index: int): Option<string> {
         return this.obj_keys.get(index);
     }
     public fun keys(): List<string> {
@@ -134,7 +136,8 @@ class JsonValue {
 
     // --- array accessors --------------------------------------------------------------------
 
-    public fun at(index: int): JsonValue {
+    // The array element at `index`, or `None` if out of range.
+    public fun at(index: int): Option<JsonValue> {
         return this.items.get(index);
     }
     public fun push(value: JsonValue): void {
@@ -234,7 +237,7 @@ class JsonParser {
             }
         }
         let text = this.src.substring(start, this.pos);
-        return JsonValue.number(double.parse(text));
+        return JsonValue.number(double.parse(text).unwrap_or(0.0d));
     }
 
     public fun parse_array(): JsonValue {
@@ -423,7 +426,7 @@ class JSON {
                 if (i > 0) {
                     result = result + ",";
                 }
-                result = result + JSON._json_stringify(v.items.get(i));
+                result = result + JSON._json_stringify(v.items.get(i).unwrap_or(JsonValue.none()));
                 i = i + 1;
             }
             result = result + "]";
@@ -436,9 +439,9 @@ class JSON {
                 if (i > 0) {
                     result = result + ",";
                 }
-                result = result + JSON._json_escape(v.obj_keys.get(i));
+                result = result + JSON._json_escape(v.obj_keys.get(i).unwrap_or(""));
                 result = result + ":";
-                result = result + JSON._json_stringify(v.obj_vals.get(i));
+                result = result + JSON._json_stringify(v.obj_vals.get(i).unwrap_or(JsonValue.none()));
                 i = i + 1;
             }
             result = result + "}";
@@ -475,7 +478,7 @@ class JSON {
                 if (i > 0) {
                     result = result + ",\n";
                 }
-                result = result + pad + JSON._json_stringify_pretty(v.items.get(i), indent, depth + 1);
+                result = result + pad + JSON._json_stringify_pretty(v.items.get(i).unwrap_or(JsonValue.none()), indent, depth + 1);
                 i = i + 1;
             }
             result = result + "\n" + pad_end + "]";
@@ -493,7 +496,7 @@ class JSON {
                 if (i > 0) {
                     result = result + ",\n";
                 }
-                result = result + pad + JSON._json_escape(v.obj_keys.get(i)) + ": " + JSON._json_stringify_pretty(v.obj_vals.get(i), indent, depth + 1);
+                result = result + pad + JSON._json_escape(v.obj_keys.get(i).unwrap_or("")) + ": " + JSON._json_stringify_pretty(v.obj_vals.get(i).unwrap_or(JsonValue.none()), indent, depth + 1);
                 i = i + 1;
             }
             result = result + "\n" + pad_end + "}";

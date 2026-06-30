@@ -19,7 +19,7 @@ async fun main(): void {
     System.println(res.header("content-type"));
 
     let data = res.json();
-    System.println(data.get("name").as_string());
+    System.println(data.get("name").unwrap_or(JsonValue.none()).as_string());
 
     // POST a JSON body (any verb is available: get/post/put/patch/delete/head, or `request`).
     let created = await api.post("/user", "{\"name\":\"Grace\"}");

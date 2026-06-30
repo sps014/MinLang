@@ -51,6 +51,30 @@ match (o) {
 }
 ```
 
+## Helper methods
+
+For the common cases the prelude provides methods on `Option<T>` so you do not have to write a full
+`match` every time:
+
+| Method | Returns |
+| --- | --- |
+| `is_some(): bool` | `true` when this is `Some` |
+| `is_none(): bool` | `true` when this is `None` |
+| `unwrap_or(fallback: T): T` | the contained value, or `fallback` when `None` |
+
+```dream
+let o = Option.Some(7);
+println(o.unwrap_or(0));   // 7
+println(o.is_some());      // true
+
+let n: Option<int> = Option.None;
+println(n.unwrap_or(0));   // 0
+```
+
+These are defined with a generic `extend Option<T> { ... }` block (see [Discriminated
+unions](../language/discriminated-unions.md#methods-on-generic-unions)). There is deliberately no
+panicking `unwrap()` — use `unwrap_or` or `match` so the empty case is always handled.
+
 ## `Option<T>` vs `T?`
 
 A nullable type (`T?`) and `Option<T>` both model absence. Prefer `Option<T>` when you want the

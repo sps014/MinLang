@@ -5,6 +5,6 @@ async fun main(): void {
     await File.write(path, "hello\n");
     await File.append(path, "dream");
     let text = await File.read(path);
-    System.print(text);
+    System.print(text.unwrap_or(""));
     await File.delete(path);
 }

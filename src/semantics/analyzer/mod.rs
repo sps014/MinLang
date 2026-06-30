@@ -3,7 +3,7 @@ use crate::semantics::function_table::FunctionTable;
 use crate::semantics::struct_table::StructTable;
 use crate::semantics::symbol_table::SymbolTable;
 use crate::semantics::union_table::UnionTable;
-use crate::syntax::nodes::EnumDeclarationNode;
+use crate::syntax::nodes::{EnumDeclarationNode, ExtendNode};
 use crate::syntax::nodes::types::{mangle_with_suffixes, primitive_type, FUTURE_TYPE};
 use crate::syntax::nodes::{FunctionNode, ProgramNode, Type};
 use crate::syntax::syntax_tree::SyntaxTree;
@@ -208,6 +208,10 @@ pub struct Analyzer<'a> {
     union_table: UnionTable,
     /// Generic discriminated-union templates (`enum Option<T> { ... }`), instantiated on demand.
     generic_unions: HashMap<String, &'a EnumDeclarationNode>,
+    /// Generic `extend Type<...> { ... }` templates (e.g. `extend Option<T> { ... }`), keyed by
+    /// the extended type's name. Their methods are monomorphized alongside each concrete
+    /// instantiation of the target generic union or struct (see `ensure_*_instantiated`).
+    generic_extends: HashMap<String, &'a ExtendNode<'a>>,
     /// An optional expected type for the expression currently being analyzed (from a `let`
     /// annotation or `return` type). Used to resolve the type arguments of a generic union's
     /// nullary variant (`let o: Option<int> = Option.None;`), where they cannot be inferred from
@@ -243,6 +247,7 @@ impl<'a> Analyzer<'a> {
             enum_table: HashMap::new(),
             union_table: HashMap::new(),
             generic_unions: HashMap::new(),
+            generic_extends: HashMap::new(),
             current_expected_type: None,
             current_generic_bindings: Vec::new(),
             loop_labels: Vec::new(),
@@ -317,6 +322,10 @@ impl<'a> Analyzer<'a> {
     ) -> Result<SemanticInfo<'_>, ()> {
         let mut symbol_table_map = HashMap::new();
 
+        // Stash generic `extend` templates before any type instantiation can occur (a concrete
+        // union/struct field may instantiate a generic union during `register_enums`), so the
+        // extension methods are always available to attach at the first instantiation.
+        self.stash_generic_extensions(node);
         self.register_enums(node, diagnostics);
         self.register_structs(node, diagnostics);
         self.register_extensions(node, diagnostics);

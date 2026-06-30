@@ -37,17 +37,17 @@ extend string {
         return result;
     }
 
-    // The index of the first occurrence of character `target`, or -1 if absent.
-    public fun index_of(target: char): int {
+    // The index of the first occurrence of character `target`, or `None` if absent.
+    public fun index_of(target: char): Option<int> {
         let n = this.len();
         let i = 0;
         while (i < n) {
             if (this.char_at(i) == target) {
-                return i;
+                return Option.Some(i);
             }
             i = i + 1;
         }
-        return 0 - 1;
+        return Option.None;
     }
 
     // True if `sub` occurs anywhere in this string (the empty string is always contained).

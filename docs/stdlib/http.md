@@ -31,7 +31,7 @@ async fun main(): void {
     let api = HttpClient("https://api.example.com");
     let body = await api.text("/users/42");
     let user = JSON.parse(body);
-    System.println(user.get("name").as_string());
+    System.println(user.get("name").unwrap_or(JsonValue.none()).as_string());
 }
 ```
 
@@ -82,7 +82,8 @@ async fun main(): void {
     await File.write_bytes("logo.png", img.bytes());
 
     // Upload raw bytes.
-    let payload = await File.read_bytes("logo.png");
+    let read = await File.read_bytes("logo.png");
+    let payload = read.unwrap_or(Array.new<char>(0));
     let res = await http.post_bytes("https://example.com/upload", payload);
     System.println(res.status());
 }

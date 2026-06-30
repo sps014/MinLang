@@ -151,7 +151,7 @@ fn generate_json_extend(
                 f = fname, k = json_key, to_inner = to_inner
             ));
             from_prelude.push_str(&format!(
-                "        let __{f}: {ty} = null;\n        let __src_{f} = v.get(\"{k}\");\n        if (__src_{f}.is_null() == false) {{\n            __{f} = {from_inner};\n        }}\n",
+                "        let __{f}: {ty} = null;\n        let __src_{f} = v.get(\"{k}\").unwrap_or(JsonValue.none());\n        if (__src_{f}.is_null() == false) {{\n            __{f} = {from_inner};\n        }}\n",
                 f = fname, k = json_key, ty = ftype, from_inner = from_inner
             ));
             from_fields.push(format!("__{f}", f = fname));
@@ -164,7 +164,7 @@ fn generate_json_extend(
             let to_elem = json_to_expr(elem, &format!("this.{}[__i_{}]", fname, fname), json_names);
             let from_elem = json_from_expr(
                 elem,
-                &format!("__src_{}.at(__i_{})", fname, fname),
+                &format!("__src_{}.at(__i_{}).unwrap_or(JsonValue.none())", fname, fname),
                 json_names,
             );
             match (to_elem, from_elem) {
@@ -174,7 +174,7 @@ fn generate_json_extend(
                         f = fname, k = json_key, to_e = to_e
                     ));
                     from_prelude.push_str(&format!(
-                        "        let __src_{f} = v.get(\"{k}\");\n        let __{f} = Array.new<{elem}>(__src_{f}.size());\n        let __i_{f} = 0;\n        while (__i_{f} < __src_{f}.size()) {{\n            __{f}[__i_{f}] = {from_e};\n            __i_{f} = __i_{f} + 1;\n        }}\n",
+                        "        let __src_{f} = v.get(\"{k}\").unwrap_or(JsonValue.none());\n        let __{f} = Array.new<{elem}>(__src_{f}.size());\n        let __i_{f} = 0;\n        while (__i_{f} < __src_{f}.size()) {{\n            __{f}[__i_{f}] = {from_e};\n            __i_{f} = __i_{f} + 1;\n        }}\n",
                         f = fname, k = json_key, elem = elem, from_e = from_e
                     ));
                     from_fields.push(format!("__{f}", f = fname));
@@ -192,7 +192,11 @@ fn generate_json_extend(
             }
         } else {
             let to_e = json_to_expr(ftype, &format!("this.{}", fname), json_names);
-            let from_e = json_from_expr(ftype, &format!("v.get(\"{}\")", json_key), json_names);
+            let from_e = json_from_expr(
+                ftype,
+                &format!("v.get(\"{}\").unwrap_or(JsonValue.none())", json_key),
+                json_names,
+            );
             match (to_e, from_e) {
                 (Some(to_e), Some(from_e)) => {
                     to_body.push_str(&format!(

@@ -191,6 +191,25 @@ impl<'a> Analyzer<'a> {
         }
         let bindings = generic_bindings(params, args);
         self.register_union(&mangled, &template.variants, &bindings, diagnostics);
+        self.register_generic_extension_methods(base_name, &mangled, args, diagnostics);
+    }
+
+    /// If a generic `extend` block targets `base_name` (e.g. `extend Option<T> { ... }`),
+    /// monomorphizes its methods for the concrete instantiation `mangled` (e.g. `Option_int`),
+    /// binding the extend block's own generic parameters to `args` in declaration order. A no-op
+    /// when no generic extension targets `base_name`.
+    pub(super) fn register_generic_extension_methods(
+        &mut self,
+        base_name: &str,
+        mangled: &str,
+        args: &[Type],
+        diagnostics: &mut DiagnosticBag,
+    ) {
+        if let Some(ext) = self.generic_extends.get(base_name).copied() {
+            let ext_params = ext.generic_parameters.as_deref().unwrap_or(&[]);
+            let ext_bindings = generic_bindings(ext_params, args);
+            self.register_methods_for(mangled, &ext.methods, &ext_bindings, diagnostics);
+        }
     }
 
     /// Instantiates whichever generic container `base_name` denotes (a generic class or a generic
@@ -575,6 +594,7 @@ impl<'a> Analyzer<'a> {
         }
 
         self.register_struct_methods(new_decl_ref, &mangled_name, &bindings, diagnostics);
+        self.register_generic_extension_methods(base_name, &mangled_name, args, diagnostics);
     }
 
     pub(super) fn register_struct_methods(
@@ -660,13 +680,20 @@ impl<'a> Analyzer<'a> {
             diagnostics.file_path = file_path_string(&ext.file_path);
             let target = ext.target.text.clone();
             if ext.generic_parameters.is_some() {
-                diagnostics.report_error(
-                    format!(
-                        "Generic 'extend' blocks are not supported yet (extending '{}')",
-                        target
-                    ),
-                    Some(ext.target.position),
-                );
+                // Generic extend blocks were stashed by `stash_generic_extensions` and are attached
+                // per instantiation in `ensure_*_instantiated`; here we only validate the target is
+                // a known generic union or struct.
+                if !self.generic_unions.contains_key(&target)
+                    && !self.generic_structs.contains_key(&target)
+                {
+                    diagnostics.report_error(
+                        format!(
+                            "Cannot extend unknown generic type '{}' (no generic union or class by that name)",
+                            target
+                        ),
+                        Some(ext.target.position),
+                    );
+                }
                 continue;
             }
             if !self.is_extendable_target(&target) {
@@ -677,6 +704,19 @@ impl<'a> Analyzer<'a> {
                 continue;
             }
             self.register_methods_for(&target, &ext.methods, &[], diagnostics);
+        }
+    }
+
+    /// Pre-pass: stash every generic `extend Type<...> { ... }` block keyed by its target type
+    /// name, so the methods are available to monomorphize at the first instantiation of that type
+    /// (which can happen as early as `register_enums`). Validation of the target is deferred to
+    /// `register_extensions`, once all type templates are registered.
+    pub(super) fn stash_generic_extensions(&mut self, node: &'a ProgramNode<'a>) {
+        for ext in node.extends.iter() {
+            if ext.generic_parameters.is_some() {
+                self.generic_extends
+                    .insert(ext.target.text.clone(), ext);
+            }
         }
     }
 

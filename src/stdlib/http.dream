@@ -102,7 +102,7 @@ class HttpResponse {
         let i = 1;   // line 0 is the status line
         while (i < lines.len()) {
             let line = lines[i];
-            let colon = line.index_of(':');
+            let colon = line.index_of(':').unwrap_or(0 - 1);
             if (colon >= 0) {
                 let key = line.substring(0, colon).trim().to_lower();
                 if (key == want) {
@@ -209,8 +209,8 @@ class HttpClient {
         let keys = extra.keys();
         let i = 0;
         while (i < keys.size()) {
-            let key = keys.get(i);
-            base.set(key, extra.get(key));
+            let key = keys.get(i).unwrap_or("");
+            base.set(key, extra.get(key).unwrap_or(JsonValue.none()));
             i = i + 1;
         }
         return JSON.stringify(base);

@@ -145,13 +145,13 @@ class Map<K, V> {
         return this.find(key) >= 0;
     }
 
-    // Value for `key`, or the zero value of V if absent.
-    public fun get(key: K): V {
+    // Value for `key`, or `None` if the key is absent.
+    public fun get(key: K): Option<V> {
         let i = this.find(key);
         if (i >= 0) {
-            return this.values[i];
+            return Option.Some(this.values[i]);
         }
-        return this.defaults[0];
+        return Option.None;
     }
 
     // Value for `key`, or `fallback` if absent.

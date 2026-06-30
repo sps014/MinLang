@@ -5,7 +5,7 @@ fun main(): void {
     System.println(s.substring(7, 12));
     System.println(s.to_lower());
     System.println(s.to_upper());
-    System.println(s.index_of('o'));
+    System.println(s.index_of('o').unwrap_or(0 - 1));
     System.println(s.contains("World"));
     System.println(s.starts_with("Hell"));
     System.println(s.ends_with("rld"));

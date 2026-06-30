@@ -31,11 +31,16 @@ user.set("tags", tags);
 | Accessor | Returns |
 | --- | --- |
 | `as_bool()` / `as_int()` / `as_double()` / `as_string()` | the scalar value |
-| `get(key): JsonValue` | object member by key |
-| `at(index): JsonValue` | array element by index |
+| `get(key): Option<JsonValue>` | object member by key (`None` if absent) |
+| `at(index): Option<JsonValue>` | array element by index (`None` if out of range) |
+| `key_at(index): Option<string>` | object key at insertion index (`None` if out of range) |
 | `set(key, v)` / `push(v)` | mutate an object / array |
 | `size(): int` | array length |
-| `is_null(): bool` | true for `null`, and for a missing key (`get` returns `null`) |
+| `is_null(): bool` | true for `null` |
+
+`get`, `at`, and `key_at` return an `Option` rather than a sentinel, so a miss is explicit. Read
+the value with `unwrap_or(JsonValue.none())` (or `match`); chaining looks like
+`v.get("a").unwrap_or(JsonValue.none()).at(0).unwrap_or(JsonValue.none())`.
 
 ## `JSON.parse` and `JSON.stringify`
 
@@ -43,12 +48,14 @@ user.set("tags", tags);
 let text = JSON.stringify(user);     // {"name":"Ada","age":36,"tags":["dev"]}
 
 let v = JSON.parse(text);
-println(v.get("name").as_string());  // Ada
-println(v.get("age").as_int());      // 36
+let none = JsonValue.none();
+println(v.get("name").unwrap_or(none).as_string());  // Ada
+println(v.get("age").unwrap_or(none).as_int());      // 36
 ```
 
-`JSON.parse` is a recursive-descent parser. A JSON `null`, and any missing object key, reads back
-as a `JsonValue` whose `is_null()` is `true`; `get` never returns a dangling reference.
+`JSON.parse` is a recursive-descent parser. A JSON `null` reads back as a `JsonValue` whose
+`is_null()` is `true`; a missing object key yields `None` from `get` (so a miss is distinguishable
+from a present `null`).
 
 ### Pretty-printing
 

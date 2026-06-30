@@ -9,6 +9,12 @@ pub fn strip_nullable(type_name: &str) -> &str {
 /// Single source of truth for name mangling: joins `base` with each suffix using `_`
 /// separators, e.g. base `Pair` with `["int", "string"]` becomes `Pair_int_string`.
 /// With no suffixes the base name is returned unchanged.
+///
+/// The array suffix `[]` is rewritten to `Array` (so `char[]` -> `charArray`) because `[` and `]`
+/// are not valid in a generated WASM identifier; a generic instantiated with an array type
+/// argument (e.g. `Result<char[], string>`) would otherwise produce an unassemblable function
+/// name. This rewrite is purely on the mangled name and is applied uniformly to type identity and
+/// codegen, so the two never disagree.
 pub fn mangle_with_suffixes<S: AsRef<str>>(
     base: &str,
     suffixes: impl IntoIterator<Item = S>,
@@ -16,7 +22,7 @@ pub fn mangle_with_suffixes<S: AsRef<str>>(
     let mut name = base.to_string();
     for suffix in suffixes {
         name.push('_');
-        name.push_str(suffix.as_ref());
+        name.push_str(&suffix.as_ref().replace("[]", "Array"));
     }
     name
 }

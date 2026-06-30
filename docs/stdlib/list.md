@@ -31,27 +31,28 @@ println(nums.size());   // 3
 
 ### get
 
-Returns the element at `index`. No bounds checking — going out of range is undefined behaviour.
+Returns the element at `index` as an `Option<T>`: `Some(value)` when in range, or `None` when `index` is negative or `>= size()`. Use `unwrap_or` (or `match`) to read it.
 
 ```dream
-println(nums.get(0));   // 10
+println(nums.get(0).unwrap_or(0 - 1));   // 10
+println(nums.get(99).unwrap_or(0 - 1));  // -1 (out of range)
 ```
 
 ### set
 
-Overwrites the element at `index`.
+Overwrites the element at `index`, returning `true` on success or `false` if `index` is out of range (nothing is written in that case).
 
 ```dream
-nums.set(1, 99);
-println(nums.get(1));   // 99
+nums.set(1, 99);                         // true
+println(nums.get(1).unwrap_or(0 - 1));   // 99
 ```
 
 ### pop
 
-Removes and returns the last element. Does not check if the list is empty.
+Removes and returns the last element as an `Option<T>`: `Some(value)`, or `None` when the list is empty.
 
 ```dream
-let last = nums.pop();
+let last = nums.pop().unwrap_or(0);
 ```
 
 ### contains
@@ -65,10 +66,10 @@ println(nums.contains(1000));  // false
 
 ### index_of
 
-Returns the index of the first matching element, or `-1` if not found.
+Returns the index of the first matching element as an `Option<int>`: `Some(index)`, or `None` if not found.
 
 ```dream
-let i = nums.index_of(99);   // 1 (or -1 if absent)
+let i = nums.index_of(99).unwrap_or(0 - 1);   // 1 (or -1 if absent)
 ```
 
 ### clear
@@ -82,10 +83,10 @@ println(nums.size());   // 0
 
 ### remove_at
 
-Removes the element at `index`, shifting everything after it left.
+Removes the element at `index`, shifting everything after it left. Returns `true` on success, or `false` if `index` is out of range (the list is left unchanged).
 
 ```dream
-nums.remove_at(0);   // removes the first element
+nums.remove_at(0);   // removes the first element; returns true
 ```
 
 ## Example
@@ -99,11 +100,11 @@ fun main() {
         i = i + 1;
     }
     // [0, 1, 4, 9, 16]
-    println(xs.size());          // 5
-    println(xs.get(4));          // 16
-    println(xs.contains(9));     // true
-    xs.remove_at(2);             // [0, 1, 9, 16]
-    println(xs.size());          // 4
+    println(xs.size());                  // 5
+    println(xs.get(4).unwrap_or(0 - 1)); // 16
+    println(xs.contains(9));             // true
+    xs.remove_at(2);                     // [0, 1, 9, 16]
+    println(xs.size());                  // 4
 }
 ```
 

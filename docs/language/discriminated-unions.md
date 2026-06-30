@@ -122,6 +122,38 @@ fun safe_div(a: int, b: int): Result<int, string> {
 }
 ```
 
+## Methods on generic unions
+
+A union can carry methods through an [`extend`](classes.md) block, and the block may be generic so
+the methods are available on every instantiation. The type parameters declared on `extend` are
+bound per instantiation, so `this` and the method signature refer to the concrete payload type:
+
+```dream
+enum Option<T> { Some(value: T), None }
+
+extend Option<T> {
+    public fun unwrap_or(fallback: T): T {
+        return match (this) {
+            Some(v) => v,
+            None    => fallback,
+        };
+    }
+    public fun is_some(): bool {
+        return match (this) { Some(v) => true, None => false };
+    }
+}
+
+fun main(): void {
+    let o = Option.Some(7);
+    println(o.unwrap_or(0));   // 7
+    println(o.is_some());      // true
+}
+```
+
+The prelude uses exactly this mechanism to give [`Option<T>`](../stdlib/option.md) and
+[`Result<T, E>`](../stdlib/result.md) their `unwrap_or` / `is_some` / `is_ok` helpers, so you rarely
+need to write the `match` by hand.
+
 ## Built-in `Option<T>` and `Result<T, E>`
 
 These two unions are common enough that the standard library defines them for you — they are

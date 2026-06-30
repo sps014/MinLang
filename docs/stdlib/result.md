@@ -44,6 +44,30 @@ fun main(): void {
 }
 ```
 
+## Helper methods
+
+For the common cases the prelude provides methods on `Result<T, E>` so you do not have to write a
+full `match` every time:
+
+| Method | Returns |
+| --- | --- |
+| `is_ok(): bool` | `true` when this is `Ok` |
+| `is_err(): bool` | `true` when this is `Err` |
+| `unwrap_or(fallback: T): T` | the success value, or `fallback` when `Err` |
+
+```dream
+let r = safe_div(10, 2);
+println(r.unwrap_or(0 - 1));   // 5
+println(r.is_ok());            // true
+
+let e = safe_div(1, 0);
+println(e.unwrap_or(0 - 1));   // -1
+```
+
+These are defined with a generic `extend Result<T, E> { ... }` block (see [Discriminated
+unions](../language/discriminated-unions.md#methods-on-generic-unions)). There is deliberately no
+panicking `unwrap()` — use `unwrap_or` or `match` so the error case is always handled.
+
 ## `Result<T, E>` vs `Option<T>`
 
 Use [`Option<T>`](option.md) when a value is simply present or absent. Use `Result<T, E>` when the
