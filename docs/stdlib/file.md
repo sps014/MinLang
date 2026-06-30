@@ -1,6 +1,8 @@
 # File I/O
 
-`File` and `FileStream` are a small filesystem API for reading and writing files. They are built on synchronous host functions wrapped in [`async fun`](../language/async.md)s, so file operations return a `Future<T>` you can `await` — and because Dream's async scheduler is compiled into the module itself, the same `.dream` runs unchanged everywhere.
+`File` and `FileStream` are the filesystem API for reading and writing files. Operations are
+[`async`](../language/async.md) and return a `Future<T>` you `await`. The same `.dream` runs
+unchanged on every host.
 
 ## Runtime support
 

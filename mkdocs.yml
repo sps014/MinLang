@@ -59,26 +59,37 @@ nav:
   - Getting Started: getting-started.md
   - Language:
     - Variables: language/variables.md
-    - Types: language/types.md
     - Operators: language/operators.md
     - Control Flow: language/control-flow.md
-    - Discriminated Unions: language/discriminated-unions.md
     - Functions: language/functions.md
     - Imports: language/imports.md
-    - Arrays: language/arrays.md
-    - Classes: language/classes.md
     - Generics: language/generics.md
-    - The object Type: language/objects.md
     - Async/Await: language/async.md
-    - JS Interop: language/interop.md
-    - JS References: language/references.md
-    - Callbacks: language/callbacks.md
-    - JSON: language/json.md
+  - Types:
+    - Overview: language/types.md
+    - string: stdlib/string.md
+    - int: stdlib/int.md
+    - float: stdlib/float.md
+    - double: stdlib/double.md
+    - char: stdlib/char.md
+    - bool: stdlib/bool.md
+    - Arrays: language/arrays.md
+    - Enums: language/enums.md
+    - Classes: language/classes.md
+    - Discriminated Unions: language/discriminated-unions.md
+    - The object Type: language/objects.md
   - Standard Library:
     - Builtins: stdlib/builtins.md
+    - Option: stdlib/option.md
+    - Result: stdlib/result.md
     - List: stdlib/list.md
     - Map: stdlib/map.md
+    - JSON: stdlib/json.md
     - File I/O: stdlib/file.md
     - HTTP: stdlib/http.md
     - Regex: stdlib/regex.md
   - Memory Model: memory.md
+  - Interop:
+    - JS Interop: language/interop.md
+    - JS References: language/references.md
+    - Callbacks: language/callbacks.md

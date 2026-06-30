@@ -37,7 +37,17 @@ If you already know the basics, the [Language](language/variables.md) section co
 | [double](stdlib/double.md) | Double methods: `abs`, `min`, `max` |
 | [char](stdlib/char.md) | Character methods: `is_digit`, `is_alpha`, `to_lower`, `to_upper`, `as_string`, … |
 | [bool](stdlib/bool.md) | Boolean methods: `to_int` |
-| [List\<T\>](stdlib/list.md) | Growable sequence: `push`, `pop`, `get`, `set`, `remove_at`, … |
-| [Map\<K, V\>](stdlib/map.md) | Hash map: `put`, `get`, `contains`, `remove`, `keys`, `values`, … |
+| [`Option<T>`](stdlib/option.md) | A value that is present (`Some`) or absent (`None`) |
+| [`Result<T, E>`](stdlib/result.md) | The outcome of an operation: `Ok` or `Err` |
+| [`List<T>`](stdlib/list.md) | Growable sequence: `push`, `pop`, `get`, `set`, `remove_at`, … |
+| [`Map<K, V>`](stdlib/map.md) | Hash map: `put`, `get`, `contains`, `remove`, `keys`, `values`, … |
+| [JSON](stdlib/json.md) | `JsonValue` model, `JSON.parse`/`stringify`, `@json` auto-derive |
 | [File I/O](stdlib/file.md) | `File` and `FileStream`: read/write text and bytes, list, stat, stream |
+| [HTTP](stdlib/http.md) | `HttpClient`: cross-runtime requests over `async`/`await` |
+
+## Interop
+
+Dream runs on the browser, Node, and native WASM runtimes. The `extern` keyword bridges to the
+JavaScript host with no boilerplate. See [JS Interop](language/interop.md), [References](language/references.md),
+and [Callbacks](language/callbacks.md).
 

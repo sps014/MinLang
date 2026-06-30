@@ -115,6 +115,6 @@ A view over the raw response bytes. All reads are synchronous.
 | `header(name): string` | value of response header `name` (case-insensitive), or "" |
 | `text(): string` | body as UTF-8 text |
 | `bytes(): char[]` | body as raw bytes (binary-safe) |
-| `json(): JsonValue` | body parsed as [JSON](../language/json.md) |
+| `json(): JsonValue` | body parsed as [JSON](json.md) |
 
 A runnable example lives in [`sample/interop/http.dream`](https://github.com/sps014/Dream/blob/main/sample/interop/http.dream) with its Node runner `http.mjs`.

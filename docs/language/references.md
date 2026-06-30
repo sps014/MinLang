@@ -1,10 +1,15 @@
 # JavaScript References (`JsRef`)
 
-`JsRef` is an opaque handle to a live JavaScript value held by the runtime (`runtime/dream.js`). It lets a real JS object — a DOM node, a `Response`, a `RegExp`, a function — cross into Dream and be read or called through generic interop helpers, instead of being flattened to a string.
+`JsRef` is an opaque handle to a live JavaScript value held by the runtime. A real JS object (a DOM
+node, a `Response`, a `RegExp`, a function) can cross into Dream as a `JsRef` and be read or called
+through interop helpers, instead of being flattened to a string.
 
 ## How it works
 
-At runtime a `JsRef` is just an `i32` id into a host-side **handle registry**. When an interop function returns a JS value typed `JsRef`, the runtime registers it and returns its id; when an id is passed back in, the runtime looks the value up. Because a `JsRef` is *not* a Dream heap object, it is **never reference-counted** — Dream will not free it for you.
+A `JsRef` is an `i32` id into a host-side handle registry. When an interop function returns a JS
+value typed `JsRef`, the runtime registers it and returns the id; when an id is passed back, the
+runtime looks the value up. A `JsRef` is not a Dream heap object, so it is never reference-counted:
+Dream will not free it for you.
 
 ```mermaid
 flowchart LR

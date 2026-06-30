@@ -1,10 +1,13 @@
 # Callbacks
 
-Functions cross the Dream/JavaScript boundary in **both** directions. Internally a Dream function value (`fun(params): ret`) is an `i32` index into the module's function table; the runtime bridges that table so JS can call into Dream and vice-versa.
+Functions cross the Dream/JavaScript boundary in both directions. A Dream function value
+(`fun(params): ret`) is an index into the module's function table, which the runtime bridges so JS
+can call into Dream and Dream can call into JS.
 
 ## Dream → JS
 
-Pass a Dream `fun(...)` to an `extern` whose parameter is a function type. The runtime wraps the function index (into the exported funcref table) as a real JS callable, so the host can invoke it directly:
+Pass a Dream `fun(...)` to an `extern` whose parameter is a function type. The runtime wraps the
+function index as a real JS callable, so the host can invoke it directly:
 
 ```ts
 fun on_tick(n: int): void {

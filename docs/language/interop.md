@@ -1,10 +1,12 @@
 # JS Interop
 
-Dream compiles to WebAssembly, so it runs anywhere WASM does — including the browser and Node. The `extern` keyword lets a Dream program call out to JavaScript with almost no boilerplate, PyScript-style.
+Dream compiles to WebAssembly, so it runs anywhere WASM does, including the browser and Node. The
+`extern` keyword declares a function that lives in the JavaScript host.
 
 ## Declaring an extern function
 
-An `extern fun` has a signature but no body. It is lowered to a WebAssembly *import* instead of a defined function:
+An `extern fun` has a signature but no body. The compiler lowers it to a WebAssembly *import* and
+records it in the auto-generated `*.abi.json`. You call it like any other function:
 
 ```ts
 extern fun alert(msg: string): void;
@@ -14,25 +16,15 @@ fun main(): void {
 }
 ```
 
-By default the import comes from the `env` module under the function's own name. You call it like any other function.
+By default the import comes from the `env` module under the function's own name.
 
-## `extern` vs. "JS interop"
+There is one interop mechanism, made of three pieces:
 
-There is exactly **one** interop mechanism in Dream, so the distinction is conceptual, not two competing features:
-
-- **`extern fun`** is the *language-side declaration*: a function with a signature but no body. The compiler lowers it to a WebAssembly `(import "module" "field" ...)` and records it in the auto-generated `*.abi.json`.
-- **`@js("module", "field")`** is just an *attribute on an `extern`* that remaps the import module/field. Without it, the import defaults to module `env`, field = the function name.
-- **The runtime** (`runtime/dream.js`) is the *host-side wiring*: it reads the ABI, marshals values, auto-binds externs to JS globals, and adds a Promise bridge for `extern async fun`.
-
-So `extern` = "this function lives in JS", `@js` = "here's exactly which JS field", and `dream.js` = "here's how values cross the boundary." There is no separate `js`/`eval`/inline-JS path.
-
-```mermaid
-flowchart LR
-  ext["extern fun + @js(...)"] --> imp["WASM (import mod field)"]
-  imp --> abi["*.abi.json entry"]
-  abi --> rt["runtime/dream.js marshals + binds"]
-  rt --> jsfn["JS implementation / global"]
-```
+- `extern fun` declares the function on the Dream side.
+- `@js("module", "field")` is an optional attribute that remaps which import module and field the
+  function binds to.
+- The runtime (`runtime/dream.js`) reads the ABI, marshals values across the boundary, binds
+  externs to JS globals, and bridges Promises for `extern async fun`.
 
 ## Remapping the import name
 
@@ -69,12 +61,14 @@ await run("hello.wasm");   // loads hello.abi.json, binds externs, calls main
 
 ### Auto-binding to JS globals
 
-Most externs need no glue at all. For every extern you do not supply, the runtime resolves it against the JavaScript global scope:
+For every extern you do not supply explicitly, the runtime resolves it against the JavaScript global
+scope:
 
-- The default `env` module maps to a bare global — `extern fun alert(...)` binds to `alert`.
-- `@js("module", "name")` maps to a property of that global — `@js("console", "log")` binds to `console.log`, `@js("Math", "max")` to `Math.max`.
+- The default `env` module maps to a bare global: `extern fun alert(...)` binds to `alert`.
+- `@js("module", "name")` maps to a property of that global: `@js("console", "log")` binds to
+  `console.log`, `@js("Math", "max")` to `Math.max`.
 
-So built-in browser/Node APIs work with zero boilerplate. You only pass `imports` for your own custom logic:
+Built-in browser and Node APIs therefore need no glue. Pass `imports` only for your own functions:
 
 ```javascript
 await run("hello.wasm", {
@@ -116,16 +110,20 @@ To hand a string back to Dream from a JS implementation, the runtime calls the e
 
 ## JavaScript object references
 
-A real JavaScript object (a `RegExp`, a fetch `Response`, a DOM node, ...) can now cross into Dream as an opaque [`JsRef`](references.md) handle, instead of being flattened to a string. See **[References](references.md)** for the full `JsRef` API.
+A real JavaScript object (a `RegExp`, a fetch `Response`, a DOM node) crosses into Dream as an
+opaque [`JsRef`](references.md) handle rather than being flattened to a string. See
+[References](references.md) for the full `JsRef` API.
 
 ## Callbacks
 
-Functions cross the boundary in both directions — pass a Dream `fun(...)` to JavaScript, or hand a JS function into a Dream `extern` parameter. See **[Callbacks](callbacks.md)**.
+Functions cross the boundary in both directions: pass a Dream `fun(...)` to JavaScript, or hand a JS
+function into a Dream `extern` parameter. See [Callbacks](callbacks.md).
 
 ## Built on interop
 
-Three standard-library features are pure interop wrappers built on the pieces above, so they are good worked examples:
+Several standard-library features are interop wrappers built on the pieces above, and serve as
+worked examples:
 
-- **[JSON](json.md)** — native parse/stringify plus `@json` auto-derive (no interop needed, but pairs with HTTP).
-- **[Regex](../stdlib/regex.md)** — a cross-runtime regular-expression class (`regex` crate natively, `RegExp` on JS hosts).
-- **[HttpClient](../stdlib/http.md)** — an instantiable, cross-runtime HTTP client over `extern async fun`.
+- [Regex](../stdlib/regex.md) — a cross-runtime regular-expression class (the `regex` crate
+  natively, `RegExp` on JS hosts).
+- [HttpClient](../stdlib/http.md) — a cross-runtime HTTP client over `extern async fun`.

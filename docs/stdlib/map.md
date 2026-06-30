@@ -1,4 +1,4 @@
-# Map<K, V>
+# `Map<K, V>`
 
 `Map<K, V>` is part of the standard library and is available in every program — no import needed. It is an open-addressing hash map with average O(1) `put`, `get`, `contains`, and `remove`, and grows automatically as it fills.
 

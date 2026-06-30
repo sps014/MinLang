@@ -65,30 +65,8 @@ let next: char = (char)(code + 1);  // 'B'
 
 ## Enums
 
-A C-style enum defines a set of named integer constants. Members are numbered from `0` by default, and an explicit value makes subsequent members continue from it:
-
-```ts
-enum Color { Red, Green, Blue }          // 0, 1, 2
-enum Status { Active = 10, Inactive }    // 10, 11
-```
-
-Access a member with `Enum.Member`. Enum values are integers at runtime, so they interoperate with `int` and work as [`switch`](control-flow.md#switch-over-enums) subjects and labels:
-
-```ts
-let c: Color = Color.Green;
-println(c);              // 1
-```
-
-Call `.name()` on an enum value to get its variant name as a string:
-
-```ts
-println(Color.Green.name());   // Green
-println(c.name());             // Green
-```
-
-When a variant carries a typed payload `(...)`, the `enum` becomes a heap-backed
-**discriminated union** matched with `match` instead of `switch`. See
-[Discriminated Unions](discriminated-unions.md).
+A set of named integer constants, or — when a variant carries a payload — a discriminated union.
+See [Enums](enums.md) and [Discriminated Unions](discriminated-unions.md).
 
 ## Type aliases
 

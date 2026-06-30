@@ -1,6 +1,8 @@
 # Regex
 
-`Regex` is a small regular-expression class. Like [`File`](file.md) and [`HttpClient`](http.md), its capability is a set of synchronous host functions implemented once per host, so the same `.dream` runs unchanged everywhere: construct a `Regex` with a pattern and flags, then `test`, `replace`, or `match`.
+`Regex` is a regular-expression class. Construct one with a pattern and flags, then `test`,
+`replace`, or `match`. Like [`File`](file.md) and [`HttpClient`](http.md), it is backed by host
+functions implemented once per runtime, so the same `.dream` runs unchanged everywhere.
 
 ## Runtime support
 
