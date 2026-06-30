@@ -17,7 +17,7 @@ extern fun __regex_replace(pattern: string, flags: string, input: string, replac
 extern fun __regex_match_joined(pattern: string, flags: string, input: string, sep: string): string;
 
 
-// Regex is a small class that wraps the provided regex functions.
+// Regex provides helpful regex functions that can be used to test, replace, and match strings.
 class Regex {
     pattern: string;
     flags: string;
