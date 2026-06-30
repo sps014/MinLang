@@ -10,7 +10,7 @@ use crate::semantics::function_table::{
 use crate::semantics::symbol_table::SymbolTable;
 use crate::syntax::nodes::types::{
     canonical_type_name, constructor_fn, is_numeric_primitive, is_unknown_type_name,
-    mangle_generic, method_fn, strip_nullable,
+    mangle_generic, method_fn, numeric_widen, strip_nullable,
 };
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, Type};
 use crate::syntax::token::syntax_token::SyntaxToken;
@@ -469,6 +469,11 @@ impl<'a> Analyzer<'a> {
         if self.enum_int_compatible(expected, given) {
             return true;
         }
+        // Implicit numeric widening: a narrower numeric argument may satisfy a wider numeric
+        // parameter/field without a cast (narrowing still requires one).
+        if numeric_widen(strip_nullable(given), strip_nullable(expected)) {
+            return true;
+        }
         if let Some(inner) = expected.strip_suffix('?') {
             if given == "void?" {
                 return true;
@@ -633,7 +638,8 @@ impl<'a> Analyzer<'a> {
                                 ),
                                 Some(method.position),
                             );
-                        } else if params_types[0] != "int" && !is_unknown_type_name(&params_types[0])
+                        } else if params_types[0] != "int"
+                            && !is_unknown_type_name(&params_types[0])
                         {
                             diagnostics.report_error(
                                 format!("'Array.new' length must be int, got {}", params_types[0]),
@@ -754,18 +760,23 @@ impl<'a> Analyzer<'a> {
         }
 
         // `str.char_at(i)`: built-in character accessor on strings (low-level read).
-        if method.text == intrinsics::CHAR_AT
-            && strip_nullable(&obj_type.get_type()) == "string"
-        {
+        if method.text == intrinsics::CHAR_AT && strip_nullable(&obj_type.get_type()) == "string" {
             if params.len() != 1 {
                 diagnostics.report_error(
-                    format!("'char_at' expects exactly 1 argument (index), got {}", params.len()),
+                    format!(
+                        "'char_at' expects exactly 1 argument (index), got {}",
+                        params.len()
+                    ),
                     Some(method.position),
                 );
             }
             for param in params.iter() {
-                let pt =
-                    self.analyze_expression(param, ctx.parent_function, ctx.symbol_table, diagnostics)?;
+                let pt = self.analyze_expression(
+                    param,
+                    ctx.parent_function,
+                    ctx.symbol_table,
+                    diagnostics,
+                )?;
                 if pt.get_type() != "int" && !is_unknown_type_name(&pt.get_type()) {
                     diagnostics.report_error(
                         format!("'char_at' index must be int, got {}", pt.get_type()),
@@ -773,7 +784,10 @@ impl<'a> Analyzer<'a> {
                     );
                 }
             }
-            return Ok(Type::Char(synthetic_token(TokenKind::DataTypeToken, "char")));
+            return Ok(Type::Char(synthetic_token(
+                TokenKind::DataTypeToken,
+                "char",
+            )));
         }
 
         // Object protocol: `x.to_string()` / `x.hash_code()` are available on every type. A

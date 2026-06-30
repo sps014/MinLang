@@ -283,20 +283,10 @@ impl<'a, 'b> Parser<'a, 'b> {
                 return Ok(expr);
             }
         } else if self.current_token().kind == TokenKind::NumberToken {
-            let text = self.current_token().text.clone();
-            if text.ends_with('d') || text.ends_with('D') {
-                let mut token = self.next_token();
-                token.text = token.text[..token.text.len() - 1].to_string();
-                return Ok(ExpressionNode::Literal(Type::Double(token)));
-            } else if text.ends_with('f') || text.ends_with('F') {
-                let mut token = self.next_token();
-                token.text = token.text[..token.text.len() - 1].to_string();
-                return Ok(ExpressionNode::Literal(Type::Float(token)));
-            } else if text.contains('.') {
-                return Ok(ExpressionNode::Literal(Type::Float(self.next_token())));
-            } else {
-                return Ok(ExpressionNode::Literal(Type::Integer(self.next_token())));
-            }
+            let token = self.next_token();
+            return Ok(ExpressionNode::Literal(Self::classify_number_literal(
+                token,
+            )));
         } else if self.current_token().kind == TokenKind::StringToken {
             return Ok(ExpressionNode::Literal(Type::String(self.next_token())));
         } else if self.current_token().kind == TokenKind::InterpolatedStringToken {
@@ -352,9 +342,7 @@ impl<'a, 'b> Parser<'a, 'b> {
                 if self.current_token().kind == TokenKind::SmallerThanToken {
                     let is_generic = self
                         .scan_generic_args(1)
-                        .map(|after| {
-                            self.peek_token(after).kind == TokenKind::OpenParenthesisToken
-                        })
+                        .map(|after| self.peek_token(after).kind == TokenKind::OpenParenthesisToken)
                         .unwrap_or(false);
                     if is_generic {
                         self.match_token(TokenKind::SmallerThanToken);
@@ -530,6 +518,34 @@ impl<'a, 'b> Parser<'a, 'b> {
         Ok(subs)
     }
 
+    /// Classifies a `NumberToken` into its concrete numeric [`Type`], stripping any type suffix
+    /// from the token's text so downstream stages see only the numeric value. Recognized suffixes
+    /// (case-insensitive): `f` (float), `d` (double), `L` (long), `u` (uint), `uL`/`Lu` (ulong),
+    /// `b` (byte). A bare literal with a decimal point is `float`, otherwise `int`.
+    pub(super) fn classify_number_literal(mut token: SyntaxToken) -> Type {
+        let text = token.text.clone();
+        let num_end = text
+            .find(|c: char| c.is_ascii_alphabetic())
+            .unwrap_or(text.len());
+        let (num, suffix) = text.split_at(num_end);
+        token.text = num.to_string();
+        match suffix.to_ascii_lowercase().as_str() {
+            "b" => Type::Byte(token),
+            "ul" | "lu" => Type::ULong(token),
+            "l" => Type::Long(token),
+            "u" => Type::UInt(token),
+            "d" => Type::Double(token),
+            "f" => Type::Float(token),
+            _ => {
+                if num.contains('.') {
+                    Type::Float(token)
+                } else {
+                    Type::Integer(token)
+                }
+            }
+        }
+    }
+
     /// Parses a literal used as a pattern (`0`, `-5`, `3.14`, `"s"`, `'c'`, `true`, `null`).
     fn parse_literal_pattern(&mut self) -> Result<Type, Error> {
         let cur = self.current_token();
@@ -552,26 +568,31 @@ impl<'a, 'b> Parser<'a, 'b> {
                 if negative {
                     self.match_token(TokenKind::MinusToken);
                 }
-                let mut token = self.match_token(TokenKind::NumberToken);
-                let mut text = token.text.clone();
-                let is_double = text.ends_with('d') || text.ends_with('D');
-                let is_float = text.ends_with('f') || text.ends_with('F');
-                if is_double || is_float {
-                    text = text[..text.len() - 1].to_string();
-                }
+                let token = self.match_token(TokenKind::NumberToken);
+                let mut classified = Self::classify_number_literal(token);
                 if negative {
-                    text = format!("-{}", text);
+                    // Prepend the sign to the (suffix-stripped) numeric text of the literal.
+                    classified = match classified {
+                        Type::Integer(mut t) => {
+                            t.text = format!("-{}", t.text);
+                            Type::Integer(t)
+                        }
+                        Type::Long(mut t) => {
+                            t.text = format!("-{}", t.text);
+                            Type::Long(t)
+                        }
+                        Type::Float(mut t) => {
+                            t.text = format!("-{}", t.text);
+                            Type::Float(t)
+                        }
+                        Type::Double(mut t) => {
+                            t.text = format!("-{}", t.text);
+                            Type::Double(t)
+                        }
+                        other => other,
+                    };
                 }
-                token.text = text.clone();
-                if is_double {
-                    Ok(Type::Double(token))
-                } else if is_float {
-                    Ok(Type::Float(token))
-                } else if text.contains('.') {
-                    Ok(Type::Float(token))
-                } else {
-                    Ok(Type::Integer(token))
-                }
+                Ok(classified)
             }
             _ => {
                 self.diagnostics.report_error(

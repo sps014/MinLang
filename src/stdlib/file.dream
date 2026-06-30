@@ -24,19 +24,19 @@ class File {
 
     // Overwrites `path` with `content`; returns the number of bytes written (-1 on error).
     @js("Dream", "fileWrite")
-    static extern fun __file_write(path: string, content: string): int;
+    static extern fun __file_write(path: string, content: string): long;
 
     // Appends `content` to `path`; returns the number of bytes written (-1 on error).
     @js("Dream", "fileAppend")
-    static extern fun __file_append(path: string, content: string): int;
+    static extern fun __file_append(path: string, content: string): long;
 
-    // Binary I/O: bytes are bulk-copied straight between the file and a Dream `char[]`, with no
+    // Binary I/O: bytes are bulk-copied straight between the file and a Dream `byte[]`, with no
     // string round-trip (binary-safe, minimal marshalling).
     @js("Dream", "fileReadBytes")
-    static extern fun __file_read_bytes(path: string): char[];
+    static extern fun __file_read_bytes(path: string): byte[];
 
     @js("Dream", "fileWriteBytes")
-    static extern fun __file_write_bytes(path: string, data: char[]): int;
+    static extern fun __file_write_bytes(path: string, data: byte[]): long;
 
     @js("Dream", "fileExists")
     static extern fun __file_exists(path: string): bool;
@@ -47,7 +47,7 @@ class File {
 
     // Size of `path` in bytes (-1 if it does not exist).
     @js("Dream", "fileSize")
-    static extern fun __file_size(path: string): int;
+    static extern fun __file_size(path: string): long;
 
     @js("Dream", "fileIsDir")
     static extern fun __file_is_dir(path: string): bool;
@@ -66,18 +66,18 @@ class File {
     }
 
     // Overwrites `path` with `content`; resolves with `Ok(bytes_written)` or `Err` on failure.
-    public static async fun write(path: string, content: string): Result<int, string> {
+    public static async fun write(path: string, content: string): Result<long, string> {
         let n = File.__file_write(path, content);
-        if (n < 0) {
+        if (n < 0L) {
             return Result.Err("failed to write file: " + path);
         }
         return Result.Ok(n);
     }
 
     // Appends `content` to the end of `path`; resolves with `Ok(bytes_written)` or `Err`.
-    public static async fun append(path: string, content: string): Result<int, string> {
+    public static async fun append(path: string, content: string): Result<long, string> {
         let n = File.__file_append(path, content);
-        if (n < 0) {
+        if (n < 0L) {
             return Result.Err("failed to append to file: " + path);
         }
         return Result.Ok(n);
@@ -85,7 +85,7 @@ class File {
 
     // Reads the whole file at `path` as raw bytes (binary-safe; a single bulk copy). Resolves
     // with `Err` when the file does not exist.
-    public static async fun read_bytes(path: string): Result<char[], string> {
+    public static async fun read_bytes(path: string): Result<byte[], string> {
         if (File.exists(path) == false) {
             return Result.Err("file not found: " + path);
         }
@@ -94,9 +94,9 @@ class File {
 
     // Writes raw bytes to `path`, replacing any existing contents; resolves with `Ok(byte_count)`
     // or `Err` on failure.
-    public static async fun write_bytes(path: string, data: char[]): Result<int, string> {
+    public static async fun write_bytes(path: string, data: byte[]): Result<long, string> {
         let n = File.__file_write_bytes(path, data);
-        if (n < 0) {
+        if (n < 0L) {
             return Result.Err("failed to write file: " + path);
         }
         return Result.Ok(n);
@@ -121,9 +121,9 @@ class File {
         return File.__file_exists(path);
     }
     // Size of `path` in bytes, or `None` if it does not exist.
-    public static fun size(path: string): Option<int> {
+    public static fun size(path: string): Option<long> {
         let s = File.__file_size(path);
-        if (s < 0) {
+        if (s < 0L) {
             return Option.None;
         }
         return Option.Some(s);
@@ -139,7 +139,7 @@ class File {
             return Result.Err("file not found: " + path);
         }
         let bytes = await File.read_bytes(path);
-        return Result.Ok(FileStream(bytes.unwrap_or(Array.new<char>(0))));
+        return Result.Ok(FileStream(bytes.unwrap_or(Array.new<byte>(0))));
     }
 }
 
@@ -149,10 +149,10 @@ class File {
 // needs no conversion; `read`/`read_all` materialize a text view only when text is requested.
 // Random access via `seek` is cheap and allocation-free.
 class FileStream {
-    data: char[];
+    data: byte[];
     pos: int;
 
-    constructor(data: char[]) {
+    constructor(data: byte[]) {
         this.data = data;
         this.pos = 0;
     }
@@ -166,13 +166,13 @@ class FileStream {
     }
 
     // Reads up to `n` raw bytes from the current position, advancing the cursor. No conversion.
-    public fun read_bytes(n: int): char[] {
+    public fun read_bytes(n: int): byte[] {
         let end = this._clamp(this.pos + n);
         let count = end - this.pos;
         if (count < 0) {
             count = 0;
         }
-        let out = Array.new<char>(count);
+        let out = Array.new<byte>(count);
         let i = 0;
         while (i < count) {
             out[i] = this.data[this.pos + i];
@@ -182,7 +182,8 @@ class FileStream {
         return out;
     }
 
-    // Reads up to `n` bytes from the current position as text, advancing the cursor.
+    // Reads up to `n` bytes from the current position as text, advancing the cursor. Each raw
+    // byte is widened to a `char` code point for the string view.
     public fun read(n: int): string {
         let end = this._clamp(this.pos + n);
         let count = end - this.pos;
@@ -192,7 +193,7 @@ class FileStream {
         let out = String.alloc(count);
         let i = 0;
         while (i < count) {
-            String.set(out, i, this.data[this.pos + i]);
+            String.set(out, i, (char)this.data[this.pos + i]);
             i = i + 1;
         }
         this.pos = end;

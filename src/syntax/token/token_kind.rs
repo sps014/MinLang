@@ -12,7 +12,7 @@ pub enum TokenKind {
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*")]
     IdentifierToken,
 
-    #[regex(r"[0-9]+(\.[0-9]+)?([dDfF])?")]
+    #[regex(r"[0-9]+(\.[0-9]+)?([dDfF]|[uU]?[lL]|[lL]?[uU]|[bB])?")]
     NumberToken,
 
     #[regex(r#""([^"\\]*(\\.[^"\\]*)*)""#)]

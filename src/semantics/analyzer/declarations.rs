@@ -72,12 +72,7 @@ impl<'a> Analyzer<'a> {
         // instantiate generic unions whose templates were collected in pass 1.
         for enum_decl in node.enums.iter() {
             if enum_decl.is_data_enum() && enum_decl.generic_parameters.is_none() {
-                self.register_union(
-                    &enum_decl.name.text,
-                    &enum_decl.variants,
-                    &[],
-                    diagnostics,
-                );
+                self.register_union(&enum_decl.name.text, &enum_decl.variants, &[], diagnostics);
             }
         }
     }
@@ -661,7 +656,18 @@ impl<'a> Analyzer<'a> {
     pub(super) fn is_extendable_target(&self, name: &str) -> bool {
         matches!(
             name,
-            "int" | "float" | "double" | "string" | "bool" | "char" | "object" | "JsRef"
+            "int"
+                | "float"
+                | "double"
+                | "string"
+                | "bool"
+                | "char"
+                | "object"
+                | "JsRef"
+                | "long"
+                | "uint"
+                | "ulong"
+                | "byte"
         ) || self.struct_table.get_struct(name).is_some()
             || self.generic_structs.contains_key(name)
             || self.enum_table.contains_key(name)
@@ -714,8 +720,7 @@ impl<'a> Analyzer<'a> {
     pub(super) fn stash_generic_extensions(&mut self, node: &'a ProgramNode<'a>) {
         for ext in node.extends.iter() {
             if ext.generic_parameters.is_some() {
-                self.generic_extends
-                    .insert(ext.target.text.clone(), ext);
+                self.generic_extends.insert(ext.target.text.clone(), ext);
             }
         }
     }

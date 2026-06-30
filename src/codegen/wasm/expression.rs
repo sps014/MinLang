@@ -2,7 +2,8 @@ use super::utils::CallDispatch;
 use super::WasmGenerator;
 use crate::intrinsics;
 use crate::syntax::nodes::types::{
-    constructor_fn, json_from_json_fn, json_to_json_fn, strip_nullable,
+    constructor_fn, is_numeric_primitive, is_unsigned_integer, json_from_json_fn, json_to_json_fn,
+    numeric_widen, strip_nullable,
 };
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, Type};
 use crate::syntax::text::indented_text_writer::IndentedTextWriter;
@@ -35,17 +36,20 @@ impl<'a> WasmGenerator<'a> {
         }
 
         // Implicit numeric widening: a narrower numeric value flowing into a wider numeric context
-        // (e.g. the `float` literal `3.14` passed to a `double` parameter) must be promoted on the
-        // WASM stack, otherwise validation fails with an operand type mismatch. The value is built
-        // in its own type first, then converted. Narrowing never reaches here (the analyzer
-        // requires an explicit cast, which is lowered by `build_cast`).
+        // (e.g. the `int` literal `5` passed to a `long` parameter, or a `byte` widened to
+        // `double`) must be promoted on the WASM stack, otherwise validation fails with an operand
+        // type mismatch. The value is built in its own type first, then converted (some widenings,
+        // such as `byte` -> `int`, share a representation and need no instruction). Narrowing never
+        // reaches here (the analyzer requires an explicit cast, lowered by `build_cast`).
         let target_base = strip_nullable(left_side);
-        if matches!(target_base, "int" | "float" | "double") {
+        if is_numeric_primitive(target_base) {
             if let Ok(real) = self.infer_expression_type(expression, function) {
                 let real_base = strip_nullable(&real);
-                if let Some(instr) = numeric_widen_instr(real_base, target_base) {
+                if real_base != target_base && numeric_widen(real_base, target_base) {
                     self.build_expression_inner(expression, &real, function, writer)?;
-                    writer.write_line(instr);
+                    if let Some(instr) = numeric_widen_instr(real_base, target_base) {
+                        writer.write_line(instr);
+                    }
                     return Ok(());
                 }
             }
@@ -170,19 +174,56 @@ impl<'a> WasmGenerator<'a> {
 
         self.build_expression_inner(expr, &source_str, function, writer)?;
 
-        // Numeric conversions between int/float/double. Same-type casts emit nothing.
-        match (source_base.as_str(), target_base.as_str()) {
-            ("int", "float") => writer.write_line("f32.convert_i32_s"),
-            ("int", "double") => writer.write_line("f64.convert_i32_s"),
-            ("float", "int") => writer.write_line("i32.trunc_f32_s"),
-            ("double", "int") => writer.write_line("i32.trunc_f64_s"),
-            ("float", "double") => writer.write_line("f64.promote_f32"),
-            ("double", "float") => writer.write_line("f32.demote_f64"),
-            _ => {}
+        // Numeric conversions between any of the numeric primitives (and `char`, treated as a
+        // signed 32-bit code point for conversion purposes). Same-representation casts emit
+        // nothing; widening/narrowing emit the matching WASM conversion (and a byte mask when
+        // narrowing into `byte`). For object<->reference and same-type casts the pointer is
+        // already correct, so no instruction is emitted.
+        let numeric_like = |t: &str| is_numeric_primitive(t) || t == "char";
+        if numeric_like(&source_base) && numeric_like(&target_base) {
+            Self::emit_numeric_cast(&source_base, &target_base, writer);
         }
-        // For object<->reference and same-type casts the pointer is already correct.
 
         Ok(())
+    }
+
+    /// Emits the WASM conversion turning a value of numeric type `src` (already on the stack) into
+    /// `tgt`. `char` is treated as a signed `i32` code point. Narrowing into `byte` masks the low
+    /// 8 bits so the result stays in `[0, 255]`.
+    fn emit_numeric_cast(src: &str, tgt: &str, writer: &mut IndentedTextWriter) {
+        // Representation + signedness for conversion (char behaves like a signed i32).
+        let wasm_of = |t: &str| match t {
+            "long" | "ulong" => "i64",
+            "float" => "f32",
+            "double" => "f64",
+            _ => "i32", // int, uint, byte, char
+        };
+        let unsigned_of = |t: &str| is_unsigned_integer(t);
+        let sw = wasm_of(src);
+        let tw = wasm_of(tgt);
+        let su = if unsigned_of(src) { "u" } else { "s" };
+        let tu = if unsigned_of(tgt) { "u" } else { "s" };
+        match (sw, tw) {
+            ("i32", "i64") => writer.write_line(&format!("i64.extend_i32_{}", su)),
+            ("i64", "i32") => writer.write_line("i32.wrap_i64"),
+            ("i32", "f32") => writer.write_line(&format!("f32.convert_i32_{}", su)),
+            ("i32", "f64") => writer.write_line(&format!("f64.convert_i32_{}", su)),
+            ("i64", "f32") => writer.write_line(&format!("f32.convert_i64_{}", su)),
+            ("i64", "f64") => writer.write_line(&format!("f64.convert_i64_{}", su)),
+            ("f32", "i32") => writer.write_line(&format!("i32.trunc_f32_{}", tu)),
+            ("f64", "i32") => writer.write_line(&format!("i32.trunc_f64_{}", tu)),
+            ("f32", "i64") => writer.write_line(&format!("i64.trunc_f32_{}", tu)),
+            ("f64", "i64") => writer.write_line(&format!("i64.trunc_f64_{}", tu)),
+            ("f32", "f64") => writer.write_line("f64.promote_f32"),
+            ("f64", "f32") => writer.write_line("f32.demote_f64"),
+            // Same WASM representation (e.g. int<->uint<->char, long<->ulong): no instruction.
+            _ => {}
+        }
+        // Narrowing into a byte keeps only the low 8 bits (the value is now an i32).
+        if tgt == "byte" {
+            writer.write_line("i32.const 255");
+            writer.write_line("i32.and");
+        }
     }
 
     /// Allocates a fresh, zero-initialized array of `n` elements (the runtime backing buffer for
@@ -292,6 +333,7 @@ impl<'a> WasmGenerator<'a> {
                 match WasmGenerator::get_wasm_type_from(ft.clone())?.as_str() {
                     "f64" => writer.write_line("f64.const 0"),
                     "f32" => writer.write_line("f32.const 0"),
+                    "i64" => writer.write_line("i64.const 0"),
                     _ => writer.write_line("i32.const 0"),
                 }
                 WasmGenerator::emit_store(&ft, writer)?;
@@ -443,6 +485,11 @@ impl<'a> WasmGenerator<'a> {
             Type::Boolean(f) => format!("i32.const {}", if f.text == "true" { 1 } else { 0 }),
             // A char literal's token text already holds its numeric code point.
             Type::Char(c) => format!("i32.const {}", c.text),
+            // `long`/`ulong` are 64-bit; `uint`/`byte` are 32-bit on the stack.
+            Type::Long(l) => format!("i64.const {}", l.text),
+            Type::ULong(l) => format!("i64.const {}", l.text),
+            Type::UInt(u) => format!("i32.const {}", u.text),
+            Type::Byte(b) => format!("i32.const {}", b.text),
             Type::String(s) => {
                 let offset = self.ctx.strings.get(&s.text).ok_or_else(|| {
                     Error::other(format!("string literal not interned: {}", s.text))
@@ -645,6 +692,10 @@ impl<'a> WasmGenerator<'a> {
         }
 
         let symbol = WasmGenerator::get_wasm_type_from(operand_ctx.clone())?;
+        // Unsigned integer types (`byte`/`uint`/`ulong`) select the unsigned WASM ops for
+        // division, remainder, the ordered comparisons, and right shift; everything else is signed.
+        let unsigned = is_unsigned_integer(strip_nullable(&operand_ctx));
+        let s = if unsigned { "_u" } else { "_s" };
         match opr.kind {
             TokenKind::PlusToken => writer.write_line(&format!("{}.add", symbol)),
             TokenKind::MinusToken => writer.write_line(&format!("{}.sub", symbol)),
@@ -654,24 +705,12 @@ impl<'a> WasmGenerator<'a> {
             _ => {}
         };
 
-        if symbol == "f32" {
+        if symbol == "f32" || symbol == "f64" {
             match opr.kind {
                 TokenKind::SlashToken => writer.write_line(&format!("{}.div", symbol)),
-                TokenKind::ModulusToken => writer.write_line(&format!("{}.rem", symbol)),
-                TokenKind::GreaterThanToken => writer.write_line(&format!("{}.gt", symbol)),
-                TokenKind::SmallerThanToken => writer.write_line(&format!("{}.lt", symbol)),
-                TokenKind::GreaterThanEqualToken => writer.write_line(&format!("{}.ge", symbol)),
-                TokenKind::SmallerThanEqualToken => writer.write_line(&format!("{}.le", symbol)),
-                TokenKind::PlusToken
-                | TokenKind::MinusToken
-                | TokenKind::StarToken
-                | TokenKind::EqualEqualToken
-                | TokenKind::NotEqualToken => {}
-                _ => return Err(Error::other(format!("unknown operator {}", opr.text))),
-            };
-        } else if symbol == "f64" {
-            match opr.kind {
-                TokenKind::SlashToken => writer.write_line(&format!("{}.div", symbol)),
+                TokenKind::ModulusToken if symbol == "f32" => {
+                    writer.write_line(&format!("{}.rem", symbol))
+                }
                 TokenKind::ModulusToken => {
                     return Err(Error::other("modulus not supported for double"))
                 }
@@ -686,14 +725,18 @@ impl<'a> WasmGenerator<'a> {
                 | TokenKind::NotEqualToken => {}
                 _ => return Err(Error::other(format!("unknown operator {}", opr.text))),
             };
-        } else if symbol == "i32" {
+        } else if symbol == "i32" || symbol == "i64" {
             match opr.kind {
-                TokenKind::SlashToken => writer.write_line(&format!("{}.div_s", symbol)),
-                TokenKind::ModulusToken => writer.write_line(&format!("{}.rem_s", symbol)),
-                TokenKind::GreaterThanToken => writer.write_line(&format!("{}.gt_s", symbol)),
-                TokenKind::SmallerThanToken => writer.write_line(&format!("{}.lt_s", symbol)),
-                TokenKind::GreaterThanEqualToken => writer.write_line(&format!("{}.ge_s", symbol)),
-                TokenKind::SmallerThanEqualToken => writer.write_line(&format!("{}.le_s", symbol)),
+                TokenKind::SlashToken => writer.write_line(&format!("{}.div{}", symbol, s)),
+                TokenKind::ModulusToken => writer.write_line(&format!("{}.rem{}", symbol, s)),
+                TokenKind::GreaterThanToken => writer.write_line(&format!("{}.gt{}", symbol, s)),
+                TokenKind::SmallerThanToken => writer.write_line(&format!("{}.lt{}", symbol, s)),
+                TokenKind::GreaterThanEqualToken => {
+                    writer.write_line(&format!("{}.ge{}", symbol, s))
+                }
+                TokenKind::SmallerThanEqualToken => {
+                    writer.write_line(&format!("{}.le{}", symbol, s))
+                }
                 TokenKind::AmpersandAmpersandToken | TokenKind::BitWiseAmpersandToken => {
                     writer.write_line(&format!("{}.and", symbol))
                 }
@@ -702,7 +745,7 @@ impl<'a> WasmGenerator<'a> {
                 }
                 TokenKind::BitWiseXorToken => writer.write_line(&format!("{}.xor", symbol)),
                 TokenKind::ShiftLeftToken => writer.write_line(&format!("{}.shl", symbol)),
-                TokenKind::ShiftRightToken => writer.write_line(&format!("{}.shr_s", symbol)),
+                TokenKind::ShiftRightToken => writer.write_line(&format!("{}.shr{}", symbol, s)),
                 TokenKind::PlusToken
                 | TokenKind::MinusToken
                 | TokenKind::StarToken
@@ -1204,13 +1247,32 @@ impl<'a> WasmGenerator<'a> {
     }
 }
 
-/// The WASM instruction that widens a numeric value of type `from` to the wider type `to`
-/// (`int` -> `float` -> `double`), or `None` when no widening is needed (`from == to`) or the
-/// conversion would be a narrowing (which requires an explicit cast).
+/// The WASM instruction that widens a numeric value of type `from` to the wider type `to` along
+/// the implicit widening lattice. Returns `None` for the widenings that share a stack
+/// representation and therefore need no instruction (`byte` -> `int`, `byte` -> `uint`). Callers
+/// must first confirm the pair is an actual widening via
+/// [`numeric_widen`](crate::syntax::nodes::types::numeric_widen); a `None` result here does not by
+/// itself mean "not a widening".
 fn numeric_widen_instr(from: &str, to: &str) -> Option<&'static str> {
     match (from, to) {
+        // i32 -> i32 (unsigned `byte` fits in both `int` and `uint`): no instruction.
+        ("byte", "int") | ("byte", "uint") => None,
+        // i32 -> i64.
+        ("int", "long") => Some("i64.extend_i32_s"),
+        ("byte", "long") | ("byte", "ulong") | ("uint", "long") | ("uint", "ulong") => {
+            Some("i64.extend_i32_u")
+        }
+        // i32 -> float/double.
         ("int", "float") => Some("f32.convert_i32_s"),
         ("int", "double") => Some("f64.convert_i32_s"),
+        ("byte", "float") | ("uint", "float") => Some("f32.convert_i32_u"),
+        ("byte", "double") | ("uint", "double") => Some("f64.convert_i32_u"),
+        // i64 -> float/double.
+        ("long", "float") => Some("f32.convert_i64_s"),
+        ("long", "double") => Some("f64.convert_i64_s"),
+        ("ulong", "float") => Some("f32.convert_i64_u"),
+        ("ulong", "double") => Some("f64.convert_i64_u"),
+        // f32 -> f64.
         ("float", "double") => Some("f64.promote_f32"),
         _ => None,
     }

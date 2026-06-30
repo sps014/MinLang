@@ -71,7 +71,7 @@ async fun main(): void {
 
 ## Binary bodies
 
-For non-text data, the response body is byte-exact via `bytes()`, and `request_bytes`/`post_bytes`/`put_bytes` send a raw `char[]` body — both directions avoid any UTF-8 round-trip:
+For non-text data, the response body is byte-exact via `bytes()`, and `request_bytes`/`post_bytes`/`put_bytes` send a raw `byte[]` body — both directions avoid any UTF-8 round-trip:
 
 ```dream
 async fun main(): void {
@@ -83,7 +83,7 @@ async fun main(): void {
 
     // Upload raw bytes.
     let read = await File.read_bytes("logo.png");
-    let payload = read.unwrap_or(Array.new<char>(0));
+    let payload = read.unwrap_or(Array.new<byte>(0));
     let res = await http.post_bytes("https://example.com/upload", payload);
     System.println(res.status());
 }
@@ -102,8 +102,8 @@ async fun main(): void {
 | `post/put/patch(path, body): Future<HttpResponse>` | send a text `body` with the given verb |
 | `delete/head(path): Future<HttpResponse>` | DELETE / HEAD request |
 | `request(method, path, body, headers): Future<HttpResponse>` | arbitrary verb; `headers` is a JSON-object string ("" for none) |
-| `request_bytes(method, path, body, headers): Future<HttpResponse>` | arbitrary verb with a binary `char[]` body |
-| `post_bytes/put_bytes(path, body): Future<HttpResponse>` | POST / PUT a raw `char[]` body |
+| `request_bytes(method, path, body, headers): Future<HttpResponse>` | arbitrary verb with a binary `byte[]` body |
+| `post_bytes/put_bytes(path, body): Future<HttpResponse>` | POST / PUT a raw `byte[]` body |
 
 ### HttpResponse
 
@@ -115,7 +115,7 @@ A view over the raw response bytes. All reads are synchronous.
 | `ok(): bool` | true for a 2xx status |
 | `header(name): string` | value of response header `name` (case-insensitive), or "" |
 | `text(): string` | body as UTF-8 text |
-| `bytes(): char[]` | body as raw bytes (binary-safe) |
+| `bytes(): byte[]` | body as raw bytes (binary-safe) |
 | `json(): JsonValue` | body parsed as [JSON](json.md) |
 
 A runnable example lives in [`sample/interop/http.dream`](https://github.com/sps014/Dream/blob/main/sample/interop/http.dream) with its Node runner `http.mjs`.

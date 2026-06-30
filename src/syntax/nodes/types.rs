@@ -42,7 +42,10 @@ pub fn canonical_type_name(name: &str) -> Option<&'static str> {
     Some(match name {
         "String" => "string",
         "Int32" => "int",
-        "Int64" => "int",
+        "Int64" => "long",
+        "UInt32" => "uint",
+        "UInt64" => "ulong",
+        "Byte" => "byte",
         "Single" => "float",
         "Double" => "double",
         "Boolean" => "bool",
@@ -63,6 +66,10 @@ pub fn primitive_type(name: &str, token: SyntaxToken) -> Option<Type> {
         "string" => Type::String(token),
         "bool" => Type::Boolean(token),
         "char" => Type::Char(token),
+        "long" => Type::Long(token),
+        "uint" => Type::UInt(token),
+        "ulong" => Type::ULong(token),
+        "byte" => Type::Byte(token),
         _ => return None,
     })
 }
@@ -71,27 +78,71 @@ pub fn primitive_type(name: &str, token: SyntaxToken) -> Option<Type> {
 /// `string` is included here because it is a first-class value type even though it is a heap
 /// reference; it is excluded from [`is_boxable_primitive`]. Single source of truth for the
 /// repeated `"int" | "float" | ...` lists that were previously copied across codegen modules.
-pub const PRIMITIVE_TYPE_NAMES: [&str; 6] = ["int", "float", "double", "bool", "char", "string"];
+pub const PRIMITIVE_TYPE_NAMES: [&str; 10] = [
+    "int", "float", "double", "bool", "char", "string", "long", "uint", "ulong", "byte",
+];
 
 /// True for the scalar primitives that are boxed into a small tagged heap block when widened to
 /// `object` (everything except `string`, which is already a heap reference).
 pub fn is_boxable_primitive(name: &str) -> bool {
-    matches!(name, "int" | "float" | "double" | "bool" | "char")
+    matches!(
+        name,
+        "int" | "float" | "double" | "bool" | "char" | "long" | "uint" | "ulong" | "byte"
+    )
 }
 
-/// True for the numeric primitives that participate in implicit widening (`int` -> `float` ->
-/// `double`). The single predicate behind overload viability and assignment/cast compatibility.
+/// True for the numeric primitives that participate in implicit widening. The single predicate
+/// behind overload viability and assignment/cast compatibility.
 pub fn is_numeric_primitive(name: &str) -> bool {
-    matches!(name, "int" | "float" | "double")
+    matches!(
+        name,
+        "int" | "float" | "double" | "long" | "uint" | "ulong" | "byte"
+    )
+}
+
+/// True for the unsigned integer primitives (`byte`/`uint`/`ulong`). Drives the choice of
+/// signed vs unsigned WASM instructions (`div_u`/`lt_u`/...) in codegen.
+pub fn is_unsigned_integer(name: &str) -> bool {
+    matches!(name, "byte" | "uint" | "ulong")
+}
+
+/// True if a value of numeric type `from` may implicitly widen to numeric type `to` without an
+/// explicit cast (narrowing always requires a cast). Encodes the full widening lattice:
+/// `byte -> int -> long -> float -> double` and `byte -> uint -> ulong`, plus the safe
+/// cross-edges (`uint -> long`, unsigned ints -> float/double). Same-width opposite-sign pairs
+/// (`int`<->`uint`, `long`<->`ulong`) are intentionally excluded. `from == to` returns false
+/// (it is an identity, not a widening); callers handle equality separately.
+pub fn numeric_widen(from: &str, to: &str) -> bool {
+    matches!(
+        (from, to),
+        ("byte", "int")
+            | ("byte", "uint")
+            | ("byte", "long")
+            | ("byte", "ulong")
+            | ("byte", "float")
+            | ("byte", "double")
+            | ("int", "long")
+            | ("int", "float")
+            | ("int", "double")
+            | ("uint", "long")
+            | ("uint", "ulong")
+            | ("uint", "float")
+            | ("uint", "double")
+            | ("long", "float")
+            | ("long", "double")
+            | ("ulong", "float")
+            | ("ulong", "double")
+            | ("float", "double")
+    )
 }
 
 /// Byte size and alignment of a value of `type_name` when stored inline (array element or struct
-/// field). `bool`/`char` occupy a single byte; `double` is 8 bytes; everything else - `int`,
-/// `float`, and all heap references (strings, arrays, structs) - is a 4-byte word/pointer.
+/// field). `bool`/`char`/`byte` occupy a single byte; `double`/`long`/`ulong` are 8 bytes;
+/// everything else - `int`, `uint`, `float`, and all heap references - is a 4-byte word/pointer.
 pub fn value_size_align(type_name: &str) -> (usize, usize) {
     match type_name {
-        "bool" | "char" => (1, 1),
-        "double" => (8, 8),
+        "bool" | "char" | "byte" => (1, 1),
+        "double" | "long" | "ulong" => (8, 8),
         _ => (4, 4),
     }
 }
@@ -195,6 +246,17 @@ pub enum Type {
     /// A single character. Stored as an `i32` code point on the stack but only one byte in
     /// memory (arrays/fields use `i32.load8_u`/`i32.store8`). A value type (not ref-counted).
     Char(SyntaxToken),
+    /// A signed 64-bit integer. Represented as an `i64` on the stack and 8 bytes in memory.
+    Long(SyntaxToken),
+    /// An unsigned 32-bit integer. Represented as an `i32` on the stack (4 bytes in memory) but
+    /// uses unsigned WASM ops (`div_u`/`lt_u`/...).
+    UInt(SyntaxToken),
+    /// An unsigned 64-bit integer. Represented as an `i64` on the stack (8 bytes in memory) and
+    /// uses unsigned WASM ops.
+    ULong(SyntaxToken),
+    /// An unsigned 8-bit integer. Stored as an `i32` on the stack but only one byte in memory
+    /// (`i32.load8_u`/`i32.store8`, like `char`). A value type (not ref-counted).
+    Byte(SyntaxToken),
     /// The universal top type. At runtime an `object` is an `i32` pointer to a tagged heap
     /// block: primitives are boxed, reference types are stored directly (their block carries
     /// the tag in its header).
@@ -237,6 +299,10 @@ impl Type {
             Type::Void => "void".to_string(),
             Type::Boolean(_) => "bool".to_string(),
             Type::Char(_) => "char".to_string(),
+            Type::Long(_) => "long".to_string(),
+            Type::UInt(_) => "uint".to_string(),
+            Type::ULong(_) => "ulong".to_string(),
+            Type::Byte(_) => "byte".to_string(),
             Type::Array(inner) => format!("{}[]", inner.get_type()),
             Type::Struct(token, generic_args) => match generic_args {
                 Some(args) => mangle_generic(&token.text, args),
@@ -321,6 +387,10 @@ impl Type {
             | Type::String(token)
             | Type::Boolean(token)
             | Type::Char(token)
+            | Type::Long(token)
+            | Type::UInt(token)
+            | Type::ULong(token)
+            | Type::Byte(token)
             | Type::Object(token)
             | Type::Struct(token, _) => Some(token.position),
             Type::Array(inner) | Type::Nullable(inner) => inner.get_span(),
@@ -339,6 +409,10 @@ impl Type {
             Type::Void => "".to_string(),
             Type::Boolean(token) => token.position.get_point_str(),
             Type::Char(token) => token.position.get_point_str(),
+            Type::Long(token) => token.position.get_point_str(),
+            Type::UInt(token) => token.position.get_point_str(),
+            Type::ULong(token) => token.position.get_point_str(),
+            Type::Byte(token) => token.position.get_point_str(),
             Type::Array(inner) => inner.get_line_str(),
             Type::Struct(token, _) => token.position.get_point_str(),
             Type::Generic(_) => "".to_string(), // Can be improved

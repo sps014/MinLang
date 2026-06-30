@@ -8,9 +8,8 @@ use common::TestHarness;
 
 #[test]
 fn clean_program_has_no_errors() {
-    let harness = TestHarness::new(
-        "fun main(): void {\n    let x: int = 1;\n    let y: int = x + 2;\n}\n|",
-    );
+    let harness =
+        TestHarness::new("fun main(): void {\n    let x: int = 1;\n    let y: int = x + 2;\n}\n|");
     let diagnostics = harness.diagnostics();
     assert!(
         diagnostics.iter().all(|d| d.severity != "error"),

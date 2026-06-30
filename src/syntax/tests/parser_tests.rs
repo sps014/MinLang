@@ -235,7 +235,8 @@ fn test_parse_interpolated_string() {
 
     assert_eq!(diagnostics.has_errors(), false);
     let func = &program.functions[0];
-    let StatementNode::Return(Some(ExpressionNode::Binary(left, opr, right))) = &func.body[0] else {
+    let StatementNode::Return(Some(ExpressionNode::Binary(left, opr, right))) = &func.body[0]
+    else {
         panic!("expected a binary concat chain");
     };
     assert_eq!(opr.kind, TokenKind::PlusToken);
@@ -369,6 +370,34 @@ fn test_parse_char_literal() {
     } else {
         panic!("Expected char literal with code point 65");
     }
+}
+
+#[test]
+fn test_parse_suffixed_number_literals() {
+    // The suffix selects the literal's concrete numeric type and is stripped from the token text.
+    let code = "fun test(): void {
+        let a = 42L;
+        let b = 7u;
+        let c = 9uL;
+        let d = 255b;
+    }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+    assert_eq!(diagnostics.has_errors(), false);
+    let body = &program.functions[0].body;
+
+    assert!(
+        matches!(&body[0], StatementNode::Declaration(_, _, ExpressionNode::Literal(Type::Long(t)), _) if t.text == "42")
+    );
+    assert!(
+        matches!(&body[1], StatementNode::Declaration(_, _, ExpressionNode::Literal(Type::UInt(t)), _) if t.text == "7")
+    );
+    assert!(
+        matches!(&body[2], StatementNode::Declaration(_, _, ExpressionNode::Literal(Type::ULong(t)), _) if t.text == "9")
+    );
+    assert!(
+        matches!(&body[3], StatementNode::Declaration(_, _, ExpressionNode::Literal(Type::Byte(t)), _) if t.text == "255")
+    );
 }
 
 #[test]

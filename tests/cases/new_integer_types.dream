@@ -1,0 +1,55 @@
+// End-to-end coverage for the long/uint/ulong/byte primitives: literals, width-specific
+// arithmetic (signed vs unsigned), implicit widening, explicit narrowing casts, boxing into
+// object, string conversion, byte arrays, and the prelude extension methods.
+
+fun main() {
+    let b: byte = 200b;
+    let u: uint = 4000000000u;
+    let l: long = 9000000000L;
+    let ul: ulong = 18000000000uL;
+    System.println(b);
+    System.println(u);
+    System.println(l);
+    System.println(ul);
+
+    // Width-specific arithmetic.
+    System.println(l * 2L);
+    System.println(u / 3u);
+    System.println((byte)(200b + 100b));
+
+    // Implicit widening (int->long, long->double, uint->ulong).
+    let w: long = 5;
+    System.println(w);
+    let d: double = l;
+    System.println(d);
+    let ul2: ulong = u;
+    System.println(ul2);
+
+    // Explicit narrowing cast wraps to 32 bits.
+    System.println((int)l);
+
+    // Boxing into object and printing through the object protocol.
+    let o: object = l;
+    System.println(o);
+
+    // String conversion via concatenation.
+    System.println("v=" + ul);
+
+    // Byte arrays.
+    let arr: byte[] = [10b, 20b, 30b];
+    System.println(arr[2]);
+    System.println(arr);
+
+    // Prelude extension methods.
+    System.println((0L - 7L).abs());
+    System.println(l.max(w));
+    System.println(byte.parse("250").unwrap_or(0b));
+
+    // Unsigned comparison.
+    let big: uint = 3000000000u;
+    if (big > 1000000000u) {
+        System.println(1);
+    } else {
+        System.println(0);
+    }
+}

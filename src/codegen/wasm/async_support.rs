@@ -91,6 +91,7 @@ impl<'a> WasmGenerator<'a> {
         match wt {
             "f64" => "f64.store",
             "f32" => "f32.store",
+            "i64" => "i64.store",
             _ => "i32.store",
         }
     }
@@ -100,6 +101,7 @@ impl<'a> WasmGenerator<'a> {
         match wt {
             "f64" => "f64.load",
             "f32" => "f32.load",
+            "i64" => "i64.load",
             _ => "i32.load",
         }
     }
@@ -213,6 +215,7 @@ impl<'a> WasmGenerator<'a> {
         writer.write(" (local $scratch_addr i32)");
         writer.write(" (local $scratch_double f64)");
         writer.write(" (local $scratch_float f32)");
+        writer.write(" (local $scratch_long i64)");
         writer.write(" (local $scratch_len i32)");
         writer.write(" (local $scratch_arr i32)");
         writer.write(" (local $scratch_switch i32)");

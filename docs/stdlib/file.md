@@ -32,13 +32,13 @@ async fun main(): void {
 
 ## Metadata
 
-`exists`, `size`, and `is_dir` are cheap and synchronous — no `await`. `size` is an `Option<int>` (`None` if the path is missing):
+`exists`, `size`, and `is_dir` are cheap and synchronous — no `await`. `size` is an `Option<long>` (`None` if the path is missing), so large files are represented exactly:
 
 ```dream
 async fun main(): void {
     if (File.exists("notes.txt")) {
         System.print("size = ");
-        System.println(File.size("notes.txt").unwrap_or(0 - 1));   // bytes; -1 if missing
+        System.println(File.size("notes.txt").unwrap_or(0L - 1L));   // bytes; -1 if missing
     }
 }
 ```
@@ -56,12 +56,12 @@ async fun main(): void {
 
 ## Binary I/O
 
-For non-text data, `read_bytes`/`write_bytes` move raw bytes directly between the file and a `char[]` with a single bulk copy — no string round-trip, so they are binary-safe (bytes such as `0x00` are preserved):
+For non-text data, `read_bytes`/`write_bytes` move raw bytes directly between the file and a `byte[]` with a single bulk copy — no string round-trip, so they are binary-safe (bytes such as `0x00` are preserved). Byte counts and sizes are `long`:
 
 ```dream
 async fun main(): void {
-    let bytes = await File.read_bytes("image.png");   // Result<char[], string>
-    await File.write_bytes("copy.png", bytes.unwrap_or(Array.new<char>(0)));
+    let bytes = await File.read_bytes("image.png");   // Result<byte[], string>
+    await File.write_bytes("copy.png", bytes.unwrap_or(Array.new<byte>(0)));
 }
 ```
 
@@ -72,13 +72,13 @@ async fun main(): void {
 ```dream
 async fun main(): void {
     let opened = await File.open("notes.txt");           // Result<FileStream, string>
-    let stream = opened.unwrap_or(FileStream(Array.new<char>(0)));
+    let stream = opened.unwrap_or(FileStream(Array.new<byte>(0)));
 
     System.println(stream.read(5));        // first 5 bytes as text
     System.println(stream.position());     // 5
 
     stream.seek(0);                        // rewind
-    let head = stream.read_bytes(4);       // first 4 bytes as char[]
+    let head = stream.read_bytes(4);       // first 4 bytes as byte[]
 
     while (stream.has_more()) {
         System.print(stream.read(16));     // 16-byte text chunks
@@ -94,25 +94,25 @@ async fun main(): void {
 | Member | Description |
 | --- | --- |
 | `File.read(path): Future<Result<string, string>>` | read the whole file as UTF-8 text; `Err` if missing |
-| `File.write(path, content): Future<Result<int, string>>` | overwrite `path`; `Ok(bytes_written)` or `Err` |
-| `File.append(path, content): Future<Result<int, string>>` | append to `path`; `Ok(bytes_written)` or `Err` |
-| `File.read_bytes(path): Future<Result<char[], string>>` | read the whole file as raw bytes (binary-safe); `Err` if missing |
-| `File.write_bytes(path, data): Future<Result<int, string>>` | write raw bytes; `Ok(bytes_written)` or `Err` |
+| `File.write(path, content): Future<Result<long, string>>` | overwrite `path`; `Ok(bytes_written)` or `Err` |
+| `File.append(path, content): Future<Result<long, string>>` | append to `path`; `Ok(bytes_written)` or `Err` |
+| `File.read_bytes(path): Future<Result<byte[], string>>` | read the whole file as raw bytes (binary-safe); `Err` if missing |
+| `File.write_bytes(path, data): Future<Result<long, string>>` | write raw bytes; `Ok(bytes_written)` or `Err` |
 | `File.delete(path): Future<bool>` | delete `path`; resolves `true` on success |
 | `File.list(path): Future<string[]>` | directory entry names (empty if not a directory) |
 | `File.exists(path): bool` | true if `path` exists (synchronous) |
-| `File.size(path): Option<int>` | size in bytes, or `None` if missing (synchronous) |
+| `File.size(path): Option<long>` | size in bytes, or `None` if missing (synchronous) |
 | `File.is_dir(path): bool` | true if `path` is a directory (synchronous) |
 | `File.open(path): Future<Result<FileStream, string>>` | open a buffered read stream; `Err` if missing |
 
 ### FileStream
 
-A buffered cursor over a file's bytes. `read`/`read_all` produce text; `read_bytes` produces raw `char[]`. The cursor advances on each read.
+A buffered cursor over a file's bytes. `read`/`read_all` produce text; `read_bytes` produces a raw `byte[]`. The cursor advances on each read.
 
 | Member | Description |
 | --- | --- |
 | `read(n): string` | up to `n` bytes from the cursor as text |
-| `read_bytes(n): char[]` | up to `n` raw bytes from the cursor |
+| `read_bytes(n): byte[]` | up to `n` raw bytes from the cursor |
 | `read_all(): string` | everything remaining as text |
 | `has_more(): bool` | true while unread bytes remain |
 | `position(): int` | current cursor offset in bytes |

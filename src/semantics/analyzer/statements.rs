@@ -289,10 +289,11 @@ impl<'a> Analyzer<'a> {
     ) {
         // bare callable, so it is a legal ordinary identifier.
         const RESERVED_TYPE_AND_LITERAL_NAMES: &[&str] = &[
-            "int", "float", "double", "string", "bool", "char", "object", "void",
+            "int", "float", "double", "string", "bool", "char", "object", "void", "long", "uint",
+            "ulong", "byte",
             // C#/.NET-style aliases for the primitives (see `canonical_type_name`).
-            "String", "Int32", "Int64", "Single", "Double", "Boolean", "Char", "Object", "Void",
-            "true", "false", "null",
+            "String", "Int32", "Int64", "UInt32", "UInt64", "Byte", "Single", "Double", "Boolean",
+            "Char", "Object", "Void", "true", "false", "null",
         ];
         // The builtin callables are reserved too; sourced from the intrinsic registry so this list
         // never drifts from the set of names the compiler special-cases.

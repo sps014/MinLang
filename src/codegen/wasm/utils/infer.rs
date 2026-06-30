@@ -116,7 +116,9 @@ impl<'a> WasmGenerator<'a> {
             ExpressionNode::Cast(target_type, _) => Ok(target_type.get_type()),
             ExpressionNode::MemberAccess(obj, member) => {
                 // Unit-variant construction (`Option.None`) yields the union type.
-                if let Some(union_name) = self.infer_union_construction(obj, &member.text, &[], function) {
+                if let Some(union_name) =
+                    self.infer_union_construction(obj, &member.text, &[], function)
+                {
                     return Ok(union_name);
                 }
                 // Enum member access yields the enum type (an i32 at runtime).

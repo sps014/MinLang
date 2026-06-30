@@ -31,8 +31,19 @@ impl<'a, 'b> Parser<'a, 'b> {
     pub(super) fn parse_enum_declaration(
         &mut self,
     ) -> Result<crate::syntax::nodes::EnumDeclarationNode, Error> {
-        let first_trivia = self.current_token().leading_trivia.clone();
+        let mut first_trivia = self.current_token().leading_trivia.clone();
         let attributes = self.parse_attributes();
+
+        // A doc comment that preceded the first attribute (e.g. above `@json`) is consumed with the
+        // attribute. Recover it so the comment still reaches the enum name token for hover/LSP.
+        if first_trivia.is_empty() {
+            if let Some(first_attr) = attributes.first() {
+                if !first_attr.name.leading_trivia.is_empty() {
+                    first_trivia = first_attr.name.leading_trivia.clone();
+                }
+            }
+        }
+
         self.match_token(TokenKind::EnumToken);
         let mut name = self.match_token(TokenKind::IdentifierToken);
         if !first_trivia.is_empty() {

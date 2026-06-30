@@ -93,6 +93,26 @@ fn test_lex_literals() {
 }
 
 #[test]
+fn test_lex_suffixed_number_literals() {
+    // Each suffixed numeric literal must lex as a single `NumberToken` carrying the whole text
+    // (suffix included); the parser later strips the suffix and assigns the concrete type.
+    let mut lexer = Lexer::new("42L 7u 7U 9uL 9UL 9Lu 255b 255B 3.0d 3.0f".to_string());
+    let mut diagnostics = DiagnosticBag::new(None);
+    let tokens = lexer.lex_all(&mut diagnostics);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    let texts: Vec<String> = tokens
+        .iter()
+        .filter(|t| t.kind == TokenKind::NumberToken)
+        .map(|t| t.text.clone())
+        .collect();
+    assert_eq!(
+        texts,
+        vec!["42L", "7u", "7U", "9uL", "9UL", "9Lu", "255b", "255B", "3.0d", "3.0f"]
+    );
+}
+
+#[test]
 fn test_lex_interpolated_string() {
     let mut lexer = Lexer::new("$\"hi {x}\"".to_string());
     let mut diagnostics = DiagnosticBag::new(None);

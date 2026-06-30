@@ -200,7 +200,19 @@ impl Builder {
             }
         }
         for en in &program.enums {
-            let detail = format!("enum {}", en.name.text);
+            let generics = en
+                .generic_parameters
+                .as_ref()
+                .map(|params| {
+                    let names = params
+                        .iter()
+                        .map(|p| p.text.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("<{}>", names)
+                })
+                .unwrap_or_default();
+            let detail = format!("enum {}{}", en.name.text, generics);
             self.push_decl(&en.name, SymKind::Enum, detail, GLOBAL, None);
             for variant in &en.variants {
                 let detail = if variant.fields.is_empty() {
@@ -402,7 +414,12 @@ impl Builder {
             }
             StatementNode::MethodInvocation(recv, method, _, args) => {
                 self.walk_expr(recv, scope);
-                self.add_ref(method, SymKind::Method, scope);
+                // `Enum.Variant(...)` is a variant constructor, not a method call.
+                let kind = match recv {
+                    ExpressionNode::Identifier(id) if self.is_enum(&id.text) => SymKind::EnumMember,
+                    _ => SymKind::Method,
+                };
+                self.add_ref(method, kind, scope);
                 if let Some(params) = self.method_params.get(&method.text) {
                     self.push_param_hints(&params.clone(), args);
                 }
@@ -537,7 +554,12 @@ impl Builder {
             }
             ExpressionNode::MethodCall(recv, method, _, args) => {
                 self.walk_expr(recv, scope);
-                self.add_ref(method, SymKind::Method, scope);
+                // `Enum.Variant(...)` is a variant constructor, not a method call.
+                let kind = match recv {
+                    ExpressionNode::Identifier(id) if self.is_enum(&id.text) => SymKind::EnumMember,
+                    _ => SymKind::Method,
+                };
+                self.add_ref(method, kind, scope);
                 if let Some(params) = self.method_params.get(&method.text) {
                     self.push_param_hints(&params.clone(), args);
                 }

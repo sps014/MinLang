@@ -51,8 +51,7 @@ fn resolve_host_future_bytes(caller: &mut Caller<'_, ()>, bytes: &[u8]) -> i32 {
 /// body is the error text.
 fn perform_http(method: &str, url: &str, headers_json: &str, body: Vec<u8>) -> Vec<u8> {
     let verb = method.to_uppercase();
-    let http_method =
-        reqwest::Method::from_bytes(verb.as_bytes()).unwrap_or(reqwest::Method::GET);
+    let http_method = reqwest::Method::from_bytes(verb.as_bytes()).unwrap_or(reqwest::Method::GET);
 
     let client = reqwest::blocking::Client::new();
     let mut builder = client.request(http_method, url);

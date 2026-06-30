@@ -174,14 +174,30 @@ impl<'a> WasmGenerator<'a> {
         };
 
         // Pattern discriminant/literal test (pure: performs no bindings).
-        self.emit_pattern_condition(&arm.pattern, subj_local, &[], None, base_type, function, writer)?;
+        self.emit_pattern_condition(
+            &arm.pattern,
+            subj_local,
+            &[],
+            None,
+            base_type,
+            function,
+            writer,
+        )?;
         writer.write_line(&result_clause);
         writer.indent();
         writer.write_line("(then");
         writer.indent();
 
         // Bind pattern variables now that the pattern matched, so the guard and body can use them.
-        self.emit_pattern_bindings(&arm.pattern, subj_local, &[], None, base_type, function, writer)?;
+        self.emit_pattern_bindings(
+            &arm.pattern,
+            subj_local,
+            &[],
+            None,
+            base_type,
+            function,
+            writer,
+        )?;
 
         if let Some(guard) = &arm.guard {
             self.build_expression(guard, &"int".to_string(), function, writer)?;
@@ -413,7 +429,10 @@ impl<'a> WasmGenerator<'a> {
             PatternNode::Wildcard(_) | PatternNode::Literal(_) => {}
             PatternNode::Binding(name) => {
                 // Unit-variant patterns bind nothing.
-                if self.unit_variant_discriminant(&base_type, &name.text).is_some() {
+                if self
+                    .unit_variant_discriminant(&base_type, &name.text)
+                    .is_some()
+                {
                     return Ok(());
                 }
                 self.emit_pattern_value(subj_local, parent_chain, leaf, value_type, writer)?;

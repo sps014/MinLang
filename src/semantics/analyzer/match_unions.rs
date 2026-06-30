@@ -7,7 +7,9 @@ use crate::driver::diagnostics::DiagnosticBag;
 use crate::semantics::symbol_table::SymbolTable;
 use crate::semantics::union_table::UnionInfo;
 use crate::syntax::nodes::types::strip_nullable;
-use crate::syntax::nodes::{ExpressionNode, FunctionNode, MatchArm, MatchArmBody, PatternNode, Type};
+use crate::syntax::nodes::{
+    ExpressionNode, FunctionNode, MatchArm, MatchArmBody, PatternNode, Type,
+};
 use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
 use std::cell::RefCell;
@@ -46,7 +48,11 @@ impl<'a> Analyzer<'a> {
         // The declared payload field types of the named variant (templated for generic unions).
         let field_types: Vec<Type> = if is_generic {
             let template = *self.generic_unions.get(enum_name).unwrap();
-            match template.variants.iter().find(|v| v.name.text == variant.text) {
+            match template
+                .variants
+                .iter()
+                .find(|v| v.name.text == variant.text)
+            {
                 Some(v) => v.fields.iter().map(|f| f.field_type.clone()).collect(),
                 None => {
                     diagnostics.report_error(
@@ -267,7 +273,13 @@ impl<'a> Analyzer<'a> {
                             arm.pattern.position(),
                         );
                     }
-                    self.analyze_body(stmts, parent_function, Some(&arm_scope), false, diagnostics)?;
+                    self.analyze_body(
+                        stmts,
+                        parent_function,
+                        Some(&arm_scope),
+                        false,
+                        diagnostics,
+                    )?;
                 }
             }
 

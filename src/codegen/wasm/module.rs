@@ -340,6 +340,7 @@ impl<'a> WasmGenerator<'a> {
         writer.write(" (local $scratch_addr i32)");
         writer.write(" (local $scratch_double f64)");
         writer.write(" (local $scratch_float f32)");
+        writer.write(" (local $scratch_long i64)");
         writer.write(" (local $scratch_len i32)");
         writer.write(" (local $scratch_arr i32)");
         writer.write(" (local $scratch_switch i32)");
@@ -404,6 +405,7 @@ impl<'a> WasmGenerator<'a> {
         writer.write(" (local $scratch_addr i32)");
         writer.write(" (local $scratch_double f64)");
         writer.write(" (local $scratch_float f32)");
+        writer.write(" (local $scratch_long i64)");
         writer.write(" (local $scratch_len i32)");
         writer.write(" (local $scratch_arr i32)");
         writer.write(" (local $scratch_switch i32)");

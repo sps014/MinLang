@@ -54,9 +54,57 @@ impl Index {
     /// Resolves any field or method named `name` (the first match across all structs), used as a
     /// fallback for member access where the precise receiver type is unknown.
     fn resolve_member(&self, name: &str) -> Option<&Decl> {
+        self.decls.iter().find(|d| {
+            d.name == name
+                && matches!(
+                    d.kind,
+                    SymKind::Field | SymKind::Method | SymKind::EnumMember
+                )
+        })
+    }
+
+    /// Resolves an enum variant reference. When the receiver (the `Enum` in `Enum.Variant`) is
+    /// known, prefer the variant whose `detail` is qualified by that enum so look-alike variant
+    /// names across different enums (e.g. `Some`/`None`) disambiguate; otherwise fall back to the
+    /// first variant matching by name.
+    fn resolve_enum_member(&self, receiver: Option<&str>, name: &str) -> Option<&Decl> {
+        if let Some(recv) = receiver {
+            let prefix = format!("{}.", recv);
+            if let Some(d) = self.decls.iter().find(|d| {
+                d.kind == SymKind::EnumMember && d.name == name && d.detail.starts_with(&prefix)
+            }) {
+                return Some(d);
+            }
+        }
         self.decls
             .iter()
-            .find(|d| d.name == name && matches!(d.kind, SymKind::Field | SymKind::Method))
+            .find(|d| d.kind == SymKind::EnumMember && d.name == name)
+    }
+
+    /// Extracts an immediately-preceding `receiver.` identifier (e.g. `Shape` in `Shape.Rect`),
+    /// scanning back over an optional dot and surrounding spaces. Returns `None` when the reference
+    /// is not a member access.
+    fn receiver_before(text: &str, ref_start: usize) -> Option<&str> {
+        let bytes = text.as_bytes();
+        let mut i = ref_start;
+        while i > 0 && is_ident_byte(bytes[i - 1]) {
+            i -= 1;
+        }
+        if i > 0 && bytes[i - 1] == b'.' {
+            let mut j = i - 1;
+            while j > 0 && bytes[j - 1] == b' ' {
+                j -= 1;
+            }
+            let recv_end = j;
+            let mut recv_start = recv_end;
+            while recv_start > 0 && is_ident_byte(bytes[recv_start - 1]) {
+                recv_start -= 1;
+            }
+            if recv_start < recv_end {
+                return Some(&text[recv_start..recv_end]);
+            }
+        }
+        None
     }
 
     pub(crate) fn substitute_generic(detail: &str, receiver_ty: &str) -> String {
@@ -90,27 +138,15 @@ impl Index {
             (decl.start, decl.end, decl)
         } else {
             let reference = self.ref_at(offset)?;
+            let receiver = Self::receiver_before(text, reference.start);
             let d = match reference.kind {
-                SymKind::Field | SymKind::Method | SymKind::EnumMember => {
-                    // Try to infer receiver type
-                    let bytes = text.as_bytes();
-                    let mut i = reference.start;
-                    while i > 0 && is_ident_byte(bytes[i - 1]) {
-                        i -= 1;
-                    }
-                    if i > 0 && bytes[i - 1] == b'.' {
-                        let mut j = i - 1;
-                        while j > 0 && bytes[j - 1] == b' ' {
-                            j -= 1;
-                        }
-                        let recv_end = j;
-                        let mut recv_start = recv_end;
-                        while recv_start > 0 && is_ident_byte(bytes[recv_start - 1]) {
-                            recv_start -= 1;
-                        }
-                        let receiver = &text[recv_start..recv_end];
+                SymKind::EnumMember => self.resolve_enum_member(receiver, &reference.name),
+                SymKind::Field | SymKind::Method => {
+                    // Try to infer the receiver's type so generic details (e.g. `List<int>`) can be
+                    // substituted into the member signature below.
+                    if let Some(recv) = receiver {
                         receiver_ty_opt =
-                            self.variable_type(receiver, reference.scope, reference.start);
+                            self.variable_type(recv, reference.scope, reference.start);
                     }
                     self.resolve_member(&reference.name)
                 }

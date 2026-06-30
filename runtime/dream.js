@@ -25,7 +25,12 @@ export const TAGS = {
   BOOL: 4,
   STRING: 5,
   ARRAY: 6,
-  STRUCT_BASE: 7,
+  CHAR: 7,
+  LONG: 8,
+  UINT: 9,
+  ULONG: 10,
+  BYTE: 11,
+  STRUCT_BASE: 12,
 };
 
 // Byte size of the universal heap-block header: [size:i32][tag:i32][ref_count:i32].
@@ -34,9 +39,9 @@ export const HEAP_HEADER_SIZE = 12;
 
 /** Byte size of a single element of the given Dream type (see utils.rs `element_size_of`). */
 function elementSize(typeName) {
-  if (typeName === "bool" || typeName === "char") return 1;
-  if (typeName === "double") return 8;
-  return 4; // int, float, and every reference type (pointer)
+  if (typeName === "bool" || typeName === "char" || typeName === "byte") return 1;
+  if (typeName === "double" || typeName === "long" || typeName === "ulong") return 8;
+  return 4; // int, uint, float, and every reference type (pointer)
 }
 
 /** Strips a trailing `?` (nullable) and `[]` (array) suffix from a type name. */
@@ -68,6 +73,8 @@ function jsToWasm(inst, t, value) {
   if (base === "bool") return value ? 1 : 0;
   if (base === "JsRef") return inst.registerHandle(value);
   if (base === "void") return 0;
+  // `long`/`ulong` are wasm i64, which the JS-WASM boundary represents as BigInt.
+  if (base === "long" || base === "ulong") return BigInt(value == null ? 0 : value);
   return value == null ? 0 : value; // numeric primitive or opaque pointer
 }
 
@@ -178,9 +185,16 @@ export class DreamInstance {
       case "int":
         return this.i32(addr);
       case "char":
+      case "byte":
         return this.bytes[addr]; // 1-byte element
       case "bool":
         return this.bytes[addr] !== 0;
+      case "uint":
+        return this.view.getUint32(addr, true);
+      case "long":
+        return this.view.getBigInt64(addr, true);
+      case "ulong":
+        return this.view.getBigUint64(addr, true);
       case "float":
         return this.f32(addr);
       case "double":
@@ -201,10 +215,20 @@ export class DreamInstance {
         this.view.setInt32(addr, value | 0, true);
         break;
       case "char":
+      case "byte":
         this.bytes[addr] = value & 0xff; // 1-byte element
         break;
       case "bool":
         this.bytes[addr] = value ? 1 : 0;
+        break;
+      case "uint":
+        this.view.setUint32(addr, value >>> 0, true);
+        break;
+      case "long":
+        this.view.setBigInt64(addr, BigInt(value == null ? 0 : value), true);
+        break;
+      case "ulong":
+        this.view.setBigUint64(addr, BigInt(value == null ? 0 : value), true);
         break;
       case "float":
         this.view.setFloat32(addr, value, true);
@@ -234,7 +258,7 @@ export class DreamInstance {
     const count = arr.length;
     const ptr = this.exports.malloc(4 + count * size, TAGS.ARRAY);
     this.view.setInt32(ptr, count, true);
-    if (elem === "char") {
+    if (elem === "char" || elem === "byte") {
       // Bulk copy for the common byte-array case.
       this.bytes.set(Uint8Array.from(arr), ptr + 4);
     } else {
@@ -496,26 +520,27 @@ function defaultDreamModule(getInstance) {
     // variants marshal `string`; the byte variants marshal `char[]` directly (binary-safe, no string
     // round-trip) - the bytes are bulk-copied across the boundary.
     fileRead: (path) => new TextDecoder("utf-8").decode(fsBackend().readBytes(path)),
+    // Byte counts and file sizes are `long` (wasm i64) on the Dream side, so these return BigInt.
     fileWrite: (path, content) => {
       const bytes = new TextEncoder().encode(content);
       fsBackend().write(path, bytes);
-      return bytes.length;
+      return BigInt(bytes.length);
     },
     fileAppend: (path, content) => {
       const bytes = new TextEncoder().encode(content);
       fsBackend().append(path, bytes);
-      return bytes.length;
+      return BigInt(bytes.length);
     },
-    // Returns the file's bytes; marshalResult turns them into a Dream `char[]` via writeArray.
+    // Returns the file's bytes; marshalResult turns them into a Dream `byte[]` via writeArray.
     fileReadBytes: (path) => fsBackend().readBytes(path),
-    // `data` arrives as a JS array of byte values (marshaled from `char[]`).
+    // `data` arrives as a JS array of byte values (marshaled from `byte[]`).
     fileWriteBytes: (path, data) => {
       fsBackend().write(path, Uint8Array.from(data));
-      return data.length;
+      return BigInt(data.length);
     },
     fileExists: (path) => fsBackend().exists(path),
     fileDelete: (path) => fsBackend().remove(path),
-    fileSize: (path) => fsBackend().size(path),
+    fileSize: (path) => BigInt(fsBackend().size(path)),
     fileIsDir: (path) => fsBackend().isDir(path),
     dirList: (path) => fsBackend().list(path).join("\n"),
   };

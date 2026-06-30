@@ -71,7 +71,14 @@ pub const VALID_SNIPPETS: &[&str] = &[
 pub fn exercise_all(src: &str) {
     let idx = Index::build(None, src);
     let len = src.len();
-    let raw = [0, len / 4, len / 2, (len * 3) / 4, len.saturating_sub(1), len];
+    let raw = [
+        0,
+        len / 4,
+        len / 2,
+        (len * 3) / 4,
+        len.saturating_sub(1),
+        len,
+    ];
     for &probe in &raw {
         // Snap to a char boundary so byte-offset slicing inside the queries is always valid.
         let mut off = probe.min(len);

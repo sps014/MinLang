@@ -33,6 +33,10 @@ If you already know the basics, the [Language](language/variables.md) section co
 | [Built-ins](stdlib/builtins.md) | `print`, `println`, `x.to_string()`, `x.hash_code()`, `Array.new`, `Math.*` |
 | [string](stdlib/string.md) | String methods: `substring`, `contains`, `trim`, `to_lower`, … |
 | [int](stdlib/int.md) | Integer methods: `abs`, `min`, `max`, `clamp`, `pow`, `signum`; static `int.parse` |
+| [long](stdlib/long.md) | 64-bit signed integer methods: `abs`, `min`, `max`, `clamp`, `signum`; static `long.parse` |
+| [uint](stdlib/uint.md) | 32-bit unsigned integer methods: `min`, `max`, `clamp`; static `uint.parse` |
+| [ulong](stdlib/ulong.md) | 64-bit unsigned integer methods: `min`, `max`, `clamp`; static `ulong.parse` |
+| [byte](stdlib/byte.md) | 8-bit unsigned integer (raw binary): `min`, `max`, `clamp`; static `byte.parse` |
 | [float](stdlib/float.md) | Float methods: `abs`, `min`, `max` |
 | [double](stdlib/double.md) | Double methods: `abs`, `min`, `max` |
 | [char](stdlib/char.md) | Character methods: `is_digit`, `is_alpha`, `to_lower`, `to_upper`, `as_string`, … |

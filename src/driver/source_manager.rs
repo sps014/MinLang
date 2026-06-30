@@ -164,7 +164,10 @@ fn generate_json_extend(
             let to_elem = json_to_expr(elem, &format!("this.{}[__i_{}]", fname, fname), json_names);
             let from_elem = json_from_expr(
                 elem,
-                &format!("__src_{}.at(__i_{}).unwrap_or(JsonValue.none())", fname, fname),
+                &format!(
+                    "__src_{}.at(__i_{}).unwrap_or(JsonValue.none())",
+                    fname, fname
+                ),
                 json_names,
             );
             match (to_elem, from_elem) {
@@ -270,7 +273,10 @@ fn generate_json_union(
             let ftype = field.type_token.text.as_str();
             match json_to_expr(ftype, fname, json_names) {
                 Some(expr) => {
-                    to_body.push_str(&format!("                __o.set(\"{}\", {});\n", fname, expr));
+                    to_body.push_str(&format!(
+                        "                __o.set(\"{}\", {});\n",
+                        fname, expr
+                    ));
                 }
                 None => {
                     diagnostics.report_error(
@@ -327,7 +333,11 @@ fn generate_json_union(
         for field in &first.fields {
             let jexpr = format!("v.get(\"{}\").unwrap_or(JsonValue.none())", field.name.text);
             // Field types were already validated in the loop above.
-            args.push(json_from_expr(field.type_token.text.as_str(), &jexpr, json_names)?);
+            args.push(json_from_expr(
+                field.type_token.text.as_str(),
+                &jexpr,
+                json_names,
+            )?);
         }
         format!("{}.{}({})", name, first.name.text, args.join(", "))
     };

@@ -409,6 +409,9 @@ impl<'a> WasmGenerator<'a> {
                 writer.write_line("local.set $scratch_double");
             } else if ret_type_str == "float" {
                 writer.write_line("local.set $scratch_float");
+            } else if WasmGenerator::get_wasm_type_from(self.resolve_type(&ret_type_str))? == "i64"
+            {
+                writer.write_line("local.set $scratch_long");
             } else {
                 writer.write_line("local.set $scratch_ptr");
             }
@@ -433,6 +436,10 @@ impl<'a> WasmGenerator<'a> {
                 writer.write_line("local.get $scratch_double");
             } else if return_type.get_type() == "float" {
                 writer.write_line("local.get $scratch_float");
+            } else if WasmGenerator::get_wasm_type_from(self.resolve_type(&return_type.get_type()))?
+                == "i64"
+            {
+                writer.write_line("local.get $scratch_long");
             } else {
                 writer.write_line("local.get $scratch_ptr");
             }

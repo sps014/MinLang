@@ -37,6 +37,43 @@ fn test_analyze_type_mismatch() {
 }
 
 #[test]
+fn test_analyze_new_integer_widening_ok() {
+    // The full widening lattice: narrower numeric values flow into wider numeric targets without
+    // an explicit cast.
+    let code = "fun main(): void {
+        let l: long = 5;
+        let l2: long = 7u;
+        let ul: ulong = 9u;
+        let d: double = 9000000000L;
+        let i: int = 200b;
+        let f: float = 3000000000u;
+    }";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), false);
+}
+
+#[test]
+fn test_analyze_new_integer_narrowing_requires_cast() {
+    // Assigning a `long` to an `int` is a narrowing conversion and must be rejected without a cast.
+    let code = "fun main(): void { let x: int = 5L; }";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+}
+
+#[test]
+fn test_analyze_new_integer_explicit_casts_ok() {
+    // Explicit casts permit narrowing and same-width sign changes between the numeric types.
+    let code = "fun main(): void {
+        let a: int = (int)9000000000L;
+        let b: byte = (byte)511;
+        let c: uint = (uint)5;
+        let e: long = (long)4000000000u;
+    }";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), false);
+}
+
+#[test]
 fn test_analyze_undefined_variable() {
     let code = "fun main(): void { let x = y + 5; }";
     let diagnostics = analyze_code(code);
@@ -228,8 +265,7 @@ fn test_analyze_union_match_non_exhaustive() {
     assert!(diagnostics
         .diagnostics
         .iter()
-        .any(|d| d.message.contains("Non-exhaustive match")
-            && d.message.contains("Empty")));
+        .any(|d| d.message.contains("Non-exhaustive match") && d.message.contains("Empty")));
 }
 
 #[test]

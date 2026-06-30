@@ -4,7 +4,9 @@
 use super::*;
 use crate::driver::diagnostics::DiagnosticBag;
 use crate::semantics::symbol_table::SymbolTable;
-use crate::syntax::nodes::types::{is_numeric_primitive, mangle_generic, strip_nullable};
+use crate::syntax::nodes::types::{
+    is_numeric_primitive, mangle_generic, numeric_widen, strip_nullable,
+};
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, Type};
 use crate::syntax::text::text_span::TextSpan;
 use crate::syntax::token::syntax_token::SyntaxToken;
@@ -300,9 +302,9 @@ impl<'a> Analyzer<'a> {
 
                 if target_type_str == expr_type_str ||
                    (is_numeric_primitive(&target_type_str) && is_numeric_primitive(&expr_type_str)) ||
-                   // `char` is a code point: allow lossless conversion to/from `int`.
-                   (target_type_str == "char" && expr_type_str == "int") ||
-                   (target_type_str == "int" && expr_type_str == "char")
+                   // `char` is a code point: allow lossless conversion to/from `int`/`byte`.
+                   (target_type_str == "char" && (expr_type_str == "int" || expr_type_str == "byte")) ||
+                   ((target_type_str == "int" || target_type_str == "byte") && expr_type_str == "char")
                 {
                     Ok(target_type.clone())
                 } else if target_type_str == "object" || expr_type_str == "object" {
@@ -437,6 +439,16 @@ impl<'a> Analyzer<'a> {
             return Ok(());
         }
         if self.enum_int_compatible(&left.get_type(), &right.get_type()) {
+            return Ok(());
+        }
+
+        // Implicit numeric widening: a narrower numeric value (`right`) may flow into a wider
+        // numeric target (`left`) without a cast (e.g. `let x: long = 5`, returning an `int`
+        // where a `double` is expected). Narrowing is rejected here and requires a cast.
+        if numeric_widen(
+            strip_nullable(&right.get_type()),
+            strip_nullable(&left.get_type()),
+        ) {
             return Ok(());
         }
 

@@ -191,6 +191,116 @@ fun main(): void {
 }
 
 #[test]
+fn hover_on_union_variant_shows_signature_and_doc() {
+    // Cursor on the `Rect` variant in a constructor call.
+    let src = "
+enum Shape {
+    Circle(radius: int),
+    // A rectangle with width and height.
+    Rect(width: int, height: int),
+    Empty,
+}
+fun main(): void {
+    let s: Shape = Shape.|Rect(3, 4);
+}
+";
+    let harness = TestHarness::new(src);
+    let index = harness.index();
+
+    let hover = index
+        .hover(harness.offset, &harness.src)
+        .expect("Expected hover info on union variant");
+    assert!(
+        hover
+            .contents
+            .contains("Shape.Rect(width: int, height: int)"),
+        "Hover should show the variant payload signature, got: {}",
+        hover.contents
+    );
+    assert!(
+        hover
+            .contents
+            .contains("A rectangle with width and height."),
+        "Hover should include the variant doc comment, got: {}",
+        hover.contents
+    );
+}
+
+#[test]
+fn hover_on_union_variant_in_match_arm() {
+    let src = "
+enum Shape {
+    Circle(radius: int),
+    Rect(width: int, height: int),
+}
+fun area(s: Shape): int {
+    return match (s) {
+        Circle(r) => r,
+        R|ect(w, h) => w * h,
+    };
+}
+";
+    let harness = TestHarness::new(src);
+    let index = harness.index();
+
+    let hover = index
+        .hover(harness.offset, &harness.src)
+        .expect("Expected hover info on match-arm variant");
+    assert!(
+        hover
+            .contents
+            .contains("Shape.Rect(width: int, height: int)"),
+        "Match-arm variant hover should show the payload signature, got: {}",
+        hover.contents
+    );
+}
+
+#[test]
+fn hover_on_generic_enum_shows_type_parameters() {
+    let src = "
+enum Opt<T> {
+    Some(value: T),
+    None,
+}
+fun main(): void {
+    let o: O|pt<int> = Opt.None;
+}
+";
+    let harness = TestHarness::new(src);
+    let index = harness.index();
+
+    let hover = index
+        .hover(harness.offset, &harness.src)
+        .expect("Expected hover info on generic enum type");
+    assert!(
+        hover.contents.contains("enum Opt<T>"),
+        "Enum hover should include generic parameters, got: {}",
+        hover.contents
+    );
+}
+
+#[test]
+fn definition_resolves_union_variant_constructor() {
+    let src = "
+enum Shape {
+    Circle(radius: int),
+    Rect(width: int, height: int),
+}
+fun main(): void {
+    let s: Shape = Shape.R|ect(3, 4);
+}
+";
+    let harness = TestHarness::new(src);
+    let index = harness.index();
+
+    let def = index
+        .definition(harness.offset)
+        .expect("Expected definition for variant constructor");
+    let decl_offset = harness.src.find("Rect").unwrap();
+    assert_eq!(def.0, decl_offset, "Should jump to the variant declaration");
+}
+
+#[test]
 fn signature_help_second_parameter() {
     let src = "
 fun add(a: int, b: int): int { return a + b; }
@@ -659,7 +769,10 @@ fun main(): void {
         .definition(harness.offset)
         .expect("expected to resolve a global reference to its declaration");
     let decl_offset = harness.src.find("count").unwrap();
-    assert_eq!(def.0, decl_offset, "definition should point at the global decl");
+    assert_eq!(
+        def.0, decl_offset,
+        "definition should point at the global decl"
+    );
 }
 
 #[test]

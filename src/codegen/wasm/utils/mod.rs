@@ -33,9 +33,10 @@ impl<'a> WasmGenerator<'a> {
     /// (address and value must already be pushed).
     pub fn emit_store(type_name: &str, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let instruction = match WasmGenerator::get_wasm_type_from(type_name.to_string())?.as_str() {
-            _ if type_name == "bool" || type_name == "char" => "i32.store8",
+            _ if type_name == "bool" || type_name == "char" || type_name == "byte" => "i32.store8",
             "f64" => "f64.store",
             "f32" => "f32.store",
+            "i64" => "i64.store",
             _ => "i32.store",
         };
         writer.write_line(instruction);
@@ -46,9 +47,10 @@ impl<'a> WasmGenerator<'a> {
     /// (the address must already be on the stack).
     pub fn emit_load(type_name: &str, writer: &mut IndentedTextWriter) -> Result<(), Error> {
         let instruction = match WasmGenerator::get_wasm_type_from(type_name.to_string())?.as_str() {
-            _ if type_name == "bool" || type_name == "char" => "i32.load8_u",
+            _ if type_name == "bool" || type_name == "char" || type_name == "byte" => "i32.load8_u",
             "f64" => "f64.load",
             "f32" => "f32.load",
+            "i64" => "i64.load",
             _ => "i32.load",
         };
         writer.write_line(instruction);
@@ -108,6 +110,11 @@ impl<'a> WasmGenerator<'a> {
             "bool" => "i32".to_string(),
             "char" => "i32".to_string(),
             "string" => "i32".to_string(),
+            // New integer primitives: 64-bit on the stack as `i64`, 32-bit/8-bit as `i32`.
+            "long" => "i64".to_string(),
+            "ulong" => "i64".to_string(),
+            "uint" => "i32".to_string(),
+            "byte" => "i32".to_string(),
             "void" => "".to_string(),
             _ => {
                 // If it's not a primitive, it's a struct, which is also a pointer (i32)
