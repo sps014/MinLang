@@ -74,10 +74,10 @@ nav:
     - Callbacks: language/callbacks.md
     - JSON: language/json.md
     - Regex: language/regex.md
-    - HttpClient: language/http.md
   - Standard Library:
     - Builtins: stdlib/builtins.md
     - List: stdlib/list.md
     - Map: stdlib/map.md
     - File I/O: stdlib/file.md
+    - HTTP: stdlib/http.md
   - Memory Model: memory.md

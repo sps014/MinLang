@@ -1,9 +1,16 @@
-# HttpClient
+# HTTP
 
-`HttpClient` is a small, instantiable HTTP client that runs the same everywhere. Unlike the [`JsRef`](references.md)-based interop, it does not depend on live JavaScript objects: the host capability is a pair of [`extern async fun`](async.md#awaiting-javascript-promises) imports implemented twice — natively in Rust (a blocking `reqwest` call) for the `wasmtime` CLI, and in JavaScript (the platform `fetch`) for Node and the browser. Each call performs the whole request and hands back the entire response as a single binary-safe `char[]`, so the same `.dream` runs unchanged on all three runtimes.
+`HttpClient` and `HttpResponse` are a small, instantiable HTTP client. Like [`File`](file.md), the host capability is a pair of [`extern async fun`](../language/async.md) imports implemented once per host, so the same `.dream` runs unchanged everywhere: each call performs the whole request and hands back the entire response — status, headers, and raw body — as a single binary-safe `char[]` you `await`.
 
-!!! note "Works on every runtime"
-    `HttpClient` runs under `wasmtime` (native `cargo run`), Node, and the browser — there is no JS-only restriction.
+## Runtime support
+
+| Runtime | HTTP backend |
+| --- | --- |
+| Wasmtime (native CLI) | Real network request via a blocking `reqwest` call (`cargo run -- run app.dream`) |
+| Node.js | The global `fetch` (Node 18+) |
+| Browser | The page's `fetch` |
+
+The API is identical across all three; only the underlying transport differs. Unlike the [`JsRef`](../language/references.md)-based interop, there is no JS-only restriction and nothing to release — the body bytes are already in hand once the request future resolves.
 
 ## Creating a client
 
@@ -30,21 +37,19 @@ async fun main(): void {
 
 ## Richer responses
 
-`get(path)` resolves to an `HttpResponse` exposing the status, headers, and body:
+`get(path)` resolves to an `HttpResponse` exposing the status, headers, and body. Reads are synchronous — the bytes arrive with the response:
 
 ```ts
 async fun main(): void {
     let api = HttpClient("https://api.example.com");
     let res = await api.get("/data");
-    if (res.ok()) {                          // 2xx
-        System.println(to_string(res.status()));     // 200
+    if (res.ok()) {                                   // 2xx
+        System.println(to_string(res.status()));      // 200
         System.println(res.header("content-type"));
-        let data = res.json();                        // JsonValue (body already in hand)
+        let data = res.json();                         // JsonValue
     }
 }
 ```
-
-`HttpResponse` reads are synchronous — the bytes are already in hand once the request future resolves — so unlike the old handle-based API there is nothing to release.
 
 ## HTTP methods
 
@@ -101,6 +106,8 @@ async fun main(): void {
 
 ### HttpResponse
 
+A view over the raw response bytes. All reads are synchronous.
+
 | Member | Description |
 | --- | --- |
 | `status(): int` | HTTP status code (`0` on a transport error) |
@@ -108,6 +115,6 @@ async fun main(): void {
 | `header(name): string` | value of response header `name` (case-insensitive), or "" |
 | `text(): string` | body as UTF-8 text |
 | `bytes(): char[]` | body as raw bytes (binary-safe) |
-| `json(): JsonValue` | body parsed as [JSON](json.md) |
+| `json(): JsonValue` | body parsed as [JSON](../language/json.md) |
 
 A runnable example lives in [`sample/interop/http.dream`](https://github.com/sps014/Dream/blob/main/sample/interop/http.dream) with its Node runner `http.mjs`.

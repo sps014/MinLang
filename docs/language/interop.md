@@ -128,4 +128,4 @@ Three standard-library features are pure interop wrappers built on the pieces ab
 
 - **[JSON](json.md)** — native parse/stringify plus `@json` auto-derive (no interop needed, but pairs with HTTP).
 - **[Regex](regex.md)** — JavaScript `RegExp` exposed through the `Regex` class.
-- **[HttpClient](http.md)** — an instantiable, cross-runtime HTTP client over `extern async fun`.
+- **[HttpClient](../stdlib/http.md)** — an instantiable, cross-runtime HTTP client over `extern async fun`.
