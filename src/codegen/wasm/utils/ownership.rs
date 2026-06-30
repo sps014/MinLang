@@ -165,7 +165,15 @@ impl<'a> WasmGenerator<'a> {
         {
             return Ok(true);
         }
+        if method.text == intrinsics::CHAR_AT && struct_name == "string" {
+            return Ok(true);
+        }
         let mangled_name = self.resolve_method_key(&struct_name, &method.text, params, function);
+        if self.function_table.get_function(&mangled_name).is_err()
+            && (method.text == intrinsics::TO_STRING || method.text == intrinsics::HASH_CODE)
+        {
+            return Ok(true);
+        }
         let returns_value = self
             .function_table
             .get_function(&mangled_name)
@@ -201,10 +209,23 @@ impl<'a> WasmGenerator<'a> {
         {
             return Ok(Some("int".to_string()));
         }
+        if method.text == intrinsics::CHAR_AT && struct_name == "string" {
+            return Ok(Some("char".to_string()));
+        }
         if method.text == intrinsics::ENUM_NAME && self.enums.contains_key(&struct_name) {
             return Ok(Some("string".to_string()));
         }
         let mangled_name = self.resolve_method_key(&struct_name, &method.text, params, function);
+        if self.function_table.get_function(&mangled_name).is_err() {
+            // Object-protocol fallback (no user override): `to_string` yields an owned string,
+            // `hash_code` an int.
+            if method.text == intrinsics::TO_STRING {
+                return Ok(Some("string".to_string()));
+            }
+            if method.text == intrinsics::HASH_CODE {
+                return Ok(Some("int".to_string()));
+            }
+        }
         Ok(self
             .function_table
             .get_function(&mangled_name)

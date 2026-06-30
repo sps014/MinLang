@@ -1,12 +1,12 @@
-{"title":"Core","lead":{"name":"Ada","age":36,"company":{"name":"London Corp","address":{"city":"London","zip":"00000","geo":{"lat":1.500000,"lng":2.500000}}},"tags":["Ada","London"]},"members":[{"name":"Bob","age":30,"company":{"name":"Paris Corp","address":{"city":"Paris","zip":"00000","geo":{"lat":1.500000,"lng":2.500000}}},"tags":["Bob","Paris"]},{"name":"Cee","age":41,"company":{"name":"Berlin Corp","address":{"city":"Berlin","zip":"00000","geo":{"lat":1.500000,"lng":2.500000}}},"tags":["Cee","Berlin"]}]}
+{"title":"Core","lead":{"name":"Ada","age":36,"company":{"name":"London Corp","address":{"city":"London","zip":"00000","geo":{"lat":1.5,"lng":2.5}}},"tags":["Ada","London"]},"members":[{"name":"Bob","age":30,"company":{"name":"Paris Corp","address":{"city":"Paris","zip":"00000","geo":{"lat":1.5,"lng":2.5}}},"tags":["Bob","Paris"]},{"name":"Cee","age":41,"company":{"name":"Berlin Corp","address":{"city":"Berlin","zip":"00000","geo":{"lat":1.5,"lng":2.5}}},"tags":["Cee","Berlin"]}]}
 Core
 Ada
 London Corp
 London
-1.500000
+1.5
 London
 2
 Bob
-2.500000
+2.5
 41
 true

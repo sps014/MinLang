@@ -6,7 +6,7 @@ fun main(): void {
     System.print('\n');
 
     let code: int = (int)a;
-    System.print(to_string(code));
+    System.print(code);
     System.print('\n');
 
     let next: char = (char)(code + 1);
@@ -19,7 +19,7 @@ fun main(): void {
     System.print('\n');
 
     if (a < z) {
-        System.print(to_string(1));
+        System.print(1);
     }
     System.print('\n');
 }

@@ -59,10 +59,12 @@ pub(crate) fn build_abi_json(program: &ProgramNode) -> String {
         }
     }
 
-    let mut externs = Vec::new();
-    for func in program.functions.iter() {
-        if !func.is_extern {
-            continue;
+    // Emits one extern's ABI entry, or `None` for non-externs and `@intrinsic` declarations (which
+    // are lowered by the compiler and emit no WASM import). Shared by top-level functions and class
+    // / `extend` static externs so a host bridge keeps its ABI entry wherever it is declared.
+    fn extern_entry(func: &crate::syntax::nodes::FunctionNode) -> Option<String> {
+        if !func.is_extern || crate::intrinsics::has_intrinsic_attr(&func.attributes) {
+            return None;
         }
         let mut import_module = "env".to_string();
         let mut import_name = func.name.text.clone();
@@ -74,22 +76,36 @@ pub(crate) fn build_abi_json(program: &ProgramNode) -> String {
                 import_name = arg.text.trim_matches('"').to_string();
             }
         }
-        let module = import_module;
-        let field = import_name;
         let params: Vec<String> = func
             .parameters
             .iter()
             .map(|p| format!("\"{}\"", json_escape(&p.type_.get_type())))
             .collect();
-        externs.push(format!(
+        Some(format!(
             "    {{ \"name\": \"{}\", \"module\": \"{}\", \"field\": \"{}\", \"params\": [{}], \"result\": \"{}\", \"async\": {} }}",
             json_escape(&func.name.text),
-            json_escape(&module),
-            json_escape(&field),
+            json_escape(&import_module),
+            json_escape(&import_name),
             params.join(", "),
             json_escape(&type_name(func.return_type.as_ref())),
             func.is_async,
-        ));
+        ))
+    }
+
+    // Walk top-level externs plus class (`structs[].methods`) and `extend` (`extends[].methods`)
+    // static externs, so host bridges moved onto their owning class still appear in the sidecar.
+    let mut externs = Vec::new();
+    let class_methods = program.structs.iter().flat_map(|s| s.methods.iter());
+    let extend_methods = program.extends.iter().flat_map(|e| e.methods.iter());
+    for func in program
+        .functions
+        .iter()
+        .chain(class_methods)
+        .chain(extend_methods)
+    {
+        if let Some(entry) = extern_entry(func) {
+            externs.push(entry);
+        }
     }
 
     let mut exports = Vec::new();

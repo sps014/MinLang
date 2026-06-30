@@ -8,131 +8,116 @@
 // function returns one (producing an id) and looks it up when an id is passed back in. Because
 // Dream does not auto-release these, call `.release()` when you are done with a long-lived
 // handle to avoid leaking the JS-side entry.
-
-// --- host bridge (implemented by the `Dream` module in runtime/dream.js) ------------------
-
-@js("Dream", "jsGlobal")
-extern fun js_global(name: string): JsRef;
-
-@js("Dream", "jsString")
-extern fun js_string(value: string): JsRef;
-
-@js("Dream", "jsInt")
-extern fun js_int(value: int): JsRef;
-
-@js("Dream", "jsDouble")
-extern fun js_double(value: double): JsRef;
-
-@js("Dream", "jsBool")
-extern fun js_bool(value: bool): JsRef;
-
-@js("Dream", "jsGetProp")
-extern fun __js_get_prop(target: JsRef, name: string): JsRef;
-
-@js("Dream", "jsGetString")
-extern fun __js_get_string(target: JsRef, name: string): string;
-
-@js("Dream", "jsGetInt")
-extern fun __js_get_int(target: JsRef, name: string): int;
-
-@js("Dream", "jsGetDouble")
-extern fun __js_get_double(target: JsRef, name: string): double;
-
-@js("Dream", "jsGetBool")
-extern fun __js_get_bool(target: JsRef, name: string): bool;
-
-@js("Dream", "jsSetProp")
-extern fun __js_set_prop(target: JsRef, name: string, value: JsRef): void;
-
-@js("Dream", "jsCall0")
-extern fun __js_call0(target: JsRef, method: string): JsRef;
-
-@js("Dream", "jsCall1")
-extern fun __js_call1(target: JsRef, method: string, a: JsRef): JsRef;
-
-@js("Dream", "jsCall2")
-extern fun __js_call2(target: JsRef, method: string, a: JsRef, b: JsRef): JsRef;
-
-@js("Dream", "jsToString")
-extern fun __js_to_string(target: JsRef): string;
-
-@js("Dream", "jsInvoke0")
-extern fun __js_invoke0(target: JsRef): JsRef;
-
-@js("Dream", "jsInvoke1")
-extern fun __js_invoke1(target: JsRef, a: JsRef): JsRef;
-
-@js("Dream", "jsInvoke2")
-extern fun __js_invoke2(target: JsRef, a: JsRef, b: JsRef): JsRef;
-
-@js("Dream", "jsIsNull")
-extern fun __js_is_null(target: JsRef): bool;
-
-@js("Dream", "jsRelease")
-extern fun __js_release(target: JsRef): void;
-
-// --- ergonomic instance API ----------------------------------------------------------------
+//
+//   let win = JsRef.global("window");
+//   let title = win.get("document").get_string("title");
 
 extend JsRef {
+    // --- value constructors (host module `Dream` in runtime/dream.js) -----------------------
+    @js("Dream", "jsGlobal")
+    static extern fun global(name: string): JsRef;
+    @js("Dream", "jsString")
+    static extern fun from_string(value: string): JsRef;
+    @js("Dream", "jsInt")
+    static extern fun from_int(value: int): JsRef;
+    @js("Dream", "jsDouble")
+    static extern fun from_double(value: double): JsRef;
+    @js("Dream", "jsBool")
+    static extern fun from_bool(value: bool): JsRef;
+
+    // --- low-level host bridge --------------------------------------------------------------
+    @js("Dream", "jsGetProp")
+    static extern fun __js_get_prop(target: JsRef, name: string): JsRef;
+    @js("Dream", "jsGetString")
+    static extern fun __js_get_string(target: JsRef, name: string): string;
+    @js("Dream", "jsGetInt")
+    static extern fun __js_get_int(target: JsRef, name: string): int;
+    @js("Dream", "jsGetDouble")
+    static extern fun __js_get_double(target: JsRef, name: string): double;
+    @js("Dream", "jsGetBool")
+    static extern fun __js_get_bool(target: JsRef, name: string): bool;
+    @js("Dream", "jsSetProp")
+    static extern fun __js_set_prop(target: JsRef, name: string, value: JsRef): void;
+    @js("Dream", "jsCall0")
+    static extern fun __js_call0(target: JsRef, method: string): JsRef;
+    @js("Dream", "jsCall1")
+    static extern fun __js_call1(target: JsRef, method: string, a: JsRef): JsRef;
+    @js("Dream", "jsCall2")
+    static extern fun __js_call2(target: JsRef, method: string, a: JsRef, b: JsRef): JsRef;
+    @js("Dream", "jsToString")
+    static extern fun __js_to_string(target: JsRef): string;
+    @js("Dream", "jsInvoke0")
+    static extern fun __js_invoke0(target: JsRef): JsRef;
+    @js("Dream", "jsInvoke1")
+    static extern fun __js_invoke1(target: JsRef, a: JsRef): JsRef;
+    @js("Dream", "jsInvoke2")
+    static extern fun __js_invoke2(target: JsRef, a: JsRef, b: JsRef): JsRef;
+    @js("Dream", "jsIsNull")
+    static extern fun __js_is_null(target: JsRef): bool;
+    @js("Dream", "jsRelease")
+    static extern fun __js_release(target: JsRef): void;
+
+    // --- ergonomic instance API -------------------------------------------------------------
+
     // Reads property `name` as another JS reference.
     public fun get(name: string): JsRef {
-        return __js_get_prop(this, name);
+        return JsRef.__js_get_prop(this, name);
     }
 
     // Reads property `name`, coerced to the given primitive.
     public fun get_string(name: string): string {
-        return __js_get_string(this, name);
+        return JsRef.__js_get_string(this, name);
     }
     public fun get_int(name: string): int {
-        return __js_get_int(this, name);
+        return JsRef.__js_get_int(this, name);
     }
     public fun get_double(name: string): double {
-        return __js_get_double(this, name);
+        return JsRef.__js_get_double(this, name);
     }
     public fun get_bool(name: string): bool {
-        return __js_get_bool(this, name);
+        return JsRef.__js_get_bool(this, name);
     }
 
-    // Sets property `name` to another JS reference (wrap primitives with `js_string` etc.).
+    // Sets property `name` to another JS reference (wrap primitives with `JsRef.from_string` etc.).
     public fun set(name: string, value: JsRef): void {
-        __js_set_prop(this, name, value);
+        JsRef.__js_set_prop(this, name, value);
     }
 
     // Invokes method `name` with 0/1/2 reference arguments, returning the result reference.
     public fun call(name: string): JsRef {
-        return __js_call0(this, name);
+        return JsRef.__js_call0(this, name);
     }
     public fun call1(name: string, a: JsRef): JsRef {
-        return __js_call1(this, name, a);
+        return JsRef.__js_call1(this, name, a);
     }
     public fun call2(name: string, a: JsRef, b: JsRef): JsRef {
-        return __js_call2(this, name, a, b);
+        return JsRef.__js_call2(this, name, a, b);
     }
 
     // The JS `String(value)` of the referenced value.
     public fun text(): string {
-        return __js_to_string(this);
+        return JsRef.__js_to_string(this);
     }
 
     // True if the referenced value is `null` or `undefined`.
     public fun is_null(): bool {
-        return __js_is_null(this);
+        return JsRef.__js_is_null(this);
     }
 
     // Calls the referenced value as a JS function with 0/1/2 reference arguments. Use when a JS
     // callback was handed to Dream as a `JsRef` (a JS -> Dream callback).
     public fun invoke(): JsRef {
-        return __js_invoke0(this);
+        return JsRef.__js_invoke0(this);
     }
     public fun invoke1(a: JsRef): JsRef {
-        return __js_invoke1(this, a);
+        return JsRef.__js_invoke1(this, a);
     }
     public fun invoke2(a: JsRef, b: JsRef): JsRef {
-        return __js_invoke2(this, a, b);
+        return JsRef.__js_invoke2(this, a, b);
     }
 
     // Releases the host-side handle. Use for long-lived references to avoid leaks.
     public fun release(): void {
-        __js_release(this);
+        JsRef.__js_release(this);
     }
 }

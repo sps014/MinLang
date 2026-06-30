@@ -30,7 +30,7 @@ If you already know the basics, the [Language](language/variables.md) section co
 
 | Page | Description |
 |------|-------------|
-| [Built-ins](stdlib/builtins.md) | `print`, `println`, `to_string`, `hash_code`, `array_new`, `Math.*` |
+| [Built-ins](stdlib/builtins.md) | `print`, `println`, `x.to_string()`, `x.hash_code()`, `Array.new`, `Math.*` |
 | [string](stdlib/string.md) | String methods: `substring`, `contains`, `trim`, `to_lower`, … |
 | [int](stdlib/int.md) | Integer methods: `abs`, `min`, `max`, `clamp`, `pow`, `signum`; static `int.parse` |
 | [float](stdlib/float.md) | Float methods: `abs`, `min`, `max` |

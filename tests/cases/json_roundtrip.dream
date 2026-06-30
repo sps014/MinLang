@@ -12,8 +12,8 @@ fun main(): void {
 
     let parsed = JSON.parse(JSON.stringify(user));
     System.println(parsed.get("name").as_string());
-    System.println(to_string(parsed.get("age").as_int()));
+    System.println(parsed.get("age").as_int());
     System.println(parsed.get("tags").at(1).as_string());
-    System.println(to_string(parsed.get("active").as_bool()));
-    System.println(to_string(parsed.get("tags").size()));
+    System.println(parsed.get("active").as_bool());
+    System.println(parsed.get("tags").size());
 }

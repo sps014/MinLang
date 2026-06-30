@@ -218,16 +218,20 @@ impl<'a> WasmGenerator<'a> {
 
     fn build_float_double_to_string(&self, writer: &mut IndentedTextWriter) {
         let minus = self.rstr("-");
-        // double_to_string: integer part + '.' + 6 fractional digits (limited precision).
+        // double_to_string: rounds `|v|` to 6 decimal places using integer micro-units, then trims
+        // trailing zeros (so `2.5`, not `2.500000`, and `3`, not `3.000000`). Rounding via integers
+        // also avoids the floor-drift and float noise of digit-by-digit truncation (e.g. a result of
+        // `4.000000000000004` prints as `4`). Identical on every runtime since no host formatter is
+        // involved.
         writer.write_block(&format!(
             r#"(func $double_to_string (param $v f64) (result i32)
-    (local $ip i32)
-    (local $frac f64)
-    (local $digit i32)
-    (local $i i32)
     (local $neg i32)
-    (local $intstr i32)
+    (local $micro i64)
+    (local $ip i64)
+    (local $fr i64)
+    (local $ipstr i32)
     (local $buf i32)
+    (local $i i32)
     (local $res i32)
     i32.const 0
     local.set $neg
@@ -241,17 +245,26 @@ impl<'a> WasmGenerator<'a> {
         f64.neg
         local.set $v
     ))
+    ;; micro = round(v * 1e6)
     local.get $v
-    i32.trunc_f64_s
+    f64.const 1000000
+    f64.mul
+    f64.const 0.5
+    f64.add
+    i64.trunc_f64_s
+    local.set $micro
+    local.get $micro
+    i64.const 1000000
+    i64.div_s
     local.set $ip
-    local.get $v
+    local.get $micro
+    i64.const 1000000
+    i64.rem_s
+    local.set $fr
     local.get $ip
-    f64.convert_i32_s
-    f64.sub
-    local.set $frac
-    local.get $ip
+    i32.wrap_i64
     call $int_to_string
-    local.set $intstr
+    local.set $ipstr
     i32.const 16
     i32.const 5
     call $malloc
@@ -259,46 +272,72 @@ impl<'a> WasmGenerator<'a> {
     local.get $buf
     i32.const 46
     i32.store8
-    i32.const 1
+    ;; write the 6 fractional digits into buf[1..6], least-significant last
+    i32.const 6
     local.set $i
-    (block $fdone
-        (loop $fgen
+    (block $wdone
+        (loop $wgen
             local.get $i
-            i32.const 7
-            i32.ge_s
-            br_if $fdone
-            local.get $frac
-            f64.const 10
-            f64.mul
-            local.set $frac
-            local.get $frac
-            i32.trunc_f64_s
-            local.set $digit
+            i32.const 1
+            i32.lt_s
+            br_if $wdone
             local.get $buf
             local.get $i
             i32.add
-            local.get $digit
+            local.get $fr
+            i64.const 10
+            i64.rem_s
+            i32.wrap_i64
             i32.const 48
             i32.add
             i32.store8
-            local.get $frac
-            local.get $digit
-            f64.convert_i32_s
-            f64.sub
-            local.set $frac
+            local.get $fr
+            i64.const 10
+            i64.div_s
+            local.set $fr
             local.get $i
             i32.const 1
-            i32.add
+            i32.sub
             local.set $i
-            br $fgen
+            br $wgen
         )
     )
+    ;; trim trailing '0's; $i ends as the cut length (chars to keep in buf)
+    i32.const 7
+    local.set $i
+    (block $tdone
+        (loop $tgen
+            local.get $i
+            i32.const 1
+            i32.le_s
+            br_if $tdone
+            local.get $buf
+            local.get $i
+            i32.const 1
+            i32.sub
+            i32.add
+            i32.load8_u
+            i32.const 48
+            i32.ne
+            br_if $tdone
+            local.get $i
+            i32.const 1
+            i32.sub
+            local.set $i
+            br $tgen
+        )
+    )
+    ;; if only the '.' is left, drop it too (whole number)
+    local.get $i
+    i32.const 1
+    i32.eq
+    (if (then i32.const 0 local.set $i))
     local.get $buf
     local.get $i
     i32.add
     i32.const 0
     i32.store8
-    local.get $intstr
+    local.get $ipstr
     local.get $buf
     call $concat_strings
     local.set $res
@@ -872,13 +911,18 @@ impl<'a> WasmGenerator<'a> {
                 self.build_expression(arg, &t, function, writer)?;
                 writer.write_line("call $print_int");
             }
+            // Float/double print through the same in-wasm formatter as `to_string`, string
+            // concatenation, and JSON, so the rendering is identical and deterministic across
+            // runtimes (the host `print_double` exposes float noise like `4.000000000000004`).
             "float" => {
                 self.build_expression(arg, &t, function, writer)?;
-                writer.write_line("call $print_float");
+                writer.write_line("call $float_to_string");
+                writer.write_line("call $print_string");
             }
             "double" => {
                 self.build_expression(arg, &t, function, writer)?;
-                writer.write_line("call $print_double");
+                writer.write_line("call $double_to_string");
+                writer.write_line("call $print_string");
             }
             "bool" => {
                 self.build_expression(arg, &t, function, writer)?;

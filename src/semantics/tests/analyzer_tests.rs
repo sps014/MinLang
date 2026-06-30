@@ -86,7 +86,8 @@ fn test_analyze_invalid_array_operations() {
 fn test_analyze_async_await_valid() {
     // Calling an async fun yields `Future<T>`; awaiting it (at a statement position) yields `T`.
     let code = "
-        async fun work(n: int): int { await sleep(1); return n * 2; }
+        async fun delay(): void { }
+        async fun work(n: int): int { await delay(); return n * 2; }
         async fun main(): void {
             let h = work(3);
             let v = await h;
@@ -99,7 +100,7 @@ fn test_analyze_async_await_valid() {
 
 #[test]
 fn test_analyze_await_outside_async() {
-    let code = "fun main(): void { let x = await sleep(1); }";
+    let code = "async fun delay(): int { return 1; } fun main(): void { let x = await delay(); }";
     let diagnostics = analyze_code(code);
     assert_eq!(diagnostics.has_errors(), true);
     assert!(diagnostics.diagnostics.iter().any(|d| d
@@ -111,7 +112,8 @@ fn test_analyze_await_outside_async() {
 fn test_analyze_await_in_subexpression_rejected() {
     // v1 restricts `await` to top-level statement positions.
     let code = "
-        async fun work(n: int): int { await sleep(1); return n; }
+        async fun delay(): void { }
+        async fun work(n: int): int { await delay(); return n; }
         async fun main(): void { let x = await work(1) + 1; }
     ";
     let diagnostics = analyze_code(code);

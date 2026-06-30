@@ -31,7 +31,7 @@ fun main(): void {
 }
 ```
 
-`js_global(name)`, `js_string(v)`, `js_int(v)`, `js_double(v)` and `js_bool(v)` build references from Dream values or the global object.
+`JsRef.global(name)`, `JsRef.from_string(v)`, `JsRef.from_int(v)`, `JsRef.from_double(v)` and `JsRef.from_bool(v)` build references from Dream values or the global object.
 
 ## The `JsRef` API
 
@@ -47,7 +47,7 @@ fun main(): void {
 | `release(): void` | drop the host-side handle |
 
 ```ts
-let re = js_global("RegExp");           // the RegExp constructor
+let re = JsRef.global("RegExp");           // the RegExp constructor
 // ... build/use a regex via call/get ...
 re.release();
 ```

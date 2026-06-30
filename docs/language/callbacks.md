@@ -8,7 +8,7 @@ Pass a Dream `fun(...)` to an `extern` whose parameter is a function type. The r
 
 ```ts
 fun on_tick(n: int): void {
-    println("tick " + to_string(n));
+    println("tick " + n);
 }
 
 extern fun run_callback(cb: fun(int): void, times: int): void;
@@ -39,8 +39,8 @@ A JavaScript function handed to Dream arrives as a [`JsRef`](references.md). Dre
 
 ```ts
 fun main(): void {
-    let logger = js_global("logger");          // a JS function on the global scope
-    logger.invoke1(js_string("hello from Dream"));
+    let logger = JsRef.global("logger");          // a JS function on the global scope
+    logger.invoke1(JsRef.from_string("hello from Dream"));
 }
 ```
 

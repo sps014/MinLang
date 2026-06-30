@@ -41,11 +41,12 @@ On a non-`object` variable, `is` is resolved at compile time. If the types match
 
 ## `to_string` and `hash_code`
 
-Every value responds to `to_string` (returns a `string`) and `hash_code` (returns an `int`):
+Every value responds to the instance methods `to_string()` (returns a `string`) and `hash_code()`
+(returns an `int`):
 
 ```ts
-let s = to_string(42);       // "42"
-let h = hash_code("hello");  // some stable integer
+let s = (42).to_string();       // "42"
+let h = "hello".hash_code();    // some stable integer
 ```
 
 These work on any type, including `object`.
@@ -61,7 +62,7 @@ class Color {
     b: int;
 
     @override public fun to_string(): string {
-        return "rgb(" + to_string(this.r) + ", " + to_string(this.g) + ", " + to_string(this.b) + ")";
+        return "rgb(" + this.r + ", " + this.g + ", " + this.b + ")";
     }
 
     @override public fun hash_code(): int {

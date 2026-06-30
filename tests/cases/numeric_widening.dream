@@ -15,13 +15,13 @@ class Calc {
 fun main(): void {
     // float literal -> double parameter
     let a = Calc.identity(1.5f);
-    System.println(to_string(a));
+    System.println(a);
 
     // int literal -> double parameter
     let b = Calc.identity(3);
-    System.println(to_string(b));
+    System.println(b);
 
     // both arguments widened (int -> double)
     let c = Calc.add(10, 20);
-    System.println(to_string(c));
+    System.println(c);
 }

@@ -1,5 +1,5 @@
 fun notAsync(): void {
-    let x = await sleep(10);
+    let x = await Time.sleep(10);
 }
 
 fun main(): void {

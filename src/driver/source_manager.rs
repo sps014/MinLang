@@ -168,7 +168,7 @@ fn generate_json_extend(
                         f = fname, k = json_key, to_e = to_e
                     ));
                     from_prelude.push_str(&format!(
-                        "        let __src_{f} = v.get(\"{k}\");\n        let __{f} = array_new<{elem}>(__src_{f}.size());\n        let __i_{f} = 0;\n        while (__i_{f} < __src_{f}.size()) {{\n            __{f}[__i_{f}] = {from_e};\n            __i_{f} = __i_{f} + 1;\n        }}\n",
+                        "        let __src_{f} = v.get(\"{k}\");\n        let __{f} = Array.new<{elem}>(__src_{f}.size());\n        let __i_{f} = 0;\n        while (__i_{f} < __src_{f}.size()) {{\n            __{f}[__i_{f}] = {from_e};\n            __i_{f} = __i_{f} + 1;\n        }}\n",
                         f = fname, k = json_key, elem = elem, from_e = from_e
                     ));
                     from_fields.push(format!("__{f}", f = fname));

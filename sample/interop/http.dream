@@ -15,7 +15,7 @@ async fun main(): void {
 
     // Richer GET response: status + JSON body + a header.
     let res = await api.get("/user");
-    System.println(to_string(res.status()));
+    System.println(res.status());
     System.println(res.header("content-type"));
 
     let data = res.json();
@@ -23,11 +23,11 @@ async fun main(): void {
 
     // POST a JSON body (any verb is available: get/post/put/patch/delete/head, or `request`).
     let created = await api.post("/user", "{\"name\":\"Grace\"}");
-    System.println(to_string(created.status()));
+    System.println(created.status());
     System.println(created.text());
 
     // Binary round-trip: the body is byte-exact in both directions.
     let bin = await api.get("/blob");
     let echoed = await api.post_bytes("/upload", bin.bytes());
-    System.println(to_string(echoed.status()));
+    System.println(echoed.status());
 }

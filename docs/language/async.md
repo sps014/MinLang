@@ -9,7 +9,7 @@ Prefix a function with `async`. Its declared return type `T` becomes `Future<T>`
 
 ```ts
 async fun fetchData(): string {
-    await sleep(100);   // suspends this task; the event loop keeps running
+    await Time.sleep(100);   // suspends this task; the event loop keeps running
     return "data";
 }
 ```
@@ -51,7 +51,7 @@ Because calls are eager, you can store the handle and `await` it later. Two call
 
 ```ts
 async fun work(id: int): int {
-    await sleep(50);
+    await Time.sleep(50);
     return id * id;
 }
 
@@ -59,7 +59,7 @@ async fun main(): void {
     let a = work(2);                         // a : Future<int>, started now
     let b = work(3);                         // b : Future<int>, started now
     let results = await Promise.all([a, b]); // both ran concurrently -> [4, 9]
-    System.println(to_string(results[0]) + ", " + to_string(results[1]));
+    System.println(results[0] + ", " + results[1]);
 }
 ```
 
@@ -77,7 +77,7 @@ The combinators are static methods on the built-in `Promise` class, over `Future
 let first = await Promise.any([work(10), work(20)]);
 ```
 
-`sleep` stays a top-level function (`sleep(ms: int): Future<void>`); only the combinators moved onto `Promise`.
+`Time.sleep` is a static method (`Time.sleep(ms: int): Future<void>`); the combinators live on `Promise`.
 
 ## Async methods
 
@@ -102,9 +102,9 @@ async fun main(): void {
 !!! note "v1 restriction"
     Async methods are not allowed on **generic** classes (the `Future<T>` machinery is itself generic). Non-generic classes, including `static async` methods, are fully supported.
 
-## The built-in `sleep`
+## The built-in `Time.sleep`
 
-`sleep(ms: int): Future<void>` is an awaitable timer backed by the runtime's timer queue (a virtual clock natively, `setTimeout` in the browser). It composes with the combinators like any other future.
+`Time.sleep(ms: int): Future<void>` is an awaitable timer backed by the runtime's timer queue (a virtual clock natively, `setTimeout` in the browser). It composes with the combinators like any other future.
 
 ## How it works
 

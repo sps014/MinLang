@@ -22,12 +22,12 @@ fun main(): void {
 
     let back = JSON.deserialize<User>(text);
     System.println(back.name);
-    System.println(to_string(back.age));
-    System.println(to_string(back.active));
+    System.println(back.age);
+    System.println(back.active);
     System.println(back.address.city);
     System.println(back.address.zip);
     System.println(back.tags[0]);
     System.println(back.tags[1]);
-    System.println(to_string(back.scores[2]));
+    System.println(back.scores[2]);
     System.println(JSON.serialize(back));
 }

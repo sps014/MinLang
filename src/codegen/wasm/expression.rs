@@ -70,24 +70,18 @@ impl<'a> WasmGenerator<'a> {
             ExpressionNode::Binary(left, opr, right) => self.build_binary(left, opr, right, left_side, function, writer)?,
             ExpressionNode::Literal(literal) => self.build_literal(literal, writer)?,
             ExpressionNode::FunctionCall(n, generic_args, args) => {
-                match n.text.as_str() {
-                    intrinsics::TO_STRING if args.len() == 1 => self.build_to_string(&args[0], function, writer)?,
-                    intrinsics::HASH_CODE if args.len() == 1 => self.build_hash_code(&args[0], function, writer)?,
-                    intrinsics::ARRAY_NEW if args.len() == 1 => self.build_array_new(generic_args, &args[0], function, writer)?,
-                    // The `sleep` async intrinsic produces a `Future` handle directly. The
-                    // combinators are invoked as `Promise.all/any/race` (see build_method_call).
-                    intrinsics::SLEEP => self.build_async_intrinsic_call(n.text.as_str(), args, function, writer)?,
-                    _ => match self.classify_call(&n.text, generic_args, args, function) {
-                        CallDispatch::Indirect { params, ret } => {
-                            self.build_indirect_call(&n.text, &params, &ret, args, function, writer)?
-                        }
-                        CallDispatch::Constructor(ctor_name) => {
-                            self.build_constructor(&ctor_name, args, function, writer)?
-                        }
-                        CallDispatch::Function(function_name) => {
-                            self.build_function_invocation(&function_name, args, function, writer)?
-                        }
-                    },
+                // The object protocol (`to_string`/`hash_code`), `Array.new`, `Time.sleep`, and the
+                // string primitives are all class/instance members now, lowered in `build_method_call`.
+                match self.classify_call(&n.text, generic_args, args, function) {
+                    CallDispatch::Indirect { params, ret } => {
+                        self.build_indirect_call(&n.text, &params, &ret, args, function, writer)?
+                    }
+                    CallDispatch::Constructor(ctor_name) => {
+                        self.build_constructor(&ctor_name, args, function, writer)?
+                    }
+                    CallDispatch::Function(function_name) => {
+                        self.build_function_invocation(&function_name, args, function, writer)?
+                    }
                 }
             },
             ExpressionNode::Parenthesized(e) => self.build_expression(e, left_side, function, writer)?,
@@ -442,6 +436,23 @@ impl<'a> WasmGenerator<'a> {
     }
 
     /// Builds a binary expression
+    /// Builds one operand of a string concatenation, leaving a string pointer on the stack. A
+    /// string operand is built directly; any other type is converted via the object protocol
+    /// (`to_string`) so `"x = " + n` works for any `n`.
+    fn build_concat_operand(
+        &mut self,
+        expr: &ExpressionNode<'a>,
+        expr_type: &str,
+        function: &FunctionNode<'a>,
+        writer: &mut IndentedTextWriter,
+    ) -> Result<(), Error> {
+        if strip_nullable(expr_type) == "string" {
+            self.build_expression(expr, &"string".to_string(), function, writer)
+        } else {
+            self.build_to_string(expr, function, writer)
+        }
+    }
+
     pub fn build_binary(
         &mut self,
         left_exp: &ExpressionNode<'a>,
@@ -505,6 +516,24 @@ impl<'a> WasmGenerator<'a> {
             return Ok(());
         }
 
+        // String concatenation with `+`: when either operand is a string the result is a string,
+        // and any non-string operand is converted via the object protocol (`to_string`). Detected
+        // from the operand types (not the surrounding expected type) so `"x = " + n` works anywhere.
+        if opr.kind == TokenKind::PlusToken {
+            let lt = self
+                .infer_expression_type(left_exp, function)
+                .unwrap_or_default();
+            let rt = self
+                .infer_expression_type(right_expr, function)
+                .unwrap_or_default();
+            if strip_nullable(&lt) == "string" || strip_nullable(&rt) == "string" {
+                self.build_concat_operand(left_exp, &lt, function, writer)?;
+                self.build_concat_operand(right_expr, &rt, function, writer)?;
+                writer.write_line("call $concat_strings");
+                return Ok(());
+            }
+        }
+
         // For a comparison the surrounding `left` is the bool/int result context, not the operand
         // type, so evaluate the operands (and pick the comparison instruction) in their own type.
         // This makes float/double/char comparisons emit `f32.lt`/`f64.lt`/... instead of `i32.lt_s`.
@@ -528,11 +557,6 @@ impl<'a> WasmGenerator<'a> {
 
         self.build_expression(left_exp, &operand_ctx, function, writer)?;
         self.build_expression(right_expr, &operand_ctx, function, writer)?;
-
-        if left == "string" && opr.kind == TokenKind::PlusToken {
-            writer.write_line("call $concat_strings");
-            return Ok(());
-        }
 
         // String equality compares contents, not pointers. Detect via the operand type (the
         // expression's own `left_side` is `bool`/`int` for a comparison, so it cannot be used).
@@ -845,6 +869,49 @@ impl<'a> WasmGenerator<'a> {
                         writer.write_line(&format!("call ${}", json_from_json_fn(&struct_name)));
                         return Ok(());
                     }
+                    // `Array.new<T>(len)`: allocate a zero-initialized array of the element type.
+                    IntrinsicOp::ArrayNew => {
+                        return self.build_array_new(_generic_args, &params[0], function, writer);
+                    }
+                    // `Time.sleep(ms)`: arm an async timer, leaving a `Future` handle on the stack.
+                    IntrinsicOp::Sleep => {
+                        return self.build_async_intrinsic_call(
+                            intrinsics::SLEEP,
+                            params,
+                            function,
+                            writer,
+                        );
+                    }
+                    // The string buffer primitives and the allocator probe lower straight to their
+                    // runtime helpers (their key already matches the emitted symbol for the others).
+                    IntrinsicOp::StringAlloc
+                    | IntrinsicOp::StringSet
+                    | IntrinsicOp::DebugFreeList => {
+                        let runtime = match op {
+                            IntrinsicOp::StringAlloc => "$string_alloc",
+                            IntrinsicOp::StringSet => "$string_set",
+                            _ => "$debug_get_free_list_head",
+                        };
+                        let param_types: Vec<String> = info.parameters.clone();
+                        let saved_tmp = self.ctx.tmp_depth;
+                        let mut owned_temps: Vec<(usize, String)> = Vec::new();
+                        for (i, expr) in params.iter().enumerate() {
+                            let param_type = param_types
+                                .get(i)
+                                .cloned()
+                                .unwrap_or_else(|| "int".to_string());
+                            self.build_call_arg(
+                                expr,
+                                &param_type,
+                                function,
+                                &mut owned_temps,
+                                writer,
+                            )?;
+                        }
+                        writer.write_line(&format!("call {}", runtime));
+                        self.release_call_temps(&owned_temps, saved_tmp, writer);
+                        return Ok(());
+                    }
                 }
             }
 
@@ -890,7 +957,28 @@ impl<'a> WasmGenerator<'a> {
             }
         }
 
+        // `str.char_at(i)`: read the character at byte `i` via the `$char_at` runtime helper.
+        if method.text == intrinsics::CHAR_AT && strip_nullable(&obj_type) == "string" {
+            self.build_expression(obj, &obj_type, function, writer)?;
+            self.build_expression(&params[0], &"int".to_string(), function, writer)?;
+            writer.write_line("call $char_at");
+            return Ok(());
+        }
+
         let struct_name = strip_nullable(&obj_type).to_string();
+
+        // Object protocol: `x.to_string()` / `x.hash_code()` fall back to the type-dispatching
+        // runtime helpers when the receiver has no user-defined override (a struct override is
+        // registered as `{Type}_to_string` and resolved by the normal method path below).
+        if method.text == intrinsics::TO_STRING || method.text == intrinsics::HASH_CODE {
+            let user_method = self.resolve_method_key(&struct_name, &method.text, params, function);
+            if self.function_table.get_function(&user_method).is_err() {
+                if method.text == intrinsics::TO_STRING {
+                    return self.build_to_string(obj, function, writer);
+                }
+                return self.build_hash_code(obj, function, writer);
+            }
+        }
         // Resolve the (possibly overloaded) method to its emitted variant, matching the analyzer.
         let mangled_name = self.resolve_method_key(&struct_name, &method.text, params, function);
         let param_types: Vec<String> = self

@@ -2,7 +2,7 @@ class Worker {
     public base: int;
 
     public async fun compute(n: int): int {
-        await sleep(10);
+        await Time.sleep(10);
         return this.base + n;
     }
 
@@ -15,8 +15,8 @@ class Worker {
 async fun main(): void {
     let w = Worker(100);
     let r = await w.compute(5);
-    System.println(to_string(r));
+    System.println(r);
 
     let t = await w.twice(1);
-    System.println(to_string(t));
+    System.println(t);
 }

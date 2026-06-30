@@ -516,6 +516,36 @@ fun main(): void {
 }
 
 #[test]
+fn parameter_inlay_hint_anchors_to_start_of_argument() {
+    use dream_lsp::index::{Index, InlayKind};
+    // A compound argument (`b.v`, `a * b`) must place the parameter-name hint *before* the whole
+    // expression, not in the middle of it (regression: it used to land at `.v` / the operator,
+    // rendering as `b. p: v`).
+    let src = "
+class Box {
+    v: int;
+}
+fun take(p: int): void { }
+fun main(): void {
+    let b = Box(5);
+    take(b.v);
+}
+";
+    let index = Index::build(None, src);
+    let hint = index
+        .inlay_hints
+        .iter()
+        .find(|h| h.kind == InlayKind::Parameter && h.label == "p:")
+        .expect("expected a `p:` parameter hint");
+    let after = &src[hint.offset..];
+    assert!(
+        after.starts_with("b.v"),
+        "hint should be anchored at the start of `b.v`, but source after offset is {:?}",
+        &after[..after.len().min(8)]
+    );
+}
+
+#[test]
 fn generic_type_inlay_hint_uses_angle_brackets() {
     use dream_lsp::index::{Index, InlayKind};
     let src = "

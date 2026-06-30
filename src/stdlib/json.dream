@@ -28,16 +28,21 @@ class JsonValue {
 
     // --- builders ---------------------------------------------------------------------------
 
+    // Allocates a fresh JsonValue of kind `k` with empty backing lists.
+    static fun _new(k: int): JsonValue {
+        return JsonValue(k, false, 0.0d, "", List<JsonValue>(), List<string>(), List<JsonValue>());
+    }
+
     public static fun none(): JsonValue {
-        return _json_new(0);
+        return JsonValue._new(0);
     }
     public static fun boolean(b: bool): JsonValue {
-        let v = _json_new(1);
+        let v = JsonValue._new(1);
         v.bool_val = b;
         return v;
     }
     public static fun number(n: double): JsonValue {
-        let v = _json_new(2);
+        let v = JsonValue._new(2);
         v.num_val = n;
         return v;
     }
@@ -45,17 +50,17 @@ class JsonValue {
         return JsonValue.number((double)n);
     }
     public static fun from_string(s: string): JsonValue {
-        let v = _json_new(3);
+        let v = JsonValue._new(3);
         v.str_val = s;
         return v;
     }
     // A new, empty JSON array. (`object`/`string` are reserved type names, so the object builder
     // is named `dict`.)
     public static fun array(): JsonValue {
-        return _json_new(4);
+        return JsonValue._new(4);
     }
     public static fun dict(): JsonValue {
-        return _json_new(5);
+        return JsonValue._new(5);
     }
 
     // --- inspection -------------------------------------------------------------------------
@@ -145,158 +150,6 @@ class JsonValue {
     }
 }
 
-// Allocates a fresh JsonValue of kind `k` with empty backing lists.
-fun _json_new(k: int): JsonValue {
-    return JsonValue(k, false, 0.0d, "", List<JsonValue>(), List<string>(), List<JsonValue>());
-}
-
-// A single-character string from a char code (the runtime has no char->string builtin).
-fun _char_str(c: char): string {
-    let s = string_alloc(1);
-    string_set(s, 0, c);
-    return s;
-}
-
-// Wraps `s` in quotes, escaping the characters JSON requires.
-fun _json_escape(s: string): string {
-    let n = s.len();
-    let result = "\"";
-    let i = 0;
-    while (i < n) {
-        let c = char_at(s, i);
-        if (c == '"') {
-            result = result + "\\\"";
-        } else if (c == '\\') {
-            result = result + "\\\\";
-        } else if (c == '\n') {
-            result = result + "\\n";
-        } else if (c == '\t') {
-            result = result + "\\t";
-        } else if (c == '\r') {
-            result = result + "\\r";
-        } else {
-            result = result + _char_str(c);
-        }
-        i = i + 1;
-    }
-    result = result + "\"";
-    return result;
-}
-
-// Formats a JSON number: integral values print without a decimal point, others fall back to the
-// default double formatting.
-fun _json_number(n: double): string {
-    let i = (int)n;
-    if ((double)i == n) {
-        return to_string(i);
-    }
-    return to_string(n);
-}
-
-// Recursively serializes a JsonValue to compact JSON text.
-fun _json_stringify(v: JsonValue): string {
-    let k = v.kind;
-    if (k == 0) {
-        return "null";
-    }
-    if (k == 1) {
-        if (v.bool_val == true) {
-            return "true";
-        }
-        return "false";
-    }
-    if (k == 2) {
-        return _json_number(v.num_val);
-    }
-    if (k == 3) {
-        return _json_escape(v.str_val);
-    }
-    if (k == 4) {
-        let result = "[";
-        let i = 0;
-        while (i < v.items.size()) {
-            if (i > 0) {
-                result = result + ",";
-            }
-            result = result + _json_stringify(v.items.get(i));
-            i = i + 1;
-        }
-        result = result + "]";
-        return result;
-    }
-    if (k == 5) {
-        let result = "{";
-        let i = 0;
-        while (i < v.obj_keys.size()) {
-            if (i > 0) {
-                result = result + ",";
-            }
-            result = result + _json_escape(v.obj_keys.get(i));
-            result = result + ":";
-            result = result + _json_stringify(v.obj_vals.get(i));
-            i = i + 1;
-        }
-        result = result + "}";
-        return result;
-    }
-    return "null";
-}
-
-// A string of `n` spaces, used to indent pretty-printed output.
-fun _json_spaces(n: int): string {
-    let s = "";
-    let i = 0;
-    while (i < n) {
-        s = s + " ";
-        i = i + 1;
-    }
-    return s;
-}
-
-// Recursively serializes a JsonValue with newlines and `indent` spaces of nesting per level.
-// `depth` is the current nesting level (0 at the root). Scalars render exactly as in compact mode;
-// empty arrays/objects stay on one line (`[]` / `{}`).
-fun _json_stringify_pretty(v: JsonValue, indent: int, depth: int): string {
-    let k = v.kind;
-    if (k == 4) {
-        if (v.items.size() == 0) {
-            return "[]";
-        }
-        let pad = _json_spaces(indent * (depth + 1));
-        let pad_end = _json_spaces(indent * depth);
-        let result = "[\n";
-        let i = 0;
-        while (i < v.items.size()) {
-            if (i > 0) {
-                result = result + ",\n";
-            }
-            result = result + pad + _json_stringify_pretty(v.items.get(i), indent, depth + 1);
-            i = i + 1;
-        }
-        result = result + "\n" + pad_end + "]";
-        return result;
-    }
-    if (k == 5) {
-        if (v.obj_keys.size() == 0) {
-            return "{}";
-        }
-        let pad = _json_spaces(indent * (depth + 1));
-        let pad_end = _json_spaces(indent * depth);
-        let result = "{\n";
-        let i = 0;
-        while (i < v.obj_keys.size()) {
-            if (i > 0) {
-                result = result + ",\n";
-            }
-            result = result + pad + _json_escape(v.obj_keys.get(i)) + ": " + _json_stringify_pretty(v.obj_vals.get(i), indent, depth + 1);
-            i = i + 1;
-        }
-        result = result + "\n" + pad_end + "}";
-        return result;
-    }
-    return _json_stringify(v);
-}
-
 // A cursor over the input text used by the recursive-descent parser.
 class JsonParser {
     src: string;
@@ -309,7 +162,7 @@ class JsonParser {
             if (this.pos >= this.n) {
                 going = false;
             } else {
-                let c = char_at(this.src, this.pos);
+                let c = this.src.char_at(this.pos);
                 if ((c == ' ') || (c == '\n') || (c == '\t') || (c == '\r')) {
                     this.pos = this.pos + 1;
                 } else {
@@ -333,31 +186,31 @@ class JsonParser {
             if (this.pos >= this.n) {
                 going = false;
             } else {
-                let c = char_at(this.src, this.pos);
+                let c = this.src.char_at(this.pos);
                 if (c == '"') {
                     this.pos = this.pos + 1;
                     going = false;
                 } else if (c == '\\') {
                     this.pos = this.pos + 1;
-                    let e = char_at(this.src, this.pos);
+                    let e = this.src.char_at(this.pos);
                     if (e == 'n') {
-                        result = result + _char_str('\n');
+                        result = result + '\n';
                     } else if (e == 't') {
-                        result = result + _char_str('\t');
+                        result = result + '\t';
                     } else if (e == 'r') {
-                        result = result + _char_str('\r');
+                        result = result + '\r';
                     } else if (e == '"') {
-                        result = result + _char_str('"');
+                        result = result + '"';
                     } else if (e == '\\') {
-                        result = result + _char_str('\\');
+                        result = result + '\\';
                     } else if (e == '/') {
-                        result = result + _char_str('/');
+                        result = result + '/';
                     } else {
-                        result = result + _char_str(e);
+                        result = result + e;
                     }
                     this.pos = this.pos + 1;
                 } else {
-                    result = result + _char_str(c);
+                    result = result + c;
                     this.pos = this.pos + 1;
                 }
             }
@@ -372,7 +225,7 @@ class JsonParser {
             if (this.pos >= this.n) {
                 going = false;
             } else {
-                let c = char_at(this.src, this.pos);
+                let c = this.src.char_at(this.pos);
                 if (((c >= '0') && (c <= '9')) || (c == '-') || (c == '+') || (c == '.') || (c == 'e') || (c == 'E')) {
                     this.pos = this.pos + 1;
                 } else {
@@ -389,7 +242,7 @@ class JsonParser {
         this.pos = this.pos + 1; // '['
         this.skip_ws();
         if (this.pos < this.n) {
-            if (char_at(this.src, this.pos) == ']') {
+            if (this.src.char_at(this.pos) == ']') {
                 this.pos = this.pos + 1;
                 return result;
             }
@@ -402,7 +255,7 @@ class JsonParser {
             if (this.pos >= this.n) {
                 going = false;
             } else {
-                let c = char_at(this.src, this.pos);
+                let c = this.src.char_at(this.pos);
                 if (c == ',') {
                     this.pos = this.pos + 1;
                 } else {
@@ -419,7 +272,7 @@ class JsonParser {
         this.pos = this.pos + 1; // '{'
         this.skip_ws();
         if (this.pos < this.n) {
-            if (char_at(this.src, this.pos) == '}') {
+            if (this.src.char_at(this.pos) == '}') {
                 this.pos = this.pos + 1;
                 return result;
             }
@@ -430,7 +283,7 @@ class JsonParser {
             let key = this.parse_string();
             this.skip_ws();
             if (this.pos < this.n) {
-                if (char_at(this.src, this.pos) == ':') {
+                if (this.src.char_at(this.pos) == ':') {
                     this.pos = this.pos + 1;
                 }
             }
@@ -440,7 +293,7 @@ class JsonParser {
             if (this.pos >= this.n) {
                 going = false;
             } else {
-                let c = char_at(this.src, this.pos);
+                let c = this.src.char_at(this.pos);
                 if (c == ',') {
                     this.pos = this.pos + 1;
                 } else {
@@ -457,7 +310,7 @@ class JsonParser {
         if (this.pos >= this.n) {
             return JsonValue.none();
         }
-        let c = char_at(this.src, this.pos);
+        let c = this.src.char_at(this.pos);
         if (c == '{') {
             return this.parse_object();
         }
@@ -490,20 +343,162 @@ class JSON {
     static extern fun deserialize<T>(text: string): T;
 
     public static fun stringify(value: JsonValue): string {
-        return _json_stringify(value);
+        return JSON._json_stringify(value);
     }
 
     // Pretty-prints `value` with newlines and `indent` spaces per nesting level (e.g. 2 or 4).
     // Pass 0 to fall back to compact output.
     public static fun stringify_pretty(value: JsonValue, indent: int): string {
         if (indent <= 0) {
-            return _json_stringify(value);
+            return JSON._json_stringify(value);
         }
-        return _json_stringify_pretty(value, indent, 0);
+        return JSON._json_stringify_pretty(value, indent, 0);
     }
 
     public static fun parse(text: string): JsonValue {
         let parser = JsonParser(text, 0, text.len());
         return parser.parse_value();
+    }
+
+    // --- internal serialization helpers -----------------------------------------------------
+
+    // Wraps `s` in quotes, escaping the characters JSON requires.
+    static fun _json_escape(s: string): string {
+        let n = s.len();
+        let result = "\"";
+        let i = 0;
+        while (i < n) {
+            let c = s.char_at(i);
+            if (c == '"') {
+                result = result + "\\\"";
+            } else if (c == '\\') {
+                result = result + "\\\\";
+            } else if (c == '\n') {
+                result = result + "\\n";
+            } else if (c == '\t') {
+                result = result + "\\t";
+            } else if (c == '\r') {
+                result = result + "\\r";
+            } else {
+                result = result + c;
+            }
+            i = i + 1;
+        }
+        result = result + "\"";
+        return result;
+    }
+
+    // Formats a JSON number: integral values print without a decimal point, others fall back to the
+    // default double formatting.
+    static fun _json_number(n: double): string {
+        let i = (int)n;
+        if ((double)i == n) {
+            return i.to_string();
+        }
+        return n.to_string();
+    }
+
+    // Recursively serializes a JsonValue to compact JSON text.
+    static fun _json_stringify(v: JsonValue): string {
+        let k = v.kind;
+        if (k == 0) {
+            return "null";
+        }
+        if (k == 1) {
+            if (v.bool_val == true) {
+                return "true";
+            }
+            return "false";
+        }
+        if (k == 2) {
+            return JSON._json_number(v.num_val);
+        }
+        if (k == 3) {
+            return JSON._json_escape(v.str_val);
+        }
+        if (k == 4) {
+            let result = "[";
+            let i = 0;
+            while (i < v.items.size()) {
+                if (i > 0) {
+                    result = result + ",";
+                }
+                result = result + JSON._json_stringify(v.items.get(i));
+                i = i + 1;
+            }
+            result = result + "]";
+            return result;
+        }
+        if (k == 5) {
+            let result = "{";
+            let i = 0;
+            while (i < v.obj_keys.size()) {
+                if (i > 0) {
+                    result = result + ",";
+                }
+                result = result + JSON._json_escape(v.obj_keys.get(i));
+                result = result + ":";
+                result = result + JSON._json_stringify(v.obj_vals.get(i));
+                i = i + 1;
+            }
+            result = result + "}";
+            return result;
+        }
+        return "null";
+    }
+
+    // A string of `n` spaces, used to indent pretty-printed output.
+    static fun _json_spaces(n: int): string {
+        let s = "";
+        let i = 0;
+        while (i < n) {
+            s = s + " ";
+            i = i + 1;
+        }
+        return s;
+    }
+
+    // Recursively serializes a JsonValue with newlines and `indent` spaces of nesting per level.
+    // `depth` is the current nesting level (0 at the root). Scalars render exactly as in compact
+    // mode; empty arrays/objects stay on one line (`[]` / `{}`).
+    static fun _json_stringify_pretty(v: JsonValue, indent: int, depth: int): string {
+        let k = v.kind;
+        if (k == 4) {
+            if (v.items.size() == 0) {
+                return "[]";
+            }
+            let pad = JSON._json_spaces(indent * (depth + 1));
+            let pad_end = JSON._json_spaces(indent * depth);
+            let result = "[\n";
+            let i = 0;
+            while (i < v.items.size()) {
+                if (i > 0) {
+                    result = result + ",\n";
+                }
+                result = result + pad + JSON._json_stringify_pretty(v.items.get(i), indent, depth + 1);
+                i = i + 1;
+            }
+            result = result + "\n" + pad_end + "]";
+            return result;
+        }
+        if (k == 5) {
+            if (v.obj_keys.size() == 0) {
+                return "{}";
+            }
+            let pad = JSON._json_spaces(indent * (depth + 1));
+            let pad_end = JSON._json_spaces(indent * depth);
+            let result = "{\n";
+            let i = 0;
+            while (i < v.obj_keys.size()) {
+                if (i > 0) {
+                    result = result + ",\n";
+                }
+                result = result + pad + JSON._json_escape(v.obj_keys.get(i)) + ": " + JSON._json_stringify_pretty(v.obj_vals.get(i), indent, depth + 1);
+                i = i + 1;
+            }
+            result = result + "\n" + pad_end + "}";
+            return result;
+        }
+        return JSON._json_stringify(v);
     }
 }

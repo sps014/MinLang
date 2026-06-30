@@ -11,7 +11,7 @@ class Named {
     label: string;
 
     @override public fun to_string(): string {
-        return "Named#" + to_string(this.id);
+        return "Named#" + this.id;
     }
 
     @override public fun hash_code(): int {
@@ -21,16 +21,16 @@ class Named {
 
 fun main() {
     let p = Point(3, 7);
-    System.print(to_string(p));
+    System.print(p);
     System.print("\n");
-    System.println(hash_code(p));
+    System.println(p.hash_code());
 
     let n = Named(5, "hello");
-    System.print(to_string(n));
+    System.print(n);
     System.print("\n");
-    System.println(hash_code(n));
+    System.println(n.hash_code());
 
     let o: object = p;
-    System.print(to_string(o));
+    System.print(o);
     System.print("\n");
 }

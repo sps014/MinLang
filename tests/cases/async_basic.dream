@@ -1,5 +1,5 @@
 async fun delayedDouble(n: int): int {
-    await sleep(100);
+    await Time.sleep(100);
     return n * 2;
 }
 
@@ -7,6 +7,6 @@ async fun main(): void {
     System.println("start");
     let a = await delayedDouble(10);
     let b = await delayedDouble(a);
-    System.println("result = " + to_string(b));
+    System.println("result = " + b);
     System.println("done");
 }

@@ -44,7 +44,7 @@ async fun main(): void {
     let api = HttpClient("https://api.example.com");
     let res = await api.get("/data");
     if (res.ok()) {                                   // 2xx
-        System.println(to_string(res.status()));      // 200
+        System.println(res.status());      // 200
         System.println(res.header("content-type"));
         let data = res.json();                         // JsonValue
     }
@@ -60,7 +60,7 @@ async fun main(): void {
     let api = HttpClient("https://api.example.com");
 
     let created = await api.post("/users", "{\"name\":\"Grace\"}");
-    System.println(to_string(created.status()));
+    System.println(created.status());
 
     let res = await api.request("PUT", "/users/1",
                                 "{\"name\":\"Ada\"}",
@@ -84,7 +84,7 @@ async fun main(): void {
     // Upload raw bytes.
     let payload = await File.read_bytes("logo.png");
     let res = await http.post_bytes("https://example.com/upload", payload);
-    System.println(to_string(res.status()));
+    System.println(res.status());
 }
 ```
 

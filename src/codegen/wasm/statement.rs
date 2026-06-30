@@ -79,59 +79,44 @@ impl<'a> WasmGenerator<'a> {
                 writer.write_line("drop");
             }
             StatementNode::FunctionInvocation(n, generic_args, p) => {
-                match n.text.as_str() {
-                    intrinsics::SLEEP => {
-                        // A discarded async intrinsic call: build the future and drop the handle.
-                        self.build_async_intrinsic_call(n.text.as_str(), p, function, writer)?;
-                        writer.write_line("drop");
+                // Shared call dispatch (see `classify_call`); the statement path differs only in
+                // that the result is discarded, so each arm balances the WASM stack.
+                match self.classify_call(&n.text, generic_args, p, function) {
+                    CallDispatch::Indirect { params, ret } => {
+                        self.build_indirect_call(&n.text, &params, &ret, p, function, writer)?;
+                        // The callee returns an owned +1: release a reference result, drop a
+                        // plain value, ignore void.
+                        let ret_str = ret.get_type();
+                        if self.is_reference_type(strip_nullable(&ret_str)) {
+                            self.emit_release(&ret_str, writer);
+                        } else if !matches!(ret, Type::Void) {
+                            writer.write_line("drop");
+                        }
                     }
-                    intrinsics::TO_STRING if p.len() == 1 => {
-                        self.build_to_string(&p[0], function, writer)?;
-                        writer.write_line("drop");
+                    CallDispatch::Constructor(ctor_name) => {
+                        // Constructed value is discarded: build it, then release the fresh
+                        // allocation (which also balances the stack).
+                        self.build_constructor(&ctor_name, p, function, writer)?;
+                        self.emit_release(&ctor_name, writer);
                     }
-                    intrinsics::HASH_CODE if p.len() == 1 => {
-                        self.build_hash_code(&p[0], function, writer)?;
-                        writer.write_line("drop");
-                    }
-                    // Shared call dispatch (see `classify_call`); the statement path differs only in
-                    // that the result is discarded, so each arm balances the WASM stack.
-                    _ => match self.classify_call(&n.text, generic_args, p, function) {
-                        CallDispatch::Indirect { params, ret } => {
-                            self.build_indirect_call(&n.text, &params, &ret, p, function, writer)?;
-                            // The callee returns an owned +1: release a reference result, drop a
-                            // plain value, ignore void.
-                            let ret_str = ret.get_type();
-                            if self.is_reference_type(strip_nullable(&ret_str)) {
-                                self.emit_release(&ret_str, writer);
-                            } else if !matches!(ret, Type::Void) {
-                                writer.write_line("drop");
+                    CallDispatch::Function(function_name) => {
+                        // A discarded function result is an owned +1: release a reference,
+                        // drop a plain value, ignore void.
+                        let ret_str = self
+                            .function_table
+                            .get_function(&function_name)
+                            .ok()
+                            .and_then(|f| f.return_type)
+                            .map(|t| t.get_type());
+                        self.build_function_invocation(&function_name, p, function, writer)?;
+                        match ret_str {
+                            Some(t) if self.is_reference_type(strip_nullable(&t)) => {
+                                self.emit_release(&t, writer)
                             }
+                            Some(t) if t != "void" => writer.write_line("drop"),
+                            _ => {}
                         }
-                        CallDispatch::Constructor(ctor_name) => {
-                            // Constructed value is discarded: build it, then release the fresh
-                            // allocation (which also balances the stack).
-                            self.build_constructor(&ctor_name, p, function, writer)?;
-                            self.emit_release(&ctor_name, writer);
-                        }
-                        CallDispatch::Function(function_name) => {
-                            // A discarded function result is an owned +1: release a reference,
-                            // drop a plain value, ignore void.
-                            let ret_str = self
-                                .function_table
-                                .get_function(&function_name)
-                                .ok()
-                                .and_then(|f| f.return_type)
-                                .map(|t| t.get_type());
-                            self.build_function_invocation(&function_name, p, function, writer)?;
-                            match ret_str {
-                                Some(t) if self.is_reference_type(strip_nullable(&t)) => {
-                                    self.emit_release(&t, writer)
-                                }
-                                Some(t) if t != "void" => writer.write_line("drop"),
-                                _ => {}
-                            }
-                        }
-                    },
+                    }
                 }
             }
             StatementNode::MethodInvocation(obj, method, generic_args, params) => {

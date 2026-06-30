@@ -1,0 +1,25 @@
+// Core builtin classes backing a handful of compiler intrinsics. These have no Dream bodies; each
+// `@intrinsic` static method is lowered directly by the codegen backend (no host import), so they
+// work identically on every runtime. Auto-imported into every program.
+
+// `Array` - low-level array allocation. `Array.new<T>(n)` returns a fresh, zero-initialized `T[]`
+// of length `n` (the backing primitive used by `List`/`Map` growth and by code that needs an array
+// whose size is only known at runtime).
+class Array {
+    @intrinsic("array_new")
+    static extern fun new<T>(len: int): T[];
+}
+
+// `Time` - timing utilities. `Time.sleep(ms)` is async: it yields a `Future<void>` that resolves
+// after roughly `ms` milliseconds, so `await Time.sleep(100)` pauses the current task.
+class Time {
+    @intrinsic("sleep")
+    static extern async fun sleep(ms: int): void;
+}
+
+// `Debug` - allocator introspection for tests and diagnostics.
+class Debug {
+    // Head pointer of the allocator's free list (0 when empty). Used by memory tests.
+    @intrinsic("debug_get_free_list_head")
+    static extern fun free_list_head(): int;
+}

@@ -67,14 +67,14 @@ extend int {
         let i = 0;
         let neg = false;
         if (n > 0) {
-            if (char_at(text, 0) == '-') {
+            if (text.char_at(0) == '-') {
                 neg = true;
                 i = 1;
             }
         }
         let result = 0;
         while (i < n) {
-            let c = char_at(text, i);
+            let c = text.char_at(i);
             if ((c >= '0') && (c <= '9')) {
                 result = result * 10 + ((int)c - 48);
             }

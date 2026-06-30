@@ -15,19 +15,6 @@
 //       }
 //   }
 
-// --- host bridge: one request per call, full response returned as raw bytes -------------------
-// Response wire format (produced identically by every host):
-//   "<status>\n" "<Header-Name>: <value>\n" ... "\n" <raw body bytes>
-// i.e. an ASCII head (status line + header lines), a blank line, then the untouched body.
-
-// Text request body (used directly as the body; ignored on GET/HEAD).
-@js("Dream", "httpRequest")
-extern async fun __http_request(url: string, method: string, headers: string, body: string): char[];
-
-// Binary request body (the `char[]` crosses without a UTF-8 round-trip; ignored on GET/HEAD).
-@js("Dream", "httpRequestBytes")
-extern async fun __http_request_bytes(url: string, method: string, headers: string, body: char[]): char[];
-
 // A parsed view over the raw response bytes returned by the host. Status/header reads scan the
 // ASCII head; `text`/`bytes`/`json` materialize the body only when asked. All reads are
 // synchronous - the bytes are already in hand by the time the request future resolves.
@@ -69,10 +56,10 @@ class HttpResponse {
         if (len < 0) {
             len = 0;
         }
-        let result = string_alloc(len);
+        let result = String.alloc(len);
         let i = 0;
         while (i < len) {
-            string_set(result, i, this.data[start + i]);
+            String.set(result, i, this.data[start + i]);
             i = i + 1;
         }
         return result;
@@ -142,7 +129,7 @@ class HttpResponse {
             start = n;
         }
         let count = n - start;
-        let out = array_new<char>(count);
+        let out = Array.new<char>(count);
         let i = 0;
         while (i < count) {
             out[i] = this.data[start + i];
@@ -166,6 +153,19 @@ class HttpResponse {
 class HttpClient {
     base_url: string;
     default_headers: string;   // a JSON object string ("" for none)
+
+    // --- host bridge: one request per call, full response returned as raw bytes ----------------
+    // Response wire format (produced identically by every host):
+    //   "<status>\n" "<Header-Name>: <value>\n" ... "\n" <raw body bytes>
+    // i.e. an ASCII head (status line + header lines), a blank line, then the untouched body.
+
+    // Text request body (used directly as the body; ignored on GET/HEAD).
+    @js("Dream", "httpRequest")
+    static extern async fun __http_request(url: string, method: string, headers: string, body: string): char[];
+
+    // Binary request body (the `char[]` crosses without a UTF-8 round-trip; ignored on GET/HEAD).
+    @js("Dream", "httpRequestBytes")
+    static extern async fun __http_request_bytes(url: string, method: string, headers: string, body: char[]): char[];
 
     // Creates a client. `base_url` is prepended to relative paths (pass "" to require absolute URLs).
     constructor(base_url: string) {
@@ -220,7 +220,7 @@ class HttpClient {
     // `headers` is a JSON-object string of header pairs ("" for none), `body` is the request body
     // ("" for none, ignored on GET/HEAD).
     public async fun request(method: string, path: string, body: string, headers: string): HttpResponse {
-        let raw = await __http_request(this.resolve(path), method, this.merge_headers(headers), body);
+        let raw = await HttpClient.__http_request(this.resolve(path), method, this.merge_headers(headers), body);
         return HttpResponse(raw);
     }
 
@@ -252,7 +252,7 @@ class HttpClient {
 
     // Performs an arbitrary request with a binary (`char[]`) body.
     public async fun request_bytes(method: string, path: string, body: char[], headers: string): HttpResponse {
-        let raw = await __http_request_bytes(this.resolve(path), method, this.merge_headers(headers), body);
+        let raw = await HttpClient.__http_request_bytes(this.resolve(path), method, this.merge_headers(headers), body);
         return HttpResponse(raw);
     }
 

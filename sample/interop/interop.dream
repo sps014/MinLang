@@ -20,7 +20,7 @@ fun main(): void {
     log("Dream booted in the browser");
 
     let result = square(7);
-    log("square(7) = " + to_string(result));
+    log("square(7) = " + result);
 
-    alert("Hello from Dream! square(7) = " + to_string(result));
+    alert("Hello from Dream! square(7) = " + result);
 }

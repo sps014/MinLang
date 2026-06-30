@@ -3,6 +3,14 @@
 // low-level `char_at` / `string_alloc` / `string_set` builtins. Auto-imported into every program.
 
 extend string {
+    // Low-level buffer primitives (lowered to the `$string_alloc` / `$string_set` runtime helpers).
+    // `String.alloc(n)` reserves an n-char buffer; `String.set(s, i, c)` writes char `c` at index
+    // `i`. The read side is the builtin pseudo-method `s.char_at(i)`.
+    @intrinsic("string_alloc")
+    static extern fun alloc(n: int): string;
+    @intrinsic("string_set")
+    static extern fun set(s: string, i: int, c: char): void;
+
     // Number of characters in the string (alias for the builtin `len()`).
     public fun length(): int {
         return this.len();
@@ -13,11 +21,6 @@ extend string {
         return this.len() == 0;
     }
 
-    // The character at `index` (no bounds checking).
-    public fun char_at(index: int): char {
-        return char_at(this, index);
-    }
-
     // A new string containing the characters in the half-open range [start, end). A non-positive
     // length yields the empty string.
     public fun substring(start: int, end: int): string {
@@ -25,10 +28,10 @@ extend string {
         if (len < 0) {
             len = 0;
         }
-        let result = string_alloc(len);
+        let result = String.alloc(len);
         let i = 0;
         while (i < len) {
-            string_set(result, i, char_at(this, start + i));
+            String.set(result, i, this.char_at(start + i));
             i = i + 1;
         }
         return result;
@@ -39,7 +42,7 @@ extend string {
         let n = this.len();
         let i = 0;
         while (i < n) {
-            if (char_at(this, i) == target) {
+            if (this.char_at(i) == target) {
                 return i;
             }
             i = i + 1;
@@ -87,11 +90,11 @@ extend string {
     // A new string with every ASCII uppercase letter lowercased.
     public fun to_lower(): string {
         let n = this.len();
-        let result = string_alloc(n);
+        let result = String.alloc(n);
         let i = 0;
         while (i < n) {
-            let c = char_at(this, i);
-            string_set(result, i, c.to_lower());
+            let c = this.char_at(i);
+            String.set(result, i, c.to_lower());
             i = i + 1;
         }
         return result;
@@ -100,11 +103,11 @@ extend string {
     // A new string with every ASCII lowercase letter uppercased.
     public fun to_upper(): string {
         let n = this.len();
-        let result = string_alloc(n);
+        let result = String.alloc(n);
         let i = 0;
         while (i < n) {
-            let c = char_at(this, i);
-            string_set(result, i, c.to_upper());
+            let c = this.char_at(i);
+            String.set(result, i, c.to_upper());
             i = i + 1;
         }
         return result;
@@ -131,12 +134,12 @@ extend string {
         if (total < 0) {
             total = 0;
         }
-        let result = string_alloc(total);
+        let result = String.alloc(total);
         let i = 0;
         while (i < times) {
             let j = 0;
             while (j < n) {
-                string_set(result, i * n + j, char_at(this, j));
+                String.set(result, i * n + j, this.char_at(j));
                 j = j + 1;
             }
             i = i + 1;
@@ -156,17 +159,17 @@ extend string {
         let parts = 1;
         let i = 0;
         while (i < n) {
-            if (char_at(this, i) == sep) {
+            if (this.char_at(i) == sep) {
                 parts = parts + 1;
             }
             i = i + 1;
         }
-        let result = array_new<string>(parts);
+        let result = Array.new<string>(parts);
         let start = 0;
         let idx = 0;
         i = 0;
         while (i < n) {
-            if (char_at(this, i) == sep) {
+            if (this.char_at(i) == sep) {
                 result[idx] = this.substring(start, i);
                 idx = idx + 1;
                 start = i + 1;
@@ -201,7 +204,7 @@ extend string {
 
     // Private helper: true if the character at `index` is ASCII whitespace.
     fun _is_space_at(index: int): bool {
-        let c = char_at(this, index);
+        let c = this.char_at(index);
         return c.is_whitespace();
     }
 
@@ -210,7 +213,7 @@ extend string {
         let m = sub.len();
         let j = 0;
         while (j < m) {
-            if (char_at(this, offset + j) != char_at(sub, j)) {
+            if (this.char_at(offset + j) != sub.char_at(j)) {
                 return false;
             }
             j = j + 1;

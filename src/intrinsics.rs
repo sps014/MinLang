@@ -41,18 +41,25 @@ pub fn has_intrinsic_attr(attributes: &[crate::syntax::nodes::AttributeNode]) ->
 
 pub const PRINT: &str = "__print";
 pub const PRINTLN: &str = "__println";
+/// The object-protocol builtins, surfaced to users as the universal instance methods
+/// `x.to_string()` / `x.hash_code()` (see [`TO_STRING`] / [`HASH_CODE`]).
 pub const TO_STRING: &str = "to_string";
 pub const HASH_CODE: &str = "hash_code";
 
-/// The object-protocol builtins.
-pub const OBJECT_BUILTINS: [&str; 4] = [PRINT, PRINTLN, TO_STRING, HASH_CODE];
+/// The internal print combinators (lowered from `System.print` / `System.println`). They are not
+/// user-callable; `to_string`/`hash_code` are exposed only as instance methods, not free functions.
+pub const OBJECT_BUILTINS: [&str; 2] = [PRINT, PRINTLN];
 
-/// True if `name` is an object-protocol builtin free function.
+/// True if `name` is an internal print combinator (`__print` / `__println`).
 pub fn is_object_builtin(name: &str) -> bool {
     OBJECT_BUILTINS.contains(&name)
 }
 
-/// The generic array-allocation builtin `array_new<T>(len)`.
+/// The low-level character accessor `s.char_at(i)`, a builtin pseudo-method on `string` (like
+/// [`LEN`]); lowered directly to the `$char_at` runtime helper.
+pub const CHAR_AT: &str = "char_at";
+
+/// The generic array-allocation builtin, surfaced as the static method `Array.new<T>(len)`.
 pub const ARRAY_NEW: &str = "array_new";
 
 // --- Builtin pseudo-methods on language types -----------------------------------------------
@@ -85,6 +92,15 @@ pub const ATTR_PROMISE_ANY: &str = "promise_any";
 pub const ATTR_PROMISE_RACE: &str = "promise_race";
 pub const ATTR_JSON_SERIALIZE: &str = "json_serialize";
 pub const ATTR_JSON_DESERIALIZE: &str = "json_deserialize";
+/// `Array.new<T>(len)` — allocate a zero-initialized array.
+pub const ATTR_ARRAY_NEW: &str = "array_new";
+/// `Time.sleep(ms)` — the async timer (yields `Future<void>`).
+pub const ATTR_SLEEP: &str = "sleep";
+/// `String.alloc(n)` / `String.set(s, i, c)` — low-level string buffer primitives.
+pub const ATTR_STRING_ALLOC: &str = "string_alloc";
+pub const ATTR_STRING_SET: &str = "string_set";
+/// `Debug.free_list_head()` — allocator introspection for tests.
+pub const ATTR_DEBUG_FREE_LIST: &str = "debug_get_free_list_head";
 
 /// The operation a `@intrinsic("…")`-tagged static method lowers to. Derived once from the
 /// attribute key via [`IntrinsicOp::from_key`], so every layer dispatches off the same enum
@@ -105,6 +121,16 @@ pub enum IntrinsicOp {
     JsonSerialize,
     /// `JSON.deserialize<T>(s)` — JSON string to `T`.
     JsonDeserialize,
+    /// `Array.new<T>(len)` — allocate a zero-initialized `T[]`.
+    ArrayNew,
+    /// `Time.sleep(ms)` — async timer yielding `Future<void>`.
+    Sleep,
+    /// `String.alloc(n)` — allocate an `n`-char string buffer.
+    StringAlloc,
+    /// `String.set(s, i, c)` — write char `c` at index `i` of buffer `s`.
+    StringSet,
+    /// `Debug.free_list_head()` — head of the allocator free list.
+    DebugFreeList,
 }
 
 impl IntrinsicOp {
@@ -118,6 +144,11 @@ impl IntrinsicOp {
             ATTR_PROMISE_RACE => IntrinsicOp::PromiseRace,
             ATTR_JSON_SERIALIZE => IntrinsicOp::JsonSerialize,
             ATTR_JSON_DESERIALIZE => IntrinsicOp::JsonDeserialize,
+            ATTR_ARRAY_NEW => IntrinsicOp::ArrayNew,
+            ATTR_SLEEP => IntrinsicOp::Sleep,
+            ATTR_STRING_ALLOC => IntrinsicOp::StringAlloc,
+            ATTR_STRING_SET => IntrinsicOp::StringSet,
+            ATTR_DEBUG_FREE_LIST => IntrinsicOp::DebugFreeList,
             _ => return None,
         })
     }

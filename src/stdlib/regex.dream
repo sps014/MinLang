@@ -7,38 +7,38 @@
 // backreferences. Patterns using those features compile under JS `RegExp` but not natively, where
 // they fall back to a safe default (`test` false, `replace` unchanged, `match` empty).
 
-@js("Dream", "regexTest")
-extern fun __regex_test(pattern: string, flags: string, input: string): bool;
-
-@js("Dream", "regexReplace")
-extern fun __regex_replace(pattern: string, flags: string, input: string, replacement: string): string;
-
-@js("Dream", "regexMatchJoined")
-extern fun __regex_match_joined(pattern: string, flags: string, input: string, sep: string): string;
-
-
 // Regex provides helpful regex functions that can be used to test, replace, and match strings.
 class Regex {
     pattern: string;
     flags: string;
 
+    // --- host bridge (implemented by the `Dream` module: natively in Rust, or via JS `RegExp`) ---
+    @js("Dream", "regexTest")
+    static extern fun __regex_test(pattern: string, flags: string, input: string): bool;
+
+    @js("Dream", "regexReplace")
+    static extern fun __regex_replace(pattern: string, flags: string, input: string, replacement: string): string;
+
+    @js("Dream", "regexMatchJoined")
+    static extern fun __regex_match_joined(pattern: string, flags: string, input: string, sep: string): string;
+
     // True if `input` contains a match for this pattern.
     public fun test(input: string): bool {
-        return __regex_test(this.pattern, this.flags, input);
+        return Regex.__regex_test(this.pattern, this.flags, input);
     }
 
     // Returns `input` with every match replaced by `replacement` (use the `g` flag for all).
     // `replacement` supports JS `$1`/`$<name>` group references.
     public fun replace(input: string, replacement: string): string {
-        return __regex_replace(this.pattern, this.flags, input, replacement);
+        return Regex.__regex_replace(this.pattern, this.flags, input, replacement);
     }
 
     // Returns the matches in `input` as an array. With the `g` flag this is every match; without
     // it, the full match followed by any capture groups. Empty when there is no match.
     public fun match(input: string): string[] {
-        let joined = __regex_match_joined(this.pattern, this.flags, input, "\n");
+        let joined = Regex.__regex_match_joined(this.pattern, this.flags, input, "\n");
         if (joined.len() == 0) {
-            return array_new<string>(0);
+            return Array.new<string>(0);
         }
         return joined.split('\n');
     }

@@ -43,7 +43,7 @@ let text = JSON.stringify(user);     // {"name":"Ada","age":36,"tags":["dev"]}
 
 let v = JSON.parse(text);
 println(v.get("name").as_string());          // Ada
-println(to_string(v.get("age").as_int()));   // 36
+println(v.get("age").as_int());   // 36
 ```
 
 `JSON.parse` is a recursive-descent parser; `JSON.stringify` walks the value and escapes strings. JSON `null` parses to a `JsonValue` whose `is_null()` is `true`; a missing object key also reads back as `null` (`get` never returns a dangling reference).

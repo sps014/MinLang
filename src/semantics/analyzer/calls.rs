@@ -185,81 +185,6 @@ impl<'a> Analyzer<'a> {
         symbol_table: &Rc<RefCell<SymbolTable>>,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<Type, ()> {
-        // Object-protocol builtins: accept exactly one argument of any type.
-        if intrinsics::is_object_builtin(&name.text) {
-            if params.len() != 1 {
-                diagnostics.report_error(
-                    format!(
-                        "'{}' expects exactly 1 argument, got {}",
-                        name.text,
-                        params.len()
-                    ),
-                    Some(name.position),
-                );
-            }
-            for param in params.iter() {
-                self.analyze_expression(param, parent_function, symbol_table, diagnostics)?;
-            }
-            return Ok(match name.text.as_str() {
-                intrinsics::TO_STRING => {
-                    Type::String(synthetic_token(TokenKind::DataTypeToken, "string"))
-                }
-                intrinsics::HASH_CODE => {
-                    Type::Integer(synthetic_token(TokenKind::DataTypeToken, "int"))
-                }
-                _ => Type::Void,
-            });
-        }
-
-        // The async timer intrinsic `sleep` is compiler-known (not in the function table) because
-        // its signature is generic over `Future<T>`. The combinators live on the `Promise` static
-        // class (`Promise.all/any/race`), handled in `analyze_method_call`.
-        if name.text == intrinsics::SLEEP {
-            return self.analyze_async_intrinsic(
-                name,
-                params,
-                parent_function,
-                symbol_table,
-                diagnostics,
-            );
-        }
-
-        // `array_new<T>(n)`: allocates a fresh, zero-initialized array of `n` elements of type `T`.
-        // The element type is read from the explicit type argument (resolved through the active
-        // monomorphization bindings so `array_new<T>` inside a `List<int>` method yields `int[]`).
-        if name.text == intrinsics::ARRAY_NEW {
-            let element = match generic_args.as_ref().and_then(|g| g.first()) {
-                Some(t) => Self::monomorphize_type(t, &self.current_generic_bindings),
-                None => {
-                    diagnostics.report_error(
-                        "'array_new' requires a type argument, e.g. array_new<int>(n)".to_string(),
-                        Some(name.position),
-                    );
-                    Type::Void
-                }
-            };
-            if params.len() != 1 {
-                diagnostics.report_error(
-                    format!(
-                        "'array_new' expects exactly 1 argument (length), got {}",
-                        params.len()
-                    ),
-                    Some(name.position),
-                );
-            }
-            for param in params.iter() {
-                let pt =
-                    self.analyze_expression(param, parent_function, symbol_table, diagnostics)?;
-                if pt.get_type() != "int" {
-                    diagnostics.report_error(
-                        format!("'array_new' length must be int, got {}", pt.get_type()),
-                        param.position(),
-                    );
-                }
-            }
-            return Ok(Type::Array(Box::new(element)));
-        }
-
         let mut function_name = name.text.clone();
         let mut params_types = vec![];
         for param in params.iter() {
@@ -669,6 +594,42 @@ impl<'a> Analyzer<'a> {
                             .get_type(),
                         );
                     }
+                    // `Array.new<T>(len)`: a generic intrinsic that allocates a zero-initialized
+                    // `T[]`. The element type comes from the explicit type argument (resolved
+                    // through the active monomorphization bindings so `Array.new<T>` inside a
+                    // `List<int>` method yields `int[]`).
+                    if intrinsics::IntrinsicOp::from_attributes(&template.attributes)
+                        == Some(intrinsics::IntrinsicOp::ArrayNew)
+                    {
+                        let element = match _generic_args.as_ref().and_then(|g| g.first()) {
+                            Some(t) => Self::monomorphize_type(t, &self.current_generic_bindings),
+                            None => {
+                                diagnostics.report_error(
+                                    "'Array.new' requires a type argument, e.g. Array.new<int>(n)"
+                                        .to_string(),
+                                    Some(method.position),
+                                );
+                                Type::Void
+                            }
+                        };
+                        if params_types.len() != 1 {
+                            diagnostics.report_error(
+                                format!(
+                                    "'Array.new' expects exactly 1 argument (length), got {}",
+                                    params_types.len()
+                                ),
+                                Some(method.position),
+                            );
+                        } else if params_types[0] != "int" && !is_unknown_type_name(&params_types[0])
+                        {
+                            diagnostics.report_error(
+                                format!("'Array.new' length must be int, got {}", params_types[0]),
+                                Some(method.position),
+                            );
+                        }
+                        return Ok(Type::Array(Box::new(element)));
+                    }
+
                     let bindings = self.infer_generic_bindings(
                         template,
                         _generic_args,
@@ -771,6 +732,60 @@ impl<'a> Analyzer<'a> {
                         format!("'len' takes no arguments, got {}", params.len()),
                         Some(method.position),
                     );
+                }
+                return Ok(Type::Integer(synthetic_token(
+                    TokenKind::DataTypeToken,
+                    "int",
+                )));
+            }
+        }
+
+        // `str.char_at(i)`: built-in character accessor on strings (low-level read).
+        if method.text == intrinsics::CHAR_AT
+            && strip_nullable(&obj_type.get_type()) == "string"
+        {
+            if params.len() != 1 {
+                diagnostics.report_error(
+                    format!("'char_at' expects exactly 1 argument (index), got {}", params.len()),
+                    Some(method.position),
+                );
+            }
+            for param in params.iter() {
+                let pt =
+                    self.analyze_expression(param, ctx.parent_function, ctx.symbol_table, diagnostics)?;
+                if pt.get_type() != "int" && !is_unknown_type_name(&pt.get_type()) {
+                    diagnostics.report_error(
+                        format!("'char_at' index must be int, got {}", pt.get_type()),
+                        param.position(),
+                    );
+                }
+            }
+            return Ok(Type::Char(synthetic_token(TokenKind::DataTypeToken, "char")));
+        }
+
+        // Object protocol: `x.to_string()` / `x.hash_code()` are available on every type. A
+        // user-defined override (registered as `{Type}_to_string`) takes precedence and is resolved
+        // by the normal method lookup below; otherwise fall back to the builtin protocol.
+        if method.text == intrinsics::TO_STRING || method.text == intrinsics::HASH_CODE {
+            let receiver = match Self::resolve_struct_parts(&obj_type) {
+                Some((base_name, generic_args)) => mangle_generic(&base_name, &generic_args),
+                None => strip_nullable(&obj_type.get_type()).to_string(),
+            };
+            let user_method = method_fn(&receiver, &method.text);
+            let has_override = self.function_table.is_overloaded(&user_method)
+                || self.function_table.get_function(&user_method).is_ok();
+            if !has_override {
+                if !params.is_empty() {
+                    diagnostics.report_error(
+                        format!("'{}' takes no arguments, got {}", method.text, params.len()),
+                        Some(method.position),
+                    );
+                }
+                if method.text == intrinsics::TO_STRING {
+                    return Ok(Type::String(synthetic_token(
+                        TokenKind::DataTypeToken,
+                        "string",
+                    )));
                 }
                 return Ok(Type::Integer(synthetic_token(
                     TokenKind::DataTypeToken,

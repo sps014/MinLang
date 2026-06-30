@@ -357,6 +357,21 @@ impl<'a> Analyzer<'a> {
             return Ok(result_type);
         }
 
+        // String concatenation: `string + T` (or `T + string`) yields a string, auto-converting
+        // the non-string operand through the object protocol (`to_string`) in codegen. This means
+        // `"count = " + n` works for any `n` with no explicit `.to_string()`.
+        if opr.kind == TokenKind::PlusToken {
+            let left_is_string = left_value.get_type() == "string";
+            let right_is_string = right_value.get_type() == "string";
+            if left_is_string || right_is_string {
+                return Ok(if left_is_string {
+                    left_value
+                } else {
+                    right_value
+                });
+            }
+        }
+
         self.compare_data_type(&left_value, &right_value, &opr.position, diagnostics)?;
         match (&left_value, &opr.kind) {
             (Type::String(_), TokenKind::PlusToken) => {}

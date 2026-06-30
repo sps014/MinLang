@@ -36,19 +36,8 @@ impl<'a> WasmGenerator<'a> {
                 }
             }
             ExpressionNode::FunctionCall(name, generic_args, args) => {
-                match name.text.as_str() {
-                    intrinsics::TO_STRING => return Ok("string".to_string()),
-                    intrinsics::HASH_CODE => return Ok("int".to_string()),
-                    intrinsics::PRINT | intrinsics::PRINTLN => return Ok("void".to_string()),
-                    intrinsics::ARRAY_NEW => {
-                        let element = generic_args
-                            .as_ref()
-                            .and_then(|g| g.first())
-                            .map(|t| self.resolve_type(&t.get_type()))
-                            .unwrap_or_else(|| "int".to_string());
-                        return Ok(format!("{}[]", element));
-                    }
-                    _ => {}
+                if intrinsics::is_object_builtin(&name.text) {
+                    return Ok("void".to_string());
                 }
                 // Indirect call through a function-typed local: result is the signature's return.
                 if let Some((_, ret)) = self.function_typed_local(&name.text, function) {
@@ -104,6 +93,22 @@ impl<'a> WasmGenerator<'a> {
                         let left_type = self.infer_expression_type(left, function)?;
                         Ok(left_type.trim_end_matches('?').to_string())
                     }
+                    // `+` is string concatenation when either operand is a string (the non-string
+                    // side is auto-converted via `to_string`); otherwise it's the left numeric type.
+                    TokenKind::PlusToken => {
+                        let ExpressionNode::Binary(_, _, right) = expression else {
+                            unreachable!()
+                        };
+                        let left_type = self.infer_expression_type(left, function)?;
+                        if strip_nullable(&left_type) == "string" {
+                            return Ok("string".to_string());
+                        }
+                        let right_type = self.infer_expression_type(right, function)?;
+                        if strip_nullable(&right_type) == "string" {
+                            return Ok("string".to_string());
+                        }
+                        Ok(left_type)
+                    }
                     _ => self.infer_expression_type(left, function),
                 }
             }
@@ -146,6 +151,10 @@ impl<'a> WasmGenerator<'a> {
                 {
                     return Ok("int".to_string());
                 }
+                // `str.char_at(i)` yields a char.
+                if method.text == intrinsics::CHAR_AT && struct_name == "string" {
+                    return Ok("char".to_string());
+                }
                 // `EnumValue.name()` yields the variant name as a string.
                 if method.text == intrinsics::ENUM_NAME && self.enums.contains_key(&struct_name) {
                     return Ok("string".to_string());
@@ -156,6 +165,14 @@ impl<'a> WasmGenerator<'a> {
                     if let Some(ret) = &func_info.return_type {
                         return Ok(ret.get_type());
                     }
+                }
+                // Object protocol fallback: `x.to_string()` / `x.hash_code()` on any receiver with
+                // no user-defined override.
+                if method.text == intrinsics::TO_STRING {
+                    return Ok("string".to_string());
+                }
+                if method.text == intrinsics::HASH_CODE {
+                    return Ok("int".to_string());
                 }
                 Ok("void".to_string())
             }

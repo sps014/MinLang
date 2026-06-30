@@ -297,8 +297,7 @@ impl<'a> Analyzer<'a> {
         // The builtin callables are reserved too; sourced from the intrinsic registry so this list
         // never drifts from the set of names the compiler special-cases.
         let is_reserved = RESERVED_TYPE_AND_LITERAL_NAMES.contains(&token.text.as_str())
-            || intrinsics::is_object_builtin(&token.text)
-            || token.text == intrinsics::ARRAY_NEW;
+            || intrinsics::is_object_builtin(&token.text);
         if is_reserved {
             diagnostics.report_error(
                 format!(

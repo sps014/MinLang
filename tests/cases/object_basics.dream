@@ -2,18 +2,18 @@
 // and reference (pointer) equality.
 fun main() {
     let o: object = 42;
-    System.print(to_string(o));
+    System.print(o);
     System.print("\n");
 
     let n: int = (int)o;
     System.println(n);
 
     let s: object = "hi";
-    System.print(to_string(s));
+    System.print(s);
     System.print("\n");
 
     let b: object = true;
-    System.print(to_string(b));
+    System.print(b);
     System.print("\n");
 
     if (o is int) { System.print("o is int\n"); }
@@ -24,6 +24,6 @@ fun main() {
     let c: object = a;
     if (a == c) { System.print("same\n"); }
 
-    System.print(to_string(hash_code(7)));
+    System.print((7).hash_code());
     System.print("\n");
 }

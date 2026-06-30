@@ -14,7 +14,9 @@ System.print(true);       // prints "true"
 System.print('A');        // prints "A"
 ```
 
-For classes that override `to_string`, `System.print` calls the override automatically.
+For classes that override `to_string`, `System.print` calls the override automatically. Because
+`print`/`println` are generic over the value type, you never need to convert first — pass the value
+directly.
 
 ## System.println
 
@@ -27,23 +29,27 @@ System.println("hello");  // prints "hello\n"
 
 ## to_string
 
-Converts any value to its string representation:
+`to_string()` is a universal instance method available on every value, returning its string
+representation:
 
 ```ts
-let s = to_string(42);      // "42"
-let b = to_string(true);    // "true"
-let f = to_string(3.14f);   // "3.14"
+let s = (42).to_string();      // "42"
+let b = (true).to_string();    // "true"
+let f = (3.14f).to_string();   // "3.14"
 ```
 
 For classes with a `@override public fun to_string()` method, that method is called.
 
+You rarely need to call it explicitly: `System.print`/`println` already convert any value, and
+string concatenation auto-converts the non-string operand, so `"x = " + 42` yields `"x = 42"`.
+
 ## hash_code
 
-Returns a stable `int` hash for any value:
+`hash_code()` is a universal instance method returning a stable `int` hash for any value:
 
 ```ts
-let h = hash_code("hello");
-let h2 = hash_code(42);
+let h = "hello".hash_code();
+let h2 = (42).hash_code();
 ```
 
 Used internally by `Map<K, V>` to find buckets.
@@ -82,10 +88,10 @@ let name = "hello";
 System.println(name.len());    // 5
 ```
 
-## array_new
+## Array.new
 
 Allocates a zeroed array of a given size. Mainly used by the standard library internals. You can use it in your own code when you need an array whose size isn't known at compile time:
 
 ```ts
-let buf = array_new<int>(100);   // int[] with 100 zero-initialized slots
+let buf = Array.new<int>(100);   // int[] with 100 zero-initialized slots
 ```

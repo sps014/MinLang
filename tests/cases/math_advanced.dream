@@ -1,22 +1,22 @@
 fun main(): void {
     let p = Math.pow(2.0d, 3.0d);
-    System.println(to_string(p));
+    System.println(p);
 
     let f = Math.floor(3.7d);
-    System.println(to_string(f));
+    System.println(f);
 
     let c = Math.ceil(3.2d);
-    System.println(to_string(c));
+    System.println(c);
 
     let r = Math.round(3.5d);
-    System.println(to_string(r));
+    System.println(r);
     
     let a = Math.abs(-42.5d);
-    System.println(to_string(a));
+    System.println(a);
     
     let s = Math.sqrt(16.0d);
-    System.println(to_string(s));
+    System.println(s);
 
     let z = Math.sin(0.0d);
-    System.println(to_string(z));
+    System.println(z);
 }

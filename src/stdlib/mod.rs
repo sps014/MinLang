@@ -10,6 +10,7 @@ use std::rc::Rc;
 /// language service, so the two can never drift. The primitive files (int/char/string/...)
 /// only attach methods to built-in types, so their relative order does not matter.
 pub const PRELUDE_FILES: &[(&str, &str)] = &[
+    ("<std>/core.dream", include_str!("core.dream")),
     ("<std>/list.dream", include_str!("list.dream")),
     ("<std>/map.dream", include_str!("map.dream")),
     ("<std>/int.dream", include_str!("int.dream")),
@@ -39,6 +40,7 @@ pub struct StdlibFunction {
 }
 
 impl StdlibFunction {
+    #[allow(dead_code)]
     fn create_type(type_str: &str) -> Type {
         let dummy_span = TextSpan::new((0, 0), &Rc::new(LineText::new("".to_string())));
         let token = SyntaxToken::new(TokenKind::DataTypeToken, dummy_span, type_str.to_string());
@@ -56,6 +58,7 @@ impl StdlibFunction {
     }
 
     /// A stdlib function whose body codegen emits inline rather than importing.
+    #[allow(dead_code)]
     fn inlined(name: &str, parameters: &[&str], return_type: Option<Type>) -> Self {
         Self {
             name: name.to_string(),
@@ -78,32 +81,12 @@ impl StdlibFunction {
         imports
     }
 
-    /// User-callable stdlib functions registered in the function table. All of these are compiled
-    /// inline (`inline: true`); their bodies live in `RUNTIME_STRINGS` / the object runtime, so the
-    /// module emitter skips emitting host imports for them.
+    /// User-callable stdlib *free* functions registered in the function table. There are none: the
+    /// former string/array/debug primitives are now class members (`String.alloc`/`String.set`,
+    /// `Array.new`, `Debug.free_list_head`) or builtin pseudo-methods (`s.char_at(i)`), lowered by
+    /// the compiler to their `RUNTIME_STRINGS` helpers (`$string_alloc`/`$char_at`/...). The runtime
+    /// bodies themselves are still emitted unconditionally from `RUNTIME_STRINGS`.
     pub fn get_all() -> Vec<StdlibFunction> {
-        vec![
-            // String
-            Self::inlined(
-                "concat",
-                &["string", "string"],
-                Some(Self::create_type("string")),
-            ),
-            Self::inlined("strlen", &["string"], Some(Self::create_type("int"))),
-            // Low-level string/char primitives that the primitive "class" prelude (int/char/string
-            // .dream) builds on. Their bodies live in `RUNTIME_STRINGS` (see codegen/wasm/memory.rs).
-            Self::inlined(
-                "char_at",
-                &["string", "int"],
-                Some(Self::create_type("char")),
-            ),
-            Self::inlined("string_alloc", &["int"], Some(Self::create_type("string"))),
-            Self::inlined("string_set", &["string", "int", "char"], None),
-            Self::inlined(
-                "debug_get_free_list_head",
-                &[],
-                Some(Self::create_type("int")),
-            ),
-        ]
+        vec![]
     }
 }

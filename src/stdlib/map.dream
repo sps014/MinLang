@@ -20,10 +20,10 @@ class Map<K, V> {
     // Allocates an empty map with a small initial capacity, e.g. `let m = Map<string, int>();`.
     // The backing arrays must be allocated up front, so construction always goes through here.
     constructor() {
-        this.keys = array_new<K>(8);
-        this.values = array_new<V>(8);
-        this.states = array_new<int>(8);
-        this.defaults = array_new<V>(1);
+        this.keys = Array.new<K>(8);
+        this.values = Array.new<V>(8);
+        this.states = Array.new<int>(8);
+        this.defaults = Array.new<V>(1);
         this.count = 0;
         this.used = 0;
         this.cap = 8;
@@ -36,7 +36,7 @@ class Map<K, V> {
 
     // Initial probe index for a key, normalized into [0, cap).
     public fun home(key: K): int {
-        let h = hash_code(key);
+        let h = key.hash_code();
         let idx = h % this.cap;
         if (idx < 0) {
             idx = idx + this.cap;
@@ -81,9 +81,9 @@ class Map<K, V> {
         if (new_cap < 8) {
             new_cap = 8;
         }
-        this.keys = array_new<K>(new_cap);
-        this.values = array_new<V>(new_cap);
-        this.states = array_new<int>(new_cap);
+        this.keys = Array.new<K>(new_cap);
+        this.values = Array.new<V>(new_cap);
+        this.states = Array.new<int>(new_cap);
         this.cap = new_cap;
         this.count = 0;
         this.used = 0;
@@ -182,9 +182,9 @@ class Map<K, V> {
 
     // Removes every entry, resetting the map to its initial empty capacity.
     public fun clear(): void {
-        this.keys = array_new<K>(8);
-        this.values = array_new<V>(8);
-        this.states = array_new<int>(8);
+        this.keys = Array.new<K>(8);
+        this.values = Array.new<V>(8);
+        this.states = Array.new<int>(8);
         this.count = 0;
         this.used = 0;
         this.cap = 8;
@@ -192,7 +192,7 @@ class Map<K, V> {
 
     // A freshly allocated array of every stored key, in unspecified order.
     public fun keys(): K[] {
-        let result = array_new<K>(this.count);
+        let result = Array.new<K>(this.count);
         let i = 0;
         let j = 0;
         while (i < this.cap) {
@@ -208,7 +208,7 @@ class Map<K, V> {
     // A freshly allocated array of every stored value, in unspecified order (key-aligned with
     // `keys()` when the map is not mutated between calls).
     public fun values(): V[] {
-        let result = array_new<V>(this.count);
+        let result = Array.new<V>(this.count);
         let i = 0;
         let j = 0;
         while (i < this.cap) {

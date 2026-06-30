@@ -17,7 +17,7 @@ fun main(): void {
     let b1 = JSON.deserialize<Profile>(t1);
     System.println(b1.nickname ?? "<none>");
     let addr = b1.address;
-    System.println(to_string(addr == null));
+    System.println(addr == null);
 
     // Null values serialize to JSON null and round-trip back to null.
     let p2 = Profile("Bob", null, null, 20);
@@ -25,10 +25,10 @@ fun main(): void {
     System.println(t2);
     let b2 = JSON.deserialize<Profile>(t2);
     System.println(b2.nickname ?? "<none>");
-    System.println(to_string(b2.address == null));
+    System.println(b2.address == null);
 
     // A missing key and an explicit null both deserialize to null.
     let b3 = JSON.deserialize<Profile>("{\"name\":\"Cee\",\"nickname\":null,\"age\":7}");
     System.println(b3.nickname ?? "<none>");
-    System.println(to_string(b3.address == null));
+    System.println(b3.address == null);
 }

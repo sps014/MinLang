@@ -34,7 +34,7 @@ extend double {
         let i = 0;
         let neg = false;
         if (i < n) {
-            let c0 = char_at(text, i);
+            let c0 = text.char_at(i);
             if (c0 == '-') {
                 neg = true;
                 i = i + 1;
@@ -46,7 +46,7 @@ extend double {
         let result = 0.0d;
         // Integer part.
         while (i < n) {
-            let c = char_at(text, i);
+            let c = text.char_at(i);
             if ((c < '0') || (c > '9')) {
                 break;
             }
@@ -55,11 +55,11 @@ extend double {
         }
         // Fractional part.
         if (i < n) {
-            if (char_at(text, i) == '.') {
+            if (text.char_at(i) == '.') {
                 i = i + 1;
                 let scale = 1.0d;
                 while (i < n) {
-                    let c = char_at(text, i);
+                    let c = text.char_at(i);
                     if ((c < '0') || (c > '9')) {
                         break;
                     }
@@ -71,12 +71,12 @@ extend double {
         }
         // Exponent.
         if (i < n) {
-            let ce = char_at(text, i);
+            let ce = text.char_at(i);
             if ((ce == 'e') || (ce == 'E')) {
                 i = i + 1;
                 let eneg = false;
                 if (i < n) {
-                    let cs = char_at(text, i);
+                    let cs = text.char_at(i);
                     if (cs == '-') {
                         eneg = true;
                         i = i + 1;
@@ -87,7 +87,7 @@ extend double {
                 }
                 let exp = 0;
                 while (i < n) {
-                    let c = char_at(text, i);
+                    let c = text.char_at(i);
                     if ((c < '0') || (c > '9')) {
                         break;
                     }

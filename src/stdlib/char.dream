@@ -50,11 +50,11 @@ extend char {
         return (int)this;
     }
 
-    // A new single-character string containing this character. (The global `to_string(c)`
-    // builtin also works; this is the method-style equivalent.)
+    // A new single-character string containing this character. (`this.to_string()` works too; this
+    // is the explicit method-style equivalent.)
     public fun as_string(): string {
-        let result = string_alloc(1);
-        string_set(result, 0, this);
+        let result = String.alloc(1);
+        String.set(result, 0, this);
         return result;
     }
 }

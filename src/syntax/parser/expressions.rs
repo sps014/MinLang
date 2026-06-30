@@ -112,7 +112,11 @@ impl<'a, 'b> Parser<'a, 'b> {
             let expression = self.parse_expression(0)?;
             //eat the close parenthesis
             self.match_token(TokenKind::CloseParenthesisToken);
-            return Ok(ExpressionNode::Parenthesized(self.arena.alloc(expression)));
+            // Allow postfix access on a parenthesized expression, e.g. `(7).hash_code()`,
+            // `("x" + y).len()`, or `(arr)[0]`. This is required for method calls on literals
+            // whose bare form would mis-lex (`7.hash_code()` reads `7.` as a float).
+            let parenthesized = ExpressionNode::Parenthesized(self.arena.alloc(expression));
+            return self.parse_postfix_chain(parenthesized);
         } else if self.current_token().kind == TokenKind::OpenBracketToken {
             // Array literal
             self.match_token(TokenKind::OpenBracketToken);

@@ -1,5 +1,5 @@
 async fun work(id: int): int {
-    await sleep(50);
+    await Time.sleep(50);
     return id * id;
 }
 
@@ -7,8 +7,8 @@ async fun main(): void {
     let a = work(2);
     let b = work(3);
     let results = await Promise.all([a, b]);
-    System.println(to_string(results[0]) + ", " + to_string(results[1]));
+    System.println(results[0] + ", " + results[1]);
 
     let first = await Promise.any([work(10), work(20)]);
-    System.println("first = " + to_string(first));
+    System.println("first = " + first);
 }

@@ -469,7 +469,7 @@ impl Builder {
                     continue;
                 }
             }
-            if let Some(span) = arg.position() {
+            if let Some(span) = arg.start_position() {
                 self.inlay_hints.push(InlayHintOut {
                     offset: span.start,
                     label: format!("{}:", param),

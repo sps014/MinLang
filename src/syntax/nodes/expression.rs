@@ -58,4 +58,30 @@ impl<'a> ExpressionNode<'a> {
             ExpressionNode::ArrayLiteral(elements) => elements.first().and_then(|e| e.position()),
         }
     }
+
+    /// Returns the span of the *leftmost* token of this expression (its true start), as opposed to
+    /// [`position`](Self::position), which returns a representative interior token. For `a.b` this is
+    /// `a` (not the `.b` member), for `a * n` it is `a` (not the operator), for `f(x).g()` it is `f`.
+    /// Used where the start offset matters — e.g. placing a parameter-name inlay hint *before* a call
+    /// argument rather than in the middle of it.
+    pub fn start_position(&self) -> Option<TextSpan> {
+        match self {
+            ExpressionNode::MemberAccess(receiver, _) => {
+                receiver.start_position().or_else(|| self.position())
+            }
+            ExpressionNode::MethodCall(receiver, _, _, _) => receiver.start_position(),
+            ExpressionNode::Binary(left, _, _) => left.start_position(),
+            ExpressionNode::IndexAccess(array_expr, _) => array_expr.start_position(),
+            ExpressionNode::Parenthesized(inner)
+            | ExpressionNode::Await(inner)
+            | ExpressionNode::IsExpression(inner, _) => inner.start_position(),
+            ExpressionNode::Ternary(cond, _, _) => cond.start_position(),
+            ExpressionNode::ArrayLiteral(elements) => {
+                elements.first().and_then(|e| e.start_position())
+            }
+            // Token-led forms (identifier, call name, unary operator, cast type, literal) already
+            // start at the token `position` returns.
+            _ => self.position(),
+        }
+    }
 }
