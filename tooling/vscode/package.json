@@ -1,6 +1,6 @@
 {
   "name": "dream-lang",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Dream language support for VS Code",
   "publisher": "dream-lang",
   "engines": {
