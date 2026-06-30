@@ -96,6 +96,7 @@ pub fn collect_diagnostics(file_path: Option<&str>, text: &str) -> Vec<Diagnosti
         &mut diagnostics,
         &mut acc.all_functions,
         &mut acc.all_structs,
+        &mut acc.all_enums,
         &mut acc.all_extends,
     );
 
@@ -157,6 +158,7 @@ fn merge_prelude<'a>(
     diagnostics: &mut DiagnosticBag,
     all_functions: &mut Vec<FunctionNode<'a>>,
     all_structs: &mut Vec<StructDeclarationNode<'a>>,
+    all_enums: &mut Vec<dream::syntax::nodes::EnumDeclarationNode>,
     all_extends: &mut Vec<ExtendNode<'a>>,
 ) {
     for &(name, src) in PRELUDE_FILES {
@@ -179,14 +181,13 @@ fn merge_prelude<'a>(
         diagnostics.extend(&prelude_bag);
 
         if let Ok(ast) = parsed {
-            let mut enums = Vec::new();
             let mut globals = Vec::new();
             collect_declarations(
                 ast.get_root(),
                 name,
                 all_functions,
                 all_structs,
-                &mut enums,
+                all_enums,
                 all_extends,
                 &mut globals,
             );

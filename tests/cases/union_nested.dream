@@ -1,0 +1,32 @@
+// Nested patterns: a variant whose payload is itself a union, matched with sub-patterns and a
+// literal guard inside the nesting.
+
+// `Option<T>` comes from the standard library prelude.
+enum Pair {
+    Both(left: Option<int>, right: Option<int>),
+    Neither,
+}
+
+// `Both(...)` is covered by refutable nested patterns, so a `_` arm is required for
+// exhaustiveness (v1 does not enumerate inner variants); `Neither` is covered explicitly.
+fun classify(p: Pair): string {
+    return match (p) {
+        Both(Some(0), None)    => "zero-left, empty-right",
+        Both(Some(x), Some(y)) => "two values",
+        Both(None, None)       => "both empty",
+        Neither                => "neither",
+        _                      => "other",
+    };
+}
+
+fun main() {
+    let a: Option<int> = Option.Some(0);
+    let b: Option<int> = Option.Some(5);
+    let n: Option<int> = Option.None;
+
+    System.println(classify(Pair.Both(a, n)));
+    System.println(classify(Pair.Both(b, b)));
+    System.println(classify(Pair.Both(n, n)));
+    System.println(classify(Pair.Neither));
+    System.println(classify(Pair.Both(b, n)));
+}

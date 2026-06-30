@@ -61,6 +61,7 @@ impl Index {
                 &arena,
                 &mut acc.all_functions,
                 &mut acc.all_structs,
+                &mut acc.all_enums,
                 &mut acc.all_extends,
                 &mut scratch,
                 &mut file_contents,

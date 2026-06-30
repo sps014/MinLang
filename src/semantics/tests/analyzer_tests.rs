@@ -193,3 +193,84 @@ fn test_unknown_call_result_does_not_cascade() {
         errors
     );
 }
+
+#[test]
+fn test_analyze_union_match_ok() {
+    let code = "
+        enum Shape { Circle(radius: int), Rect(width: int, height: int), Empty }
+        fun area(s: Shape): int {
+            return match (s) {
+                Circle(r)  => r * r,
+                Rect(w, h) => w * h,
+                Empty      => 0,
+            };
+        }
+        fun main(): void { let a: int = area(Shape.Circle(2)); }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), false);
+}
+
+#[test]
+fn test_analyze_union_match_non_exhaustive() {
+    let code = "
+        enum Shape { Circle(radius: int), Rect(width: int, height: int), Empty }
+        fun area(s: Shape): int {
+            return match (s) {
+                Circle(r)  => r * r,
+                Rect(w, h) => w * h,
+            };
+        }
+        fun main(): void { let a: int = area(Shape.Empty); }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("Non-exhaustive match")
+            && d.message.contains("Empty")));
+}
+
+#[test]
+fn test_analyze_union_variant_arity_mismatch() {
+    let code = "
+        enum Shape { Circle(radius: int), Empty }
+        fun main(): void { let s: Shape = Shape.Circle(1, 2); }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("expects 1 argument")));
+}
+
+#[test]
+fn test_analyze_generic_union_inference() {
+    let code = "
+        enum Option<T> { Some(value: T), None }
+        fun main(): void {
+            let o = Option.Some(42);
+            let n: Option<int> = Option.None;
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), false);
+}
+
+#[test]
+fn test_analyze_match_expression_arm_type_mismatch() {
+    let code = "
+        enum Shape { Circle(radius: int), Empty }
+        fun f(s: Shape): int {
+            return match (s) {
+                Circle(r) => r,
+                Empty     => \"oops\",
+            };
+        }
+        fun main(): void { let x: int = f(Shape.Empty); }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+}

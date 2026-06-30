@@ -1,3 +1,5 @@
+use super::pattern::PatternNode;
+use super::statement::StatementNode;
 use super::types::Type;
 use crate::syntax::text::text_span::TextSpan;
 use crate::syntax::token::syntax_token::SyntaxToken;
@@ -31,6 +33,28 @@ pub enum ExpressionNode<'a> {
     /// `await <future-expr>`: suspends the enclosing `async` function until the awaited
     /// `Future<T>` resolves, then yields its `T`. The inner expression produces the future.
     Await(&'a ExpressionNode<'a>),
+    /// `match (subject) { pattern [if guard] => body, ... }`. Used both as an expression (every
+    /// arm yields a value of a common type) and, when wrapped in an `ExpressionStatement`, as a
+    /// statement (arms may be blocks yielding `void`). The first field is the subject.
+    Match(&'a ExpressionNode<'a>, Vec<MatchArm<'a>>),
+}
+
+/// One arm of a `match`: a pattern, an optional `if` guard, and a body.
+#[derive(Debug, Clone)]
+pub struct MatchArm<'a> {
+    pub pattern: PatternNode,
+    /// An optional `if <bool-expr>` guard; the arm only matches when the guard is also true.
+    pub guard: Option<ExpressionNode<'a>>,
+    pub body: MatchArmBody<'a>,
+}
+
+/// The body of a `match` arm.
+#[derive(Debug, Clone)]
+pub enum MatchArmBody<'a> {
+    /// `=> expr` - yields the expression's value (the only form allowed in expression position).
+    Expr(ExpressionNode<'a>),
+    /// `=> { stmts }` - a statement block yielding `void` (only allowed in statement position).
+    Block(&'a [StatementNode<'a>]),
 }
 
 impl<'a> ExpressionNode<'a> {
@@ -50,6 +74,7 @@ impl<'a> ExpressionNode<'a> {
             ExpressionNode::Parenthesized(inner)
             | ExpressionNode::Await(inner)
             | ExpressionNode::IsExpression(inner, _) => inner.position(),
+            ExpressionNode::Match(subject, _) => subject.position(),
             ExpressionNode::Ternary(cond, _, _) => cond.position(),
             ExpressionNode::IndexAccess(array_expr, _) => array_expr.position(),
             ExpressionNode::Cast(target_type, expr) => {
@@ -75,6 +100,7 @@ impl<'a> ExpressionNode<'a> {
             ExpressionNode::Parenthesized(inner)
             | ExpressionNode::Await(inner)
             | ExpressionNode::IsExpression(inner, _) => inner.start_position(),
+            ExpressionNode::Match(subject, _) => subject.start_position(),
             ExpressionNode::Ternary(cond, _, _) => cond.start_position(),
             ExpressionNode::ArrayLiteral(elements) => {
                 elements.first().and_then(|e| e.start_position())

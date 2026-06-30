@@ -173,6 +173,46 @@ impl<'a> WasmGenerator<'a> {
             ExpressionNode::Await(inner) => {
                 self.collect_strings_from_expr(inner);
             }
+            ExpressionNode::Match(subject, arms) => {
+                self.collect_strings_from_expr(subject);
+                for arm in arms {
+                    self.collect_strings_from_pattern(&arm.pattern);
+                    if let Some(guard) = &arm.guard {
+                        self.collect_strings_from_expr(guard);
+                    }
+                    match &arm.body {
+                        crate::syntax::nodes::MatchArmBody::Expr(e) => {
+                            self.collect_strings_from_expr(e)
+                        }
+                        crate::syntax::nodes::MatchArmBody::Block(stmts) => {
+                            self.collect_strings_from_body(stmts)
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Collects string literals that appear inside match patterns (e.g. `Some("x")`), interning
+    /// them like any other string literal so the literal pattern test can reference them.
+    fn collect_strings_from_pattern(&mut self, pattern: &crate::syntax::nodes::PatternNode) {
+        use crate::syntax::nodes::PatternNode;
+        match pattern {
+            PatternNode::Literal(Type::String(token)) => {
+                let s = token.text.clone();
+                if !self.ctx.strings.contains_key(&s) {
+                    self.ctx
+                        .strings
+                        .insert(s.clone(), self.ctx.next_string_offset);
+                    self.ctx.next_string_offset += s.len() + 1 + super::HEAP_HEADER_SIZE;
+                }
+            }
+            PatternNode::Variant(_, _, subs) => {
+                for sub in subs {
+                    self.collect_strings_from_pattern(sub);
+                }
+            }
             _ => {}
         }
     }

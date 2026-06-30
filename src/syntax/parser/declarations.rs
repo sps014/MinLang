@@ -22,8 +22,12 @@ impl<'a, 'b> Parser<'a, 'b> {
         Ok(())
     }
 
-    /// Parses an enum declaration: `enum Name { A, B = 5, C }`. Members without an explicit value
-    /// continue from the previous member's value (starting at 0), C-style.
+    /// Parses an enum declaration. Two forms share this parser:
+    /// - C-style integer enum: `enum Color { Red, Green = 5, Blue }`. Members without an explicit
+    ///   value continue from the previous member's value (starting at 0).
+    /// - Discriminated union: `enum Shape { Circle(radius: float), Empty }`, optionally generic
+    ///   `enum Option<T> { Some(value: T), None }`. A variant carries a parenthesized payload of
+    ///   `name: Type` fields; the variant's `value` is its discriminant (sequential from 0).
     pub(super) fn parse_enum_declaration(
         &mut self,
     ) -> Result<crate::syntax::nodes::EnumDeclarationNode, Error> {
@@ -33,15 +37,54 @@ impl<'a, 'b> Parser<'a, 'b> {
         if !first_trivia.is_empty() {
             name.leading_trivia.splice(0..0, first_trivia);
         }
+
+        // Optional generic parameters: `enum Option<T> { ... }`.
+        let mut generic_parameters = None;
+        if self.current_token().kind == TokenKind::SmallerThanToken {
+            self.match_token(TokenKind::SmallerThanToken);
+            let mut params = Vec::new();
+            while self.current_token().kind != TokenKind::GreaterThanToken
+                && self.current_token().kind != TokenKind::EndOfFileToken
+            {
+                let iter = self.current_token_index;
+                params.push(self.match_token(TokenKind::IdentifierToken));
+                if self.current_token().kind == TokenKind::CommaToken {
+                    self.match_token(TokenKind::CommaToken);
+                }
+                self.ensure_progress(iter);
+            }
+            self.match_token(TokenKind::GreaterThanToken);
+            generic_parameters = Some(params);
+        }
+
         self.match_token(TokenKind::CurlyOpenBracketToken);
 
-        let mut members = Vec::new();
+        let mut variants = Vec::new();
         let mut next_value: i32 = 0;
         while self.current_token().kind != TokenKind::CurlyCloseBracketToken
             && self.current_token().kind != TokenKind::EndOfFileToken
         {
             let index_before = self.current_token_index;
-            let member_name = self.match_token(TokenKind::IdentifierToken);
+            let variant_name = self.match_token(TokenKind::IdentifierToken);
+
+            // A payload `(name: Type, ...)` makes this a discriminated-union variant.
+            let mut fields = Vec::new();
+            if self.current_token().kind == TokenKind::OpenParenthesisToken {
+                self.match_token(TokenKind::OpenParenthesisToken);
+                while self.current_token().kind != TokenKind::CloseParenthesisToken
+                    && self.current_token().kind != TokenKind::EndOfFileToken
+                {
+                    let iter = self.current_token_index;
+                    fields.push(self.parse_variant_field()?);
+                    if self.current_token().kind == TokenKind::CommaToken {
+                        self.match_token(TokenKind::CommaToken);
+                    }
+                    self.ensure_progress(iter);
+                }
+                self.match_token(TokenKind::CloseParenthesisToken);
+            }
+
+            // C-style explicit value (`Green = 5`); only meaningful for payload-less variants.
             let value = if self.current_token().kind == TokenKind::EqualToken {
                 self.match_token(TokenKind::EqualToken);
                 let num = self.match_token(TokenKind::NumberToken);
@@ -50,7 +93,11 @@ impl<'a, 'b> Parser<'a, 'b> {
                 next_value
             };
             next_value = value + 1;
-            members.push((member_name, value));
+            variants.push(crate::syntax::nodes::EnumVariantNode {
+                name: variant_name,
+                fields,
+                value,
+            });
 
             if self.current_token().kind == TokenKind::CommaToken {
                 self.match_token(TokenKind::CommaToken);
@@ -62,8 +109,32 @@ impl<'a, 'b> Parser<'a, 'b> {
         }
         self.match_token(TokenKind::CurlyCloseBracketToken);
         Ok(crate::syntax::nodes::EnumDeclarationNode::new(
-            name, members,
+            name,
+            generic_parameters,
+            variants,
         ))
+    }
+
+    /// Parses a single discriminated-union variant payload field: `name: Type`.
+    fn parse_variant_field(
+        &mut self,
+    ) -> Result<crate::syntax::nodes::struct_node::StructFieldNode, Error> {
+        let field_name = self.match_token(TokenKind::IdentifierToken);
+        self.match_token(TokenKind::ColonToken);
+        let type_position = self.current_token().position;
+        let parsed_type = self.parse_type()?;
+        let field_type_token = crate::syntax::token::syntax_token::SyntaxToken::new(
+            TokenKind::IdentifierToken,
+            type_position,
+            parsed_type.get_type(),
+        );
+        Ok(crate::syntax::nodes::struct_node::StructFieldNode {
+            attributes: Vec::new(),
+            name: field_name,
+            is_public: true,
+            type_token: field_type_token,
+            field_type: parsed_type,
+        })
     }
 
     /// Parses a struct declaration
@@ -452,7 +523,9 @@ impl<'a, 'b> Parser<'a, 'b> {
 
         //eat the fun keyword
         self.match_token(TokenKind::FunToken);
-        let mut function_name = self.match_token(TokenKind::IdentifierToken);
+        // `match` is a soft keyword, so it remains a legal function/method name (e.g. the stdlib
+        // `regex.match`).
+        let mut function_name = self.match_name_token();
         if !first_trivia.is_empty() {
             function_name.leading_trivia.splice(0..0, first_trivia);
         }

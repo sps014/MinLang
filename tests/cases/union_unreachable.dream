@@ -1,0 +1,19 @@
+// Unreachable arm: a `_` catch-all precedes a concrete arm, so the trailing arm can never match.
+
+enum Light {
+    Red(brightness: int),
+    Green,
+    Blue,
+}
+
+fun name(l: Light): string {
+    return match (l) {
+        Red(b) => "red",
+        _      => "other",
+        Blue   => "blue",
+    };
+}
+
+fun main() {
+    System.println(name(Light.Green));
+}

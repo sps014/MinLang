@@ -115,6 +115,10 @@ impl<'a> WasmGenerator<'a> {
             ExpressionNode::Parenthesized(expr) => self.infer_expression_type(expr, function),
             ExpressionNode::Cast(target_type, _) => Ok(target_type.get_type()),
             ExpressionNode::MemberAccess(obj, member) => {
+                // Unit-variant construction (`Option.None`) yields the union type.
+                if let Some(union_name) = self.infer_union_construction(obj, &member.text, &[], function) {
+                    return Ok(union_name);
+                }
                 // Enum member access yields the enum type (an i32 at runtime).
                 if let ExpressionNode::Identifier(id) = obj {
                     if self.enums.contains_key(&id.text) {
@@ -133,7 +137,22 @@ impl<'a> WasmGenerator<'a> {
             }
             ExpressionNode::IsExpression(_, _) => Ok("bool".to_string()),
             ExpressionNode::Ternary(_, then_e, _) => self.infer_expression_type(then_e, function),
+            ExpressionNode::Match(_, arms) => {
+                // Best-effort: a value-position match's type is its first arm's body type.
+                for arm in arms.iter() {
+                    if let crate::syntax::nodes::MatchArmBody::Expr(e) = &arm.body {
+                        return self.infer_expression_type(e, function);
+                    }
+                }
+                Ok("void".to_string())
+            }
             ExpressionNode::MethodCall(obj, method, _generic_args, params) => {
+                // Data-variant construction (`Option.Some(42)`) yields the union type.
+                if let Some(union_name) =
+                    self.infer_union_construction(obj, &method.text, params, function)
+                {
+                    return Ok(union_name);
+                }
                 if let Some(key) = self.resolve_static_call(obj, &method.text, params, function) {
                     if let Ok(func_info) = self.function_table.get_function(&key) {
                         return Ok(func_info
@@ -177,5 +196,48 @@ impl<'a> WasmGenerator<'a> {
                 Ok("void".to_string())
             }
         }
+    }
+
+    /// Best-effort: if `obj.variant(args)` constructs a discriminated-union variant, returns the
+    /// concrete (monomorphized) union name. Non-generic unions resolve by name; generic unions are
+    /// matched by their instantiated name when unambiguous (or by the first argument's type).
+    fn infer_union_construction(
+        &self,
+        obj: &crate::syntax::nodes::ExpressionNode<'a>,
+        variant: &str,
+        args: &[crate::syntax::nodes::ExpressionNode<'a>],
+        function: &FunctionNode<'a>,
+    ) -> Option<String> {
+        use crate::syntax::nodes::ExpressionNode;
+        let ExpressionNode::Identifier(id) = obj else {
+            return None;
+        };
+        if let Some(info) = self.unions.get(&id.text) {
+            if info.variant(variant).is_some() {
+                return Some(id.text.clone());
+            }
+        }
+        let prefix = format!("{}_", id.text);
+        let candidates: Vec<&crate::semantics::union_table::UnionInfo> = self
+            .unions
+            .values()
+            .filter(|u| u.name.starts_with(&prefix) && u.variant(variant).is_some())
+            .collect();
+        if candidates.len() == 1 {
+            return Some(candidates[0].name.clone());
+        }
+        if candidates.len() > 1 && !args.is_empty() {
+            if let Ok(arg_type) = self.infer_expression_type(&args[0], function) {
+                let base = strip_nullable(&arg_type);
+                for u in &candidates {
+                    if let Some(field) = u.variant(variant).and_then(|v| v.fields.first()) {
+                        if strip_nullable(&field.type_.get_type()) == base {
+                            return Some(u.name.clone());
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
 }

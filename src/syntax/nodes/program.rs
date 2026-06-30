@@ -1,6 +1,6 @@
 use super::expression::ExpressionNode;
 use super::function::FunctionNode;
-use super::struct_node::StructDeclarationNode;
+use super::struct_node::{StructDeclarationNode, StructFieldNode};
 use super::types::Type;
 use crate::syntax::token::syntax_token::SyntaxToken;
 use std::rc::Rc;
@@ -39,17 +39,49 @@ impl ImportNode {
     }
 }
 
-/// Represents a C-style enum declaration: `enum Color { Red, Green = 5, Blue }`.
-/// Members carry explicit `i32` values (auto-assigned sequentially when not specified).
+/// A single variant of an `enum`. A variant with no `fields` is either a plain C-style member
+/// (`Red`, `Green = 5`) or a unit variant of a discriminated union (`None`, `Empty`). A variant
+/// with one or more `fields` carries a typed payload (`Circle(radius: float)`), which turns the
+/// whole enum into a heap-backed discriminated union.
+#[derive(Debug, Clone)]
+pub struct EnumVariantNode {
+    pub name: SyntaxToken,
+    /// The variant's payload fields, in declaration order. Empty for unit / C-style members.
+    pub fields: Vec<StructFieldNode>,
+    /// The variant's integer value. For C-style enums this is the member value (explicit or
+    /// auto-assigned, C-style); for discriminated unions this is the variant's discriminant.
+    pub value: i32,
+}
+
+/// Represents an enum declaration. Two flavours share this node:
+/// - C-style integer enums: `enum Color { Red, Green = 5, Blue }` (all variants payload-less).
+/// - Discriminated unions (Rust-style): `enum Shape { Circle(radius: float), Empty }` and
+///   generic `enum Option<T> { Some(value: T), None }` (at least one variant carries a payload).
 #[derive(Debug, Clone)]
 pub struct EnumDeclarationNode {
     pub name: SyntaxToken,
-    pub members: Vec<(SyntaxToken, i32)>,
+    /// Generic type parameters for a generic discriminated union (`enum Option<T> { ... }`).
+    pub generic_parameters: Option<Vec<SyntaxToken>>,
+    pub variants: Vec<EnumVariantNode>,
 }
 
 impl EnumDeclarationNode {
-    pub fn new(name: SyntaxToken, members: Vec<(SyntaxToken, i32)>) -> EnumDeclarationNode {
-        EnumDeclarationNode { name, members }
+    pub fn new(
+        name: SyntaxToken,
+        generic_parameters: Option<Vec<SyntaxToken>>,
+        variants: Vec<EnumVariantNode>,
+    ) -> EnumDeclarationNode {
+        EnumDeclarationNode {
+            name,
+            generic_parameters,
+            variants,
+        }
+    }
+
+    /// True when any variant carries a payload, i.e. this enum is a discriminated union rather
+    /// than a plain C-style integer enum.
+    pub fn is_data_enum(&self) -> bool {
+        self.variants.iter().any(|v| !v.fields.is_empty())
     }
 }
 

@@ -5,7 +5,9 @@
 use std::collections::HashMap;
 
 use dream::syntax::nodes::struct_node::StructDeclarationNode;
-use dream::syntax::nodes::{ExpressionNode, FunctionNode, ProgramNode, StatementNode, Type};
+use dream::syntax::nodes::{
+    ExpressionNode, FunctionNode, MatchArmBody, PatternNode, ProgramNode, StatementNode, Type,
+};
 use dream::syntax::token::syntax_token::SyntaxToken;
 
 use super::{
@@ -200,9 +202,19 @@ impl Builder {
         for en in &program.enums {
             let detail = format!("enum {}", en.name.text);
             self.push_decl(&en.name, SymKind::Enum, detail, GLOBAL, None);
-            for (member, value) in &en.members {
-                let detail = format!("{}.{} = {}", en.name.text, member.text, value);
-                self.push_decl(member, SymKind::EnumMember, detail, GLOBAL, None);
+            for variant in &en.variants {
+                let detail = if variant.fields.is_empty() {
+                    format!("{}.{} = {}", en.name.text, variant.name.text, variant.value)
+                } else {
+                    let params = variant
+                        .fields
+                        .iter()
+                        .map(|f| format!("{}: {}", f.name.text, f.field_type.display_name()))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("{}.{}({})", en.name.text, variant.name.text, params)
+                };
+                self.push_decl(&variant.name, SymKind::EnumMember, detail, GLOBAL, None);
             }
         }
         for ext in &program.extends {
@@ -548,7 +560,41 @@ impl Builder {
                 }
             }
             ExpressionNode::Await(e) => self.walk_expr(e, scope),
+            ExpressionNode::Match(subject, arms) => {
+                self.walk_expr(subject, scope);
+                for arm in arms {
+                    self.walk_pattern(&arm.pattern, scope);
+                    if let Some(guard) = &arm.guard {
+                        self.walk_expr(guard, scope);
+                    }
+                    match &arm.body {
+                        MatchArmBody::Expr(e) => self.walk_expr(e, scope),
+                        MatchArmBody::Block(stmts) => self.walk_block(stmts, scope),
+                    }
+                }
+            }
             ExpressionNode::Literal(_) => {}
+        }
+    }
+
+    /// Indexes the bindings and variant references introduced by a match pattern so hover, rename,
+    /// and go-to work for them. Binding identifiers become local variables; variant names (and an
+    /// optional `Enum.` qualifier) become references.
+    fn walk_pattern(&mut self, pattern: &PatternNode, scope: usize) {
+        match pattern {
+            PatternNode::Wildcard(_) | PatternNode::Literal(_) => {}
+            PatternNode::Binding(name) => {
+                self.push_decl(name, SymKind::Variable, "binding".to_string(), scope, None);
+            }
+            PatternNode::Variant(qualifier, variant, subs) => {
+                if let Some(q) = qualifier {
+                    self.add_ref(q, SymKind::Type, scope);
+                }
+                self.add_ref(variant, SymKind::EnumMember, scope);
+                for sub in subs {
+                    self.walk_pattern(sub, scope);
+                }
+            }
         }
     }
 

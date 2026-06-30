@@ -86,6 +86,10 @@ println(Color.Green.name());   // Green
 println(c.name());             // Green
 ```
 
+When a variant carries a typed payload `(...)`, the `enum` becomes a heap-backed
+**discriminated union** matched with `match` instead of `switch`. See
+[Discriminated Unions](discriminated-unions.md).
+
 ## Type aliases
 
 `type` introduces an alias for an existing type. Aliases are resolved at compile time (they are interchangeable with the underlying type) and must be declared before use:

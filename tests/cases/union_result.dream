@@ -1,0 +1,25 @@
+// The generic two-parameter discriminated union `Result<T, E>` (from the standard library prelude),
+// monomorphized to `Result<int, string>`, matched in both expression and statement position.
+
+fun safe_div(a: int, b: int): Result<int, string> {
+    if (b == 0) {
+        return Result.Err("divide by zero");
+    }
+    return Result.Ok(a / b);
+}
+
+fun main() {
+    let r1 = safe_div(10, 2);
+    let r2 = safe_div(1, 0);
+
+    let v = match (r1) {
+        Ok(n)  => n,
+        Err(e) => 0 - 1,
+    };
+    System.println(v);
+
+    match (r2) {
+        Ok(n)  => { System.println(n); }
+        Err(e) => { System.print("error: "); System.println(e); }
+    }
+}

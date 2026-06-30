@@ -59,9 +59,38 @@ impl<'a> WasmGenerator<'a> {
                 self.struct_table.get_struct(&ctor_name).is_some()
             }
             ExpressionNode::Parenthesized(inner) => self.produces_owned_ref(inner, function),
-            // Identifier, MemberAccess, IndexAccess, Literal, Ternary, `??`, Cast, Unary, Is: borrowed.
+            // Unit-variant construction (e.g. `Option.None`, `IntList.Nil`) allocates a fresh,
+            // owned union value, exactly like the data-variant `MethodCall` arm above. Other member
+            // accesses (field reads) are borrowed.
+            ExpressionNode::MemberAccess(obj, member) => {
+                if let ExpressionNode::Identifier(id) = obj {
+                    return self.is_unit_variant_construction(&id.text, &member.text);
+                }
+                false
+            }
+            // Identifier, IndexAccess, Literal, Ternary, `??`, Cast, Unary, Is: borrowed.
             _ => false,
         }
+    }
+
+    /// True when `receiver.member` constructs a payload-less (unit) variant of a discriminated
+    /// union — either a non-generic union named `receiver`, or any monomorphized instantiation of a
+    /// generic union whose base name is `receiver` (all instantiations share the same variants).
+    fn is_unit_variant_construction(&self, receiver: &str, member: &str) -> bool {
+        if let Some(info) = self.unions.get(receiver) {
+            if let Some(variant) = info.variant(member) {
+                return variant.fields.is_empty();
+            }
+        }
+        let prefix = format!("{}_", receiver);
+        for info in self.unions.values() {
+            if info.name.starts_with(&prefix) {
+                if let Some(variant) = info.variant(member) {
+                    return variant.fields.is_empty();
+                }
+            }
+        }
+        false
     }
 
     /// True when `expr` flowing into a slot of type `target_type` is implicitly boxed by

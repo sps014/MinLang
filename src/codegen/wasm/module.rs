@@ -350,6 +350,9 @@ impl<'a> WasmGenerator<'a> {
         for i in 0..Self::TMP_POOL {
             writer.write(&format!(" (local $tmp{} i32)", i));
         }
+        for i in 0..Self::MATCH_SUBJ_POOL {
+            writer.write(&format!(" (local $match_subj{} i32)", i));
+        }
         writer.write_line("");
         writer.indent();
 
@@ -413,6 +416,10 @@ impl<'a> WasmGenerator<'a> {
         // call (see `build_call_arg` / `release_call_temps`).
         for i in 0..Self::TMP_POOL {
             writer.write(&format!(" (local $tmp{} i32)", i));
+        }
+        // Subject-pointer locals for (possibly nested) `match` lowering (see `match_subj_local`).
+        for i in 0..Self::MATCH_SUBJ_POOL {
+            writer.write(&format!(" (local $match_subj{} i32)", i));
         }
         writer.write_line("");
         writer.indent();

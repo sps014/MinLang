@@ -2,6 +2,8 @@ use crate::driver::diagnostics::DiagnosticBag;
 use crate::semantics::function_table::FunctionTable;
 use crate::semantics::struct_table::StructTable;
 use crate::semantics::symbol_table::SymbolTable;
+use crate::semantics::union_table::UnionTable;
+use crate::syntax::nodes::EnumDeclarationNode;
 use crate::syntax::nodes::types::{mangle_with_suffixes, primitive_type, FUTURE_TYPE};
 use crate::syntax::nodes::{FunctionNode, ProgramNode, Type};
 use crate::syntax::syntax_tree::SyntaxTree;
@@ -19,6 +21,7 @@ mod calls;
 mod declarations;
 mod expressions;
 mod generics;
+mod match_unions;
 mod statements;
 mod type_checker;
 
@@ -152,6 +155,9 @@ pub struct SemanticInfo<'a> {
     pub instantiated_generics: HashMap<String, (GenericBindings, &'a FunctionNode<'a>)>,
     pub struct_methods: Vec<(&'a FunctionNode<'a>, GenericBindings)>,
     pub enums: EnumTable,
+    /// Layout of every (monomorphized) discriminated union, surfaced to codegen so it can
+    /// allocate variant blocks, lower `match`, and emit discriminant-aware releases.
+    pub unions: UnionTable,
     pub globals: Vec<GlobalSymbol>,
 }
 
@@ -164,6 +170,7 @@ impl<'a> SemanticInfo<'a> {
         instantiated_generics: HashMap<String, (GenericBindings, &'a FunctionNode<'a>)>,
         struct_methods: Vec<(&'a FunctionNode<'a>, GenericBindings)>,
         enums: EnumTable,
+        unions: UnionTable,
         globals: Vec<GlobalSymbol>,
     ) -> SemanticInfo<'a> {
         SemanticInfo {
@@ -173,6 +180,7 @@ impl<'a> SemanticInfo<'a> {
             instantiated_generics,
             struct_methods,
             enums,
+            unions,
             globals,
         }
     }
@@ -196,6 +204,15 @@ pub struct Analyzer<'a> {
     struct_methods: Vec<(&'a FunctionNode<'a>, GenericBindings)>,
     /// Registered enums: name -> (member -> value). Enum values are plain `i32`s at runtime.
     enum_table: EnumTable,
+    /// Layout of every registered (monomorphized) discriminated union.
+    union_table: UnionTable,
+    /// Generic discriminated-union templates (`enum Option<T> { ... }`), instantiated on demand.
+    generic_unions: HashMap<String, &'a EnumDeclarationNode>,
+    /// An optional expected type for the expression currently being analyzed (from a `let`
+    /// annotation or `return` type). Used to resolve the type arguments of a generic union's
+    /// nullary variant (`let o: Option<int> = Option.None;`), where they cannot be inferred from
+    /// arguments. `None` outside such contexts.
+    current_expected_type: Option<Type>,
     /// The generic substitution bindings active while analyzing a monomorphized function or
     /// struct-method body. Empty outside of any generic instantiation. Used to resolve generic
     /// type parameters that appear inside a body (e.g. the `T` in `array_new<T>(...)`).
@@ -224,6 +241,9 @@ impl<'a> Analyzer<'a> {
             generic_structs: HashMap::new(),
             struct_methods: Vec::new(),
             enum_table: HashMap::new(),
+            union_table: HashMap::new(),
+            generic_unions: HashMap::new(),
+            current_expected_type: None,
             current_generic_bindings: Vec::new(),
             loop_labels: Vec::new(),
             current_function_is_async: false,
@@ -314,6 +334,7 @@ impl<'a> Analyzer<'a> {
             self.instantiated_generics.clone(),
             self.struct_methods.clone(),
             self.enum_table.clone(),
+            self.union_table.clone(),
             self.globals.clone(),
         ))
     }

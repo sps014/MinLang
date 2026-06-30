@@ -1,5 +1,5 @@
 use super::Parser;
-use crate::syntax::nodes::{ExpressionNode, Type};
+use crate::syntax::nodes::{ExpressionNode, MatchArm, MatchArmBody, PatternNode, Type};
 use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
 use crate::syntax::token::token_kind::TokenKind::{EndOfFileToken, IdentifierToken};
@@ -64,6 +64,10 @@ impl<'a, 'b> Parser<'a, 'b> {
     }
     /// Parses a primary expression (literal, identifier, parenthesized expression, or function call)
     pub(super) fn parse_primary_expression(&mut self) -> Result<ExpressionNode<'a>, Error> {
+        // `match (subject) { ... }` expression.
+        if self.current_token().kind == TokenKind::MatchToken {
+            return self.parse_match();
+        }
         //parse parenthesized expressions or cast
         if self.current_token().kind == TokenKind::OpenParenthesisToken {
             let is_cast = if self.peek_token(1).kind == TokenKind::DataTypeToken {
@@ -153,7 +157,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             let mut expr = ExpressionNode::Identifier(self.next_token());
             while self.current_token().kind == TokenKind::DotToken {
                 self.match_token(TokenKind::DotToken);
-                let member = self.match_token(TokenKind::IdentifierToken);
+                let member = self.match_name_token();
                 let mut generic_args = None;
                 if self.current_token().kind == TokenKind::SmallerThanToken {
                     let is_generic = self
@@ -228,7 +232,7 @@ impl<'a, 'b> Parser<'a, 'b> {
                         );
                     } else if self.current_token().kind == TokenKind::DotToken {
                         self.match_token(TokenKind::DotToken);
-                        let member = self.match_token(TokenKind::IdentifierToken);
+                        let member = self.match_name_token();
 
                         let mut generic_args = None;
                         if self.current_token().kind == TokenKind::SmallerThanToken {
@@ -338,7 +342,7 @@ impl<'a, 'b> Parser<'a, 'b> {
                 expr = ExpressionNode::IndexAccess(self.arena.alloc(expr), self.arena.alloc(index));
             } else if self.current_token().kind == TokenKind::DotToken {
                 self.match_token(TokenKind::DotToken);
-                let member = self.match_token(TokenKind::IdentifierToken);
+                let member = self.match_name_token();
 
                 let mut generic_args = None;
                 if self.current_token().kind == TokenKind::SmallerThanToken {
@@ -419,5 +423,160 @@ impl<'a, 'b> Parser<'a, 'b> {
             generic_arguments,
             arguments,
         ))
+    }
+
+    /// Parses a `match (subject) { pattern [if guard] => body, ... }` expression. Each arm body is
+    /// either an expression (`=> expr`) or a statement block (`=> { ... }`); a trailing comma after
+    /// an arm is optional.
+    pub(super) fn parse_match(&mut self) -> Result<ExpressionNode<'a>, Error> {
+        self.match_token(TokenKind::MatchToken);
+        self.match_token(TokenKind::OpenParenthesisToken);
+        let subject = self.parse_expression(0)?;
+        self.match_token(TokenKind::CloseParenthesisToken);
+        self.match_token(TokenKind::CurlyOpenBracketToken);
+
+        let mut arms = Vec::new();
+        while self.current_token().kind != TokenKind::CurlyCloseBracketToken
+            && self.current_token().kind != EndOfFileToken
+        {
+            let iter = self.current_token_index;
+            let pattern = self.parse_pattern()?;
+
+            // Optional `if <guard>` after the pattern.
+            let guard = if self.current_token().kind == TokenKind::IfToken {
+                self.match_token(TokenKind::IfToken);
+                Some(self.parse_expression(0)?)
+            } else {
+                None
+            };
+
+            self.match_token(TokenKind::FatArrowToken);
+
+            let body = if self.current_token().kind == TokenKind::CurlyOpenBracketToken {
+                MatchArmBody::Block(self.parse_block()?)
+            } else {
+                MatchArmBody::Expr(self.parse_expression(0)?)
+            };
+
+            // A trailing comma between arms is optional.
+            if self.current_token().kind == TokenKind::CommaToken {
+                self.match_token(TokenKind::CommaToken);
+            }
+
+            arms.push(MatchArm {
+                pattern,
+                guard,
+                body,
+            });
+            self.ensure_progress(iter);
+        }
+        self.match_token(TokenKind::CurlyCloseBracketToken);
+        Ok(ExpressionNode::Match(self.arena.alloc(subject), arms))
+    }
+
+    /// Parses a single match pattern: `_` (wildcard), a literal, a bare identifier (a binding,
+    /// later reinterpreted as a unit variant by the analyzer when it names one), or a variant
+    /// pattern `Variant(sub, ...)` / `Enum.Variant(sub, ...)`.
+    pub(super) fn parse_pattern(&mut self) -> Result<PatternNode, Error> {
+        let cur = self.current_token();
+        match cur.kind {
+            TokenKind::IdentifierToken => {
+                if cur.text == "_" {
+                    let tok = self.next_token();
+                    return Ok(PatternNode::Wildcard(tok));
+                }
+                let first = self.match_token(TokenKind::IdentifierToken);
+                // `Enum.Variant[(...)]` - a qualified variant pattern.
+                if self.current_token().kind == TokenKind::DotToken {
+                    self.match_token(TokenKind::DotToken);
+                    let variant = self.match_token(TokenKind::IdentifierToken);
+                    let subs = self.parse_pattern_args()?;
+                    return Ok(PatternNode::Variant(Some(first), variant, subs));
+                }
+                // `Variant(...)` - an unqualified variant pattern with a payload.
+                if self.current_token().kind == TokenKind::OpenParenthesisToken {
+                    let subs = self.parse_pattern_args()?;
+                    return Ok(PatternNode::Variant(None, first, subs));
+                }
+                // A bare identifier: a binding (or a unit variant, resolved during analysis).
+                Ok(PatternNode::Binding(first))
+            }
+            _ => Ok(PatternNode::Literal(self.parse_literal_pattern()?)),
+        }
+    }
+
+    /// Parses the parenthesized sub-pattern list of a variant pattern, e.g. the `(x, None)` in
+    /// `Pair(x, None)`. Returns an empty list when there is no `(...)`.
+    fn parse_pattern_args(&mut self) -> Result<Vec<PatternNode>, Error> {
+        let mut subs = Vec::new();
+        if self.current_token().kind == TokenKind::OpenParenthesisToken {
+            self.match_token(TokenKind::OpenParenthesisToken);
+            while self.current_token().kind != TokenKind::CloseParenthesisToken
+                && self.current_token().kind != EndOfFileToken
+            {
+                let iter = self.current_token_index;
+                subs.push(self.parse_pattern()?);
+                if self.current_token().kind == TokenKind::CommaToken {
+                    self.match_token(TokenKind::CommaToken);
+                }
+                self.ensure_progress(iter);
+            }
+            self.match_token(TokenKind::CloseParenthesisToken);
+        }
+        Ok(subs)
+    }
+
+    /// Parses a literal used as a pattern (`0`, `-5`, `3.14`, `"s"`, `'c'`, `true`, `null`).
+    fn parse_literal_pattern(&mut self) -> Result<Type, Error> {
+        let cur = self.current_token();
+        match cur.kind {
+            TokenKind::BooleanToken => Ok(Type::Boolean(self.match_token(TokenKind::BooleanToken))),
+            TokenKind::StringToken => Ok(Type::String(self.match_token(TokenKind::StringToken))),
+            TokenKind::NullToken => {
+                self.match_token(TokenKind::NullToken);
+                Ok(Type::Nullable(Box::new(Type::Void)))
+            }
+            TokenKind::CharToken => {
+                let tok = self.next_token();
+                let value = Self::char_literal_value(&tok.text);
+                let char_token =
+                    SyntaxToken::new(TokenKind::CharToken, tok.position, value.to_string());
+                Ok(Type::Char(char_token))
+            }
+            TokenKind::MinusToken | TokenKind::NumberToken => {
+                let negative = cur.kind == TokenKind::MinusToken;
+                if negative {
+                    self.match_token(TokenKind::MinusToken);
+                }
+                let mut token = self.match_token(TokenKind::NumberToken);
+                let mut text = token.text.clone();
+                let is_double = text.ends_with('d') || text.ends_with('D');
+                let is_float = text.ends_with('f') || text.ends_with('F');
+                if is_double || is_float {
+                    text = text[..text.len() - 1].to_string();
+                }
+                if negative {
+                    text = format!("-{}", text);
+                }
+                token.text = text.clone();
+                if is_double {
+                    Ok(Type::Double(token))
+                } else if is_float {
+                    Ok(Type::Float(token))
+                } else if text.contains('.') {
+                    Ok(Type::Float(token))
+                } else {
+                    Ok(Type::Integer(token))
+                }
+            }
+            _ => {
+                self.diagnostics.report_error(
+                    format!("Expected a pattern but found {}", cur.kind.friendly_name()),
+                    Some(cur.position),
+                );
+                self.next_token();
+                Ok(Type::Unknown)
+            }
+        }
     }
 }

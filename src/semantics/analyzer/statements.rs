@@ -350,9 +350,13 @@ impl<'a> Analyzer<'a> {
                 }
             }
         }
-        //return right type
+        //return right type. A type annotation is published as the expected type so a generic
+        // union's nullary variant (`let o: Option<int> = Option.None;`) can resolve its arguments.
+        let saved_expected = self.current_expected_type.take();
+        self.current_expected_type = type_annotation.clone();
         let right_type =
             self.analyze_expression(right, ctx.parent_function, ctx.symbol_table, diagnostics)?;
+        self.current_expected_type = saved_expected;
 
         let var_type = if let Some(t) = type_annotation {
             self.compare_data_type(t, &right_type, &left.position, diagnostics)?;
@@ -642,12 +646,15 @@ impl<'a> Analyzer<'a> {
     ) -> Result<(), ()> {
         match (expression, &parent_function.return_type) {
             (Some(expression), Some(return_type)) => {
+                let saved_expected = self.current_expected_type.take();
+                self.current_expected_type = Some(return_type.clone());
                 let r = self.analyze_expression(
                     expression,
                     parent_function,
                     symbol_table,
                     diagnostics,
                 )?;
+                self.current_expected_type = saved_expected;
                 self.compare_data_type(
                     return_type,
                     &r,

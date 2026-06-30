@@ -4,3 +4,4 @@ mod function_control_flow;
 pub mod function_table;
 pub mod struct_table;
 pub mod symbol_table;
+pub mod union_table;

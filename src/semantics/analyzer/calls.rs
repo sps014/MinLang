@@ -574,6 +574,19 @@ impl<'a> Analyzer<'a> {
             // variable), so resolve `{type}_{method}` directly with no implicit `this`.
             let is_local = (*ctx.symbol_table).as_ref().borrow().get_symbol(id).is_ok();
             if !is_local {
+                // `Enum.Variant(args)`: construct a discriminated-union value.
+                if let Some(t) = self.analyze_variant_construction(
+                    &id.text,
+                    method,
+                    params,
+                    ctx.parent_function,
+                    ctx.symbol_table,
+                    diagnostics,
+                )? {
+                    return Ok(t);
+                }
+            }
+            if !is_local {
                 let type_name = canonical_type_name(&id.text)
                     .unwrap_or(id.text.as_str())
                     .to_string();

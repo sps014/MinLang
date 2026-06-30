@@ -73,10 +73,17 @@ impl<'a> WasmGenerator<'a> {
                 writer.write_line("drop");
             }
             StatementNode::ExpressionStatement(expr) => {
-                // If it evaluates to a value, we must pop it from the Wasm stack. We'll use "int"
-                // as a fallback expected type, but dropping ensures the stack remains balanced.
-                self.build_expression(expr, &"int".to_string(), function, writer)?;
-                writer.write_line("drop");
+                // A statement-position `match` is lowered directly so its arms may be blocks and
+                // it yields no value (no stack result to drop).
+                if let ExpressionNode::Match(subject, arms) = expr {
+                    self.build_match(subject, arms, None, function, writer)?;
+                } else {
+                    // If it evaluates to a value, we must pop it from the Wasm stack. We'll use
+                    // "int" as a fallback expected type, but dropping ensures the stack stays
+                    // balanced.
+                    self.build_expression(expr, &"int".to_string(), function, writer)?;
+                    writer.write_line("drop");
+                }
             }
             StatementNode::FunctionInvocation(n, generic_args, p) => {
                 // Shared call dispatch (see `classify_call`); the statement path differs only in

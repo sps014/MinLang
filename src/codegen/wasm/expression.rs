@@ -102,6 +102,7 @@ impl<'a> WasmGenerator<'a> {
                 }
             },
             ExpressionNode::MethodCall(obj, method, generic_args, params) => self.build_method_call(obj, method, generic_args, params, left_side, function, writer)?,
+            ExpressionNode::Match(subject, arms) => self.build_match(subject, arms, Some(left_side.clone()), function, writer)?,
             ExpressionNode::Ternary(cond, then_e, else_e) => self.build_ternary(cond, then_e, else_e, left_side, function, writer)?,
             // `await` only ever appears at allowed statement positions in v1, which the async
             // statement splitter lowers directly (it never calls `build_expression` on an `Await`).
@@ -364,6 +365,26 @@ impl<'a> WasmGenerator<'a> {
         function: &FunctionNode<'a>,
         writer: &mut IndentedTextWriter,
     ) -> Result<(), Error> {
+        // Unit-variant construction `Union.Variant` (e.g. `Option.None`) allocates a tagged block.
+        if let ExpressionNode::Identifier(id) = obj {
+            if let Some(union_name) = self.resolve_union_name(&id.text, _left_side) {
+                let is_unit_variant = self
+                    .unions
+                    .get(&union_name)
+                    .and_then(|u| u.variant(&member.text))
+                    .map(|v| v.fields.is_empty())
+                    .unwrap_or(false);
+                if is_unit_variant {
+                    return self.build_variant_construction(
+                        &union_name,
+                        &member.text,
+                        &[],
+                        function,
+                        writer,
+                    );
+                }
+            }
+        }
         // Enum member access `EnumName.Member` lowers to the member's integer constant.
         if let ExpressionNode::Identifier(id) = obj {
             if let Some(members) = self.enums.get(&id.text) {
@@ -874,6 +895,28 @@ impl<'a> WasmGenerator<'a> {
         function: &FunctionNode<'a>,
         writer: &mut IndentedTextWriter,
     ) -> Result<(), Error> {
+        // Data-variant construction `Union.Variant(args)` (e.g. `Option.Some(42)`) allocates a
+        // tagged block holding the discriminant and payload. Checked before static dispatch so a
+        // union name never collides with a class's static method.
+        if let ExpressionNode::Identifier(id) = obj {
+            if let Some(union_name) = self.resolve_union_name(&id.text, _left_side) {
+                let is_variant = self
+                    .unions
+                    .get(&union_name)
+                    .and_then(|u| u.variant(&method.text))
+                    .is_some();
+                if is_variant {
+                    return self.build_variant_construction(
+                        &union_name,
+                        &method.text,
+                        params,
+                        function,
+                        writer,
+                    );
+                }
+            }
+        }
+
         // `Type.method(args)`: a static call. Arguments map 1:1 to the parameters (no `this`).
         if let Some(key) = self.resolve_static_call(obj, &method.text, params, function) {
             let info = self.function_table.get_function(&key)?;

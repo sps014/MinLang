@@ -159,14 +159,87 @@ fn test_parse_enum_declaration() {
 
     let decl = &program.enums[0];
     assert_eq!(decl.name.text, "Color");
-    assert_eq!(decl.members.len(), 3);
+    assert_eq!(decl.variants.len(), 3);
     // Auto-assigned, explicit, then continues from explicit value.
-    assert_eq!(decl.members[0].0.text, "Red");
-    assert_eq!(decl.members[0].1, 0);
-    assert_eq!(decl.members[1].0.text, "Green");
-    assert_eq!(decl.members[1].1, 5);
-    assert_eq!(decl.members[2].0.text, "Blue");
-    assert_eq!(decl.members[2].1, 6);
+    assert_eq!(decl.variants[0].name.text, "Red");
+    assert_eq!(decl.variants[0].value, 0);
+    assert_eq!(decl.variants[1].name.text, "Green");
+    assert_eq!(decl.variants[1].value, 5);
+    assert_eq!(decl.variants[2].name.text, "Blue");
+    assert_eq!(decl.variants[2].value, 6);
+}
+
+#[test]
+fn test_parse_data_enum_with_generics() {
+    let code = "enum Option<T> { Some(value: T), None }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    assert_eq!(program.enums.len(), 1);
+
+    let decl = &program.enums[0];
+    assert_eq!(decl.name.text, "Option");
+    assert!(decl.is_data_enum());
+    let params = decl.generic_parameters.as_ref().expect("generic params");
+    assert_eq!(params.len(), 1);
+    assert_eq!(params[0].text, "T");
+
+    assert_eq!(decl.variants.len(), 2);
+    assert_eq!(decl.variants[0].name.text, "Some");
+    assert_eq!(decl.variants[0].fields.len(), 1);
+    assert_eq!(decl.variants[0].fields[0].name.text, "value");
+    assert_eq!(decl.variants[1].name.text, "None");
+    assert_eq!(decl.variants[1].fields.len(), 0);
+}
+
+#[test]
+fn test_parse_match_expression_with_patterns() {
+    let code = "fun f(s: Shape): int { return match (s) { Circle(r) => r, Empty => 0, _ => 1 }; }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    let func = &program.functions[0];
+    let StatementNode::Return(Some(ExpressionNode::Match(_subject, arms))) = &func.body[0] else {
+        panic!("expected a return of a match expression");
+    };
+    assert_eq!(arms.len(), 3);
+
+    use crate::syntax::nodes::PatternNode;
+    assert!(matches!(arms[0].pattern, PatternNode::Variant(_, _, _)));
+    assert!(matches!(arms[2].pattern, PatternNode::Wildcard(_)));
+}
+
+#[test]
+fn test_parse_match_arm_guard() {
+    let code = "fun f(o: Option): int { return match (o) { Some(n) if n > 0 => n, _ => 0 }; }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    let func = &program.functions[0];
+    let StatementNode::Return(Some(ExpressionNode::Match(_subject, arms))) = &func.body[0] else {
+        panic!("expected a return of a match expression");
+    };
+    assert!(arms[0].guard.is_some(), "first arm should have a guard");
+    assert!(arms[1].guard.is_none());
+}
+
+#[test]
+fn test_match_is_a_soft_keyword() {
+    // `match` remains usable as a method name (the stdlib `regex.match`).
+    let code = "fun f(r: Regex): string[] { return r.match(\"x\"); }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    let func = &program.functions[0];
+    let StatementNode::Return(Some(ExpressionNode::MethodCall(_obj, method, _, _))) = &func.body[0]
+    else {
+        panic!("expected a method call");
+    };
+    assert_eq!(method.text, "match");
 }
 
 #[test]

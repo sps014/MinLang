@@ -110,6 +110,12 @@ impl<'a, 'b> Parser<'a, 'b> {
             TokenKind::DoToken => Ok(self.parse_do_while()?),
             TokenKind::ForToken => Ok(self.parse_for()?),
             TokenKind::SwitchToken => Ok(self.parse_switch()?),
+            // `match (...) { ... }` as a statement: parse the match expression and wrap it. No
+            // trailing semicolon is required (it ends with `}`), like `if`/`switch`/`while`.
+            TokenKind::MatchToken => {
+                let expr = self.parse_match()?;
+                Ok(StatementNode::ExpressionStatement(expr))
+            }
             TokenKind::BreakToken => Ok(self.parse_break()?),
             TokenKind::ContinueToken => Ok(self.parse_continue()?),
             // `await <future-expr>;` as a statement, discarding the resolved value.

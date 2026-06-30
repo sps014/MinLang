@@ -17,6 +17,7 @@ pub mod module;
 pub mod object;
 pub mod statement;
 pub mod strings;
+pub mod unions;
 pub mod utils;
 
 /// Byte size of the universal heap-block header: `[size:i32][tag:i32][ref_count:i32]`.
@@ -53,6 +54,10 @@ pub struct CodegenContext {
     /// across sub-expression evaluation, so nested literals (`[P{...}]`, `Box<Box<int>>`) do
     /// not clobber each other's base pointer.
     pub alloc_depth: usize,
+    /// Current nesting depth of `match` lowering. Each level holds its subject pointer in a
+    /// distinct `$match_subj{depth}` local so a `match` inside a `match` arm body does not clobber
+    /// the enclosing subject.
+    pub match_depth: usize,
     /// Number of `$tmp{n}` temp locals currently held live. Owned-reference call arguments are
     /// `local.tee`'d into the next free `$tmp{n}` so they can be released after the call; the
     /// counter advances while a slot is held and is restored once the call's temps are released.
@@ -91,6 +96,7 @@ impl CodegenContext {
             current_mangled_name: None,
             function_indices: HashMap::new(),
             alloc_depth: 0,
+            match_depth: 0,
             tmp_depth: 0,
             poll_indices: HashMap::new(),
             current_async_self: None,
@@ -120,6 +126,9 @@ pub struct WasmGenerator<'a> {
     )>,
     /// Registered enums: name -> (member -> i32 value). Enum members lower to `i32.const`.
     pub enums: &'a crate::semantics::analyzer::EnumTable,
+    /// Layout of every (monomorphized) discriminated union, used to construct variant blocks,
+    /// lower `match`, and emit discriminant-aware releases.
+    pub unions: &'a crate::semantics::union_table::UnionTable,
     /// Resolved top-level variables, in declaration order.
     pub globals: &'a Vec<crate::semantics::analyzer::GlobalSymbol>,
     /// Mutable working state accumulated during emission.
@@ -148,6 +157,7 @@ impl<'a> WasmGenerator<'a> {
             instantiated_generics: &semantic_info.instantiated_generics,
             struct_methods: &semantic_info.struct_methods,
             enums: &semantic_info.enums,
+            unions: &semantic_info.unions,
             globals: &semantic_info.globals,
             ctx,
         }
@@ -169,6 +179,16 @@ impl<'a> WasmGenerator<'a> {
     /// arguments after a call. Bounds the count of simultaneously-live owned argument temporaries
     /// across nested calls; deeper nesting falls back to the last slot.
     pub const TMP_POOL: usize = 16;
+
+    /// Number of `$match_subj{n}` locals declared per function, holding the subject pointer of
+    /// each active (possibly nested) `match`. Deeper nesting falls back to the last slot.
+    pub const MATCH_SUBJ_POOL: usize = 8;
+
+    /// The subject local for the current `match` nesting depth, clamped to the declared pool.
+    pub fn match_subj_local(&self) -> String {
+        let idx = self.ctx.match_depth.min(Self::MATCH_SUBJ_POOL - 1);
+        format!("$match_subj{}", idx)
+    }
 
     /// Returns the name of the base-pointer local for the current constructor nesting depth,
     /// clamped to the declared pool so it always refers to a real local.

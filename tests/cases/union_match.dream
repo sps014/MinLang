@@ -1,0 +1,46 @@
+// `Option<T>` comes from the standard library prelude.
+enum Shape {
+    Circle(radius: int),
+    Rect(width: int, height: int),
+    Empty,
+}
+
+fun area(s: Shape): int {
+    return match (s) {
+        Circle(r)  => r * r * 3,
+        Rect(w, h) => w * h,
+        Empty      => 0,
+    };
+}
+
+fun describe(o: Option<int>): string {
+    return match (o) {
+        Some(0)           => "zero",
+        Some(n) if n > 10 => "big",
+        Some(n)           => "small",
+        None              => "none",
+    };
+}
+
+fun main(): void {
+    let c = Shape.Circle(2);
+    let r = Shape.Rect(3, 4);
+    let e = Shape.Empty;
+    System.println(area(c));
+    System.println(area(r));
+    System.println(area(e));
+
+    let a: Option<int> = Option.Some(0);
+    let b: Option<int> = Option.Some(42);
+    let d: Option<int> = Option.Some(5);
+    let n: Option<int> = Option.None;
+    System.println(describe(a));
+    System.println(describe(b));
+    System.println(describe(d));
+    System.println(describe(n));
+
+    match (b) {
+        Some(x) => { System.println(x); }
+        None    => System.println(0),
+    }
+}

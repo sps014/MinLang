@@ -72,6 +72,8 @@ pub enum TokenKind {
     ShiftRightToken,
     #[token("??")]
     QuestionQuestionToken,
+    #[token("=>")]
+    FatArrowToken,
     #[token("=")]
     EqualToken,
     #[token(">=")]
@@ -161,6 +163,8 @@ pub enum TokenKind {
     CaseToken,
     #[token("default")]
     DefaultToken,
+    #[token("match")]
+    MatchToken,
 
     #[token("@")]
     AtToken,
@@ -215,6 +219,7 @@ impl TokenKind {
             TokenKind::ShiftLeftToken => "'<<'",
             TokenKind::ShiftRightToken => "'>>'",
             TokenKind::QuestionQuestionToken => "'??'",
+            TokenKind::FatArrowToken => "'=>'",
             TokenKind::EqualToken => "'='",
             TokenKind::GreaterThanEqualToken => "'>='",
             TokenKind::GreaterThanToken => "'>'",
@@ -258,6 +263,7 @@ impl TokenKind {
             TokenKind::SwitchToken => "'switch'",
             TokenKind::CaseToken => "'case'",
             TokenKind::DefaultToken => "'default'",
+            TokenKind::MatchToken => "'match'",
             TokenKind::AtToken => "'@'",
             TokenKind::DataTypeToken => "data type",
             TokenKind::LineCommentToken | TokenKind::BlockCommentToken => "comment",

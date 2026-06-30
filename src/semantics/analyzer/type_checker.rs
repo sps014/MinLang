@@ -167,7 +167,19 @@ impl<'a> Analyzer<'a> {
                 )?;
             }
             StatementNode::ExpressionStatement(expr) => {
-                self.analyze_expression(expr, parent_function, symbol_table, diagnostics)?;
+                // A statement-position `match` allows block arms and yields no value.
+                if let crate::syntax::nodes::ExpressionNode::Match(subject, arms) = expr {
+                    self.analyze_match(
+                        subject,
+                        arms,
+                        parent_function,
+                        symbol_table,
+                        false,
+                        diagnostics,
+                    )?;
+                } else {
+                    self.analyze_expression(expr, parent_function, symbol_table, diagnostics)?;
+                }
             }
             StatementNode::MethodInvocation(obj, method, generic_args, params) => {
                 self.analyze_method_call(obj, method, generic_args, params, &ctx, diagnostics)?;

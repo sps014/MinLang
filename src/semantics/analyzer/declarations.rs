@@ -2,9 +2,14 @@ use super::*;
 use crate::driver::diagnostics::DiagnosticBag;
 use crate::semantics::function_table::FunctionTableInfo;
 use crate::semantics::symbol_table::SymbolTable;
+use crate::semantics::union_table::{
+    UnionFieldInfo, UnionInfo, UnionVariantInfo, DISCRIMINANT_SIZE,
+};
 use crate::syntax::nodes::struct_node::{StructDeclarationNode, StructFieldNode};
-use crate::syntax::nodes::types::{mangle_generic, method_fn, strip_array, strip_nullable};
-use crate::syntax::nodes::{FunctionNode, ProgramNode, Type};
+use crate::syntax::nodes::types::{
+    mangle_generic, method_fn, strip_array, strip_nullable, value_size_align,
+};
+use crate::syntax::nodes::{EnumVariantNode, FunctionNode, ProgramNode, Type};
 use crate::syntax::text::text_span::TextSpan;
 use crate::syntax::token::token_kind::TokenKind;
 use std::cell::RefCell;
@@ -12,36 +17,195 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 impl<'a> Analyzer<'a> {
-    /// Pass: register every enum and its members (member -> integer value), reporting duplicate
-    /// enum names and duplicate member names.
+    /// Pass: register every enum. A C-style integer enum (no payloads) goes into the enum table
+    /// (member -> integer value). A discriminated union (any variant carries a payload) is
+    /// registered as a heap reference type with a computed layout; generic unions are stashed as
+    /// templates and instantiated on demand. Reports duplicate enum/member names.
     pub(super) fn register_enums(
         &mut self,
         node: &'a ProgramNode<'a>,
         diagnostics: &mut DiagnosticBag,
     ) {
+        // Pass 1: register C-style enums and stash generic-union *templates*. Doing templates
+        // first means a concrete union may reference a generic union declared later (or one from
+        // the prelude, which is merged after user code), e.g. `enum Pair { Both(Option<int>) }`.
         for enum_decl in node.enums.iter() {
-            if self.enum_table.contains_key(&enum_decl.name.text) {
+            let name = &enum_decl.name.text;
+            if self.enum_table.contains_key(name)
+                || self.union_table.contains_key(name)
+                || self.generic_unions.contains_key(name)
+            {
                 diagnostics.report_error(
-                    format!("Enum '{}' is already defined", enum_decl.name.text),
+                    format!("Enum '{}' is already defined", name),
                     Some(enum_decl.name.position),
                 );
                 continue;
             }
+
+            if enum_decl.is_data_enum() {
+                // Generic discriminated unions are templates, monomorphized on first use.
+                if enum_decl.generic_parameters.is_some() {
+                    self.generic_unions.insert(name.clone(), enum_decl);
+                }
+                continue;
+            }
+
+            // C-style integer enum: members lower to plain `i32` constants.
             let mut members = HashMap::new();
-            for (member, value) in enum_decl.members.iter() {
-                if members.contains_key(&member.text) {
+            for variant in enum_decl.variants.iter() {
+                if members.contains_key(&variant.name.text) {
                     diagnostics.report_error(
                         format!(
                             "Duplicate member '{}' in enum '{}'",
-                            member.text, enum_decl.name.text
+                            variant.name.text, name
                         ),
-                        Some(member.position),
+                        Some(variant.name.position),
                     );
                     continue;
                 }
-                members.insert(member.text.clone(), *value);
+                members.insert(variant.name.text.clone(), variant.value);
             }
-            self.enum_table.insert(enum_decl.name.text.clone(), members);
+            self.enum_table.insert(name.clone(), members);
+        }
+
+        // Pass 2: register concrete (non-generic) discriminated unions. Their payload fields may
+        // instantiate generic unions whose templates were collected in pass 1.
+        for enum_decl in node.enums.iter() {
+            if enum_decl.is_data_enum() && enum_decl.generic_parameters.is_none() {
+                self.register_union(
+                    &enum_decl.name.text,
+                    &enum_decl.variants,
+                    &[],
+                    diagnostics,
+                );
+            }
+        }
+    }
+
+    /// Computes and registers the layout of a (possibly monomorphized) discriminated union under
+    /// `union_name`. Each variant's payload starts after the discriminant word; payloads of
+    /// different variants overlap, so the block is sized to the largest variant. `bindings`
+    /// substitutes any generic parameters in field types (empty for non-generic unions).
+    pub(super) fn register_union(
+        &mut self,
+        union_name: &str,
+        variants: &[EnumVariantNode],
+        bindings: &[(String, String)],
+        diagnostics: &mut DiagnosticBag,
+    ) {
+        let mut variant_infos = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        let mut block_end = DISCRIMINANT_SIZE;
+
+        for variant in variants {
+            if !seen.insert(variant.name.text.clone()) {
+                diagnostics.report_error(
+                    format!(
+                        "Duplicate variant '{}' in enum '{}'",
+                        variant.name.text, union_name
+                    ),
+                    Some(variant.name.position),
+                );
+                continue;
+            }
+            let mut offset = DISCRIMINANT_SIZE;
+            let mut field_infos = Vec::new();
+            for field in &variant.fields {
+                let ftype = substitute_generic_type(&field.field_type, bindings);
+                // Instantiate any generic union/struct referenced by a payload field type.
+                if let Some((base, args)) = Self::resolve_struct_parts(&ftype) {
+                    if !args.is_empty() {
+                        self.ensure_type_instantiated(
+                            &base,
+                            &args,
+                            &field.name.position,
+                            diagnostics,
+                        );
+                    }
+                }
+                let (size, align) = value_size_align(&ftype.get_type());
+                let rem = offset % align;
+                if rem != 0 {
+                    offset += align - rem;
+                }
+                field_infos.push(UnionFieldInfo {
+                    name: field.name.text.clone(),
+                    type_: ftype,
+                    offset,
+                });
+                offset += size;
+            }
+            block_end = block_end.max(offset);
+            variant_infos.push(UnionVariantInfo {
+                name: variant.name.text.clone(),
+                discriminant: variant.value,
+                fields: field_infos,
+            });
+        }
+
+        // Align the block to 8 bytes so a `double` payload stays naturally aligned.
+        let size = (block_end + 7) / 8 * 8;
+
+        if let Err(e) = self.struct_table.add_union(union_name, size, true) {
+            diagnostics.report_error(e, None);
+            return;
+        }
+        self.union_table.insert(
+            union_name.to_string(),
+            UnionInfo {
+                name: union_name.to_string(),
+                variants: variant_infos,
+                size,
+            },
+        );
+    }
+
+    /// Ensures a generic union instantiation (e.g. `Option<int>` -> `Option_int`) is registered,
+    /// monomorphizing its variant field types. No-op for non-generic or already-registered unions.
+    pub(super) fn ensure_union_instantiated(
+        &mut self,
+        base_name: &str,
+        args: &[Type],
+        position: &TextSpan,
+        diagnostics: &mut DiagnosticBag,
+    ) {
+        let mangled = mangle_generic(base_name, args);
+        if self.union_table.contains_key(&mangled) {
+            return;
+        }
+        let template = match self.generic_unions.get(base_name) {
+            Some(t) => *t,
+            None => return,
+        };
+        let params = template.generic_parameters.as_deref().unwrap_or(&[]);
+        if args.len() != params.len() {
+            diagnostics.report_error(
+                format!(
+                    "Generic enum '{}' expects {} type argument(s), but {} were provided",
+                    base_name,
+                    params.len(),
+                    args.len()
+                ),
+                Some(*position),
+            );
+        }
+        let bindings = generic_bindings(params, args);
+        self.register_union(&mangled, &template.variants, &bindings, diagnostics);
+    }
+
+    /// Instantiates whichever generic container `base_name` denotes (a generic class or a generic
+    /// discriminated union), so nested generic types in field/argument positions are resolved.
+    pub(super) fn ensure_type_instantiated(
+        &mut self,
+        base_name: &str,
+        args: &[Type],
+        position: &TextSpan,
+        diagnostics: &mut DiagnosticBag,
+    ) {
+        if self.generic_unions.contains_key(base_name) {
+            self.ensure_union_instantiated(base_name, args, position, diagnostics);
+        } else {
+            self.ensure_struct_instantiated(base_name, args, position, diagnostics);
         }
     }
 

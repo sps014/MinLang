@@ -1,0 +1,19 @@
+// `Result<T, E>` - the outcome of an operation that may fail: a success value (`Ok`) or an error
+// (`Err`). A discriminated union, matched exhaustively with `match`. Auto-imported into every
+// program.
+//
+//   fun safe_div(a: int, b: int): Result<int, string> {
+//       if (b == 0) {
+//           return Result.Err("divide by zero");
+//       }
+//       return Result.Ok(a / b);
+//   }
+//
+//   match (safe_div(10, 2)) {
+//       Ok(v)  => System.println(v),
+//       Err(e) => System.println(e),
+//   }
+enum Result<T, E> {
+    Ok(value: T),
+    Err(error: E),
+}

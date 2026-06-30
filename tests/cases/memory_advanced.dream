@@ -3,6 +3,20 @@ class Node {
     next: Node?;
 }
 
+// A recursive discriminated union: a singly-linked list. Each `Cons` owns its `tail`, so dropping
+// the head must release the whole chain (deep, deterministic reclamation through `$release_IntList`).
+enum IntList {
+    Cons(head: int, tail: IntList),
+    Nil,
+}
+
+// A recursive union tree: each `Branch` owns two child references, so the discriminant-aware
+// release has to recurse through *both* subtrees before freeing the node.
+enum Tree {
+    Leaf(value: int),
+    Branch(left: Tree, right: Tree),
+}
+
 fun do_allocations() {
     let n1 = Node(1, null);
     let n2 = Node(2, n1);
@@ -10,21 +24,69 @@ fun do_allocations() {
     // n3 goes out of scope, releasing n2, releasing n1
 }
 
+fun build_list(n: int): IntList {
+    let list: IntList = IntList.Nil;
+    let i = 0;
+    while (i < n) {
+        // The previous `list` becomes the tail of a fresh `Cons`; reassigning transfers ownership
+        // of the old chain into the new head, so nothing leaks across iterations.
+        list = IntList.Cons(i, list);
+        i = i + 1;
+    }
+    return list;
+}
+
+fun sum_list(list: IntList): int {
+    return match (list) {
+        Cons(h, t) => h + sum_list(t),
+        Nil        => 0,
+    };
+}
+
+fun build_tree(depth: int): Tree {
+    if (depth <= 0) {
+        return Tree.Leaf(depth);
+    }
+    return Tree.Branch(build_tree(depth - 1), build_tree(depth - 1));
+}
+
+fun sum_tree(t: Tree): int {
+    return match (t) {
+        Leaf(v)      => v,
+        Branch(l, r) => sum_tree(l) + sum_tree(r),
+    };
+}
+
+// Deep, reference-rich enum allocations: a 16-node linked list and a depth-4 binary tree (31 union
+// nodes). Both are built, traversed, and dropped at scope exit; the recursive `$release_*` must
+// reclaim every node so the heap returns to its baseline.
+fun do_enum_allocations() {
+    let list = build_list(16);
+    let s = sum_list(list);
+    let tree = build_tree(4);
+    let t = sum_tree(tree);
+}
+
 fun main() {
-    // Warm up once so the freelist reaches a steady state, then capture the baseline. Genuine
-    // reclamation means each subsequent round reuses (and returns) the same blocks, leaving the
-    // freelist head unchanged; a leak would keep growing the heap and never return to baseline.
+    // Warm up once, then capture the live-object baseline. `Debug.live_objects()` is the count of
+    // heap blocks currently handed out (incremented by `$malloc`, decremented by `$free`), so it is
+    // the true leak detector: it is insensitive to which freed block sits at the freelist head
+    // (deep recursive frees of mixed-size union nodes reorder the freelist without leaking). If
+    // every round's classes AND recursive union chains are fully reclaimed, the count after 100
+    // more rounds equals the baseline; a single leaked node makes it grow.
     do_allocations();
-    let initial_free = Debug.free_list_head();
+    do_enum_allocations();
+    let baseline = Debug.live_objects();
 
     let i = 0;
     while (i < 100) {
         do_allocations();
+        do_enum_allocations();
         i = i + 1;
     }
 
-    let final_free = Debug.free_list_head();
-    if (initial_free == final_free) {
+    let final_live = Debug.live_objects();
+    if (baseline == final_live) {
         System.print("Memory perfectly reclaimed!");
     } else {
         System.print("Memory leak detected!");

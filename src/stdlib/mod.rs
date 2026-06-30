@@ -11,6 +11,8 @@ use std::rc::Rc;
 /// only attach methods to built-in types, so their relative order does not matter.
 pub const PRELUDE_FILES: &[(&str, &str)] = &[
     ("<std>/core.dream", include_str!("core.dream")),
+    ("<std>/option.dream", include_str!("option.dream")),
+    ("<std>/result.dream", include_str!("result.dream")),
     ("<std>/list.dream", include_str!("list.dream")),
     ("<std>/map.dream", include_str!("map.dream")),
     ("<std>/int.dream", include_str!("int.dream")),

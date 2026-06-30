@@ -1,0 +1,59 @@
+// Discriminated unions + exhaustive `match`.
+//
+// Run with:  cargo run -- run sample/discriminated_unions.dream
+
+// `Option<T>` and `Result<T, E>` come from the standard library prelude.
+enum Shape {
+    Circle(radius: int),
+    Rect(width: int, height: int),
+    Empty,
+}
+
+// `match` as an expression: every arm yields an int.
+fun area(s: Shape): int {
+    return match (s) {
+        Circle(r)  => r * r * 3,
+        Rect(w, h) => w * h,
+        Empty      => 0,
+    };
+}
+
+// Literal sub-patterns and a guard; a trailing binding keeps the match exhaustive.
+fun describe(o: Option<int>): string {
+    return match (o) {
+        Some(0)           => "zero",
+        Some(n) if n > 10 => "big",
+        Some(n)           => "small",
+        None              => "nothing",
+    };
+}
+
+fun safe_div(a: int, b: int): Result<int, string> {
+    if (b == 0) {
+        return Result.Err("divide by zero");
+    }
+    return Result.Ok(a / b);
+}
+
+fun main() {
+    System.println(area(Shape.Circle(2)));   // 12
+    System.println(area(Shape.Rect(3, 4)));  // 12
+    System.println(area(Shape.Empty));       // 0
+
+    let a: Option<int> = Option.Some(0);
+    let b: Option<int> = Option.Some(42);
+    let n: Option<int> = Option.None;
+    System.println(describe(a));              // zero
+    System.println(describe(b));              // big
+    System.println(describe(n));              // nothing
+
+    // `match` as a statement with block arms.
+    match (safe_div(10, 2)) {
+        Ok(v)  => { System.print("ok "); System.println(v); }
+        Err(e) => { System.print("err "); System.println(e); }
+    }
+    match (safe_div(1, 0)) {
+        Ok(v)  => { System.print("ok "); System.println(v); }
+        Err(e) => { System.print("err "); System.println(e); }
+    }
+}

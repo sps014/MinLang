@@ -104,6 +104,26 @@ impl StructTable {
         Ok(())
     }
 
+    /// Registers a discriminated union under `name` as a heap reference type. Unions carry no
+    /// flat field map (their payload layout is variant-dependent and lives in the union table),
+    /// but they still need an entry here so they receive a runtime type tag, count as a reference
+    /// type, and get a (discriminant-aware) `$release_*` helper generated.
+    pub fn add_union(&mut self, name: &str, size: usize, is_public: bool) -> Result<(), String> {
+        if self.structs.contains_key(name) {
+            return Err(format!("Type '{}' is already defined", name));
+        }
+        self.structs.insert(
+            name.to_string(),
+            StructInfo {
+                name: name.to_string(),
+                fields: HashMap::new(),
+                size,
+                is_public,
+            },
+        );
+        Ok(())
+    }
+
     pub fn get_struct(&self, name: &str) -> Option<&StructInfo> {
         self.structs.get(name)
     }

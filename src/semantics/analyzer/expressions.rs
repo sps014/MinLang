@@ -173,7 +173,29 @@ impl<'a> Analyzer<'a> {
                 self.compare_data_type(&then_type, &else_type, &empty_span(), diagnostics)?;
                 Ok(then_type)
             }
+            ExpressionNode::Match(subject, arms) => self.analyze_match(
+                subject,
+                arms,
+                parent_function,
+                symbol_table,
+                true,
+                diagnostics,
+            ),
             ExpressionNode::MemberAccess(obj, member) => {
+                // A unit variant of a discriminated union (`Shape.Empty`, `Option.None`) constructs
+                // a heap union value rather than resolving to an integer enum member.
+                if let ExpressionNode::Identifier(id) = obj {
+                    if let Some(t) = self.analyze_variant_construction(
+                        &id.text,
+                        member,
+                        &[],
+                        parent_function,
+                        symbol_table,
+                        diagnostics,
+                    )? {
+                        return Ok(t);
+                    }
+                }
                 // Enum member access `EnumName.Member` resolves to the enum type (an i32 at runtime).
                 if let ExpressionNode::Identifier(id) = obj {
                     if self.enum_table.contains_key(&id.text) {

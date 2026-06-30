@@ -14,6 +14,7 @@ pub fn merge_prelude<'a>(
     arena: &'a Bump,
     all_functions: &mut Vec<crate::syntax::nodes::FunctionNode<'a>>,
     all_structs: &mut Vec<crate::syntax::nodes::struct_node::StructDeclarationNode<'a>>,
+    all_enums: &mut Vec<crate::syntax::nodes::EnumDeclarationNode>,
     all_extends: &mut Vec<crate::syntax::nodes::ExtendNode<'a>>,
     diagnostics: &mut DiagnosticBag,
     file_contents: &mut HashMap<String, String>,
@@ -51,6 +52,11 @@ pub fn merge_prelude<'a>(
                 method.file_path = Some(file_tag.clone());
             }
             all_structs.push(struct_decl);
+        }
+        // Prelude enums/discriminated unions (`Option<T>`, `Result<T, E>`) are merged like any
+        // other declaration so they are auto-imported into every program.
+        for enum_decl in program.enums.iter().cloned() {
+            all_enums.push(enum_decl);
         }
         for extend_decl in program.extends.iter().cloned() {
             let mut extend_decl = extend_decl;

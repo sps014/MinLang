@@ -209,7 +209,46 @@ impl<'a> WasmGenerator<'a> {
         }
 
         // Deep release logic
-        if let Some(info) = struct_info {
+        if let Some(union) = self.unions.get(type_name).cloned() {
+            // A discriminated union overlaps its variants' payloads, so only the *active*
+            // variant's reference fields are valid: switch on the discriminant (offset 0) and
+            // release just those.
+            for variant in &union.variants {
+                let ref_fields: Vec<&crate::semantics::union_table::UnionFieldInfo> = variant
+                    .fields
+                    .iter()
+                    .filter(|f| {
+                        self.is_reference_type(crate::syntax::nodes::types::strip_nullable(
+                            &f.type_.get_type(),
+                        ))
+                    })
+                    .collect();
+                if ref_fields.is_empty() {
+                    continue;
+                }
+                writer.write_line("local.get $ptr");
+                writer.write_line("i32.load"); // discriminant at offset 0
+                writer.write_line(&format!("i32.const {}", variant.discriminant));
+                writer.write_line("i32.eq");
+                writer.write_line("(if");
+                writer.indent();
+                writer.write_line("(then");
+                writer.indent();
+                for f in ref_fields {
+                    writer.write_line("local.get $ptr");
+                    if f.offset > 0 {
+                        writer.write_line(&format!("i32.const {}", f.offset));
+                        writer.write_line("i32.add");
+                    }
+                    writer.write_line("i32.load"); // load the field pointer
+                    self.emit_release(&f.type_.get_type(), writer);
+                }
+                writer.unindent();
+                writer.write_line(")");
+                writer.unindent();
+                writer.write_line(")");
+            }
+        } else if let Some(info) = struct_info {
             for field_info in info.fields.values() {
                 let field_type = field_info.type_.get_type();
                 if self.is_reference_type(&field_type) {

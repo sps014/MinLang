@@ -62,6 +62,7 @@ nav:
     - Types: language/types.md
     - Operators: language/operators.md
     - Control Flow: language/control-flow.md
+    - Discriminated Unions: language/discriminated-unions.md
     - Functions: language/functions.md
     - Imports: language/imports.md
     - Arrays: language/arrays.md

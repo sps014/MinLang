@@ -1,0 +1,19 @@
+// Non-exhaustive match: the `Blue` variant is neither covered nor caught by a `_` arm, so the
+// analyzer must reject this at compile time.
+
+enum Light {
+    Red(brightness: int),
+    Green,
+    Blue,
+}
+
+fun name(l: Light): string {
+    return match (l) {
+        Red(b) => "red",
+        Green  => "green",
+    };
+}
+
+fun main() {
+    System.println(name(Light.Green));
+}
