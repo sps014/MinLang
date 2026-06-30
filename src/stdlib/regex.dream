@@ -1,11 +1,11 @@
-// `Regex` - regular expressions exposed via JS interop. Dream ships no regex engine of its own;
-// instead the host (`runtime/dream.js`) backs these helpers with JavaScript's `RegExp`, so the
-// full ECMAScript syntax and flags are available. The string-in/string-out helpers cover the
-// common cases; `compile()` hands back a live `RegExp` as a `JsRef` for stateful use
-// (`lastIndex`, `exec`, ...).
+// `Regex` - regular expressions over a small set of synchronous host functions, implemented
+// natively in Rust (`src/execution/host.rs`, via the `regex` crate) for the wasmtime CLI and in
+// JavaScript (`runtime/dream.js`, via `RegExp`) for Node and the browser. Because both back the
+// same string-in/string-out helpers, the same `.dream` runs unchanged on every host.
 //
-// Because this leans on the `Dream` host module, regex only runs under the JS runtime
-// (`runtime/dream.js`), not the standalone wasmtime test harness.
+// Note: the native (wasmtime) backend uses Rust's `regex` crate, which has no lookaround or
+// backreferences. Patterns using those features compile under JS `RegExp` but not natively, where
+// they fall back to a safe default (`test` false, `replace` unchanged, `match` empty).
 
 @js("Dream", "regexTest")
 extern fun __regex_test(pattern: string, flags: string, input: string): bool;
@@ -16,9 +16,8 @@ extern fun __regex_replace(pattern: string, flags: string, input: string, replac
 @js("Dream", "regexMatchJoined")
 extern fun __regex_match_joined(pattern: string, flags: string, input: string, sep: string): string;
 
-@js("Dream", "regexCompile")
-extern fun __regex_compile(pattern: string, flags: string): JsRef;
 
+// Regex is a small class that wraps the provided regex functions.
 class Regex {
     pattern: string;
     flags: string;
@@ -42,11 +41,5 @@ class Regex {
             return array_new<string>(0);
         }
         return joined.split('\n');
-    }
-
-    // Returns a live JS `RegExp` handle for stateful operations (`exec`, `lastIndex`). Remember to
-    // call `.release()` on the handle when finished.
-    public fun compile(): JsRef {
-        return __regex_compile(this.pattern, this.flags);
     }
 }

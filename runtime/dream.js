@@ -473,7 +473,8 @@ function defaultDreamModule(getInstance) {
     jsInvoke0: (fn) => fn(),
     jsInvoke1: (fn, a) => fn(a),
     jsInvoke2: (fn, a, b) => fn(a, b),
-    // Regex helpers (string-in/string-out; see src/stdlib/regex.dream).
+    // Regex helpers (string-in/string-out; see src/stdlib/regex.dream). Mirrored natively in
+    // src/execution/host.rs so `Regex` works the same under wasmtime, Node, and the browser.
     regexTest: (pattern, flags, input) => new RegExp(pattern, flags).test(input),
     regexReplace: (pattern, flags, input, replacement) =>
       input.replace(new RegExp(pattern, flags), replacement),
@@ -481,7 +482,6 @@ function defaultDreamModule(getInstance) {
       const m = input.match(new RegExp(pattern, flags));
       return m ? Array.from(m).join(sep) : "";
     },
-    regexCompile: (pattern, flags) => new RegExp(pattern, flags),
     // HTTP helpers (see src/stdlib/http.dream). Each performs the whole request and resolves with
     // the full response as a single `Uint8Array` (marshaled to a Dream `char[]`): an ASCII head
     // ("<status>\n" + "Name: value\n" ... + blank line) followed by the raw body bytes. Bridged via

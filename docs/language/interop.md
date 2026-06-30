@@ -127,5 +127,5 @@ Functions cross the boundary in both directions — pass a Dream `fun(...)` to J
 Three standard-library features are pure interop wrappers built on the pieces above, so they are good worked examples:
 
 - **[JSON](json.md)** — native parse/stringify plus `@json` auto-derive (no interop needed, but pairs with HTTP).
-- **[Regex](regex.md)** — JavaScript `RegExp` exposed through the `Regex` class.
+- **[Regex](../stdlib/regex.md)** — a cross-runtime regular-expression class (`regex` crate natively, `RegExp` on JS hosts).
 - **[HttpClient](../stdlib/http.md)** — an instantiable, cross-runtime HTTP client over `extern async fun`.

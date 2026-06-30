@@ -1,7 +1,7 @@
-// Regex via JS interop. The `Regex` class (stdlib prelude) wraps JavaScript's RegExp, so the
-// full ECMAScript pattern syntax is available without Dream shipping its own engine.
+// Cross-runtime regex via the `Regex` class (stdlib prelude). The same program runs natively under
+// wasmtime (Rust's `regex` crate) and over `RegExp` in Node / the browser.
 //
-//   cargo run -- sample/interop/regex.dream
+//   cargo run -- run sample/interop/regex.dream
 //   node sample/interop/regex.mjs sample/interop/regex.wasm
 
 fun main(): void {
