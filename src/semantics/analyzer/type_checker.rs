@@ -15,18 +15,19 @@ impl<'a> Analyzer<'a> {
         let param_table = Rc::new(RefCell::new(
             self.add_function_param_table(function, diagnostics)?,
         ));
-        self.current_function_is_async = function.is_async;
-        self.analyze_body(
-            function.body,
-            function,
-            Some(&param_table),
-            false,
-            diagnostics,
-        )?;
-        // Enforce the v1 `await` placement rules (only in async functions, only at statement
-        // position) and that non-async functions contain no `await` at all.
-        self.check_await_positions(function, diagnostics);
-        self.current_function_is_async = false;
+        self.with_async_flag(function.is_async, |s| {
+            s.analyze_body(
+                function.body,
+                function,
+                Some(&param_table),
+                false,
+                diagnostics,
+            )?;
+            // Enforce the v1 `await` placement rules (only in async functions, only at statement
+            // position) and that non-async functions contain no `await` at all.
+            s.check_await_positions(function, diagnostics);
+            Ok(())
+        })?;
         // check return
         let mut graph = FunctionControlGraph::new(function);
         if let Err(e) = graph.build() {

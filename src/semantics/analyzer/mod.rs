@@ -281,6 +281,33 @@ impl<'a> Analyzer<'a> {
         self.analyze_pgm(pgm, diagnostics)
     }
 
+    /// Runs `f` with `current_generic_bindings` set to `bindings`, restoring the previous bindings
+    /// afterward (even if `f` returns early via `?`). Replaces the manual "set then clear to empty"
+    /// pattern at the monomorphized-body analysis sites, which both leaked bindings into the next
+    /// body on an error path and clobbered (rather than restored) any enclosing bindings.
+    pub(super) fn with_generic_bindings<F, R>(&mut self, bindings: GenericBindings, f: F) -> R
+    where
+        F: FnOnce(&mut Self) -> R,
+    {
+        let saved = std::mem::replace(&mut self.current_generic_bindings, bindings);
+        let result = f(self);
+        self.current_generic_bindings = saved;
+        result
+    }
+
+    /// Runs `f` with `current_function_is_async` set to `is_async`, restoring the previous value
+    /// afterward so the flag cannot leak into a sibling function's analysis.
+    pub(super) fn with_async_flag<F, R>(&mut self, is_async: bool, f: F) -> R
+    where
+        F: FnOnce(&mut Self) -> R,
+    {
+        let saved = self.current_function_is_async;
+        self.current_function_is_async = is_async;
+        let result = f(self);
+        self.current_function_is_async = saved;
+        result
+    }
+
     /// Builds a concrete `Type` from a type name, used when substituting a generic
     /// parameter `T` with the concrete type chosen at the call/instantiation site.
     fn concrete_type_from_str(name: &str) -> Type {

@@ -36,6 +36,46 @@ impl<'a> WasmGenerator<'a> {
         writer.write_line("(module");
         writer.indent();
 
+        self.emit_imports(program, writer)?;
+
+        // Memory management functions
+        self.build_memory_management(writer)?;
+
+        // Top-level variable storage (one mutable WASM global each), zero-initialized; their real
+        // initializers run in `$__dream_init` (emitted below, invoked via `(start ...)`).
+        self.build_global_declarations(writer)?;
+
+        // Object protocol: boxing/unboxing, to_string/hash_code dispatchers, defaults.
+        self.build_object_runtime(writer)?;
+
+        // Per-enum `name()` lookup functions.
+        self.build_enum_runtime(writer);
+
+        // Function table for first-class function values / `call_indirect`, plus the async
+        // scheduler runtime when any `async fun` is present.
+        self.emit_function_table(program, writer);
+
+        self.emit_data_segments(writer);
+
+        // Concrete functions, monomorphized generics, and struct/extension methods.
+        self.emit_function_definitions(program, writer)?;
+
+        // Evaluate top-level variable initializers once, before `main`, via a `(start)` function.
+        self.build_global_init(program, writer)?;
+
+        self.build_export(program, writer)?;
+        writer.unindent();
+        writer.write_line(")");
+        Ok(())
+    }
+
+    /// Emits the WASM `(import ...)` declarations: first the host I/O + importable stdlib
+    /// functions, then user-declared `extern fun`s (which may be remapped via `@js`).
+    fn emit_imports(
+        &self,
+        program: &ProgramNode<'a>,
+        writer: &mut IndentedTextWriter,
+    ) -> Result<(), Error> {
         // Import the host I/O functions (print_*) plus the importable stdlib functions. Functions
         // flagged `inline` (the string/char runtime helpers, compiled into RUNTIME_STRINGS) are not
         // imported - the `inline` field on StdlibFunction is the single source of truth for that.
@@ -47,20 +87,10 @@ impl<'a> WasmGenerator<'a> {
                 continue;
             } // body emitted internally, not imported
 
-            let mut params_str = String::new();
-            for p in &std_func.parameters {
-                params_str.push_str(&format!(
-                    "{} ",
-                    WasmGenerator::get_wasm_type_from(p.clone())?
-                ));
-            }
-
+            let params_str = self.wasm_params_str(std_func.parameters.iter().cloned())?;
             let result_str = match &std_func.return_type {
-                Some(t) => format!(
-                    " (result {})",
-                    WasmGenerator::get_wasm_type_from(t.get_type())?
-                ),
-                None => "".to_string(),
+                Some(t) => Self::wasm_result_str(&t.get_type(), false)?,
+                None => String::new(),
             };
 
             writer.write_line(&format!(
@@ -86,39 +116,17 @@ impl<'a> WasmGenerator<'a> {
                 continue;
             }
 
-            let mut params_str = String::new();
-            for p in &func.parameters {
-                let resolved = self.resolve_type(&p.type_.get_type());
-                params_str.push_str(&format!(
-                    "{} ",
-                    WasmGenerator::get_wasm_type_from(resolved)?
-                ));
-            }
-
+            let params_str = self.wasm_params_str(
+                func.parameters
+                    .iter()
+                    .map(|p| self.resolve_type(&p.type_.get_type())),
+            )?;
             let result_str = match &func.return_type {
-                Some(t) => {
-                    let resolved = self.resolve_type(&t.get_type());
-                    if resolved == "void" {
-                        String::new()
-                    } else {
-                        format!(" (result {})", WasmGenerator::get_wasm_type_from(resolved)?)
-                    }
-                }
+                Some(t) => Self::wasm_result_str(&self.resolve_type(&t.get_type()), true)?,
                 None => String::new(),
             };
 
-            let mut import_module = "env";
-            let mut import_name = func.name.text.as_str();
-            if let Some(js_attr) = func.attributes.iter().find(|a| a.name.text == "js") {
-                if let Some(arg) = js_attr.args.get(0) {
-                    import_module = arg.text.trim_matches('"');
-                }
-                if let Some(arg) = js_attr.args.get(1) {
-                    import_name = arg.text.trim_matches('"');
-                }
-            }
-            let module = import_module;
-            let field = import_name;
+            let (module, field) = Self::extern_import_target(func);
             // Overloaded externs get distinct internal `$key` names but share the imported field,
             // so a single host function can back every signature.
             let internal = self
@@ -133,22 +141,55 @@ impl<'a> WasmGenerator<'a> {
                 result_str
             ));
         }
+        Ok(())
+    }
 
-        // Memory management functions
-        self.build_memory_management(writer)?;
+    /// Joins the WASM parameter types (space-separated, trailing space) for an import signature.
+    /// Each input is a (possibly already monomorphized) Dream type name.
+    fn wasm_params_str(
+        &self,
+        dream_types: impl Iterator<Item = String>,
+    ) -> Result<String, Error> {
+        let mut params_str = String::new();
+        for t in dream_types {
+            params_str.push_str(&format!("{} ", WasmGenerator::get_wasm_type_from(t)?));
+        }
+        Ok(params_str)
+    }
 
-        // Top-level variable storage (one mutable WASM global each), zero-initialized; their real
-        // initializers run in `$__dream_init` (emitted below, invoked via `(start ...)`).
-        self.build_global_declarations(writer)?;
+    /// The ` (result T)` fragment for an import signature, or an empty string for a `void` return.
+    /// When `void_is_empty` is set, a `void` Dream return also yields no result clause (the extern
+    /// path); otherwise the caller has already excluded `void` (the stdlib path).
+    fn wasm_result_str(dream_type: &str, void_is_empty: bool) -> Result<String, Error> {
+        if void_is_empty && dream_type == "void" {
+            return Ok(String::new());
+        }
+        Ok(format!(
+            " (result {})",
+            WasmGenerator::get_wasm_type_from(dream_type.to_string())?
+        ))
+    }
 
-        // Object protocol: boxing/unboxing, to_string/hash_code dispatchers, defaults.
-        self.build_object_runtime(writer)?;
+    /// The `(module, field)` an `extern fun` imports from: `("env", <name>)` by default, overridable
+    /// via `@js("module", "field")`.
+    fn extern_import_target<'f>(func: &'f FunctionNode<'a>) -> (&'f str, &'f str) {
+        let mut import_module = "env";
+        let mut import_name = func.name.text.as_str();
+        if let Some(js_attr) = func.attributes.iter().find(|a| a.name.text == "js") {
+            if let Some(arg) = js_attr.args.get(0) {
+                import_module = arg.text.trim_matches('"');
+            }
+            if let Some(arg) = js_attr.args.get(1) {
+                import_name = arg.text.trim_matches('"');
+            }
+        }
+        (import_module, import_name)
+    }
 
-        // Per-enum `name()` lookup functions.
-        self.build_enum_runtime(writer);
-
-        // Function table for first-class function values / `call_indirect`. Every non-generic
-        // top-level function (including externs) gets a stable index.
+    /// Assigns `$fn_table` slots (first-class function values then async poll functions), emits the
+    /// table/elem segment, and triggers the async scheduler runtime when any `async fun` exists.
+    fn emit_function_table(&mut self, program: &ProgramNode<'a>, writer: &mut IndentedTextWriter) {
+        // Every non-generic, non-overloaded top-level function gets a stable index.
         let mut indexed_functions: Vec<&str> = Vec::new();
         for func in program.functions.iter() {
             if func.generic_parameters.is_some() {
@@ -211,7 +252,11 @@ impl<'a> WasmGenerator<'a> {
         if self.ctx.has_async {
             self.build_async_runtime(writer);
         }
+    }
 
+    /// Emits the linear memory declaration and every interned string's data segment (program
+    /// string literals first, then the object-protocol runtime strings).
+    fn emit_data_segments(&self, writer: &mut IndentedTextWriter) {
         writer.write_line("(memory 10)");
         for (s, offset) in &self.ctx.strings {
             let unquoted = if s.starts_with('"') && s.ends_with('"') {
@@ -224,7 +269,16 @@ impl<'a> WasmGenerator<'a> {
         for (content, offset) in &self.ctx.runtime_strings {
             self.write_string_data(*offset, content, writer);
         }
+    }
 
+    /// Emits the bodies of all concrete functions, monomorphized generic instantiations, and
+    /// struct/extension methods. Generic bindings and the active mangled name are scoped per
+    /// definition via [`with_function_scope`](Self::with_function_scope).
+    fn emit_function_definitions(
+        &mut self,
+        program: &ProgramNode<'a>,
+        writer: &mut IndentedTextWriter,
+    ) -> Result<(), Error> {
         for i in program.functions.iter() {
             if i.generic_parameters.is_some() {
                 continue;
@@ -234,54 +288,70 @@ impl<'a> WasmGenerator<'a> {
                 continue;
             }
             // Overloaded functions are emitted under their signature-mangled key.
-            self.ctx.current_mangled_name = Some(
-                self.function_table
-                    .resolve_emitted_name(&i.name.text, &Self::func_param_types(i)),
-            );
-            if i.is_async {
-                self.build_async_function(i, writer)?;
-            } else {
-                self.build_function(i, writer)?;
-            }
-            self.ctx.current_mangled_name = None;
+            let mangled = self
+                .function_table
+                .resolve_emitted_name(&i.name.text, &Self::func_param_types(i));
+            self.with_function_scope(mangled, Vec::new(), writer, |g, w| {
+                if i.is_async {
+                    g.build_async_function(i, w)
+                } else {
+                    g.build_function(i, w)
+                }
+            })?;
         }
         for (mangled_name, (bindings, template)) in self.instantiated_generics {
             if template.is_extern {
                 continue;
             }
-            self.ctx.current_generic_bindings = bindings.iter().cloned().collect();
-            self.ctx.current_mangled_name = Some(mangled_name.clone());
-            self.build_function(template, writer)?;
-            self.ctx.current_generic_bindings.clear();
-            self.ctx.current_mangled_name = None;
+            self.with_function_scope(
+                mangled_name.clone(),
+                bindings.iter().cloned().collect(),
+                writer,
+                |g, w| g.build_function(template, w),
+            )?;
         }
         for (method, bindings) in self.struct_methods {
             if method.is_extern {
                 continue;
             }
-            self.ctx.current_generic_bindings = bindings.iter().cloned().collect();
             // Overloaded methods are emitted under their signature-mangled key (the parameter
             // list includes the implicit `this`, matching how they were registered).
-            self.ctx.current_mangled_name = Some(
-                self.function_table
-                    .resolve_emitted_name(&method.name.text, &Self::func_param_types(method)),
-            );
-            if method.is_async {
-                self.build_async_function(method, writer)?;
-            } else {
-                self.build_function(method, writer)?;
-            }
-            self.ctx.current_mangled_name = None;
-            self.ctx.current_generic_bindings.clear();
+            let mangled = self
+                .function_table
+                .resolve_emitted_name(&method.name.text, &Self::func_param_types(method));
+            self.with_function_scope(mangled, bindings.iter().cloned().collect(), writer, |g, w| {
+                if method.is_async {
+                    g.build_async_function(method, w)
+                } else {
+                    g.build_function(method, w)
+                }
+            })?;
         }
-
-        // Evaluate top-level variable initializers once, before `main`, via a `(start)` function.
-        self.build_global_init(program, writer)?;
-
-        self.build_export(program, writer)?;
-        writer.unindent();
-        writer.write_line(")");
         Ok(())
+    }
+
+    /// Runs `f` with the active mangled name and generic bindings set to the given values, then
+    /// restores the previous values. This replaces the manual `current_mangled_name = ...; ...;
+    /// = None` save/restore that was duplicated at every definition-emission site and could leak
+    /// state if an early `?` returned between the set and the clear.
+    fn with_function_scope<F, R>(
+        &mut self,
+        mangled_name: String,
+        generic_bindings: Vec<(String, String)>,
+        writer: &mut IndentedTextWriter,
+        f: F,
+    ) -> R
+    where
+        F: FnOnce(&mut Self, &mut IndentedTextWriter) -> R,
+    {
+        let prev_name = self.ctx.current_mangled_name.take();
+        let prev_bindings = std::mem::take(&mut self.ctx.current_generic_bindings);
+        self.ctx.current_mangled_name = Some(mangled_name);
+        self.ctx.current_generic_bindings = generic_bindings.into_iter().collect();
+        let result = f(self, writer);
+        self.ctx.current_mangled_name = prev_name;
+        self.ctx.current_generic_bindings = prev_bindings;
+        result
     }
 
     /// Emits one mutable, zero-initialized WASM global per top-level variable. Reference-typed

@@ -250,9 +250,12 @@ impl<'a> WasmGenerator<'a> {
         }
 
         let segments = self.split_async_segments(function);
-        self.ctx.current_async_self = Some("self".to_string());
-        self.emit_async_segments(&segments, &slots, &offsets, function, writer)?;
-        self.ctx.current_async_self = None;
+        // Scope `current_async_self` so an early error inside segment emission cannot leak it into
+        // the next function's body (where it would wrongly turn plain returns into future completes).
+        let prev_async_self = self.ctx.current_async_self.replace("self".to_string());
+        let result = self.emit_async_segments(&segments, &slots, &offsets, function, writer);
+        self.ctx.current_async_self = prev_async_self;
+        result?;
 
         writer.unindent();
         writer.write_line(")");
@@ -472,495 +475,55 @@ impl<'a> WasmGenerator<'a> {
 
     /// Emits the scheduler runtime (queue/timer globals, poll-dispatch type, and helper
     /// functions). Called once when the program contains any `async fun`.
+    ///
+    /// The runtime body lives in `runtime/async.wat` as a template whose `{FIELD}` placeholders
+    /// name the `Future` block offsets / kind tags defined as constants in this module. They are
+    /// substituted here so the constants remain the single source of truth (the `.wat` file never
+    /// hardcodes a raw offset). Each placeholder is brace-delimited, so the replacements are
+    /// independent of order.
     pub fn build_async_runtime(&self, writer: &mut IndentedTextWriter) {
-        let tag_array = super::object::TAG_ARRAY;
-        let runtime = format!(
-            r#"(type $dream_poll_t (func (param i32) (result i32)))
-(global $rq_head (mut i32) (i32.const 0))
-(global $rq_tail (mut i32) (i32.const 0))
-(global $timer_head (mut i32) (i32.const 0))
-(global $vclock (mut i32) (i32.const 0))
-(func $dream_new_future (param $size i32) (param $poll i32) (param $kind i32) (result i32)
-    (local $p i32)
-    local.get $size
-    i32.const 0
-    call $malloc
-    local.set $p
-    local.get $p
-    i32.const 0
-    local.get $size
-    memory.fill
-    local.get $p
-    local.get $poll
-    i32.store offset={F_POLL}
-    local.get $p
-    local.get $kind
-    i32.store offset={F_KIND}
-    local.get $p
-)
-(func $dream_enqueue (param $f i32)
-    local.get $f
-    i32.eqz
-    br_if 0
-    local.get $f
-    i32.load offset={F_QUEUED}
-    br_if 0
-    local.get $f
-    i32.const 1
-    i32.store offset={F_QUEUED}
-    local.get $f
-    i32.const 0
-    i32.store offset={F_NEXT}
-    global.get $rq_tail
-    i32.eqz
-    (if
-        (then
-            local.get $f
-            global.set $rq_head
-            local.get $f
-            global.set $rq_tail
-        )
-        (else
-            global.get $rq_tail
-            local.get $f
-            i32.store offset={F_NEXT}
-            local.get $f
-            global.set $rq_tail
-        )
-    )
-)
-(func $dream_complete (param $f i32) (param $res i32)
-    (local $w i32)
-    local.get $f
-    local.get $res
-    i32.store offset={F_RESULT}
-    local.get $f
-    i32.const 1
-    i32.store offset={F_STATUS}
-    local.get $f
-    i32.load offset={F_WAKER}
-    local.set $w
-    local.get $w
-    i32.eqz
-    br_if 0
-    local.get $w
-    local.get $f
-    call $dream_wake
-)
-(func $dream_wake (param $w i32) (param $child i32)
-    local.get $w
-    i32.load offset={F_KIND}
-    i32.eqz
-    (if
-        (then
-            local.get $w
-            call $dream_enqueue
-        )
-        (else
-            local.get $w
-            local.get $child
-            call $dream_combinator_progress
-        )
-    )
-)
-(func $dream_await (param $parent i32) (param $child i32)
-    local.get $child
-    local.get $parent
-    i32.store offset={F_WAKER}
-    local.get $child
-    i32.load offset={F_STATUS}
-    (if
-        (then
-            local.get $parent
-            call $dream_enqueue
-        )
-    )
-)
-(func $dream_resolve (param $f i32) (param $res i32)
-    local.get $f
-    local.get $res
-    call $dream_complete
-)
-(func $dream_set_timer (param $f i32) (param $delay i32)
-    (local $due i32)
-    (local $cur i32)
-    (local $nxt i32)
-    global.get $vclock
-    local.get $delay
-    i32.add
-    local.set $due
-    local.get $f
-    local.get $due
-    i32.store offset={F_DUE}
-    global.get $timer_head
-    i32.eqz
-    (if
-        (then
-            local.get $f
-            i32.const 0
-            i32.store offset={F_NEXT}
-            local.get $f
-            global.set $timer_head
-            return
-        )
-    )
-    global.get $timer_head
-    i32.load offset={F_DUE}
-    local.get $due
-    i32.gt_s
-    (if
-        (then
-            local.get $f
-            global.get $timer_head
-            i32.store offset={F_NEXT}
-            local.get $f
-            global.set $timer_head
-            return
-        )
-    )
-    global.get $timer_head
-    local.set $cur
-    (block $done
-        (loop $scan
-            local.get $cur
-            i32.load offset={F_NEXT}
-            local.set $nxt
-            local.get $nxt
-            i32.eqz
-            br_if $done
-            local.get $nxt
-            i32.load offset={F_DUE}
-            local.get $due
-            i32.gt_s
-            br_if $done
-            local.get $nxt
-            local.set $cur
-            br $scan
-        )
-    )
-    local.get $f
-    local.get $cur
-    i32.load offset={F_NEXT}
-    i32.store offset={F_NEXT}
-    local.get $cur
-    local.get $f
-    i32.store offset={F_NEXT}
-)
-(func $dream_run_loop
-    (local $f i32)
-    (local $t i32)
-    (block $alldone
-        (loop $outer
-            (block $drained
-                (loop $drain
-                    global.get $rq_head
-                    local.set $f
-                    local.get $f
-                    i32.eqz
-                    br_if $drained
-                    local.get $f
-                    i32.load offset={F_NEXT}
-                    global.set $rq_head
-                    global.get $rq_head
-                    i32.eqz
-                    (if
-                        (then
-                            i32.const 0
-                            global.set $rq_tail
-                        )
-                    )
-                    local.get $f
-                    i32.const 0
-                    i32.store offset={F_QUEUED}
-                    local.get $f
-                    i32.const 0
-                    i32.store offset={F_NEXT}
-                    local.get $f
-                    local.get $f
-                    i32.load offset={F_POLL}
-                    call_indirect (type $dream_poll_t)
-                    drop
-                    br $drain
-                )
-            )
-            global.get $timer_head
-            i32.eqz
-            br_if $alldone
-            global.get $timer_head
-            i32.load offset={F_DUE}
-            global.set $vclock
-            (block $timers_done
-                (loop $tloop
-                    global.get $timer_head
-                    local.set $t
-                    local.get $t
-                    i32.eqz
-                    br_if $timers_done
-                    local.get $t
-                    i32.load offset={F_DUE}
-                    global.get $vclock
-                    i32.gt_s
-                    br_if $timers_done
-                    local.get $t
-                    i32.load offset={F_NEXT}
-                    global.set $timer_head
-                    local.get $t
-                    i32.const 0
-                    i32.store offset={F_NEXT}
-                    local.get $t
-                    i32.const 0
-                    call $dream_complete
-                    br $tloop
-                )
-            )
-            br $outer
-        )
-    )
-)
-(func $dream_combinator_progress (param $w i32) (param $child i32)
-    (local $n i32)
-    (local $i i32)
-    (local $arr i32)
-    (local $c i32)
-    local.get $w
-    i32.load offset={F_KIND}
-    i32.const {KIND_ALL}
-    i32.eq
-    (if
-        (then
-            local.get $w
-            local.get $w
-            i32.load offset={F_REMAINING}
-            i32.const 1
-            i32.sub
-            i32.store offset={F_REMAINING}
-            local.get $w
-            i32.load offset={F_REMAINING}
-            i32.eqz
-            (if
-                (then
-                    local.get $w
-                    i32.load offset={F_COUNT}
-                    local.set $n
-                    i32.const 4
-                    local.get $n
-                    i32.const 4
-                    i32.mul
-                    i32.add
-                    i32.const {tag_array}
-                    call $malloc
-                    local.set $arr
-                    local.get $arr
-                    local.get $n
-                    i32.store
-                    i32.const 0
-                    local.set $i
-                    (block $fdone
-                        (loop $f
-                            local.get $i
-                            local.get $n
-                            i32.ge_s
-                            br_if $fdone
-                            local.get $w
-                            i32.load offset={F_CHILDREN}
-                            i32.const 4
-                            i32.add
-                            local.get $i
-                            i32.const 4
-                            i32.mul
-                            i32.add
-                            i32.load
-                            local.set $c
-                            local.get $arr
-                            i32.const 4
-                            i32.add
-                            local.get $i
-                            i32.const 4
-                            i32.mul
-                            i32.add
-                            local.get $c
-                            i32.load offset={F_RESULT}
-                            i32.store
-                            local.get $i
-                            i32.const 1
-                            i32.add
-                            local.set $i
-                            br $f
-                        )
-                    )
-                    local.get $w
-                    local.get $arr
-                    i32.store offset={F_RESULTS}
-                    local.get $w
-                    local.get $arr
-                    call $dream_complete
-                )
-            )
-        )
-        (else
-            local.get $w
-            i32.load offset={F_STATUS}
-            i32.eqz
-            (if
-                (then
-                    local.get $w
-                    local.get $child
-                    i32.load offset={F_RESULT}
-                    call $dream_complete
-                )
-            )
-        )
-    )
-)
-(func $dream_all (param $arr i32) (result i32)
-    (local $w i32)
-    (local $n i32)
-    (local $i i32)
-    (local $c i32)
-    local.get $arr
-    i32.load
-    local.set $n
-    i32.const {F_SLOTS}
-    i32.const -1
-    i32.const {KIND_ALL}
-    call $dream_new_future
-    local.set $w
-    local.get $w
-    local.get $arr
-    i32.store offset={F_CHILDREN}
-    local.get $w
-    local.get $n
-    i32.store offset={F_COUNT}
-    local.get $w
-    local.get $n
-    i32.store offset={F_REMAINING}
-    local.get $n
-    i32.eqz
-    (if
-        (then
-            local.get $w
-            local.get $arr
-            call $dream_complete
-            local.get $w
-            return
-        )
-    )
-    i32.const 0
-    local.set $i
-    (block $done
-        (loop $reg
-            local.get $i
-            local.get $n
-            i32.ge_s
-            br_if $done
-            local.get $arr
-            i32.const 4
-            i32.add
-            local.get $i
-            i32.const 4
-            i32.mul
-            i32.add
-            i32.load
-            local.set $c
-            local.get $c
-            local.get $w
-            i32.store offset={F_WAKER}
-            local.get $c
-            i32.load offset={F_STATUS}
-            (if
-                (then
-                    local.get $w
-                    local.get $c
-                    call $dream_combinator_progress
-                )
-            )
-            local.get $i
-            i32.const 1
-            i32.add
-            local.set $i
-            br $reg
-        )
-    )
-    local.get $w
-)
-(func $dream_any (param $arr i32) (result i32)
-    (local $w i32)
-    (local $n i32)
-    (local $i i32)
-    (local $c i32)
-    local.get $arr
-    i32.load
-    local.set $n
-    i32.const {F_SLOTS}
-    i32.const -1
-    i32.const {KIND_ANY}
-    call $dream_new_future
-    local.set $w
-    local.get $w
-    local.get $arr
-    i32.store offset={F_CHILDREN}
-    local.get $w
-    local.get $n
-    i32.store offset={F_COUNT}
-    local.get $w
-    local.get $n
-    i32.store offset={F_REMAINING}
-    i32.const 0
-    local.set $i
-    (block $done
-        (loop $reg
-            local.get $i
-            local.get $n
-            i32.ge_s
-            br_if $done
-            local.get $arr
-            i32.const 4
-            i32.add
-            local.get $i
-            i32.const 4
-            i32.mul
-            i32.add
-            i32.load
-            local.set $c
-            local.get $c
-            local.get $w
-            i32.store offset={F_WAKER}
-            local.get $c
-            i32.load offset={F_STATUS}
-            (if
-                (then
-                    local.get $w
-                    local.get $c
-                    call $dream_combinator_progress
-                )
-            )
-            local.get $i
-            i32.const 1
-            i32.add
-            local.set $i
-            br $reg
-        )
-    )
-    local.get $w
-)
-"#,
-            F_POLL = F_POLL,
-            F_KIND = F_KIND,
-            F_QUEUED = F_QUEUED,
-            F_NEXT = F_NEXT,
-            F_RESULT = F_RESULT,
-            F_STATUS = F_STATUS,
-            F_WAKER = F_WAKER,
-            F_DUE = F_DUE,
-            F_CHILDREN = F_CHILDREN,
-            F_COUNT = F_COUNT,
-            F_REMAINING = F_REMAINING,
-            F_RESULTS = F_RESULTS,
-            F_SLOTS = F_SLOTS,
-            KIND_ALL = KIND_ALL,
-            KIND_ANY = KIND_ANY,
-            tag_array = tag_array
-        );
+        let runtime = Self::async_runtime_wat();
         writer.write_block(&runtime);
+    }
+
+    /// The fixed scheduler runtime template (see `runtime/async.wat`).
+    const RUNTIME_ASYNC: &'static str = include_str!("runtime/async.wat");
+
+    /// Materializes [`Self::RUNTIME_ASYNC`] with the `Future` field offsets / kind tags / array
+    /// tag substituted in. Kept separate from emission so it is trivially unit-testable.
+    fn async_runtime_wat() -> String {
+        Self::RUNTIME_ASYNC
+            .replace("{F_POLL}", &F_POLL.to_string())
+            .replace("{F_KIND}", &F_KIND.to_string())
+            .replace("{F_QUEUED}", &F_QUEUED.to_string())
+            .replace("{F_NEXT}", &F_NEXT.to_string())
+            .replace("{F_RESULTS}", &F_RESULTS.to_string())
+            .replace("{F_RESULT}", &F_RESULT.to_string())
+            .replace("{F_STATUS}", &F_STATUS.to_string())
+            .replace("{F_WAKER}", &F_WAKER.to_string())
+            .replace("{F_DUE}", &F_DUE.to_string())
+            .replace("{F_CHILDREN}", &F_CHILDREN.to_string())
+            .replace("{F_COUNT}", &F_COUNT.to_string())
+            .replace("{F_REMAINING}", &F_REMAINING.to_string())
+            .replace("{F_SLOTS}", &F_SLOTS.to_string())
+            .replace("{KIND_ALL}", &KIND_ALL.to_string())
+            .replace("{KIND_ANY}", &KIND_ANY.to_string())
+            .replace("{tag_array}", &super::object::TAG_ARRAY.to_string())
+    }
+}
+
+#[cfg(test)]
+mod async_runtime_tests {
+    use super::WasmGenerator;
+
+    /// Every `{...}` placeholder in the template must be substituted; if a new placeholder is
+    /// added to `async.wat` without a matching replacement, this catches it before codegen does.
+    #[test]
+    fn async_runtime_has_no_unsubstituted_placeholders() {
+        let wat = WasmGenerator::async_runtime_wat();
+        assert!(
+            !wat.contains('{') && !wat.contains('}'),
+            "async runtime still contains an unsubstituted placeholder"
+        );
     }
 }

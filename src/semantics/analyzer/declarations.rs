@@ -493,9 +493,8 @@ impl<'a> Analyzer<'a> {
                     None => continue,
                 };
                 diagnostics.file_path = file_path_string(&template.file_path);
-                self.current_generic_bindings = bindings;
-                let table = self.analyze_function(template, diagnostics)?;
-                self.current_generic_bindings = Vec::new();
+                let table =
+                    self.with_generic_bindings(bindings, |s| s.analyze_function(template, diagnostics))?;
                 symbol_table_map.insert(mangled_name, table);
                 progressed = true;
             }
@@ -505,9 +504,8 @@ impl<'a> Analyzer<'a> {
                 let (method, bindings) = self.struct_methods[method_index].clone();
                 method_index += 1;
                 diagnostics.file_path = file_path_string(&method.file_path);
-                self.current_generic_bindings = bindings;
-                let table = self.analyze_function(method, diagnostics)?;
-                self.current_generic_bindings = Vec::new();
+                let table =
+                    self.with_generic_bindings(bindings, |s| s.analyze_function(method, diagnostics))?;
                 // Key by the emitted name so overloaded methods each get a distinct entry (the
                 // parameter list includes the implicit `this`).
                 let param_types: Vec<String> = method

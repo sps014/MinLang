@@ -184,147 +184,10 @@ impl<'a> Analyzer<'a> {
                 diagnostics,
             ),
             ExpressionNode::MemberAccess(obj, member) => {
-                // A unit variant of a discriminated union (`Shape.Empty`, `Option.None`) constructs
-                // a heap union value rather than resolving to an integer enum member.
-                if let ExpressionNode::Identifier(id) = obj {
-                    if let Some(t) = self.analyze_variant_construction(
-                        &id.text,
-                        member,
-                        &[],
-                        parent_function,
-                        symbol_table,
-                        diagnostics,
-                    )? {
-                        return Ok(t);
-                    }
-                }
-                // Enum member access `EnumName.Member` resolves to the enum type (an i32 at runtime).
-                if let ExpressionNode::Identifier(id) = obj {
-                    if self.enum_table.contains_key(&id.text) {
-                        if self.enum_member_value(&id.text, &member.text).is_none() {
-                            diagnostics.report_error(
-                                format!("Enum '{}' has no member '{}'", id.text, member.text),
-                                Some(member.position),
-                            );
-                        }
-                        return Ok(Type::Struct(id.clone(), None));
-                    }
-                }
-                let obj_type =
-                    self.analyze_expression(obj, parent_function, symbol_table, diagnostics)?;
-
-                // The receiver was already poisoned by an earlier error: stay quiet and stay poison.
-                if obj_type.is_unknown() {
-                    return Ok(Type::Unknown);
-                }
-
-                let (base_name, generic_args) = match Self::resolve_struct_parts(&obj_type) {
-                    Some(parts) => parts,
-                    None => {
-                        diagnostics.report_error(
-                            format!(
-                                "Cannot access member of non-class type {}",
-                                obj_type.get_type()
-                            ),
-                            Some(member.position),
-                        );
-                        return Ok(Type::Unknown);
-                    }
-                };
-
-                self.ensure_struct_instantiated(
-                    &base_name,
-                    &generic_args,
-                    &member.position,
-                    diagnostics,
-                );
-                let struct_name = mangle_generic(&base_name, &generic_args);
-
-                let struct_info = match self.struct_table.get_struct(&struct_name) {
-                    Some(info) => info,
-                    None => {
-                        diagnostics.report_error(
-                            format!("Struct '{}' not found", struct_name),
-                            Some(member.position),
-                        );
-                        return Ok(Type::Unknown);
-                    }
-                };
-
-                let field_info = match struct_info.fields.get(&member.text) {
-                    Some(info) => info,
-                    None => {
-                        diagnostics.report_error(
-                            format!(
-                                "Field '{}' not found in class '{}'",
-                                member.text, struct_name
-                            ),
-                            Some(member.position),
-                        );
-                        return Ok(Type::Unknown);
-                    }
-                };
-
-                let field_type = field_info.type_.clone();
-                let field_is_public = field_info.is_public;
-
-                // Private fields (the default) may only be read from within the declaring type's
-                // own methods; `public` exposes them to outside code.
-                if !field_is_public && !self.in_methods_of(parent_function, &base_name) {
-                    diagnostics.report_error(
-                        format!("'{}' is private to '{}'", member.text, base_name),
-                        Some(member.position),
-                    );
-                }
-
-                Ok(field_type)
+                self.analyze_member_access(obj, member, parent_function, symbol_table, diagnostics)
             }
             ExpressionNode::Cast(target_type, expr) => {
-                let expr_type =
-                    self.analyze_expression(expr, parent_function, symbol_table, diagnostics)?;
-
-                let target_type_str = target_type.get_type();
-                let expr_type_str = expr_type.get_type();
-
-                // If the target (after peeling array wrappers) is a generic struct, instantiate it.
-                let mut core_target = target_type;
-                while let Type::Array(inner) = core_target {
-                    core_target = inner;
-                }
-                if let Some((base_name, generic_args)) = Self::resolve_struct_parts(core_target) {
-                    self.ensure_struct_instantiated(
-                        &base_name,
-                        &generic_args,
-                        &empty_span(),
-                        diagnostics,
-                    );
-                }
-
-                if target_type_str == expr_type_str ||
-                   (is_numeric_primitive(&target_type_str) && is_numeric_primitive(&expr_type_str)) ||
-                   // `char` is a code point: allow lossless conversion to/from `int`/`byte`.
-                   (target_type_str == "char" && (expr_type_str == "int" || expr_type_str == "byte")) ||
-                   ((target_type_str == "int" || target_type_str == "byte") && expr_type_str == "char")
-                {
-                    Ok(target_type.clone())
-                } else if target_type_str == "object" || expr_type_str == "object" {
-                    // Boxing (`T as object`) and unboxing (`object as T`) are always permitted;
-                    // an unbox to the wrong primitive traps at runtime.
-                    Ok(target_type.clone())
-                } else if expr_type_str == "int"
-                    && (self.struct_table.get_struct(&target_type_str).is_some()
-                        || target_type_str.ends_with("[]")
-                        || target_type_str.ends_with("?"))
-                {
-                    // Allow casting int to pointer types (for null pointers)
-                    Ok(target_type.clone())
-                } else {
-                    diagnostics.report_error(
-                        format!("Cannot cast from {} to {}", expr_type_str, target_type_str),
-                        target_type.get_span().or_else(|| expr.position()),
-                    );
-                    Ok(target_type.clone())
-                }
+                self.analyze_cast(target_type, expr, parent_function, symbol_table, diagnostics)
             }
             ExpressionNode::MethodCall(obj, method, generic_args, params) => {
                 let ctx = super::AnalyzerContext {
@@ -352,6 +215,173 @@ impl<'a> Analyzer<'a> {
             }
         }
     }
+
+    /// Types a member access `obj.member`: discriminated-union unit-variant construction
+    /// (`Option.None`), enum member access (`Color.Red`), and struct field access (with generic
+    /// instantiation and field-privacy enforcement). Returns the accessed field/member type.
+    fn analyze_member_access(
+        &mut self,
+        obj: &ExpressionNode<'a>,
+        member: &SyntaxToken,
+        parent_function: &FunctionNode<'a>,
+        symbol_table: &Rc<RefCell<SymbolTable>>,
+        diagnostics: &mut DiagnosticBag,
+    ) -> Result<Type, ()> {
+        // A unit variant of a discriminated union (`Shape.Empty`, `Option.None`) constructs
+        // a heap union value rather than resolving to an integer enum member.
+        if let ExpressionNode::Identifier(id) = obj {
+            if let Some(t) = self.analyze_variant_construction(
+                &id.text,
+                member,
+                &[],
+                parent_function,
+                symbol_table,
+                diagnostics,
+            )? {
+                return Ok(t);
+            }
+        }
+        // Enum member access `EnumName.Member` resolves to the enum type (an i32 at runtime).
+        if let ExpressionNode::Identifier(id) = obj {
+            if self.enum_table.contains_key(&id.text) {
+                if self.enum_member_value(&id.text, &member.text).is_none() {
+                    diagnostics.report_error(
+                        format!("Enum '{}' has no member '{}'", id.text, member.text),
+                        Some(member.position),
+                    );
+                }
+                return Ok(Type::Struct(id.clone(), None));
+            }
+        }
+        let obj_type =
+            self.analyze_expression(obj, parent_function, symbol_table, diagnostics)?;
+
+        // The receiver was already poisoned by an earlier error: stay quiet and stay poison.
+        if obj_type.is_unknown() {
+            return Ok(Type::Unknown);
+        }
+
+        let (base_name, generic_args) = match Self::resolve_struct_parts(&obj_type) {
+            Some(parts) => parts,
+            None => {
+                diagnostics.report_error(
+                    format!(
+                        "Cannot access member of non-class type {}",
+                        obj_type.get_type()
+                    ),
+                    Some(member.position),
+                );
+                return Ok(Type::Unknown);
+            }
+        };
+
+        self.ensure_struct_instantiated(
+            &base_name,
+            &generic_args,
+            &member.position,
+            diagnostics,
+        );
+        let struct_name = mangle_generic(&base_name, &generic_args);
+
+        let struct_info = match self.struct_table.get_struct(&struct_name) {
+            Some(info) => info,
+            None => {
+                diagnostics.report_error(
+                    format!("Struct '{}' not found", struct_name),
+                    Some(member.position),
+                );
+                return Ok(Type::Unknown);
+            }
+        };
+
+        let field_info = match struct_info.fields.get(&member.text) {
+            Some(info) => info,
+            None => {
+                diagnostics.report_error(
+                    format!(
+                        "Field '{}' not found in class '{}'",
+                        member.text, struct_name
+                    ),
+                    Some(member.position),
+                );
+                return Ok(Type::Unknown);
+            }
+        };
+
+        let field_type = field_info.type_.clone();
+        let field_is_public = field_info.is_public;
+
+        // Private fields (the default) may only be read from within the declaring type's
+        // own methods; `public` exposes them to outside code.
+        if !field_is_public && !self.in_methods_of(parent_function, &base_name) {
+            diagnostics.report_error(
+                format!("'{}' is private to '{}'", member.text, base_name),
+                Some(member.position),
+            );
+        }
+
+        Ok(field_type)
+    }
+
+    /// Types a cast `expr as T`: instantiates a generic target struct if needed, then validates the
+    /// conversion (identity, numeric<->numeric, `char`<->`int`/`byte`, boxing/unboxing via `object`,
+    /// and `int`->pointer for null literals). Always yields the target type, reporting an error for
+    /// disallowed conversions so analysis can continue.
+    fn analyze_cast(
+        &mut self,
+        target_type: &Type,
+        expr: &ExpressionNode<'a>,
+        parent_function: &FunctionNode<'a>,
+        symbol_table: &Rc<RefCell<SymbolTable>>,
+        diagnostics: &mut DiagnosticBag,
+    ) -> Result<Type, ()> {
+        let expr_type =
+            self.analyze_expression(expr, parent_function, symbol_table, diagnostics)?;
+
+        let target_type_str = target_type.get_type();
+        let expr_type_str = expr_type.get_type();
+
+        // If the target (after peeling array wrappers) is a generic struct, instantiate it.
+        let mut core_target = target_type;
+        while let Type::Array(inner) = core_target {
+            core_target = inner;
+        }
+        if let Some((base_name, generic_args)) = Self::resolve_struct_parts(core_target) {
+            self.ensure_struct_instantiated(
+                &base_name,
+                &generic_args,
+                &empty_span(),
+                diagnostics,
+            );
+        }
+
+        if target_type_str == expr_type_str ||
+           (is_numeric_primitive(&target_type_str) && is_numeric_primitive(&expr_type_str)) ||
+           // `char` is a code point: allow lossless conversion to/from `int`/`byte`.
+           (target_type_str == "char" && (expr_type_str == "int" || expr_type_str == "byte")) ||
+           ((target_type_str == "int" || target_type_str == "byte") && expr_type_str == "char")
+        {
+            Ok(target_type.clone())
+        } else if target_type_str == "object" || expr_type_str == "object" {
+            // Boxing (`T as object`) and unboxing (`object as T`) are always permitted;
+            // an unbox to the wrong primitive traps at runtime.
+            Ok(target_type.clone())
+        } else if expr_type_str == "int"
+            && (self.struct_table.get_struct(&target_type_str).is_some()
+                || target_type_str.ends_with("[]")
+                || target_type_str.ends_with("?"))
+        {
+            // Allow casting int to pointer types (for null pointers)
+            Ok(target_type.clone())
+        } else {
+            diagnostics.report_error(
+                format!("Cannot cast from {} to {}", expr_type_str, target_type_str),
+                target_type.get_span().or_else(|| expr.position()),
+            );
+            Ok(target_type.clone())
+        }
+    }
+
     pub(super) fn analyze_binary_expression(
         &mut self,
         left: &ExpressionNode<'a>,

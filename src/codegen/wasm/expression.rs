@@ -547,6 +547,10 @@ impl<'a> WasmGenerator<'a> {
         Ok(matches!(base.as_str(), "int" | "float" | "double" | "char"))
     }
 
+    /// Builds a binary expression. Logical short-circuit (`&&`/`||`), null-coalescing (`??`), and
+    /// string concatenation (`+` with a string operand) are special control/allocation shapes and
+    /// are delegated to dedicated helpers; everything else evaluates both operands in a common type
+    /// and emits a single arithmetic/comparison instruction via [`emit_binary_operator`].
     pub fn build_binary(
         &mut self,
         left_exp: &ExpressionNode<'a>,
@@ -556,58 +560,14 @@ impl<'a> WasmGenerator<'a> {
         function: &FunctionNode<'a>,
         writer: &mut IndentedTextWriter,
     ) -> Result<(), Error> {
-        // Short-circuit logical operators: the right operand is only evaluated when its result can
-        // still affect the outcome. `&&` -> `if left then right else 0`; `||` -> `if left then 1
-        // else right`. The eager bitwise `&`/`|` operators are handled in the generic path below.
-        // Null-coalescing `a ?? b`: evaluate `a` once into a scratch local; if it is non-null
-        // (pointer != 0) yield it, otherwise evaluate and yield `b`.
-        if opr.kind == TokenKind::QuestionQuestionToken {
-            self.build_expression(left_exp, left, function, writer)?;
-            writer.write_line("local.tee $scratch_coalesce");
-            writer.write_line("i32.const 0");
-            writer.write_line("i32.ne");
-            writer.write_line("(if (result i32)");
-            writer.indent();
-            writer.write_line("(then");
-            writer.indent();
-            writer.write_line("local.get $scratch_coalesce");
-            writer.unindent();
-            writer.write_line(")");
-            writer.write_line("(else");
-            writer.indent();
-            self.build_expression(right_expr, left, function, writer)?;
-            writer.unindent();
-            writer.write_line(")");
-            writer.unindent();
-            writer.write_line(")");
-            return Ok(());
-        }
-
-        if matches!(
-            opr.kind,
-            TokenKind::AmpersandAmpersandToken | TokenKind::PipePipeToken
-        ) {
-            self.build_expression(left_exp, left, function, writer)?;
-            writer.write_line("(if (result i32)");
-            writer.indent();
-            if opr.kind == TokenKind::AmpersandAmpersandToken {
-                writer.write_line("(then");
-                writer.indent();
-                self.build_expression(right_expr, left, function, writer)?;
-                writer.unindent();
-                writer.write_line(")");
-                writer.write_line("(else (i32.const 0))");
-            } else {
-                writer.write_line("(then (i32.const 1))");
-                writer.write_line("(else");
-                writer.indent();
-                self.build_expression(right_expr, left, function, writer)?;
-                writer.unindent();
-                writer.write_line(")");
+        match opr.kind {
+            TokenKind::QuestionQuestionToken => {
+                return self.build_null_coalesce(left_exp, right_expr, left, function, writer)
             }
-            writer.unindent();
-            writer.write_line(")");
-            return Ok(());
+            TokenKind::AmpersandAmpersandToken | TokenKind::PipePipeToken => {
+                return self.build_logical_and_or(left_exp, opr, right_expr, left, function, writer)
+            }
+            _ => {}
         }
 
         // String concatenation with `+`: when either operand is a string the result is a string,
@@ -621,31 +581,7 @@ impl<'a> WasmGenerator<'a> {
                 .infer_expression_type(right_expr, function)
                 .unwrap_or_default();
             if strip_nullable(&lt) == "string" || strip_nullable(&rt) == "string" {
-                // `$concat_strings` copies both operands into a fresh string; it does not consume
-                // them. Stash any operand that is a freshly allocated owned temporary so it can be
-                // released after the call (otherwise chained concatenations and `"n=" + n` style
-                // formatting leak their intermediate strings).
-                let saved_tmp = self.ctx.tmp_depth;
-                let mut owned: Vec<usize> = Vec::new();
-                if self.build_concat_operand(left_exp, &lt, function, writer)? {
-                    let slot = self.ctx.tmp_depth.min(Self::TMP_POOL - 1);
-                    self.ctx.tmp_depth += 1;
-                    writer.write_line(&format!("local.tee $tmp{}", slot));
-                    owned.push(slot);
-                }
-                if self.build_concat_operand(right_expr, &rt, function, writer)? {
-                    let slot = self.ctx.tmp_depth.min(Self::TMP_POOL - 1);
-                    self.ctx.tmp_depth += 1;
-                    writer.write_line(&format!("local.tee $tmp{}", slot));
-                    owned.push(slot);
-                }
-                writer.write_line("call $concat_strings");
-                for slot in owned.iter().rev() {
-                    writer.write_line(&format!("local.get $tmp{}", slot));
-                    self.emit_release("string", writer);
-                }
-                self.ctx.tmp_depth = saved_tmp;
-                return Ok(());
+                return self.build_string_concat(left_exp, &lt, right_expr, &rt, function, writer);
             }
         }
 
@@ -691,10 +627,121 @@ impl<'a> WasmGenerator<'a> {
             }
         }
 
-        let symbol = WasmGenerator::get_wasm_type_from(operand_ctx.clone())?;
-        // Unsigned integer types (`byte`/`uint`/`ulong`) select the unsigned WASM ops for
-        // division, remainder, the ordered comparisons, and right shift; everything else is signed.
-        let unsigned = is_unsigned_integer(strip_nullable(&operand_ctx));
+        Self::emit_binary_operator(opr, &operand_ctx, writer)
+    }
+
+    /// Null-coalescing `a ?? b`: evaluate `a` once into a scratch local; if it is non-null
+    /// (pointer != 0) yield it, otherwise evaluate and yield `b`.
+    fn build_null_coalesce(
+        &mut self,
+        left_exp: &ExpressionNode<'a>,
+        right_expr: &ExpressionNode<'a>,
+        left: &String,
+        function: &FunctionNode<'a>,
+        writer: &mut IndentedTextWriter,
+    ) -> Result<(), Error> {
+        self.build_expression(left_exp, left, function, writer)?;
+        writer.write_line("local.tee $scratch_coalesce");
+        writer.write_line("i32.const 0");
+        writer.write_line("i32.ne");
+        writer.write_line("(if (result i32)");
+        writer.indent();
+        writer.write_line("(then");
+        writer.indent();
+        writer.write_line("local.get $scratch_coalesce");
+        writer.unindent();
+        writer.write_line(")");
+        writer.write_line("(else");
+        writer.indent();
+        self.build_expression(right_expr, left, function, writer)?;
+        writer.unindent();
+        writer.write_line(")");
+        writer.unindent();
+        writer.write_line(")");
+        Ok(())
+    }
+
+    /// Short-circuit logical operators: the right operand is only evaluated when its result can
+    /// still affect the outcome. `&&` -> `if left then right else 0`; `||` -> `if left then 1
+    /// else right`. The eager bitwise `&`/`|` operators are handled by [`emit_binary_operator`].
+    fn build_logical_and_or(
+        &mut self,
+        left_exp: &ExpressionNode<'a>,
+        opr: &SyntaxToken,
+        right_expr: &ExpressionNode<'a>,
+        left: &String,
+        function: &FunctionNode<'a>,
+        writer: &mut IndentedTextWriter,
+    ) -> Result<(), Error> {
+        self.build_expression(left_exp, left, function, writer)?;
+        writer.write_line("(if (result i32)");
+        writer.indent();
+        if opr.kind == TokenKind::AmpersandAmpersandToken {
+            writer.write_line("(then");
+            writer.indent();
+            self.build_expression(right_expr, left, function, writer)?;
+            writer.unindent();
+            writer.write_line(")");
+            writer.write_line("(else (i32.const 0))");
+        } else {
+            writer.write_line("(then (i32.const 1))");
+            writer.write_line("(else");
+            writer.indent();
+            self.build_expression(right_expr, left, function, writer)?;
+            writer.unindent();
+            writer.write_line(")");
+        }
+        writer.unindent();
+        writer.write_line(")");
+        Ok(())
+    }
+
+    /// String concatenation `a + b` where at least one operand is a string. `$concat_strings` copies
+    /// both operands into a fresh string; it does not consume them, so any operand that is a freshly
+    /// allocated owned temporary is stashed into a `$tmp` local and released after the call
+    /// (otherwise chained concatenations and `"n=" + n` style formatting leak intermediate strings).
+    fn build_string_concat(
+        &mut self,
+        left_exp: &ExpressionNode<'a>,
+        lt: &str,
+        right_expr: &ExpressionNode<'a>,
+        rt: &str,
+        function: &FunctionNode<'a>,
+        writer: &mut IndentedTextWriter,
+    ) -> Result<(), Error> {
+        let saved_tmp = self.ctx.tmp_depth;
+        let mut owned: Vec<usize> = Vec::new();
+        if self.build_concat_operand(left_exp, lt, function, writer)? {
+            let slot = self.ctx.tmp_depth.min(Self::TMP_POOL - 1);
+            self.ctx.tmp_depth += 1;
+            writer.write_line(&format!("local.tee $tmp{}", slot));
+            owned.push(slot);
+        }
+        if self.build_concat_operand(right_expr, rt, function, writer)? {
+            let slot = self.ctx.tmp_depth.min(Self::TMP_POOL - 1);
+            self.ctx.tmp_depth += 1;
+            writer.write_line(&format!("local.tee $tmp{}", slot));
+            owned.push(slot);
+        }
+        writer.write_line("call $concat_strings");
+        for slot in owned.iter().rev() {
+            writer.write_line(&format!("local.get $tmp{}", slot));
+            self.emit_release("string", writer);
+        }
+        self.ctx.tmp_depth = saved_tmp;
+        Ok(())
+    }
+
+    /// Emits the single WASM instruction for an arithmetic/comparison binary operator, given the
+    /// already-evaluated operands' common type. Unsigned integer types (`byte`/`uint`/`ulong`)
+    /// select the unsigned ops for division, remainder, ordered comparisons, and right shift.
+    fn emit_binary_operator(
+        opr: &SyntaxToken,
+        operand_ctx: &str,
+        writer: &mut IndentedTextWriter,
+    ) -> Result<(), Error> {
+        let symbol = WasmGenerator::get_wasm_type_from(operand_ctx.to_string())?;
+        let unsigned = is_unsigned_integer(strip_nullable(operand_ctx));
         let s = if unsigned { "_u" } else { "_s" };
         match opr.kind {
             TokenKind::PlusToken => writer.write_line(&format!("{}.add", symbol)),
@@ -911,18 +958,34 @@ impl<'a> WasmGenerator<'a> {
         writer: &mut IndentedTextWriter,
     ) -> Result<(), Error> {
         let param_types: Vec<String> = self.function_table.get_function(name)?.parameters.clone();
+        self.emit_arg_call(name, parameters, &param_types, 0, function, writer)
+    }
 
+    /// Evaluates `params` as call arguments (tracking owned-reference temporaries via `$tmp`
+    /// locals), emits `call $callee`, then releases those temporaries. `param_types` is the
+    /// callee's full declared parameter list; the first `skip` entries correspond to arguments
+    /// already on the stack (e.g. an instance method's implicit `this`), so argument `i` maps to
+    /// `param_types[i + skip]`. This centralizes the owned-argument refcount discipline that was
+    /// previously copy-pasted at every direct call site.
+    fn emit_arg_call(
+        &mut self,
+        callee: &str,
+        params: &[ExpressionNode<'a>],
+        param_types: &[String],
+        skip: usize,
+        function: &FunctionNode<'a>,
+        writer: &mut IndentedTextWriter,
+    ) -> Result<(), Error> {
         let saved_tmp = self.ctx.tmp_depth;
         let mut owned_temps: Vec<(usize, String)> = Vec::new();
-        for (i, expr) in parameters.iter().enumerate() {
+        for (i, expr) in params.iter().enumerate() {
             let param_type = param_types
-                .get(i)
+                .get(i + skip)
                 .cloned()
                 .unwrap_or_else(|| "int".to_string()); // Fallback if arity mismatch (caught by semantic analysis)
             self.build_call_arg(expr, &param_type, function, &mut owned_temps, writer)?;
         }
-        writer.write("call $");
-        writer.write_line(name);
+        writer.write_line(&format!("call ${}", callee));
         self.release_call_temps(&owned_temps, saved_tmp, writer);
         Ok(())
     }
@@ -960,117 +1023,115 @@ impl<'a> WasmGenerator<'a> {
             }
         }
 
-        // `Type.method(args)`: a static call. Arguments map 1:1 to the parameters (no `this`).
-        if let Some(key) = self.resolve_static_call(obj, &method.text, params, function) {
-            let info = self.function_table.get_function(&key)?;
-            if let Some(op) = info
-                .intrinsic_name
-                .as_deref()
-                .and_then(intrinsics::IntrinsicOp::from_key)
-            {
-                use intrinsics::IntrinsicOp;
-                match op {
-                    IntrinsicOp::Print => {
-                        return self.build_print(&params[0], function, writer);
-                    }
-                    IntrinsicOp::Println => {
-                        return self.build_println(&params[0], function, writer);
-                    }
-                    IntrinsicOp::PromiseAll
-                    | IntrinsicOp::PromiseAny
-                    | IntrinsicOp::PromiseRace => {
-                        let combinator = op.promise_combinator().expect("combinator op");
-                        return self
-                            .build_async_intrinsic_call(combinator, params, function, writer);
-                    }
-                    IntrinsicOp::JsonSerialize => {
-                        let arg_type = self.infer_expression_type(&params[0], function)?;
-                        let struct_name = strip_nullable(&arg_type).to_string();
-                        self.build_expression(&params[0], &arg_type, function, writer)?;
-                        writer.write_line(&format!("call ${}", json_to_json_fn(&struct_name)));
-                        writer.write_line("call $JSON_stringify");
-                        return Ok(());
-                    }
-                    IntrinsicOp::JsonDeserialize => {
-                        let struct_name = _generic_args
-                            .as_ref()
-                            .and_then(|g| g.first())
-                            .map(|t| strip_nullable(&t.get_type()).to_string())
-                            .unwrap_or_default();
-                        self.build_expression(&params[0], &"string".to_string(), function, writer)?;
-                        writer.write_line("call $JSON_parse");
-                        writer.write_line(&format!("call ${}", json_from_json_fn(&struct_name)));
-                        return Ok(());
-                    }
-                    // `Array.new<T>(len)`: allocate a zero-initialized array of the element type.
-                    IntrinsicOp::ArrayNew => {
-                        return self.build_array_new(_generic_args, &params[0], function, writer);
-                    }
-                    // `Time.sleep(ms)`: arm an async timer, leaving a `Future` handle on the stack.
-                    IntrinsicOp::Sleep => {
-                        return self.build_async_intrinsic_call(
-                            intrinsics::SLEEP,
-                            params,
-                            function,
-                            writer,
-                        );
-                    }
-                    // The string buffer primitives and the allocator probe lower straight to their
-                    // runtime helpers (their key already matches the emitted symbol for the others).
-                    IntrinsicOp::StringAlloc
-                    | IntrinsicOp::StringSet
-                    | IntrinsicOp::DebugFreeList
-                    | IntrinsicOp::DebugHeapPtr
-                    | IntrinsicOp::DebugLiveObjects
-                    | IntrinsicOp::DebugTotalAllocations
-                    | IntrinsicOp::DebugRefCount => {
-                        let runtime = match op {
-                            IntrinsicOp::StringAlloc => "$string_alloc",
-                            IntrinsicOp::StringSet => "$string_set",
-                            IntrinsicOp::DebugHeapPtr => "$debug_get_heap_ptr",
-                            IntrinsicOp::DebugLiveObjects => "$debug_get_live_objects",
-                            IntrinsicOp::DebugTotalAllocations => "$debug_get_total_allocations",
-                            IntrinsicOp::DebugRefCount => "$debug_get_ref_count",
-                            _ => "$debug_get_free_list_head",
-                        };
-                        let param_types: Vec<String> = info.parameters.clone();
-                        let saved_tmp = self.ctx.tmp_depth;
-                        let mut owned_temps: Vec<(usize, String)> = Vec::new();
-                        for (i, expr) in params.iter().enumerate() {
-                            let param_type = param_types
-                                .get(i)
-                                .cloned()
-                                .unwrap_or_else(|| "int".to_string());
-                            self.build_call_arg(
-                                expr,
-                                &param_type,
-                                function,
-                                &mut owned_temps,
-                                writer,
-                            )?;
-                        }
-                        writer.write_line(&format!("call {}", runtime));
-                        self.release_call_temps(&owned_temps, saved_tmp, writer);
-                        return Ok(());
-                    }
-                }
-            }
-
-            let param_types: Vec<String> = info.parameters.clone();
-            let saved_tmp = self.ctx.tmp_depth;
-            let mut owned_temps: Vec<(usize, String)> = Vec::new();
-            for (i, expr) in params.iter().enumerate() {
-                let param_type = param_types
-                    .get(i)
-                    .cloned()
-                    .unwrap_or_else(|| "int".to_string());
-                self.build_call_arg(expr, &param_type, function, &mut owned_temps, writer)?;
-            }
-            writer.write_line(&format!("call ${}", key));
-            self.release_call_temps(&owned_temps, saved_tmp, writer);
+        if self.try_build_static_call(obj, method, _generic_args, params, function, writer)? {
             return Ok(());
         }
 
+        self.build_instance_method_call(obj, method, params, function, writer)
+    }
+
+    /// Handles `Type.method(args)` static dispatch, including the compiler intrinsics (`print`,
+    /// `Array.new`, JSON (de)serialization, the async combinators, and the string/allocator-probe
+    /// runtime helpers). Returns `Ok(true)` when the receiver named a type and the call was emitted,
+    /// `Ok(false)` when it is not a static call (so the caller falls through to instance dispatch).
+    #[allow(clippy::too_many_arguments)]
+    fn try_build_static_call(
+        &mut self,
+        obj: &ExpressionNode<'a>,
+        method: &SyntaxToken,
+        generic_args: &Option<Vec<Type>>,
+        params: &Vec<ExpressionNode<'a>>,
+        function: &FunctionNode<'a>,
+        writer: &mut IndentedTextWriter,
+    ) -> Result<bool, Error> {
+        // Arguments map 1:1 to the parameters (no implicit `this`).
+        let Some(key) = self.resolve_static_call(obj, &method.text, params, function) else {
+            return Ok(false);
+        };
+        let info = self.function_table.get_function(&key)?;
+        if let Some(op) = info
+            .intrinsic_name
+            .as_deref()
+            .and_then(intrinsics::IntrinsicOp::from_key)
+        {
+            use intrinsics::IntrinsicOp;
+            match op {
+                IntrinsicOp::Print => {
+                    self.build_print(&params[0], function, writer)?;
+                }
+                IntrinsicOp::Println => {
+                    self.build_println(&params[0], function, writer)?;
+                }
+                IntrinsicOp::PromiseAll | IntrinsicOp::PromiseAny | IntrinsicOp::PromiseRace => {
+                    let combinator = op.promise_combinator().expect("combinator op");
+                    self.build_async_intrinsic_call(combinator, params, function, writer)?;
+                }
+                IntrinsicOp::JsonSerialize => {
+                    let arg_type = self.infer_expression_type(&params[0], function)?;
+                    let struct_name = strip_nullable(&arg_type).to_string();
+                    self.build_expression(&params[0], &arg_type, function, writer)?;
+                    writer.write_line(&format!("call ${}", json_to_json_fn(&struct_name)));
+                    writer.write_line("call $JSON_stringify");
+                }
+                IntrinsicOp::JsonDeserialize => {
+                    let struct_name = generic_args
+                        .as_ref()
+                        .and_then(|g| g.first())
+                        .map(|t| strip_nullable(&t.get_type()).to_string())
+                        .unwrap_or_default();
+                    self.build_expression(&params[0], &"string".to_string(), function, writer)?;
+                    writer.write_line("call $JSON_parse");
+                    writer.write_line(&format!("call ${}", json_from_json_fn(&struct_name)));
+                }
+                // `Array.new<T>(len)`: allocate a zero-initialized array of the element type.
+                IntrinsicOp::ArrayNew => {
+                    self.build_array_new(generic_args, &params[0], function, writer)?;
+                }
+                // `Time.sleep(ms)`: arm an async timer, leaving a `Future` handle on the stack.
+                IntrinsicOp::Sleep => {
+                    self.build_async_intrinsic_call(intrinsics::SLEEP, params, function, writer)?;
+                }
+                // The string buffer primitives and the allocator probe lower straight to their
+                // runtime helpers.
+                IntrinsicOp::StringAlloc
+                | IntrinsicOp::StringSet
+                | IntrinsicOp::DebugFreeList
+                | IntrinsicOp::DebugHeapPtr
+                | IntrinsicOp::DebugLiveObjects
+                | IntrinsicOp::DebugTotalAllocations
+                | IntrinsicOp::DebugRefCount => {
+                    let runtime = match op {
+                        IntrinsicOp::StringAlloc => "string_alloc",
+                        IntrinsicOp::StringSet => "string_set",
+                        IntrinsicOp::DebugHeapPtr => "debug_get_heap_ptr",
+                        IntrinsicOp::DebugLiveObjects => "debug_get_live_objects",
+                        IntrinsicOp::DebugTotalAllocations => "debug_get_total_allocations",
+                        IntrinsicOp::DebugRefCount => "debug_get_ref_count",
+                        _ => "debug_get_free_list_head",
+                    };
+                    let param_types: Vec<String> = info.parameters.clone();
+                    self.emit_arg_call(runtime, params, &param_types, 0, function, writer)?;
+                }
+            }
+            return Ok(true);
+        }
+
+        let param_types: Vec<String> = info.parameters.clone();
+        self.emit_arg_call(&key, params, &param_types, 0, function, writer)?;
+        Ok(true)
+    }
+
+    /// Lowers an instance method call `obj.method(args)`: the builtins (`name()`, `len()`,
+    /// `char_at()`, and the `to_string`/`hash_code` object-protocol fallbacks), then the normal
+    /// (possibly overloaded) `{Type}_{method}` dispatch with `this` as the first argument.
+    fn build_instance_method_call(
+        &mut self,
+        obj: &ExpressionNode<'a>,
+        method: &SyntaxToken,
+        params: &Vec<ExpressionNode<'a>>,
+        function: &FunctionNode<'a>,
+        writer: &mut IndentedTextWriter,
+    ) -> Result<(), Error> {
         let obj_type = self.infer_expression_type(obj, function)?;
 
         // `EnumValue.name()`: map an enum's integer value to its variant-name string via the

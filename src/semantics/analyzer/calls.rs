@@ -575,136 +575,10 @@ impl<'a> Analyzer<'a> {
         diagnostics: &mut DiagnosticBag,
     ) -> Result<Type, ()> {
         if let ExpressionNode::Identifier(id) = obj {
-            // `Type.method(args)`: a static-method call. The receiver names a type (not a local
-            // variable), so resolve `{type}_{method}` directly with no implicit `this`.
-            let is_local = (*ctx.symbol_table).as_ref().borrow().get_symbol(id).is_ok();
-            if !is_local {
-                // `Enum.Variant(args)`: construct a discriminated-union value.
-                if let Some(t) = self.analyze_variant_construction(
-                    &id.text,
-                    method,
-                    params,
-                    ctx.parent_function,
-                    ctx.symbol_table,
-                    diagnostics,
-                )? {
-                    return Ok(t);
-                }
-            }
-            if !is_local {
-                let type_name = canonical_type_name(&id.text)
-                    .unwrap_or(id.text.as_str())
-                    .to_string();
-                let base = method_fn(&type_name, &method.text);
-
-                // Support generic static method calls by monomorphizing them on the fly.
-                if self.generic_functions.contains_key(&base) {
-                    let template = *self.generic_functions.get(&base).unwrap();
-                    let mut params_types = vec![];
-                    for param in params.iter() {
-                        params_types.push(
-                            self.analyze_expression(
-                                param,
-                                ctx.parent_function,
-                                ctx.symbol_table,
-                                diagnostics,
-                            )?
-                            .get_type(),
-                        );
-                    }
-                    // `Array.new<T>(len)`: a generic intrinsic that allocates a zero-initialized
-                    // `T[]`. The element type comes from the explicit type argument (resolved
-                    // through the active monomorphization bindings so `Array.new<T>` inside a
-                    // `List<int>` method yields `int[]`).
-                    if intrinsics::IntrinsicOp::from_attributes(&template.attributes)
-                        == Some(intrinsics::IntrinsicOp::ArrayNew)
-                    {
-                        let element = match _generic_args.as_ref().and_then(|g| g.first()) {
-                            Some(t) => Self::monomorphize_type(t, &self.current_generic_bindings),
-                            None => {
-                                diagnostics.report_error(
-                                    "'Array.new' requires a type argument, e.g. Array.new<int>(n)"
-                                        .to_string(),
-                                    Some(method.position),
-                                );
-                                Type::Void
-                            }
-                        };
-                        if params_types.len() != 1 {
-                            diagnostics.report_error(
-                                format!(
-                                    "'Array.new' expects exactly 1 argument (length), got {}",
-                                    params_types.len()
-                                ),
-                                Some(method.position),
-                            );
-                        } else if params_types[0] != "int"
-                            && !is_unknown_type_name(&params_types[0])
-                        {
-                            diagnostics.report_error(
-                                format!("'Array.new' length must be int, got {}", params_types[0]),
-                                Some(method.position),
-                            );
-                        }
-                        return Ok(Type::Array(Box::new(element)));
-                    }
-
-                    let bindings = self.infer_generic_bindings(
-                        template,
-                        _generic_args,
-                        &params_types,
-                        &method.position,
-                        diagnostics,
-                    );
-                    let mangled_name = mangle_bindings(&base, &bindings);
-
-                    // Promise combinators (`Promise.all/any/race`) are typed by the shared async
-                    // intrinsic logic; classify via the registry and delegate when applicable.
-                    if let Some(combinator) =
-                        intrinsics::IntrinsicOp::from_attributes(&template.attributes)
-                            .and_then(|op| op.promise_combinator())
-                    {
-                        let mut s_tok = method.clone();
-                        s_tok.text = combinator.to_string();
-                        return self.analyze_async_intrinsic(
-                            &s_tok,
-                            params,
-                            ctx.parent_function,
-                            ctx.symbol_table,
-                            diagnostics,
-                        );
-                    }
-
-                    if self.function_table.get_function(&mangled_name).is_err() {
-                        let mut specialized = template.clone();
-                        Self::substitute_generic_signature(&mut specialized, &bindings);
-                        let specialized_ref: &'a FunctionNode<'a> = self.arena.alloc(specialized);
-                        let info = FunctionTableInfo::from(specialized_ref);
-                        self.function_table
-                            .add_function(mangled_name.clone(), info)
-                            .unwrap();
-                        self.instantiated_generics
-                            .insert(mangled_name.clone(), (bindings, specialized_ref));
-                    }
-                    let info = self.function_table.get_function(&mangled_name).unwrap();
-                    if info.is_async {
-                        return Ok(Self::future_type(info.return_type.unwrap_or(Type::Void)));
-                    }
-                    return Ok(info.return_type.unwrap_or(Type::Void));
-                }
-
-                if self.function_table.is_overloaded(&base)
-                    || self.function_table.get_function(&base).is_ok()
-                {
-                    return self.analyze_static_call(
-                        &type_name,
-                        method,
-                        params,
-                        ctx.parent_function,
-                        ctx.symbol_table,
-                        diagnostics,
-                    );
-                }
+            if let Some(t) =
+                self.try_analyze_static_method(id, method, _generic_args, params, ctx, diagnostics)?
+            {
+                return Ok(t);
             }
         }
 
@@ -725,6 +599,174 @@ impl<'a> Analyzer<'a> {
             return Ok(Type::Unknown);
         }
 
+        if let Some(t) = self.analyze_builtin_method(&obj_type, method, params, ctx, diagnostics)? {
+            return Ok(t);
+        }
+
+        self.analyze_instance_method(&obj_type, method, params, ctx, diagnostics)
+    }
+
+    /// Handles `Type.method(args)` static dispatch when the receiver `id` names a type rather than
+    /// a local: discriminated-union variant construction, on-the-fly monomorphization of generic
+    /// static methods (including the `Array.new` and promise-combinator intrinsics), and plain
+    /// static-method resolution. Returns `Ok(Some(type))` when handled, `Ok(None)` when `id` is a
+    /// local or names no static member (so the caller falls through to instance dispatch).
+    #[allow(clippy::too_many_arguments)]
+    fn try_analyze_static_method(
+        &mut self,
+        id: &SyntaxToken,
+        method: &SyntaxToken,
+        generic_args: &Option<Vec<Type>>,
+        params: &Vec<ExpressionNode<'a>>,
+        ctx: &super::AnalyzerContext<'a, '_>,
+        diagnostics: &mut DiagnosticBag,
+    ) -> Result<Option<Type>, ()> {
+        // The receiver names a type (not a local variable), so resolve `{type}_{method}` directly
+        // with no implicit `this`.
+        let is_local = (*ctx.symbol_table).as_ref().borrow().get_symbol(id).is_ok();
+        if is_local {
+            return Ok(None);
+        }
+
+        // `Enum.Variant(args)`: construct a discriminated-union value.
+        if let Some(t) = self.analyze_variant_construction(
+            &id.text,
+            method,
+            params,
+            ctx.parent_function,
+            ctx.symbol_table,
+            diagnostics,
+        )? {
+            return Ok(Some(t));
+        }
+
+        let type_name = canonical_type_name(&id.text)
+            .unwrap_or(id.text.as_str())
+            .to_string();
+        let base = method_fn(&type_name, &method.text);
+
+        // Support generic static method calls by monomorphizing them on the fly.
+        if self.generic_functions.contains_key(&base) {
+            let template = *self.generic_functions.get(&base).unwrap();
+            let mut params_types = vec![];
+            for param in params.iter() {
+                params_types.push(
+                    self.analyze_expression(
+                        param,
+                        ctx.parent_function,
+                        ctx.symbol_table,
+                        diagnostics,
+                    )?
+                    .get_type(),
+                );
+            }
+            // `Array.new<T>(len)`: a generic intrinsic that allocates a zero-initialized
+            // `T[]`. The element type comes from the explicit type argument (resolved
+            // through the active monomorphization bindings so `Array.new<T>` inside a
+            // `List<int>` method yields `int[]`).
+            if intrinsics::IntrinsicOp::from_attributes(&template.attributes)
+                == Some(intrinsics::IntrinsicOp::ArrayNew)
+            {
+                let element = match generic_args.as_ref().and_then(|g| g.first()) {
+                    Some(t) => Self::monomorphize_type(t, &self.current_generic_bindings),
+                    None => {
+                        diagnostics.report_error(
+                            "'Array.new' requires a type argument, e.g. Array.new<int>(n)"
+                                .to_string(),
+                            Some(method.position),
+                        );
+                        Type::Void
+                    }
+                };
+                if params_types.len() != 1 {
+                    diagnostics.report_error(
+                        format!(
+                            "'Array.new' expects exactly 1 argument (length), got {}",
+                            params_types.len()
+                        ),
+                        Some(method.position),
+                    );
+                } else if params_types[0] != "int" && !is_unknown_type_name(&params_types[0]) {
+                    diagnostics.report_error(
+                        format!("'Array.new' length must be int, got {}", params_types[0]),
+                        Some(method.position),
+                    );
+                }
+                return Ok(Some(Type::Array(Box::new(element))));
+            }
+
+            let bindings = self.infer_generic_bindings(
+                template,
+                generic_args,
+                &params_types,
+                &method.position,
+                diagnostics,
+            );
+            let mangled_name = mangle_bindings(&base, &bindings);
+
+            // Promise combinators (`Promise.all/any/race`) are typed by the shared async
+            // intrinsic logic; classify via the registry and delegate when applicable.
+            if let Some(combinator) = intrinsics::IntrinsicOp::from_attributes(&template.attributes)
+                .and_then(|op| op.promise_combinator())
+            {
+                let mut s_tok = method.clone();
+                s_tok.text = combinator.to_string();
+                return Ok(Some(self.analyze_async_intrinsic(
+                    &s_tok,
+                    params,
+                    ctx.parent_function,
+                    ctx.symbol_table,
+                    diagnostics,
+                )?));
+            }
+
+            if self.function_table.get_function(&mangled_name).is_err() {
+                let mut specialized = template.clone();
+                Self::substitute_generic_signature(&mut specialized, &bindings);
+                let specialized_ref: &'a FunctionNode<'a> = self.arena.alloc(specialized);
+                let info = FunctionTableInfo::from(specialized_ref);
+                self.function_table
+                    .add_function(mangled_name.clone(), info)
+                    .unwrap();
+                self.instantiated_generics
+                    .insert(mangled_name.clone(), (bindings, specialized_ref));
+            }
+            let info = self.function_table.get_function(&mangled_name).unwrap();
+            if info.is_async {
+                return Ok(Some(Self::future_type(info.return_type.unwrap_or(Type::Void))));
+            }
+            return Ok(Some(info.return_type.unwrap_or(Type::Void)));
+        }
+
+        if self.function_table.is_overloaded(&base)
+            || self.function_table.get_function(&base).is_ok()
+        {
+            return Ok(Some(self.analyze_static_call(
+                &type_name,
+                method,
+                params,
+                ctx.parent_function,
+                ctx.symbol_table,
+                diagnostics,
+            )?));
+        }
+
+        Ok(None)
+    }
+
+    /// Type-checks the builtin methods available on every (or every primitive/array) receiver:
+    /// `EnumValue.name()`, `len()`, `str.char_at(i)`, and the `to_string`/`hash_code` object
+    /// protocol. Returns `Ok(Some(result_type))` when the call is a builtin (so the caller returns
+    /// it) or `Ok(None)` to fall through to normal instance-method dispatch. A user-defined
+    /// `to_string`/`hash_code` override yields `None` so the override is dispatched normally.
+    fn analyze_builtin_method(
+        &mut self,
+        obj_type: &Type,
+        method: &SyntaxToken,
+        params: &Vec<ExpressionNode<'a>>,
+        ctx: &super::AnalyzerContext<'a, '_>,
+        diagnostics: &mut DiagnosticBag,
+    ) -> Result<Option<Type>, ()> {
         // `EnumValue.name()`: built-in accessor returning the variant name as a string.
         if method.text == intrinsics::ENUM_NAME {
             let base = strip_nullable(&obj_type.get_type()).to_string();
@@ -735,10 +777,10 @@ impl<'a> Analyzer<'a> {
                         Some(method.position),
                     );
                 }
-                return Ok(Type::String(synthetic_token(
+                return Ok(Some(Type::String(synthetic_token(
                     TokenKind::DataTypeToken,
                     "string",
-                )));
+                ))));
             }
         }
 
@@ -752,10 +794,10 @@ impl<'a> Analyzer<'a> {
                         Some(method.position),
                     );
                 }
-                return Ok(Type::Integer(synthetic_token(
+                return Ok(Some(Type::Integer(synthetic_token(
                     TokenKind::DataTypeToken,
                     "int",
-                )));
+                ))));
             }
         }
 
@@ -784,17 +826,17 @@ impl<'a> Analyzer<'a> {
                     );
                 }
             }
-            return Ok(Type::Char(synthetic_token(
+            return Ok(Some(Type::Char(synthetic_token(
                 TokenKind::DataTypeToken,
                 "char",
-            )));
+            ))));
         }
 
         // Object protocol: `x.to_string()` / `x.hash_code()` are available on every type. A
         // user-defined override (registered as `{Type}_to_string`) takes precedence and is resolved
         // by the normal method lookup below; otherwise fall back to the builtin protocol.
         if method.text == intrinsics::TO_STRING || method.text == intrinsics::HASH_CODE {
-            let receiver = match Self::resolve_struct_parts(&obj_type) {
+            let receiver = match Self::resolve_struct_parts(obj_type) {
                 Some((base_name, generic_args)) => mangle_generic(&base_name, &generic_args),
                 None => strip_nullable(&obj_type.get_type()).to_string(),
             };
@@ -809,21 +851,36 @@ impl<'a> Analyzer<'a> {
                     );
                 }
                 if method.text == intrinsics::TO_STRING {
-                    return Ok(Type::String(synthetic_token(
+                    return Ok(Some(Type::String(synthetic_token(
                         TokenKind::DataTypeToken,
                         "string",
-                    )));
+                    ))));
                 }
-                return Ok(Type::Integer(synthetic_token(
+                return Ok(Some(Type::Integer(synthetic_token(
                     TokenKind::DataTypeToken,
                     "int",
-                )));
+                ))));
             }
         }
 
+        Ok(None)
+    }
+
+    /// Resolves and type-checks an instance method call `obj.method(args)` once the receiver type
+    /// (`obj_type`) is known and the builtins/static cases have been ruled out: monomorphizes the
+    /// receiver, selects the (possibly overloaded) `{Type}_{method}`, enforces privacy and the
+    /// argument arity/types, and returns the call's result type (a `Future<T>` for `async`).
+    fn analyze_instance_method(
+        &mut self,
+        obj_type: &Type,
+        method: &SyntaxToken,
+        params: &Vec<ExpressionNode<'a>>,
+        ctx: &super::AnalyzerContext<'a, '_>,
+        diagnostics: &mut DiagnosticBag,
+    ) -> Result<Type, ()> {
         // Struct receivers are monomorphized to their concrete type name; primitive/`object`
         // receivers (which can carry methods via `extend`) use their canonical type name directly.
-        let struct_name = match Self::resolve_struct_parts(&obj_type) {
+        let struct_name = match Self::resolve_struct_parts(obj_type) {
             Some((base_name, generic_args)) => {
                 // A generic union receiver (e.g. `Option<int>`) is instantiated through the union
                 // path so its extension methods are registered; everything else is a struct.
@@ -877,7 +934,7 @@ impl<'a> Analyzer<'a> {
         // Private methods (the default) may only be called from within the declaring type's own
         // methods; `public` exposes them to outside code.
         if !store_sig.is_public {
-            let base_name = Self::resolve_struct_parts(&obj_type)
+            let base_name = Self::resolve_struct_parts(obj_type)
                 .map(|(b, _)| b)
                 .unwrap_or_else(|| strip_nullable(&obj_type.get_type()).to_string());
             if !self.in_methods_of(ctx.parent_function, &base_name) {
