@@ -6,7 +6,7 @@ Generics let you write code that works for any type without duplicating it. Drea
 
 Add `<T>` after the function name:
 
-```ts
+```dream
 fun first<T>(arr: T[]): T {
     return arr[0];
 }
@@ -23,7 +23,7 @@ The type argument can often be inferred from the call site, though explicit `<Ty
 
 Multiple type parameters:
 
-```ts
+```dream
 fun swap<A, B>(a: A, b: B): A {
     return a;
 }
@@ -33,7 +33,7 @@ fun swap<A, B>(a: A, b: B): A {
 
 Classes can be generic too:
 
-```ts
+```dream
 class Pair<A, B> {
     first: A;
     second: B;
@@ -48,7 +48,7 @@ fun main(): void {
 
 Type arguments can themselves be generic (or arrays), so generics nest freely:
 
-```ts
+```dream
 let nested = Pair<Box<int>, int>(Box<int>(7), 5);
 println(nested.first.v);   // 7
 
@@ -60,7 +60,7 @@ println(pts[0].second);    // 2
 
 Methods on generic classes automatically have access to the class's type parameters:
 
-```ts
+```dream
 class Box<T> {
     value: T;
 
@@ -84,7 +84,7 @@ fun main(): void {
 
 Use `is` to branch on the concrete type at compile time. The compiler eliminates dead branches entirely:
 
-```ts
+```dream
 fun describe<T>(v: T): void {
     if (v is int) {
         print("it's an int: ");

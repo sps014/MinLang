@@ -2,7 +2,7 @@
 
 Dream is a statically typed language that compiles to WebAssembly. It has a simple, readable syntax and manages memory automatically — no garbage collector, no manual frees.
 
-```ts
+```dream
 fun greet(name: string): string {
     return "Hello, " + name;
 }

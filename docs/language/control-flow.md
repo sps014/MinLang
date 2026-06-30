@@ -3,7 +3,7 @@
 ## if / else
 
 
-```ts
+```dream
 if (score >= 90) {
     print("A\n");
 } else if (score >= 70) {
@@ -19,7 +19,7 @@ A ternary expression is also available for value selection: `cond ? a : b` (see 
 
 Runs the body repeatedly as long as the condition is `true`:
 
-```ts
+```dream
 let i = 0;
 while (i < 10) {
     println(i);
@@ -31,7 +31,7 @@ while (i < 10) {
 
 Three-part loop: initializer, condition, increment. All three parts are optional:
 
-```ts
+```dream
 for (let i = 0; i < 5; i = i + 1) {
     println(i);
 }
@@ -43,7 +43,7 @@ The initializer runs once. The condition is checked before each iteration. The i
 
 Like `while`, but the body always runs at least once because the condition is checked at the end:
 
-```ts
+```dream
 let i = 0;
 do {
     println(i);
@@ -55,7 +55,7 @@ do {
 
 Iterate the elements of an array directly with `for (let x in arr)`:
 
-```ts
+```dream
 let xs: int[] = [10, 20, 30];
 for (let value in xs) {
     println(value);
@@ -68,7 +68,7 @@ The loop variable is bound to each element in turn (its type is the array's elem
 
 `switch` matches a subject against one or more constant labels. There is **no implicit fallthrough** - each `case` runs only its own block. A case may list several comma-separated labels, and a `default` clause is optional:
 
-```ts
+```dream
 switch (code) {
     case 1, 2:
         print("low\n");
@@ -85,7 +85,7 @@ Labels must be constants (integers, strings, booleans, or enum members) and matc
 
 `switch` works naturally with [enums](types.md#enums):
 
-```ts
+```dream
 enum Color { Red, Green, Blue }
 
 switch (c) {
@@ -102,7 +102,7 @@ switch (c) {
 
 `break` exits the nearest enclosing loop immediately:
 
-```ts
+```dream
 let i = 0;
 while (true) {
     if (i >= 5) {
@@ -115,7 +115,7 @@ while (true) {
 
 `continue` skips the rest of the current iteration and goes back to the condition check:
 
-```ts
+```dream
 for (let i = 0; i < 10; i = i + 1) {
     if (i % 2 == 0) {
         continue;   // skip even numbers
@@ -130,7 +130,7 @@ Both `break` and `continue` produce a compile error if used outside a loop.
 
 A loop may be given a label so that `break`/`continue` can target an outer loop from within a nested one:
 
-```ts
+```dream
 outer: for (let i = 0; i < 3; i = i + 1) {
     for (let j = 0; j < 3; j = j + 1) {
         if (j == 1) {

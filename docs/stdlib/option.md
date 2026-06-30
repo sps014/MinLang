@@ -3,7 +3,7 @@
 `Option<T>` represents a value that may be absent. It is a [discriminated
 union](../language/discriminated-unions.md) with two variants:
 
-```ts
+```dream
 enum Option<T> { Some(value: T), None }   // provided by the prelude
 ```
 
@@ -13,7 +13,7 @@ produce a result.
 
 ## Constructing
 
-```ts
+```dream
 let some = Option.Some(42);          // inferred Option<int>
 let none: Option<int> = Option.None; // annotation needed for the unit variant
 ```
@@ -27,7 +27,7 @@ type) when constructing a bare `None`.
 Destructure an `Option<T>` with [`match`](../language/discriminated-unions.md). The match is
 checked for exhaustiveness, so both variants must be handled:
 
-```ts
+```dream
 fun unwrap_or(o: Option<int>, fallback: int): int {
     return match (o) {
         Some(v) => v,
@@ -43,7 +43,7 @@ fun main(): void {
 
 A guard narrows an arm further:
 
-```ts
+```dream
 match (o) {
     Some(n) if n > 100 => println("large"),
     Some(n)            => println(n),

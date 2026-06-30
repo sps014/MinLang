@@ -12,13 +12,13 @@
 
 Both operands must be the same type. Use an explicit cast if they differ:
 
-```ts
+```dream
 let x = 7 / (float)2;   // 3.5
 ```
 
 String concatenation uses `+`:
 
-```ts
+```dream
 let msg = "Hello, " + name + "!";
 ```
 
@@ -63,7 +63,7 @@ These operate on `int` values:
 
 `a ?? b` evaluates to `a` when it is non-null, otherwise to `b`. The left operand should be a nullable (`T?`) value and the result type is the unwrapped `T`:
 
-```ts
+```dream
 let name: string? = lookup();
 let display: string = name ?? "anonymous";
 ```
@@ -72,7 +72,7 @@ let display: string = name ?? "anonymous";
 
 `cond ? a : b` evaluates `cond` (a `bool`); the result is `a` when true and `b` when false. Both branches must share a type:
 
-```ts
+```dream
 let label = score >= 60 ? "pass" : "fail";
 ```
 
@@ -80,7 +80,7 @@ let label = score >= 60 ? "pass" : "fail";
 
 `=` assigns a new value to a variable, array element, or class field:
 
-```ts
+```dream
 x = 10;
 arr[0] = 99;
 point.x = 3;
@@ -90,7 +90,7 @@ point.x = 3;
 
 `+=`, `-=`, `*=`, `/=`, and `%=` update a target in place, and `++`/`--` add or subtract one:
 
-```ts
+```dream
 total += 5;     // total = total + 5
 count++;        // count = count + 1
 i--;
@@ -100,7 +100,7 @@ i--;
 
 Prefix `-` negates a numeric value:
 
-```ts
+```dream
 let neg = -x;
 ```
 

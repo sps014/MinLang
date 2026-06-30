@@ -31,6 +31,9 @@ theme:
     - navigation.expand
     - toc.follow
 
+hooks:
+  - tooling/docs/dream_lexer.py
+
 markdown_extensions:
   - admonition
   - attr_list

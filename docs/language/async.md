@@ -7,7 +7,7 @@ Dream supports cooperative concurrency with `async`/`await`. The syntax is Pytho
 
 Prefix a function with `async`. Its declared return type `T` becomes `Future<T>` at the call site:
 
-```ts
+```dream
 async fun fetchData(): string {
     await Time.sleep(100);   // suspends this task; the event loop keeps running
     return "data";
@@ -18,7 +18,7 @@ async fun fetchData(): string {
 
 `await e` suspends the current task until the `Future` produced by `e` resolves, then yields its value:
 
-```ts
+```dream
 async fun main(): void {
     let x = await fetchData();   // x : string
     println(x);
@@ -31,7 +31,7 @@ async fun main(): void {
 
 In the current version `await` may only appear at a **top-level statement position**:
 
-```ts
+```dream
 await e;                 // discard the result
 let x = await e;         // bind the result
 return await e;          // complete with the result
@@ -39,7 +39,7 @@ return await e;          // complete with the result
 
 Awaiting inside a sub-expression, loop, or branch is a compile-time error in v1:
 
-```ts
+```dream
 let y = await f() + 1;   // error: await must be a top-level statement
 ```
 
@@ -49,7 +49,7 @@ let y = await f() + 1;   // error: await must be a top-level statement
 
 Because calls are eager, you can store the handle and `await` it later. Two calls made before the first `await` run concurrently:
 
-```ts
+```dream
 async fun work(id: int): int {
     await Time.sleep(50);
     return id * id;
@@ -73,7 +73,7 @@ The combinators are static methods on the built-in `Promise` class, over `Future
 | `Promise.any`  | `Promise.any(xs: Future<T>[]): Future<T>`   | the first future resolves |
 | `Promise.race` | `Promise.race(xs: Future<T>[]): Future<T>`  | the first future settles |
 
-```ts
+```dream
 let first = await Promise.any([work(10), work(20)]);
 ```
 
@@ -83,7 +83,7 @@ let first = await Promise.any([work(10), work(20)]);
 
 `async` is not limited to free functions — class methods (instance and `static`) can be `async` too, so a type can own its own asynchronous behavior. An async method call types as `Future<T>` just like a free async call:
 
-```ts
+```dream
 class Downloader {
     url: string;
     async fun fetch(): string {
@@ -126,7 +126,7 @@ The whole event loop lives **inside** the WebAssembly module, so an `async` prog
 
 An `extern async fun` bridges to a host function that returns a `Promise`. The `.then` wiring lives entirely in `dream.js`; Dream source never sees a promise:
 
-```ts
+```dream
 @js("api", "getUser")
 extern async fun getUser(id: int): string;
 

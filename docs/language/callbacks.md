@@ -9,7 +9,7 @@ can call into Dream and Dream can call into JS.
 Pass a Dream `fun(...)` to an `extern` whose parameter is a function type. The runtime wraps the
 function index as a real JS callable, so the host can invoke it directly:
 
-```ts
+```dream
 fun on_tick(n: int): void {
     println("tick " + n);
 }
@@ -40,7 +40,7 @@ The compiler exports the function table as `__indirect_function_table`, and the 
 
 A JavaScript function handed to Dream arrives as a [`JsRef`](references.md). Dream calls it back with `invoke` / `invoke1` / `invoke2`:
 
-```ts
+```dream
 fun main(): void {
     let logger = JsRef.global("logger");          // a JS function on the global scope
     logger.invoke1(JsRef.from_string("hello from Dream"));

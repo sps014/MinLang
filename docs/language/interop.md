@@ -8,7 +8,7 @@ Dream compiles to WebAssembly, so it runs anywhere WASM does, including the brow
 An `extern fun` has a signature but no body. The compiler lowers it to a WebAssembly *import* and
 records it in the auto-generated `*.abi.json`. You call it like any other function:
 
-```ts
+```dream
 extern fun alert(msg: string): void;
 
 fun main(): void {
@@ -30,7 +30,7 @@ There is one interop mechanism, made of three pieces:
 
 Use the `@js(module, name)` attribute to control which import module and field the extern binds to:
 
-```ts
+```dream
 // binds to importObject["dom"]["setText"]
 @js("dom", "setText")
 extern fun set_text(value: string): void;

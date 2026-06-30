@@ -2,7 +2,7 @@
 
 ## Defining a function
 
-```ts
+```dream
 fun add(a: int, b: int): int {
     return a + b;
 }
@@ -14,7 +14,7 @@ fun add(a: int, b: int): int {
 
 The return type is optional for functions that return nothing. These two are equivalent:
 
-```ts
+```dream
 fun greet() {
     println("hi");
 }
@@ -26,7 +26,7 @@ fun greet(): void {
 
 ## Calling a function
 
-```ts
+```dream
 let result = add(3, 4);
 ```
 
@@ -34,7 +34,7 @@ let result = add(3, 4);
 
 Use `return`:
 
-```ts
+```dream
 fun clamp(value: int, lo: int, hi: int): int {
     if (value < lo) { return lo; }
     if (value > hi) { return hi; }
@@ -48,7 +48,7 @@ The compiler checks that all code paths return a value when the return type is n
 
 Functions can call themselves:
 
-```ts
+```dream
 fun fib(n: int): int {
     if (n <= 1) { return n; }
     return fib(n - 1) + fib(n - 2);
@@ -59,7 +59,7 @@ fun fib(n: int): int {
 
 Add `<TypeParam>` after the function name to make it generic. The type parameter stands in for any concrete type:
 
-```ts
+```dream
 fun identity<T>(value: T): T {
     return value;
 }
@@ -74,7 +74,7 @@ The compiler generates a separate copy of the function body for each distinct ty
 
 Multiple type parameters are allowed:
 
-```ts
+```dream
 fun pair_first<A, B>(a: A, b: B): A {
     return a;
 }
@@ -84,7 +84,7 @@ fun pair_first<A, B>(a: A, b: B): A {
 
 A function name used as a value refers to the function itself, and the function type is written `fun(ParamTypes): ReturnType`. Functions can be stored in variables and passed as parameters, then invoked like any other call:
 
-```ts
+```dream
 fun twice(x: int): int {
     return x * 2;
 }
@@ -106,7 +106,7 @@ Closures (capturing surrounding variables) are not yet supported.
 
 Functions are **private by default** — callable within their own module but not exposed to the host. Mark a function `public` to make it module-visible and export it to the WebAssembly host environment:
 
-```ts
+```dream
 public fun compute(n: int): int {
     return n * n;
 }
@@ -118,7 +118,7 @@ A `public` function cannot expose a class that is not itself `public`.
 
 The runtime calls `main` to start the program. Every runnable Dream program needs one. The return type can be omitted:
 
-```ts
+```dream
 fun main() {
     println("hello");
 }

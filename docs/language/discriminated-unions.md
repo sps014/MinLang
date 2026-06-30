@@ -5,7 +5,7 @@ payload `(...)`, the whole `enum` becomes a *discriminated union* (also called a
 algebraic data type): a value is exactly one of its variants, and each variant can hold its own
 typed data. You take the data back out with an exhaustive `match`.
 
-```ts
+```dream
 enum Shape {
     Circle(radius: float),
     Rect(width: float, height: float),
@@ -20,7 +20,7 @@ generics, `is`, and `to_string`.
 
 Construct a variant with member-access call syntax. Unit variants need no parentheses:
 
-```ts
+```dream
 let s = Shape.Circle(2.0);
 let r = Shape.Rect(3.0, 4.0);
 let e = Shape.Empty;
@@ -32,7 +32,7 @@ let e = Shape.Empty;
 **expression** (every arm is `pattern => expr`, and all arms share one type) and a **statement**
 (arms may be `=> { ... }` blocks run for their effects).
 
-```ts
+```dream
 // expression position: yields a value
 let area = match (s) {
     Circle(r)  => 3.14 * r * r,
@@ -62,7 +62,7 @@ The variant qualifier is optional inside `match` because the subject type is alr
 
 Patterns nest, so a variant's fields can themselves be matched:
 
-```ts
+```dream
 match (pair) {
     Both(Some(x), None) => x,
     _                   => 0,
@@ -74,7 +74,7 @@ match (pair) {
 An arm may add an `if <bool>` guard. A guarded arm matches only when its pattern fits **and** the
 guard is true:
 
-```ts
+```dream
 match (opt) {
     Some(n) if n > 10 => println("big"),
     Some(n)           => println(n),
@@ -87,7 +87,7 @@ match (opt) {
 `match` must cover every case. The compiler rejects a `match` that omits a variant unless a `_`
 (or a bare binding) catches the rest:
 
-```ts
+```dream
 // error: missing variant(s) Empty
 let area = match (s) {
     Circle(r)  => 3.14 * r * r,
@@ -107,7 +107,7 @@ catch-all.
 Unions may be generic; the concrete type is inferred from the constructor arguments, or supplied by
 an annotation when it cannot be inferred (e.g. a unit variant):
 
-```ts
+```dream
 enum Option<T> { Some(value: T), None }
 enum Result<T, E> { Ok(value: T), Err(error: E) }
 
@@ -128,7 +128,7 @@ These two unions are common enough that the standard library defines them for yo
 auto-imported into every program, so you can use `Option.Some`/`Option.None` and
 `Result.Ok`/`Result.Err` without declaring anything:
 
-```ts
+```dream
 enum Option<T> { Some(value: T), None }          // provided by the prelude
 enum Result<T, E> { Ok(value: T), Err(error: E) } // provided by the prelude
 ```

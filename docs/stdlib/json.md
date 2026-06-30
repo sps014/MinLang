@@ -9,7 +9,7 @@ Dream with no interop, so it runs on every host, including the `wasmtime` test h
 A `JsonValue` holds any JSON value. Build values with the static constructors and read them with
 the typed accessors:
 
-```ts
+```dream
 let user = JsonValue.dict();
 user.set("name", JsonValue.from_string("Ada"));
 user.set("age", JsonValue.from_int(36));
@@ -39,7 +39,7 @@ user.set("tags", tags);
 
 ## `JSON.parse` and `JSON.stringify`
 
-```ts
+```dream
 let text = JSON.stringify(user);     // {"name":"Ada","age":36,"tags":["dev"]}
 
 let v = JSON.parse(text);
@@ -55,7 +55,7 @@ as a `JsonValue` whose `is_null()` is `true`; `get` never returns a dangling ref
 `JSON.stringify_pretty(value, indent)` formats the output with newlines and `indent` spaces per
 nesting level. An `indent` of `0` produces compact output, the same as `JSON.stringify`.
 
-```ts
+```dream
 println(JSON.stringify_pretty(v, 2));
 // {
 //   "name": "Ada",
@@ -70,7 +70,7 @@ println(JSON.stringify_pretty(v, 2));
 Mark a class `@json` and the compiler generates its `to_json` / `from_json` converters, so the
 class round-trips with no boilerplate:
 
-```ts
+```dream
 @json
 class Address { city: string; zip: string; }
 
@@ -97,7 +97,7 @@ Field types may be primitives, `string`, other `@json` classes, arrays of those,
 Use `@property_name("key")` on a field to map it to a different JSON key while keeping the Dream
 field name in code:
 
-```ts
+```dream
 @json
 class Product {
     @property_name("id")
@@ -116,7 +116,7 @@ A nullable field (`string?` or a nullable `@json` class) maps to JSON `null`. On
 `null` field is written as `null`. On deserialize, a JSON `null` or a missing key produces a `null`
 field:
 
-```ts
+```dream
 @json
 class Profile { name: string; nickname: string?; address: Address?; }
 

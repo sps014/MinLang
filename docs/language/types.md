@@ -16,14 +16,14 @@
 
 Append `[]` to any type to get an array of that type:
 
-```ts
+```dream
 let nums: int[] = [10, 20, 30];
 let names: string[] = ["a", "b", "c"];
 ```
 
 Array access is zero-indexed:
 
-```ts
+```dream
 let first = nums[0];   // 10
 nums[1] = 99;
 ```
@@ -34,7 +34,7 @@ Arrays are fixed-size once created from a literal. For a growable list, use [`Li
 
 Any reference type can be marked nullable with `?`. A nullable variable may hold either a real value or `null`:
 
-```ts
+```dream
 let node: Node? = null;
 node = Node(5, null);
 ```
@@ -47,7 +47,7 @@ The null-coalescing operator `??` provides a fallback for nullable values (see [
 
 `char` is a dedicated single-character type. A character literal is written in single quotes, and common escapes (`'\n'`, `'\t'`, `'\r'`, `'\0'`, `'\\'`, `'\''`) are supported. Each `char` occupies one byte in memory (in arrays and class fields), making `char[]` a compact byte/character buffer:
 
-```ts
+```dream
 let a: char = 'A';
 let newline: char = '\n';
 print(a);                  // prints "A"
@@ -58,7 +58,7 @@ print(letters[0]);         // prints "h"
 
 A `char` and an `int` convert losslessly via a cast (a `char` is a code point):
 
-```ts
+```dream
 let code: int = (int)a;       // 65
 let next: char = (char)(code + 1);  // 'B'
 ```
@@ -72,7 +72,7 @@ See [Enums](enums.md) and [Discriminated Unions](discriminated-unions.md).
 
 `type` introduces an alias for an existing type. Aliases are resolved at compile time (they are interchangeable with the underlying type) and must be declared before use:
 
-```ts
+```dream
 type Number = int;
 type Names = string[];
 
@@ -93,7 +93,7 @@ A universal container that can hold any value at runtime. Useful for heterogeneo
 
 Use a C-style cast to convert between numeric types or between a value and `object`:
 
-```ts
+```dream
 let n = 7;
 let f = (float)n;        // int -> float
 let back = (int)f;       // float -> int

@@ -6,7 +6,7 @@
 
 Assigning to an `object` variable automatically boxes the value:
 
-```ts
+```dream
 let o: object = 42;       // boxing an int
 let s: object = "hello";  // boxing a string
 ```
@@ -15,7 +15,7 @@ let s: object = "hello";  // boxing a string
 
 To get the original value out, cast with the concrete type. If the stored type doesn't match, the program traps at runtime:
 
-```ts
+```dream
 let n = (int)o;    // 42, if o holds an int
 ```
 
@@ -23,7 +23,7 @@ let n = (int)o;    // 42, if o holds an int
 
 Check the runtime type of an `object` before casting:
 
-```ts
+```dream
 fun describe(o: object): void {
     if (o is int) {
         print("int: ");
@@ -44,7 +44,7 @@ On a non-`object` variable, `is` is resolved at compile time. If the types match
 Every value responds to the instance methods `to_string()` (returns a `string`) and `hash_code()`
 (returns an `int`):
 
-```ts
+```dream
 let s = (42).to_string();       // "42"
 let h = "hello".hash_code();    // some stable integer
 ```
@@ -55,7 +55,7 @@ These work on any type, including `object`.
 
 A class can customize `to_string` and `hash_code` by declaring them with `@override public`:
 
-```ts
+```dream
 class Color {
     r: int;
     g: int;

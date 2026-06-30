@@ -25,7 +25,7 @@ flowchart LR
 
 The prelude provides a few constructors plus access to the JS global scope:
 
-```ts
+```dream
 @js("window", "document")
 extern fun get_document(): JsRef;
 
@@ -51,7 +51,7 @@ fun main(): void {
 | `is_null(): bool` | true if the value is `null` or `undefined` |
 | `release(): void` | drop the host-side handle |
 
-```ts
+```dream
 let re = JsRef.global("RegExp");           // the RegExp constructor
 // ... build/use a regex via call/get ...
 re.release();

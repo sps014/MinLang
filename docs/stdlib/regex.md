@@ -18,7 +18,7 @@ The API is identical across all three. One caveat: the native (`regex`-crate) en
 
 Construct a `Regex` with a pattern and flags, then test, replace, or match. These calls are synchronous (no `await`):
 
-```ts
+```dream
 fun main(): void {
     let digits = Regex("\\d+", "g");
 
@@ -49,7 +49,7 @@ Flags are passed as a string, mirroring JavaScript:
 
 Without the `g` flag, `match` returns the full match followed by each capture group (missing optional groups are `""`):
 
-```ts
+```dream
 fun main(): void {
     let date = Regex("(\\d{4})-(\\d{2})", "i");
     let caps = date.match("2026-06");   // ["2026-06", "2026", "06"]

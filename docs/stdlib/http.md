@@ -16,7 +16,7 @@ The API is identical across all three; only the underlying transport differs. Un
 
 Construct a client with a base URL (`""` for none) and, optionally, default headers applied to every request. `set_header` returns the client, so calls chain:
 
-```ts
+```dream
 let api = HttpClient("https://api.example.com")
     .set_header("Authorization", "Bearer secret")
     .set_header("Accept", "application/json");
@@ -26,7 +26,7 @@ let api = HttpClient("https://api.example.com")
 
 `text(path)` resolves to the body directly. Relative paths are joined onto the base URL:
 
-```ts
+```dream
 async fun main(): void {
     let api = HttpClient("https://api.example.com");
     let body = await api.text("/users/42");
@@ -39,7 +39,7 @@ async fun main(): void {
 
 `get(path)` resolves to an `HttpResponse` exposing the status, headers, and body. Reads are synchronous — the bytes arrive with the response:
 
-```ts
+```dream
 async fun main(): void {
     let api = HttpClient("https://api.example.com");
     let res = await api.get("/data");
@@ -55,7 +55,7 @@ async fun main(): void {
 
 `get`/`delete`/`head` take just a path; `post`/`put`/`patch` also take a request body; and `request` gives full control including per-call headers (a JSON-object string, merged over the client's defaults):
 
-```ts
+```dream
 async fun main(): void {
     let api = HttpClient("https://api.example.com");
 
@@ -73,7 +73,7 @@ async fun main(): void {
 
 For non-text data, the response body is byte-exact via `bytes()`, and `request_bytes`/`post_bytes`/`put_bytes` send a raw `char[]` body — both directions avoid any UTF-8 round-trip:
 
-```ts
+```dream
 async fun main(): void {
     let http = HttpClient("");
 

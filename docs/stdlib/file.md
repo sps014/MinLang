@@ -18,7 +18,7 @@ The API is identical across all three; only the browser differs in that writes l
 
 `File.read` returns the whole file as a UTF-8 string; `File.write` replaces its contents and `File.append` adds to the end. Each resolves a `Future`, so `await` them inside an `async fun`:
 
-```ts
+```dream
 async fun main(): void {
     await File.write("notes.txt", "hello\n");
     await File.append("notes.txt", "world\n");
@@ -34,7 +34,7 @@ async fun main(): void {
 
 `exists`, `size`, and `is_dir` are cheap and synchronous — no `await`:
 
-```ts
+```dream
 async fun main(): void {
     if (File.exists("notes.txt")) {
         System.print("size = ");
@@ -47,7 +47,7 @@ async fun main(): void {
 
 `File.list` resolves to a `string[]` of entry names (empty for an empty or non-directory path):
 
-```ts
+```dream
 async fun main(): void {
     let entries = await File.list(".");
     System.println(entries.len());
@@ -58,7 +58,7 @@ async fun main(): void {
 
 For non-text data, `read_bytes`/`write_bytes` move raw bytes directly between the file and a `char[]` with a single bulk copy — no string round-trip, so they are binary-safe (bytes such as `0x00` are preserved):
 
-```ts
+```dream
 async fun main(): void {
     let bytes = await File.read_bytes("image.png");   // char[]
     await File.write_bytes("copy.png", bytes);
@@ -69,7 +69,7 @@ async fun main(): void {
 
 `File.open` reads a file's bytes once into a buffered, seekable cursor. Reads slice the buffer in place; text views are materialized only when you ask for them, and random access via `seek` is allocation-free:
 
-```ts
+```dream
 async fun main(): void {
     let stream = await File.open("notes.txt");
 

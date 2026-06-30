@@ -4,7 +4,7 @@
 
 Use `let` to declare a local variable. The type is inferred from the right-hand side:
 
-```ts
+```dream
 let x = 42;          // int
 let name = "Alice";  // string
 let ratio = 3.14;    // float
@@ -13,7 +13,7 @@ let done = false;    // bool
 
 You can also write the type explicitly. This is required when the initializer alone is ambiguous:
 
-```ts
+```dream
 let score: double = 99.5d;
 let items: int[] = [1, 2, 3];
 ```
@@ -22,7 +22,7 @@ let items: int[] = [1, 2, 3];
 
 Use `const` instead of `let` to declare an immutable binding. Reassigning a `const` is a compile error:
 
-```ts
+```dream
 const pi: int = 3;
 // pi = 4;   // error: cannot assign to 'pi' because it is a const binding
 ```
@@ -31,7 +31,7 @@ const pi: int = 3;
 
 Variables declared with `let` are mutable. Assign a new value with `=`:
 
-```ts
+```dream
 let count = 0;
 count = count + 1;
 ```
@@ -42,7 +42,7 @@ Compound assignment (`+=`, `-=`, `*=`, `/=`, `%=`) and increment/decrement (`++`
 
 `let` and `const` can also be declared at the top level of a file, outside any function or class. These become module globals: their initializers run once, in declaration order, when the module is instantiated, and a later global may reference an earlier one.
 
-```ts
+```dream
 let counter: int = 10;
 const FACTOR: int = 3;
 let derived: int = counter * FACTOR;   // may reference earlier globals
@@ -60,7 +60,7 @@ Like class members, top-level variables are **private by default** — visible t
 
 `public` and `static` are mutually exclusive on the same declaration:
 
-```ts
+```dream
 public let version: int = 1;   // exported to the host
 static let cache: int = 0;     // file-local
 
@@ -73,7 +73,7 @@ A top-level `const` is immutable just like a local one; reassigning it is a comp
 
 Variables live until the end of the block they are declared in. When a reference-typed variable (string, array, class) goes out of scope, its reference count is decremented automatically.
 
-```ts
+```dream
 fun main(): void {
     let a = 10;
     {
@@ -96,7 +96,7 @@ The compiler infers the type from the initializer expression. A few things to wa
 
 If inference gives you the wrong type, add an explicit annotation or a suffix:
 
-```ts
+```dream
 let pi: double = 3.14159;   // explicit annotation
 let pi2 = 3.14159d;         // suffix
 ```

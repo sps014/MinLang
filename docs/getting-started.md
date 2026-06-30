@@ -18,7 +18,7 @@ The binary ends up at `target/release/dream`. You can run it directly from that 
 
 Create a file called `hello.dream`:
 
-```ts
+```dream
 fun main() {
     println("Hello, world!");
 }
@@ -48,7 +48,7 @@ This writes a `hello.wat` file next to your source.
 
 ## A slightly bigger example
 
-```ts
+```dream
 fun factorial(n: int): int {
     if (n <= 1) {
         return 1;

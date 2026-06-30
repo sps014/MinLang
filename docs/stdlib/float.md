@@ -6,7 +6,7 @@
 
 Returns the absolute value.
 
-```ts
+```dream
 println((-1.5f).abs());   // 1.5
 ```
 
@@ -14,7 +14,7 @@ println((-1.5f).abs());   // 1.5
 
 Returns the smaller of this value and `other`.
 
-```ts
+```dream
 println(2.0f.min(5.0f));   // 2.0
 ```
 
@@ -22,6 +22,6 @@ println(2.0f.min(5.0f));   // 2.0
 
 Returns the larger of this value and `other`.
 
-```ts
+```dream
 println(2.0f.max(5.0f));   // 5.0
 ```

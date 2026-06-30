@@ -4,7 +4,7 @@ Classes are user-defined types that group related data together.
 
 ## Defining a class
 
-```ts
+```dream
 class Point {
     x: int;
     y: int;
@@ -17,7 +17,7 @@ Fields are declared as `name: type;` pairs. A custom `constructor` may leave fie
 
 Create an instance with a constructor call, passing values positionally in field declaration order:
 
-```ts
+```dream
 let p = Point(3, 4);
 ```
 
@@ -32,7 +32,7 @@ To run custom logic when an instance is created, define a `constructor(...)`.
 When a `constructor` is present, the constructor call matches its parameters instead of the fields,
 and any field you do not assign starts at its zero value (`0`, `0.0`, `false`, or `null`):
 
-```ts
+```dream
 class Account {
     owner: string;
     balance: int;
@@ -56,7 +56,7 @@ body, `this` refers to the new instance. A `constructor` cannot be marked `publi
 
 Use `.`:
 
-```ts
+```dream
 println(p.x);      // 3
 p.x = 10;
 println(p.x);      // 10
@@ -66,7 +66,7 @@ println(p.x);      // 10
 
 Define methods inside the class body using `fun`. Methods automatically receive a `this` parameter that refers to the current instance:
 
-```ts
+```dream
 class Counter {
     count: int;
 
@@ -96,7 +96,7 @@ when its last reference goes out of scope; `del` runs automatically just before 
 released, while the fields are still valid. A destructor takes no parameters and has no return
 type, and cannot be marked `public`:
 
-```ts
+```dream
 class File {
     name: string;
 
@@ -122,7 +122,7 @@ You never call `del` yourself; the runtime invokes it as part of automatic memor
 
 Append `?` to a class type to allow `null`:
 
-```ts
+```dream
 class Node {
     value: int;
     next: Node?;
@@ -136,7 +136,7 @@ head = Node(1, null);
 
 A class can hold a nullable reference to itself (non-nullable self-references would have infinite size):
 
-```ts
+```dream
 class Node {
     value: int;
     next: Node?;
@@ -153,7 +153,7 @@ Class members — fields and methods — are **private by default**. A private m
 read, written, or called from within the declaring type's own methods (instance or static).
 Mark a member `public` to allow access from outside:
 
-```ts
+```dream
 class Account {
     public owner: string;   // readable/writable from anywhere
     balance: int;           // private: only Account's own methods may touch it
@@ -180,7 +180,7 @@ fun main(): void {
 
 Mark a class `public` to make it module-visible and expose it to the WebAssembly host:
 
-```ts
+```dream
 public class Vec2 {
     public x: float;
     public y: float;

@@ -4,7 +4,7 @@
 
 ## Creating a list
 
-```ts
+```dream
 let nums = List<int>();
 let words = List<string>();
 ```
@@ -15,7 +15,7 @@ let words = List<string>();
 
 Appends a value to the end, growing the backing buffer if needed.
 
-```ts
+```dream
 nums.push(10);
 nums.push(20);
 nums.push(30);
@@ -25,7 +25,7 @@ nums.push(30);
 
 Number of elements currently in the list.
 
-```ts
+```dream
 println(nums.size());   // 3
 ```
 
@@ -33,7 +33,7 @@ println(nums.size());   // 3
 
 Returns the element at `index`. No bounds checking — going out of range is undefined behaviour.
 
-```ts
+```dream
 println(nums.get(0));   // 10
 ```
 
@@ -41,7 +41,7 @@ println(nums.get(0));   // 10
 
 Overwrites the element at `index`.
 
-```ts
+```dream
 nums.set(1, 99);
 println(nums.get(1));   // 99
 ```
@@ -50,7 +50,7 @@ println(nums.get(1));   // 99
 
 Removes and returns the last element. Does not check if the list is empty.
 
-```ts
+```dream
 let last = nums.pop();
 ```
 
@@ -58,7 +58,7 @@ let last = nums.pop();
 
 Returns `true` if the value is present. Uses value equality (string contents, not pointers).
 
-```ts
+```dream
 println(nums.contains(99));    // true
 println(nums.contains(1000));  // false
 ```
@@ -67,7 +67,7 @@ println(nums.contains(1000));  // false
 
 Returns the index of the first matching element, or `-1` if not found.
 
-```ts
+```dream
 let i = nums.index_of(99);   // 1 (or -1 if absent)
 ```
 
@@ -75,7 +75,7 @@ let i = nums.index_of(99);   // 1 (or -1 if absent)
 
 Resets the element count to zero.
 
-```ts
+```dream
 nums.clear();
 println(nums.size());   // 0
 ```
@@ -84,13 +84,13 @@ println(nums.size());   // 0
 
 Removes the element at `index`, shifting everything after it left.
 
-```ts
+```dream
 nums.remove_at(0);   // removes the first element
 ```
 
 ## Example
 
-```ts
+```dream
 fun main() {
     let xs = List<int>();
     let i = 0;

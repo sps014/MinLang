@@ -4,7 +4,7 @@ A Dream program can be split across multiple `.dream` files. Use `import` at the
 
 ## Importing a file
 
-```ts
+```dream
 import "math_lib.dream"
 ```
 
@@ -12,14 +12,14 @@ import "math_lib.dream"
 - The `.dream` extension is optional: `import "math_lib"` and `import "math_lib.dream"` are equivalent.
 - Imported declarations become directly usable — no namespace prefix.
 
-```ts
+```dream
 // math_lib.dream
 public fun add_numbers(a: int, b: int): int {
     return a + b;
 }
 ```
 
-```ts
+```dream
 // main.dream
 import "math_lib.dream"
 
@@ -34,7 +34,7 @@ Imports are resolved recursively (an imported file may import others), and each 
 
 Declarations are **private by default**: visible throughout their own module but not exposed to the host. Mark a declaration `public` to make it part of a file's public surface and to expose it to the host environment. A `public` function cannot expose a class that is not itself `public`.
 
-```ts
+```dream
 public class Point {
     public x: int;
     public y: int;

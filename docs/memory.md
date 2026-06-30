@@ -30,7 +30,7 @@ You don't write any of this yourself. The upshot is that values reach a referenc
 
 If a class defines a `del()` [destructor](language/classes.md#destructors), it is called automatically at the moment its reference count reaches zero, just before the block is freed. This is where you put cleanup logic that must run when an instance is destroyed.
 
-```ts
+```dream
 fun make_list(): int[] {
     let arr = [1, 2, 3];   // allocated, ref_count = 1
     return arr;            // retained before locals released, count stays 1

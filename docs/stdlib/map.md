@@ -4,7 +4,7 @@
 
 ## Creating a map
 
-```ts
+```dream
 let scores = Map<string, int>();
 let cache  = Map<int, string>();
 ```
@@ -15,7 +15,7 @@ let cache  = Map<int, string>();
 
 Inserts or updates the value for `key`.
 
-```ts
+```dream
 scores.put("alice", 95);
 scores.put("bob", 80);
 scores.put("alice", 100);   // overwrites 95
@@ -25,7 +25,7 @@ scores.put("alice", 100);   // overwrites 95
 
 Returns the value for `key`. If the key is absent, returns the zero value of `V` (`0` for `int`, `null` for references).
 
-```ts
+```dream
 println(scores.get("alice"));   // 100
 println(scores.get("nobody"));  // 0
 ```
@@ -34,7 +34,7 @@ println(scores.get("nobody"));  // 0
 
 Returns the value for `key`, or `fallback` if the key is absent.
 
-```ts
+```dream
 let v = scores.get_or("nobody", -1);   // -1
 ```
 
@@ -42,7 +42,7 @@ let v = scores.get_or("nobody", -1);   // -1
 
 Returns `true` if the key is present.
 
-```ts
+```dream
 println(scores.contains("bob"));     // true
 println(scores.contains("nobody"));  // false
 ```
@@ -51,7 +51,7 @@ println(scores.contains("nobody"));  // false
 
 Removes the key and returns `true` if it existed, `false` otherwise.
 
-```ts
+```dream
 let removed = scores.remove("bob");   // true
 ```
 
@@ -59,7 +59,7 @@ let removed = scores.remove("bob");   // true
 
 Number of key-value pairs currently in the map.
 
-```ts
+```dream
 println(scores.size());   // 1
 ```
 
@@ -67,7 +67,7 @@ println(scores.size());   // 1
 
 Returns `true` when the map holds no key-value pairs.
 
-```ts
+```dream
 println(scores.is_empty());   // false
 ```
 
@@ -75,7 +75,7 @@ println(scores.is_empty());   // false
 
 Removes every entry and resets the map to its initial empty capacity.
 
-```ts
+```dream
 scores.clear();
 println(scores.size());   // 0
 ```
@@ -84,7 +84,7 @@ println(scores.size());   // 0
 
 Returns a freshly allocated array of every stored key, in unspecified order.
 
-```ts
+```dream
 let ks = scores.keys();   // string[]
 ```
 
@@ -92,13 +92,13 @@ let ks = scores.keys();   // string[]
 
 Returns a freshly allocated array of every stored value, in unspecified order (key-aligned with `keys()` when the map is not mutated between calls).
 
-```ts
+```dream
 let vs = scores.values();   // int[]
 ```
 
 ## Example
 
-```ts
+```dream
 fun main() {
     let freq = Map<string, int>();
     let words = ["the", "cat", "sat", "on", "the", "mat"];
