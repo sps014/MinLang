@@ -408,6 +408,38 @@ function resolveGlobal(module, field) {
 }
 
 /**
+ * Performs one HTTP request via the platform `fetch` and serializes the whole response into a single
+ * `Uint8Array` for `src/stdlib/http.dream`: an ASCII head (status line + header lines) and a blank
+ * line, then the raw body bytes. Keeping the body raw (an `arrayBuffer`) makes binary responses
+ * byte-exact. `body` is either a string or a `Uint8Array` (or "" / empty for none).
+ */
+async function httpDo(url, method, headersJson, body) {
+  const verb = (method || "GET").toUpperCase();
+  const init = { method: verb };
+  if (headersJson && headersJson !== "") {
+    try { init.headers = JSON.parse(headersJson); } catch (_) { /* ignore bad header json */ }
+  }
+  const hasBody = typeof body === "string" ? body !== "" : body && body.length > 0;
+  if (hasBody && verb !== "GET" && verb !== "HEAD") {
+    init.body = body;
+  }
+  const res = await fetch(url, init);
+
+  let head = `${res.status}\n`;
+  res.headers.forEach((value, name) => {
+    head += `${name}: ${value}\n`;
+  });
+  head += "\n"; // blank line separating head from body
+  const headBytes = new TextEncoder().encode(head);
+  const bodyBytes = new Uint8Array(await res.arrayBuffer());
+
+  const out = new Uint8Array(headBytes.length + bodyBytes.length);
+  out.set(headBytes, 0);
+  out.set(bodyBytes, headBytes.length);
+  return out;
+}
+
+/**
  * The built-in `Dream` host module backing the stdlib interop layer (`JsRef`, regex, fetch).
  * These run *after* argument marshaling, so a `JsRef` parameter arrives as the live JS value and
  * a `JsRef`/`string`/number result is marshaled back automatically. Only `jsRelease` needs the
@@ -450,25 +482,15 @@ function defaultDreamModule(getInstance) {
       return m ? Array.from(m).join(sep) : "";
     },
     regexCompile: (pattern, flags) => new RegExp(pattern, flags),
-    // Fetch helpers (see src/stdlib/fetch.dream). Return Promises; bridged via extern async.
-    fetchText: (url) => fetch(url).then((r) => r.text()),
-    fetch: (url) => fetch(url),
-    // Generic request: `method` is GET/POST/PUT/PATCH/DELETE/..., `headersJson` is a JSON object of
-    // header name/value pairs ("" for none), and `body` is the request body ("" for none, omitted
-    // on GET/HEAD). Returns the live Response as a handle.
-    fetchRequest: (url, method, headersJson, body) => {
-      const init = { method: method || "GET" };
-      if (headersJson && headersJson !== "") {
-        try { init.headers = JSON.parse(headersJson); } catch (_) { /* ignore bad header json */ }
-      }
-      const m = (method || "GET").toUpperCase();
-      if (body !== "" && m !== "GET" && m !== "HEAD") {
-        init.body = body;
-      }
-      return fetch(url, init);
-    },
-    // Reads the body of a `Response` handle as text (Promise; bridged via extern async).
-    responseText: (res) => res.text(),
+    // HTTP helpers (see src/stdlib/http.dream). Each performs the whole request and resolves with
+    // the full response as a single `Uint8Array` (marshaled to a Dream `char[]`): an ASCII head
+    // ("<status>\n" + "Name: value\n" ... + blank line) followed by the raw body bytes. Bridged via
+    // extern async. `httpRequest` takes a string body; `httpRequestBytes` takes a `char[]` body
+    // (arriving as a JS byte array) so binary payloads cross without a UTF-8 round-trip.
+    httpRequest: (url, method, headersJson, body) =>
+      httpDo(url, method, headersJson, body),
+    httpRequestBytes: (url, method, headersJson, body) =>
+      httpDo(url, method, headersJson, Uint8Array.from(body || [])),
     // Filesystem helpers (see src/stdlib/file.dream). Synchronous. They route through `fsBackend()`:
     // Node's real `node:fs`, or an in-memory virtual filesystem in the browser (see `memFs`). Text
     // variants marshal `string`; the byte variants marshal `char[]` directly (binary-safe, no string

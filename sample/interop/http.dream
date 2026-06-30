@@ -1,0 +1,33 @@
+// Cross-runtime HTTP via the instantiable `HttpClient` (stdlib prelude). The same program runs
+// natively under wasmtime and over `fetch` in Node / the browser - each host returns the full
+// response (status, headers, raw body) as a single binary-safe `char[]`.
+//
+//   cargo run -- sample/interop/http.dream
+//   node sample/interop/http.mjs sample/interop/http.wasm
+
+async fun main(): void {
+    // A configured client: base URL + a default header applied to every request.
+    let api = HttpClient("https://example.com").set_header("Accept", "application/json");
+
+    // Simple text body.
+    let body = await api.text("/hello");
+    System.println(body);
+
+    // Richer GET response: status + JSON body + a header.
+    let res = await api.get("/user");
+    System.println(to_string(res.status()));
+    System.println(res.header("content-type"));
+
+    let data = res.json();
+    System.println(data.get("name").as_string());
+
+    // POST a JSON body (any verb is available: get/post/put/patch/delete/head, or `request`).
+    let created = await api.post("/user", "{\"name\":\"Grace\"}");
+    System.println(to_string(created.status()));
+    System.println(created.text());
+
+    // Binary round-trip: the body is byte-exact in both directions.
+    let bin = await api.get("/blob");
+    let echoed = await api.post_bytes("/upload", bin.bytes());
+    System.println(to_string(echoed.status()));
+}

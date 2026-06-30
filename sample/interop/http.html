@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Dream Fetch Interop Demo</title>
+    <title>Dream HttpClient Interop Demo</title>
     <style>
       body {
         font-family: "Inter", system-ui, sans-serif;
@@ -28,12 +28,12 @@
     </style>
   </head>
   <body>
-    <h1>Dream <code>Fetch</code> over the Promise bridge</h1>
+    <h1>Dream <code>HttpClient</code> over the Promise bridge</h1>
     <p class="muted">
-      A Dream program that <code>await</code>s <code>Fetch.text</code> / <code>Fetch.get</code>,
-      which wrap the browser's <code>fetch</code> via the <code>Dream</code> host module. Serve this
-      folder over HTTP (e.g. <code>npx serve</code>) and open the page. Uses the real
-      <code>fetch</code>, so point the URLs at endpoints that exist (and allow CORS).
+      A Dream program that <code>await</code>s <code>HttpClient</code> calls, which wrap the
+      browser's <code>fetch</code> via the <code>Dream</code> host module. Serve this folder over
+      HTTP (e.g. <code>npx serve</code>) and open the page. Uses the real <code>fetch</code>, so
+      point the URLs at endpoints that exist (and allow CORS).
     </p>
     <div id="log"></div>
 
@@ -50,8 +50,8 @@
         origLog(...a);
       };
 
-      // Fetch helpers are built in to dream.js (they call the page's global `fetch`).
-      await run("fetch.wasm");
+      // The HTTP helpers are built in to dream.js (they call the page's global `fetch`).
+      await run("http.wasm");
     </script>
   </body>
 </html>

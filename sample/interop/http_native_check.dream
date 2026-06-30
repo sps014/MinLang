@@ -1,0 +1,11 @@
+// Temporary native smoke check: exercises the wasmtime HTTP future bridge end to end.
+async fun main(): void {
+    let http = HttpClient("");
+    let res = await http.get("https://example.com");
+    System.println("status:");
+    System.println(to_string(res.status()));
+    System.println("len:");
+    System.println(to_string(res.bytes().len()));
+    System.println("has-html:");
+    System.println(to_string(res.text().contains("html")));
+}

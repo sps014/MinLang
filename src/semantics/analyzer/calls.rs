@@ -134,7 +134,7 @@ impl<'a> Analyzer<'a> {
             }
         }
 
-        // An async static method (e.g. `Fetch.get`) eagerly starts a task; the call yields a
+        // An async static method (e.g. `File.read`) eagerly starts a task; the call yields a
         // `Future<T>` that must be `await`ed, just like an async instance method or free function.
         if store_sig.is_async {
             return Ok(Self::future_type(

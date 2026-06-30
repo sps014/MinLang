@@ -1,4 +1,6 @@
-use super::host::{link_file_functions, link_math_functions, read_string_from_memory};
+use super::host::{
+    link_file_functions, link_http_functions, link_math_functions, read_string_from_memory,
+};
 use std::fs;
 use wasmtime::*;
 
@@ -48,6 +50,7 @@ pub fn execute_wasm(wat_path: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     link_math_functions(&mut linker)?;
     link_file_functions(&mut linker)?;
+    link_http_functions(&mut linker)?;
     linker.func_wrap("env", "strlen", |_: i32| -> i32 { 0 })?;
     linker.func_wrap("env", "debug_get_free_list_head", || -> i32 { 0 })?;
 

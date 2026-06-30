@@ -126,6 +126,6 @@ Functions cross the boundary in both directions — pass a Dream `fun(...)` to J
 
 Three standard-library features are pure interop wrappers built on the pieces above, so they are good worked examples:
 
-- **[JSON](json.md)** — native parse/stringify plus `@json` auto-derive (no interop needed, but pairs with fetch).
+- **[JSON](json.md)** — native parse/stringify plus `@json` auto-derive (no interop needed, but pairs with HTTP).
 - **[Regex](regex.md)** — JavaScript `RegExp` exposed through the `Regex` class.
-- **[Fetch](fetch.md)** — a JS-like HTTP client over `extern async fun` + the Promise bridge.
+- **[HttpClient](http.md)** — an instantiable, cross-runtime HTTP client over `extern async fun`.

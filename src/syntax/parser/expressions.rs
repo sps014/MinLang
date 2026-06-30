@@ -204,7 +204,11 @@ impl<'a, 'b> Parser<'a, 'b> {
             }
 
             if is_invocation {
-                return self.parse_invocation_expression();
+                // A call on a bare identifier (free function or constructor, e.g.
+                // `HttpClient(url)`) can still be the base of a postfix chain like
+                // `HttpClient(url).set_header(...)` or `make().field`.
+                let expr = self.parse_invocation_expression()?;
+                return self.parse_postfix_chain(expr);
             } else {
                 let mut expr = ExpressionNode::Identifier(self.next_token());
 
@@ -314,6 +318,68 @@ impl<'a, 'b> Parser<'a, 'b> {
         let identifier = self.match_token(TokenKind::IdentifierToken);
         Ok(ExpressionNode::Identifier(identifier))
     }
+    /// Continues parsing index (`[...]`) and member/method (`.name` / `.name(...)`) accesses onto an
+    /// already-parsed base expression. Used so a call on a bare identifier (e.g. a constructor like
+    /// `HttpClient(url)`) can be chained: `HttpClient(url).set_header(...)`.
+    pub(super) fn parse_postfix_chain(
+        &mut self,
+        base: ExpressionNode<'a>,
+    ) -> Result<ExpressionNode<'a>, Error> {
+        let mut expr = base;
+        loop {
+            if self.current_token().kind == TokenKind::OpenBracketToken {
+                self.match_token(TokenKind::OpenBracketToken);
+                let index = self.parse_expression(0)?;
+                self.match_token(TokenKind::CloseBracketToken);
+                expr = ExpressionNode::IndexAccess(self.arena.alloc(expr), self.arena.alloc(index));
+            } else if self.current_token().kind == TokenKind::DotToken {
+                self.match_token(TokenKind::DotToken);
+                let member = self.match_token(TokenKind::IdentifierToken);
+
+                let mut generic_args = None;
+                if self.current_token().kind == TokenKind::SmallerThanToken {
+                    let is_generic = self
+                        .scan_generic_args(1)
+                        .map(|after| {
+                            self.peek_token(after).kind == TokenKind::OpenParenthesisToken
+                        })
+                        .unwrap_or(false);
+                    if is_generic {
+                        self.match_token(TokenKind::SmallerThanToken);
+                        generic_args = Some(self.parse_generic_args()?);
+                    }
+                }
+
+                if self.current_token().kind == TokenKind::OpenParenthesisToken {
+                    self.match_token(TokenKind::OpenParenthesisToken);
+                    let mut params = Vec::new();
+                    while self.current_token().kind != TokenKind::CloseParenthesisToken
+                        && self.current_token().kind != TokenKind::EndOfFileToken
+                    {
+                        let iter = self.current_token_index;
+                        params.push(self.parse_expression(0)?);
+                        if self.current_token().kind == TokenKind::CommaToken {
+                            self.match_token(TokenKind::CommaToken);
+                        }
+                        self.ensure_progress(iter);
+                    }
+                    self.match_token(TokenKind::CloseParenthesisToken);
+                    expr = ExpressionNode::MethodCall(
+                        self.arena.alloc(expr),
+                        member,
+                        generic_args,
+                        params,
+                    );
+                } else {
+                    expr = ExpressionNode::MemberAccess(self.arena.alloc(expr), member);
+                }
+            } else {
+                break;
+            }
+        }
+        Ok(expr)
+    }
+
     /// Parses a function invocation expression
     pub(super) fn parse_invocation_expression(&mut self) -> Result<ExpressionNode<'a>, Error> {
         let function_name = self.match_token(TokenKind::IdentifierToken);

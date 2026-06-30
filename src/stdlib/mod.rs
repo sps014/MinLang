@@ -22,7 +22,7 @@ pub const PRELUDE_FILES: &[(&str, &str)] = &[
     ("<std>/json.dream", include_str!("json.dream")),
     ("<std>/math.dream", include_str!("math.dream")),
     ("<std>/regex.dream", include_str!("regex.dream")),
-    ("<std>/fetch.dream", include_str!("fetch.dream")),
+    ("<std>/http.dream", include_str!("http.dream")),
     ("<std>/file.dream", include_str!("file.dream")),
     ("<std>/system.dream", include_str!("system.dream")),
     ("<std>/promise.dream", include_str!("promise.dream")),

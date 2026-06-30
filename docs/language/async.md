@@ -87,7 +87,7 @@ let first = await Promise.any([work(10), work(20)]);
 class Downloader {
     url: string;
     async fun fetch(): string {
-        let body = await Fetch.text(this.url);  // await inside a method body
+        let body = await HttpClient("").text(this.url);  // await inside a method body
         return body;
     }
 }
