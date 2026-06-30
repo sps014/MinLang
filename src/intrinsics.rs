@@ -101,6 +101,14 @@ pub const ATTR_STRING_ALLOC: &str = "string_alloc";
 pub const ATTR_STRING_SET: &str = "string_set";
 /// `Debug.free_list_head()` — allocator introspection for tests.
 pub const ATTR_DEBUG_FREE_LIST: &str = "debug_get_free_list_head";
+/// `Debug.heap_ptr()` — current bump-pointer (heap high-water mark).
+pub const ATTR_DEBUG_HEAP_PTR: &str = "debug_get_heap_ptr";
+/// `Debug.live_objects()` — number of blocks currently allocated (not yet freed).
+pub const ATTR_DEBUG_LIVE_OBJECTS: &str = "debug_get_live_objects";
+/// `Debug.total_allocations()` — monotonic count of every allocation ever made.
+pub const ATTR_DEBUG_TOTAL_ALLOCATIONS: &str = "debug_get_total_allocations";
+/// `Debug.ref_count(o)` — live reference count of a heap value.
+pub const ATTR_DEBUG_REF_COUNT: &str = "debug_get_ref_count";
 
 /// The operation a `@intrinsic("…")`-tagged static method lowers to. Derived once from the
 /// attribute key via [`IntrinsicOp::from_key`], so every layer dispatches off the same enum
@@ -131,6 +139,14 @@ pub enum IntrinsicOp {
     StringSet,
     /// `Debug.free_list_head()` — head of the allocator free list.
     DebugFreeList,
+    /// `Debug.heap_ptr()` — current bump-pointer value.
+    DebugHeapPtr,
+    /// `Debug.live_objects()` — number of currently live (un-freed) blocks.
+    DebugLiveObjects,
+    /// `Debug.total_allocations()` — monotonic allocation count.
+    DebugTotalAllocations,
+    /// `Debug.ref_count(o)` — live reference count of a heap value.
+    DebugRefCount,
 }
 
 impl IntrinsicOp {
@@ -149,6 +165,10 @@ impl IntrinsicOp {
             ATTR_STRING_ALLOC => IntrinsicOp::StringAlloc,
             ATTR_STRING_SET => IntrinsicOp::StringSet,
             ATTR_DEBUG_FREE_LIST => IntrinsicOp::DebugFreeList,
+            ATTR_DEBUG_HEAP_PTR => IntrinsicOp::DebugHeapPtr,
+            ATTR_DEBUG_LIVE_OBJECTS => IntrinsicOp::DebugLiveObjects,
+            ATTR_DEBUG_TOTAL_ALLOCATIONS => IntrinsicOp::DebugTotalAllocations,
+            ATTR_DEBUG_REF_COUNT => IntrinsicOp::DebugRefCount,
             _ => return None,
         })
     }

@@ -484,7 +484,7 @@ impl<'a> WasmGenerator<'a> {
 
     /// Returns the element types for which array helpers are generated: the primitives plus
     /// every known struct.
-    fn array_element_types(&self) -> Vec<String> {
+    pub(crate) fn array_element_types(&self) -> Vec<String> {
         let mut v: Vec<String> = PRIMITIVE_ARRAY_ELEMENTS
             .iter()
             .map(|s| s.to_string())

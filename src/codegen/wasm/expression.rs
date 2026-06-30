@@ -439,18 +439,44 @@ impl<'a> WasmGenerator<'a> {
     /// Builds one operand of a string concatenation, leaving a string pointer on the stack. A
     /// string operand is built directly; any other type is converted via the object protocol
     /// (`to_string`) so `"x = " + n` works for any `n`.
+    ///
+    /// Returns `true` when the value left on the stack is a freshly allocated, *owned* heap string
+    /// that the caller must release once `$concat_strings` has consumed it (otherwise the
+    /// intermediate temporary leaks, e.g. the inner `"a" + "b"` of `"a" + "b" + "c"`, or the string
+    /// produced by `"n=" + n`). Borrowed operands (string literals, identifiers, the static
+    /// `"true"`/`"false"` from `bool`, etc.) return `false` and must not be released.
     fn build_concat_operand(
         &mut self,
         expr: &ExpressionNode<'a>,
         expr_type: &str,
         function: &FunctionNode<'a>,
         writer: &mut IndentedTextWriter,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         if strip_nullable(expr_type) == "string" {
-            self.build_expression(expr, &"string".to_string(), function, writer)
+            self.build_expression(expr, &"string".to_string(), function, writer)?;
+            Ok(self.produces_owned_ref(expr, function))
         } else {
-            self.build_to_string(expr, function, writer)
+            self.build_to_string(expr, function, writer)?;
+            self.to_string_allocates(expr, function)
         }
+    }
+
+    /// Whether `build_to_string(expr)` leaves a freshly allocated (owned) string on the stack.
+    /// Conversions of the numeric/char primitives and of renderable arrays allocate a new buffer;
+    /// `bool` yields the interned static `"true"`/`"false"`, and `object`/struct rendering may
+    /// return a static fallback (`"null"`/`"<object>"`), so those are treated conservatively as
+    /// borrowed — at worst a small leak, never an over-release of static data.
+    fn to_string_allocates(
+        &self,
+        expr: &ExpressionNode<'a>,
+        function: &FunctionNode<'a>,
+    ) -> Result<bool, Error> {
+        let t = self.infer_expression_type(expr, function)?;
+        let base = self.enum_or_int(strip_nullable(&t));
+        if let Some(elem) = base.strip_suffix("[]") {
+            return Ok(self.array_element_types().contains(&elem.to_string()));
+        }
+        Ok(matches!(base.as_str(), "int" | "float" | "double" | "char"))
     }
 
     pub fn build_binary(
@@ -527,9 +553,30 @@ impl<'a> WasmGenerator<'a> {
                 .infer_expression_type(right_expr, function)
                 .unwrap_or_default();
             if strip_nullable(&lt) == "string" || strip_nullable(&rt) == "string" {
-                self.build_concat_operand(left_exp, &lt, function, writer)?;
-                self.build_concat_operand(right_expr, &rt, function, writer)?;
+                // `$concat_strings` copies both operands into a fresh string; it does not consume
+                // them. Stash any operand that is a freshly allocated owned temporary so it can be
+                // released after the call (otherwise chained concatenations and `"n=" + n` style
+                // formatting leak their intermediate strings).
+                let saved_tmp = self.ctx.tmp_depth;
+                let mut owned: Vec<usize> = Vec::new();
+                if self.build_concat_operand(left_exp, &lt, function, writer)? {
+                    let slot = self.ctx.tmp_depth.min(Self::TMP_POOL - 1);
+                    self.ctx.tmp_depth += 1;
+                    writer.write_line(&format!("local.tee $tmp{}", slot));
+                    owned.push(slot);
+                }
+                if self.build_concat_operand(right_expr, &rt, function, writer)? {
+                    let slot = self.ctx.tmp_depth.min(Self::TMP_POOL - 1);
+                    self.ctx.tmp_depth += 1;
+                    writer.write_line(&format!("local.tee $tmp{}", slot));
+                    owned.push(slot);
+                }
                 writer.write_line("call $concat_strings");
+                for slot in owned.iter().rev() {
+                    writer.write_line(&format!("local.get $tmp{}", slot));
+                    self.emit_release("string", writer);
+                }
+                self.ctx.tmp_depth = saved_tmp;
                 return Ok(());
             }
         }
@@ -886,10 +933,18 @@ impl<'a> WasmGenerator<'a> {
                     // runtime helpers (their key already matches the emitted symbol for the others).
                     IntrinsicOp::StringAlloc
                     | IntrinsicOp::StringSet
-                    | IntrinsicOp::DebugFreeList => {
+                    | IntrinsicOp::DebugFreeList
+                    | IntrinsicOp::DebugHeapPtr
+                    | IntrinsicOp::DebugLiveObjects
+                    | IntrinsicOp::DebugTotalAllocations
+                    | IntrinsicOp::DebugRefCount => {
                         let runtime = match op {
                             IntrinsicOp::StringAlloc => "$string_alloc",
                             IntrinsicOp::StringSet => "$string_set",
+                            IntrinsicOp::DebugHeapPtr => "$debug_get_heap_ptr",
+                            IntrinsicOp::DebugLiveObjects => "$debug_get_live_objects",
+                            IntrinsicOp::DebugTotalAllocations => "$debug_get_total_allocations",
+                            IntrinsicOp::DebugRefCount => "$debug_get_ref_count",
                             _ => "$debug_get_free_list_head",
                         };
                         let param_types: Vec<String> = info.parameters.clone();

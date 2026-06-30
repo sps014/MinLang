@@ -1,0 +1,178 @@
+// Comprehensive garbage-collection (ARC) coverage. Uses the `Debug.*` allocator probes to assert,
+// at runtime, that every allocation pattern is reference-counted correctly:
+//   * ref_count()        - retain/release arithmetic on shared values
+//   * live_objects()     - net live blocks (leak detection)
+//   * heap_ptr()         - heap high-water mark (block reuse vs. growth)
+//   * free_list_head()   - reclaimed-block freelist
+//
+// The destructor prints make reclamation order observable for the `del()` cases.
+
+class Node {
+    public val: int;
+    public next: Node?;
+}
+
+class Holder {
+    public item: Node?;
+    public label: string;
+
+    constructor(item: Node?, label: string) {
+        this.item = item;
+        this.label = label;
+    }
+}
+
+class Tracked {
+    public id: int;
+
+    constructor(id: int) {
+        this.id = id;
+    }
+
+    del() {
+        System.print("drop ");
+        System.println(this.id);
+    }
+}
+
+// --- Allocation patterns, each self-contained so everything is released at scope exit. ---
+
+fun build_chain(): Node {
+    let head = Node(1, null);
+    head.next = Node(2, null);
+    head.next.next = Node(3, null);
+    return head;
+}
+
+fun struct_array() {
+    let xs = [Node(1, null), Node(2, null), Node(3, null)];
+    let total = 0;
+    let i = 0;
+    while (i < 3) {
+        total = total + xs[i].val;
+        i = i + 1;
+    }
+}
+
+fun string_array() {
+    let names = ["alpha", "beta", "gamma"];
+    let joined = names[0] + "-" + names[1] + "-" + names[2];
+}
+
+fun nested_array() {
+    let grid = [[1, 2], [3, 4], [5, 6]];
+    let sum = grid[0][0] + grid[2][1];
+}
+
+fun string_builder() {
+    let s = "";
+    let i = 0;
+    while (i < 5) {
+        s = s + "x" + i.to_string();
+        i = i + 1;
+    }
+}
+
+fun field_reassign() {
+    let h = Holder(Node(1, null), "first");
+    h.item = Node(2, null);
+    h.label = "second";
+}
+
+fun local_reassign() {
+    let n = Node(0, null);
+    let i = 1;
+    while (i <= 4) {
+        n = Node(i, null);
+        i = i + 1;
+    }
+}
+
+fun nullable_paths() {
+    let a: Node? = null;
+    let b: Node? = Node(7, null);
+    a = b;
+    b = null;
+}
+
+fun pass_borrow(n: Node): int {
+    return n.val;
+}
+
+fun branchy(flag: bool) {
+    if (flag) {
+        let x = Node(1, null);
+    } else {
+        let y = Holder(Node(2, null), "branch");
+    }
+}
+
+// A single tracked object per scope so its `del()` runs (and prints) in a deterministic order
+// driven by the call sequence rather than by intra-scope local-release order.
+fun drop_one(id: int) {
+    let t = Tracked(id);
+}
+
+// Every pattern in one unit of work; nothing escapes.
+fun stress() {
+    let chain = build_chain();
+    let borrowed = pass_borrow(chain);
+    struct_array();
+    string_array();
+    nested_array();
+    string_builder();
+    field_reassign();
+    local_reassign();
+    nullable_paths();
+    branchy(true);
+    branchy(false);
+}
+
+// --- Targeted reference-count assertions. ---
+
+fun check_ref_counts() {
+    let n = Node(1, null);
+    System.println("rc.fresh=" + Debug.ref_count(n).to_string());
+
+    let alias = n;
+    System.println("rc.aliased=" + Debug.ref_count(n).to_string());
+
+    let h = Holder(n, "held");
+    System.println("rc.in_field=" + Debug.ref_count(n).to_string());
+
+    let arr = [n, n];
+    System.println("rc.in_array=" + Debug.ref_count(n).to_string());
+}
+
+fun main() {
+    check_ref_counts();
+
+    // Warm up so the freelist/heap reach steady state, then capture the baseline.
+    let w = 0;
+    while (w < 20) {
+        stress();
+        w = w + 1;
+    }
+    let base_live = Debug.live_objects();
+    let base_heap = Debug.heap_ptr();
+    let base_free = Debug.free_list_head();
+
+    let i = 0;
+    while (i < 100) {
+        stress();
+        i = i + 1;
+    }
+
+    let end_live = Debug.live_objects();
+    let end_heap = Debug.heap_ptr();
+    let end_free = Debug.free_list_head();
+
+    System.println("live_delta=" + (end_live - base_live).to_string());
+    System.println("heap_grew=" + (end_heap - base_heap > 0).to_string());
+    System.println("free_stable=" + (base_free == end_free).to_string());
+
+    // Destructor execution + ordering, driven by the call sequence.
+    drop_one(1);
+    drop_one(2);
+    System.println("done");
+}

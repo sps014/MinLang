@@ -101,6 +101,35 @@
     global.get $free_list_head
 )
 
+(func $debug_get_heap_ptr (result i32)
+    global.get $heap_ptr
+)
+
+(func $debug_get_live_objects (result i32)
+    global.get $live_objects
+)
+
+(func $debug_get_total_allocations (result i32)
+    global.get $total_allocations
+)
+
+;; Reads the live reference count of a heap value (string/array/struct/object). The data pointer
+;; passed in points just past the [size][tag][ref_count] header, so the count lives at ptr-4.
+;; A null pointer reports 0.
+(func $debug_get_ref_count (param $ptr i32) (result i32)
+    local.get $ptr
+    i32.eqz
+    (if (result i32)
+        (then i32.const 0)
+        (else
+            local.get $ptr
+            i32.const 4
+            i32.sub
+            i32.load
+        )
+    )
+)
+
 (func $string_eq (param $a i32) (param $b i32) (result i32)
     (local $ca i32)
     (local $cb i32)

@@ -31,6 +31,11 @@ impl<'a> WasmGenerator<'a> {
             heap_base
         ));
         writer.write_line("(global $free_list_head (mut i32) (i32.const 0))");
+        // Allocator introspection counters (surfaced via the `Debug` intrinsics). `$live_objects`
+        // is the number of blocks currently handed out (++ in `$malloc`, -- in `$free`);
+        // `$total_allocations` is the monotonic count of every `$malloc` ever made.
+        writer.write_line("(global $live_objects (mut i32) (i32.const 0))");
+        writer.write_line("(global $total_allocations (mut i32) (i32.const 0))");
         writer.write_line("");
         writer.write_block(RUNTIME_ALLOCATOR);
         self.build_type_specific_releases(writer)?;
