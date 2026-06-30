@@ -1,0 +1,22 @@
+// Exercises reference-typed parameters and locals across suspension points.
+// Prior to the fix, string params were not retained by the async frame, and
+// string locals were leaked (never released) when the task completed.
+
+async fun greet(name: string): string {
+    await Time.sleep(0);
+    let msg = "Hello, " + name + "!";
+    return msg;
+}
+
+async fun echo(value: string): string {
+    let prefix = "echo: ";
+    await Time.sleep(0);
+    return prefix + value;
+}
+
+async fun main(): void {
+    let g = await greet("World");
+    System.println(g);
+    let e = await echo("dream");
+    System.println(e);
+}

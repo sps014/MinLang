@@ -158,5 +158,3 @@ A complete runnable example lives in [`sample/interop/async_fetch.dream`](https:
 ## Limitations (v1)
 
 - There is no `.then()`/callback chaining and no `spawn`/channels yet.
-- References created inside an async function may leak across suspension points (a deliberate v1 simplification).
-tion).

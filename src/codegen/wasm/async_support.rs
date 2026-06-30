@@ -14,6 +14,7 @@
 
 use super::WasmGenerator;
 use crate::intrinsics;
+use crate::syntax::nodes::types::strip_nullable;
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, StatementNode};
 use crate::syntax::text::indented_text_writer::IndentedTextWriter;
 use std::collections::HashMap;
@@ -73,6 +74,9 @@ struct Segment<'a> {
 pub struct AsyncSlots {
     pub entries: Vec<(String, String)>,
     pub offsets: HashMap<String, i32>,
+    /// Resolved Dream type name for each slot (keyed by local name). Used to decide
+    /// which slots are reference-counted and therefore need retain/release treatment.
+    pub dream_types: HashMap<String, String>,
 }
 
 impl<'a> WasmGenerator<'a> {
@@ -108,6 +112,11 @@ impl<'a> WasmGenerator<'a> {
         func_name: &str,
     ) -> Result<AsyncSlots, Error> {
         let locals = self.get_local_variables(self.symbol_map.get(func_name).unwrap())?;
+        // Collect the resolved Dream type for every local before consuming the map.
+        let dream_types: HashMap<String, String> = locals
+            .iter()
+            .map(|(name, ty)| (name.clone(), self.resolve_type(&ty.get_type())))
+            .collect();
         let mut entries: Vec<(String, String)> = locals
             .into_iter()
             .map(|(name, ty)| {
@@ -123,7 +132,11 @@ impl<'a> WasmGenerator<'a> {
         for (i, (name, _)) in entries.iter().enumerate() {
             offsets.insert(name.clone(), F_SLOTS + (i as i32) * SLOT_SIZE);
         }
-        Ok(AsyncSlots { entries, offsets })
+        Ok(AsyncSlots {
+            entries,
+            offsets,
+            dream_types,
+        })
     }
 
     /// Emits the constructor + poll function for one `async fun`.
@@ -140,6 +153,7 @@ impl<'a> WasmGenerator<'a> {
         let async_slots = self.async_slots(function, &func_name)?;
         let slots = async_slots.entries;
         let offsets = async_slots.offsets;
+        let dream_types = async_slots.dream_types;
         let frame_size = F_SLOTS + (slots.len() as i32) * SLOT_SIZE;
         let poll_idx = *self
             .ctx
@@ -164,7 +178,14 @@ impl<'a> WasmGenerator<'a> {
         writer.write_line("local.set $self");
         for p in function.parameters.iter() {
             let off = offsets.get(&p.name.text).copied().unwrap_or(F_SLOTS);
-            let wt = WasmGenerator::get_wasm_type_from(self.resolve_type(&p.type_.get_type()))?;
+            let resolved_type = self.resolve_type(&p.type_.get_type());
+            let wt = WasmGenerator::get_wasm_type_from(resolved_type.clone())?;
+            // The frame takes ownership of reference-typed params; retain so the task
+            // keeps a valid reference even after the caller releases its own copy.
+            if self.is_reference_type(strip_nullable(&resolved_type)) {
+                writer.write_line(&format!("local.get ${}", p.name.text));
+                writer.write_line("call $retain");
+            }
             writer.write_line("local.get $self");
             writer.write_line(&format!("local.get ${}", p.name.text));
             writer.write_line(&format!("{} offset={}", Self::slot_store(&wt), off));
@@ -206,11 +227,23 @@ impl<'a> WasmGenerator<'a> {
         writer.indent();
 
         // Restore every slot into its local before dispatching.
+        // For reference-typed slots, zero the frame slot after the load so the local is the
+        // sole owner of the reference ("move" semantics: frame → local). The next suspension
+        // will write the local's value back, and all completion paths call emit_release_locals
+        // to release the refs owned by locals. Zeroing first ensures the release functions
+        // never see a stale non-zero frame pointer after the owned ref has been moved out.
         for (name, wt) in slots.iter() {
             let off = offsets[name];
             writer.write_line("local.get $self");
             writer.write_line(&format!("{} offset={}", Self::slot_load(wt), off));
             writer.write_line(&format!("local.set ${}", name));
+            if let Some(dt) = dream_types.get(name) {
+                if self.is_reference_type(strip_nullable(dt)) {
+                    writer.write_line("local.get $self");
+                    writer.write_line("i32.const 0");
+                    writer.write_line(&format!("i32.store offset={}", off));
+                }
+            }
         }
 
         let segments = self.split_async_segments(function);
@@ -314,6 +347,14 @@ impl<'a> WasmGenerator<'a> {
             }
             Resume::Discard => {}
             Resume::ReturnAwaited => {
+                // Release all locals (they were moved from the frame into WASM locals by the
+                // restore loop at the top of this poll call) before completing the future.
+                let func_name = self
+                    .ctx
+                    .current_mangled_name
+                    .clone()
+                    .unwrap_or_else(|| function.name.text.clone());
+                self.emit_release_locals(&func_name, writer);
                 writer.write_line("local.get $self");
                 writer.write_line("local.get $self");
                 writer.write_line(&format!("i32.load offset={}", F_AWAITING));
@@ -334,6 +375,13 @@ impl<'a> WasmGenerator<'a> {
                 self.emit_suspend(child, *next, slots, offsets, function, writer)?
             }
             SegEnd::CompleteVoid => {
+                // Release all locals before completing the (void) future.
+                let func_name = self
+                    .ctx
+                    .current_mangled_name
+                    .clone()
+                    .unwrap_or_else(|| function.name.text.clone());
+                self.emit_release_locals(&func_name, writer);
                 writer.write_line("local.get $self");
                 writer.write_line("i32.const 0");
                 writer.write_line("call $dream_complete");

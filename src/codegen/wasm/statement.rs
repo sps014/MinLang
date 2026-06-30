@@ -339,17 +339,36 @@ impl<'a> WasmGenerator<'a> {
         function: &FunctionNode<'a>,
         writer: &mut IndentedTextWriter,
     ) -> Result<(), Error> {
-        // Inside an async poll body a `return` completes the task's `Future` and yields `Pending`
-        // (the poll's wasm result is unused). Saved locals are intentionally not released in v1.
+        // Inside an async poll body a `return` completes the task's `Future`.
+        // Mirror the sync return pattern: stash the return value in $scratch_ptr (retaining it
+        // if it is a borrowed reference), release all owned locals, then call $dream_complete.
         if let Some(self_local) = self.ctx.current_async_self.clone() {
-            writer.write_line(&format!("local.get ${}", self_local));
             if let Some(expr) = expression {
                 let ret_type_str = function
                     .return_type
                     .as_ref()
                     .map(|t| t.get_type())
                     .unwrap_or_else(|| "int".to_string());
+                let owns_ref = self.stores_owned_ref(expr, &ret_type_str, function)?;
                 self.build_expression(expr, &ret_type_str, function, writer)?;
+                // Stash the return value so it survives the local releases below.
+                writer.write_line("local.set $scratch_ptr");
+                if self.is_reference_type(strip_nullable(&ret_type_str)) && !owns_ref {
+                    writer.write_line("local.get $scratch_ptr");
+                    writer.write_line("call $retain");
+                }
+            }
+
+            let func_name = self
+                .ctx
+                .current_mangled_name
+                .clone()
+                .unwrap_or_else(|| function.name.text.clone());
+            self.emit_release_locals(&func_name, writer);
+
+            writer.write_line(&format!("local.get ${}", self_local));
+            if expression.is_some() {
+                writer.write_line("local.get $scratch_ptr");
             } else {
                 writer.write_line("i32.const 0");
             }
