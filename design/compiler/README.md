@@ -73,20 +73,18 @@ Dream/
 │   ├── dream-diagnostics/          DiagnosticBag, Severity, rendering
 │   └── dream-syntax/               Lexer, parser, AST nodes (depends on text + diagnostics)
 ├── src/
-│   ├── types/                      ★ Structured type system (Phase 1)
-│   ├── hir/                        ★ Typed High-level IR (Phase 2)
-│   ├── mir/                        ★ CFG Mid-level IR, passes, relooper, WAT backend (Phases 3–5)
+│   ├── types/                      Structured type system (Phase 1)
+│   ├── hir/                        Typed High-level IR (Phase 2)
+│   ├── mir/                        CFG Mid-level IR, passes, relooper, WAT backend + runtime/ + abi.rs (Phases 3–5)
 │   ├── semantics/                  Semantic analyzer + the (currently string-based) tables
-│   ├── codegen/                    Legacy AST-walking WASM backend (still the default)
 │   ├── driver/                     Pipeline orchestration (compiler.rs), source loading, errors
 │   ├── stdlib/                     Prelude + host function registration
 │   └── execution/                  (feature "native") wasmtime runner
 └── design/compiler/                ← you are here
 ```
 
-`★` marks the new architecture. It currently lives **alongside** the legacy `codegen/` so the
-compiler keeps working while the migration completes; see
-[09-migration-status.md](./09-migration-status.md).
+The `types → hir → mir` pipeline is the **only** backend. The legacy AST-walking `codegen/` backend
+has been deleted; see [09-migration-status.md](./09-migration-status.md) for the completed migration.
 
 ### Crate dependency graph
 

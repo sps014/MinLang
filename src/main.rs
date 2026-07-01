@@ -10,7 +10,6 @@ fn main() {
     let mut verbose = false;
     let mut run_after_compile = false;
     let mut debug_alloc = false;
-    let mut use_mir = false;
     let mut file_name = None;
 
     for arg in args.iter().skip(1) {
@@ -21,9 +20,6 @@ fn main() {
             // `Debug.total_allocations()` probes report real values. Off by default so normal
             // builds carry zero per-allocation overhead.
             debug_alloc = true;
-        } else if arg == "--mir" {
-            // Route code generation through the new HIR → MIR → WAT backend (Step-D opt-in).
-            use_mir = true;
         } else if arg == "run" {
             run_after_compile = true;
         } else if !arg.starts_with("-") {
@@ -54,9 +50,7 @@ fn main() {
     info!("========================");
     info!("Compiling file: {}", file_name);
 
-    let compiler = Compiler::new(Target::Wasm)
-        .with_debug_alloc(debug_alloc)
-        .with_mir(use_mir);
+    let compiler = Compiler::new(Target::Wasm).with_debug_alloc(debug_alloc);
     let out_path = match get_path_from_file_path(file_name) {
         Some(path) => path,
         None => {

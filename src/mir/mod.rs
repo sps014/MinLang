@@ -7,6 +7,7 @@
 //! passes reason about them with ordinary dataflow. The backend  reconstructs
 //! structured WASM control flow from this CFG via a relooper.
 
+pub mod abi;
 pub mod async_emit;
 pub mod build;
 pub mod emit;

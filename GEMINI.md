@@ -36,12 +36,10 @@ The repository is structured as a Rust-centric multi-component monorepo:
     *   `semantics/`: Semantic analysis stage.
         *   `analyzer/`: Implements type check, scope validation, `async`/`await` compliance, and generic instantiation.
         *   `symbol_table.rs`, `function_table.rs`, & `struct_table.rs`: Context-tracking databases for semantic validation.
-    *   `codegen/`: Code generation stage.
-        *   `wasm/`: Produces WebAssembly Text representation (`.wat`). Contains submodules for statements, expressions, async support, objects, memory, and string operations. `CodegenError` (in `codegen/mod.rs`) is the typed backend error.
-    *   *Multi-pass middle/back-end (new architecture):* a structured-types -> typed HIR -> CFG MIR -> optimization passes -> MIR->WAT pipeline, built alongside the legacy AST-walking codegen.
+    *   *Multi-pass middle/back-end (the only backend):* a structured-types -> typed HIR -> CFG MIR -> optimization passes -> MIR->WAT pipeline. (The legacy AST-walking `codegen/` backend has been deleted; `src/mir/` is now the sole code generator.)
         *   `types/`: The structured type system. A `TypeInterner` hash-conses type shapes (`TyKind`) to compact `TypeId`s; a `DefTable` names nominal declarations by `DefId`; `compat` holds structural assignability/widening/overload rules; `display_name` renders `Box<int>`; `TypeCtx` lowers AST `Type` -> `TypeId`. Replaces stringly-typed names (`Box_int`).
         *   `hir/`: Typed, name-resolved High-level IR — every node carries a `TypeId`, every reference a resolved `Binding`, every call a `Callee`; monomorphization is an explicit instance worklist. Control flow is still structured.
-        *   `mir/`: CFG-based Mid-level IR (basic blocks + terminators, explicit `Retain`/`Release`/alloc). `lower` desugars HIR control flow into the CFG; `passes/` is a pass manager with const-fold, copy/const-prop, DCE, simplify-CFG, and RC insertion/elision; `relooper` recovers structured shapes; `emit` lowers MIR to WAT.
+        *   `mir/`: CFG-based Mid-level IR (basic blocks + terminators, explicit `Retain`/`Release`/alloc). `lower` desugars HIR control flow into the CFG; `passes/` is a pass manager with const-fold, copy/const-prop, DCE, simplify-CFG, and RC insertion/elision; `relooper` recovers structured shapes; `emit` lowers MIR to WAT. `abi.rs` holds the heap-block tag constants and `runtime/*.wat` are the embedded runtime layers (allocator, strings, object protocol, float/double format, async scheduler).
     *   `stdlib/`: Standard library implementations.
         *   `mod.rs`: Registers host and inline functions. Defines the exact ordering for standard prelude modules.
         *   `*.dream`: Standard collections (`list.dream`, `map.dream`) and primitive type extensions (`string.dream`, `int.dream`, `char.dream`, etc.).
@@ -101,7 +99,7 @@ Adhere to strict software engineering standards to maintain long-term scalabilit
     *   **Lexing (`lexer.rs`):** Translates source strings into token streams. Must not embed syntactic rules or diagnostic assumptions.
     *   **Parsing (`parser/`):** Builds AST nodes from token streams. Must not evaluate type correctness or enforce binding scopes.
     *   **Semantic Analyzer (`analyzer/`):** Validates type correctness, variable scopes, and async constraints. Must not modify AST structure or introduce target code generation.
-    *   **Code Generation (`codegen/`):** Emits target representation (`.wat`). Expects a fully validated AST and resolved symbols; must never perform type checks or emit compile-time errors.
+    *   **Code Generation (`mir/`):** Lowers typed HIR → MIR → target representation (`.wat`). Expects a fully validated program and resolved symbols/types; must never perform type checks or emit compile-time errors.
 *   **Don't Repeat Yourself (DRY):**
     *   Consolidate common type-checking routines, helper operations, or expression evaluations into shared helper traits/methods inside `src/semantics/` or `crates/dream-syntax/src/nodes/`.
     *   The standard library files in `src/stdlib/*.dream` are the single source of truth. Both the main compiler and the `dream-lsp` reuse these exact files via `PRELUDE_FILES` to prevent behavior and definitions from drifting.

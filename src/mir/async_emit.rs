@@ -2,7 +2,7 @@
 //!
 //! An `async fun` compiles to a **constructor** (allocates a `Future` frame, stores params, enqueues
 //! the first poll, returns the frame pointer) and a **poll** function (resumable state machine between
-//! `await` points). The cooperative scheduler runtime lives in `codegen/wasm/runtime/async.wat`.
+//! `await` points). The cooperative scheduler runtime lives in `mir/runtime/async.wat`.
 
 use super::emit::{
     emit_expr_to_scratch, emit_straight_line_segment, func_symbol, poll_symbol, release_call_for_ty,
@@ -23,7 +23,7 @@ const F_SLOTS: i32 = 56;
 const KIND_TASK: i32 = 0;
 const SLOT_SIZE: i32 = 8;
 
-const RUNTIME_ASYNC: &str = include_str!("../codegen/wasm/runtime/async.wat");
+const RUNTIME_ASYNC: &str = include_str!("runtime/async.wat");
 
 pub fn poll_indices(functions: &[MirFunction]) -> HashMap<(crate::types::DefId, Vec<TypeId>), usize> {
     let base = functions.len();
@@ -71,7 +71,7 @@ pub fn async_runtime_wat() -> String {
         .replace("{F_SLOTS}", &F_SLOTS_RT.to_string())
         .replace("{KIND_ALL}", &KIND_ALL.to_string())
         .replace("{KIND_ANY}", &KIND_ANY.to_string())
-        .replace("{tag_array}", &crate::codegen::wasm::object::TAG_ARRAY.to_string())
+        .replace("{tag_array}", &super::abi::TAG_ARRAY.to_string())
 }
 
 struct AsyncSlots {
@@ -360,10 +360,7 @@ pub fn emit_async_main_wrapper(entry_sym: &str, has_args_param: bool) -> String 
     if has_args_param {
         out.push_str("\n (local $args i32)");
         out.push_str("\n i32.const 4");
-        out.push_str(&format!(
-            "\n i32.const {}",
-            crate::codegen::wasm::object::TAG_ARRAY
-        ));
+        out.push_str(&format!("\n i32.const {}", super::abi::TAG_ARRAY));
         out.push_str("\n call $malloc\n local.set $args\n local.get $args\n i32.const 0\n i32.store\n local.get $args");
     }
     let _ = writeln!(out, "\n call ${entry_sym}\n drop\n call $dream_run_loop\n)\n");

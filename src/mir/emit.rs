@@ -18,16 +18,16 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 /// Runtime type tag for arrays passed to `$malloc`, matching the object protocol's `$object_tag`
-/// dispatch (mirrors `codegen::wasm::object::TAG_ARRAY`).
-const ARRAY_TAG: i32 = crate::codegen::wasm::object::TAG_ARRAY;
+/// dispatch (see [`super::abi::TAG_ARRAY`]).
+const ARRAY_TAG: i32 = super::abi::TAG_ARRAY;
 
-/// The first tag assigned to a user struct/union; consecutive types get consecutive tags. Mirrors
-/// the legacy backend so the shared runtime's dispatch tables agree (`TAG_STRUCT_BASE`).
-const STRUCT_TAG_BASE: i32 = crate::codegen::wasm::object::TAG_STRUCT_BASE;
+/// The first tag assigned to a user struct/union; consecutive types get consecutive tags, so the
+/// shared runtime's dispatch tables agree (see [`super::abi::TAG_STRUCT_BASE`]).
+const STRUCT_TAG_BASE: i32 = super::abi::TAG_STRUCT_BASE;
 
-/// The heap-block tag for strings (mirrors `codegen::wasm::object::TAG_STRING`), written into the
-/// header of interned string blocks so the runtime treats them as strings.
-const STRING_TAG: i32 = 5;
+/// The heap-block tag for strings (see [`super::abi::TAG_STRING`]), written into the header of
+/// interned string blocks so the runtime treats them as strings.
+const STRING_TAG: i32 = super::abi::TAG_STRING;
 
 /// Byte size of the universal heap-block header `[size:i32][tag:i32][ref_count:i32]` that precedes
 /// every allocated value; a value's pointer points at `block_start + HEAP_HEADER_SIZE`.
@@ -44,29 +44,42 @@ const MEMORY_PAGES: u32 = 16;
 /// The fixed allocator runtime (`$malloc`/`$free`/`$retain`/`$release_generic`/`$object_tag`),
 /// shared with the legacy backend as the single source of truth for the heap ABI. Its debug-counter
 /// placeholders are expanded to nothing (instrumentation off) here.
-const RUNTIME_ALLOCATOR: &str = include_str!("../codegen/wasm/runtime/allocator.wat");
+const RUNTIME_ALLOCATOR: &str = include_str!("runtime/allocator.wat");
 
 /// The fixed string runtime (`$strlen`/`$char_at`/`$string_eq`/`$concat_strings`/`$string_alloc`/…),
 /// shared with the legacy backend. Self-contained given the allocator + memory.
-const RUNTIME_STRINGS: &str = include_str!("../codegen/wasm/runtime/strings.wat");
+const RUNTIME_STRINGS: &str = include_str!("runtime/strings.wat");
 
 /// The object runtime: box/unbox/hash plus the integer-family `*_to_string` formatters
 /// (`$int_to_string`/`$long_to_string`/`$byte_to_string`/…). `{TAG_*}` placeholders are substituted.
-const RUNTIME_OBJECT: &str = include_str!("../codegen/wasm/runtime/object.wat");
+const RUNTIME_OBJECT: &str = include_str!("runtime/object.wat");
 
 /// The decimal `float`/`double` formatter (`$float_to_string`/`$double_to_string`). `{minus}` (the
 /// data pointer of the interned `"-"`) and `{TAG_STRING}` are substituted.
-const RUNTIME_FORMAT: &str = include_str!("../codegen/wasm/runtime/format.wat");
+const RUNTIME_FORMAT: &str = include_str!("runtime/format.wat");
 
 /// String constants the `*_to_string` runtime references by address (`bool` renders to `"true"`/
 /// `"false"`; the `double` formatter prepends `"-"`). Interned into every module so the runtime is
 /// always self-contained.
 const RUNTIME_STR_CONSTS: [&str; 3] = ["true", "false", "-"];
 
-fn runtime_prelude() -> String {
+/// The allocator + string runtime. When `debug_alloc` is on, `$malloc` bumps
+/// `$live_objects`/`$total_allocations` and `$free` decrements `$live_objects` (backing the
+/// `Debug.*` probes); otherwise the placeholders expand to nothing so the hot allocation path
+/// carries no extra instructions.
+fn runtime_prelude(debug_alloc: bool) -> String {
+    let (malloc_count, free_count) = if debug_alloc {
+        (
+            "global.get $live_objects\n    i32.const 1\n    i32.add\n    global.set $live_objects\n    \
+             global.get $total_allocations\n    i32.const 1\n    i32.add\n    global.set $total_allocations",
+            "global.get $live_objects\n    i32.const 1\n    i32.sub\n    global.set $live_objects",
+        )
+    } else {
+        ("", "")
+    };
     let mut out = RUNTIME_ALLOCATOR
-        .replace(";;@DEBUG_ALLOC_COUNT@", "")
-        .replace(";;@DEBUG_FREE_COUNT@", "");
+        .replace(";;@DEBUG_ALLOC_COUNT@", malloc_count)
+        .replace(";;@DEBUG_FREE_COUNT@", free_count);
     out.push('\n');
     out.push_str(RUNTIME_STRINGS);
     out
@@ -76,7 +89,7 @@ fn runtime_prelude() -> String {
 /// double formatter), resolving the `{TAG_*}`/`{minus}` placeholders and the `bool` string pointers
 /// from the interned string table. Depends on the allocator + string runtime emitted before it.
 fn to_string_runtime(strings: &IndexMap<String, u32>) -> String {
-    use crate::codegen::wasm::object as tags;
+    use super::abi as tags;
     let object = RUNTIME_OBJECT
         .replace("{TAG_INT}", &tags::TAG_INT.to_string())
         .replace("{TAG_FLOAT}", &tags::TAG_FLOAT.to_string())
@@ -439,7 +452,7 @@ pub fn emit_program(mir: &super::Mir, interner: &TypeInterner) -> String {
 /// Emits a whole MIR program as a single `(module ...)`, exporting every (non-instance) function
 /// under its source name. This is the self-contained unit the driver will hand to the WASM
 /// assembler once the runtime layers are wired in.
-pub fn emit_module(mir: &super::Mir, interner: &TypeInterner) -> String {
+pub fn emit_module(mir: &super::Mir, interner: &TypeInterner, debug_alloc: bool) -> String {
     let symbols = symbol_table(mir);
     let sigs = signature_table(mir);
     let strings = string_table(mir);
@@ -469,7 +482,7 @@ pub fn emit_module(mir: &super::Mir, interner: &TypeInterner) -> String {
         let _ = writeln!(out, "(global $g{} (mut {}) {})", g.id.0, wasm_ty_of(interner, g.ty), zero);
     }
 
-    out.push_str(&runtime_prelude());
+    out.push_str(&runtime_prelude(debug_alloc));
     out.push('\n');
     if super::async_emit::module_has_async(&mir.functions) {
         out.push_str(&super::async_emit::async_runtime_wat());
@@ -514,7 +527,7 @@ pub fn emit_module(mir: &super::Mir, interner: &TypeInterner) -> String {
             let _ = writeln!(
                 out,
                 "(func (export \"main\")\n (local $args i32)\n i32.const 4\n i32.const {}\n call $malloc\n local.set $args\n local.get $args\n i32.const 0\n i32.store\n local.get $args\n call ${}\n)",
-                crate::codegen::wasm::object::TAG_ARRAY,
+                super::abi::TAG_ARRAY,
                 func_symbol(f),
             );
         } else if f.instance.is_empty() {
@@ -655,7 +668,7 @@ fn unbox_fn_for(p: PrimTy) -> Option<&'static str> {
 /// primitives/string, or the struct/union's assigned tag (from `tags`). Used to lower a runtime
 /// `x is T` test to an `$object_tag` comparison.
 fn runtime_tag_for(interner: &TypeInterner, tags: &HashMap<TypeId, i32>, ty: TypeId) -> Option<i32> {
-    use crate::codegen::wasm::object as t;
+    use super::abi as t;
     let stripped = interner.strip_nullable(ty);
     match interner.kind(stripped) {
         TyKind::Prim(PrimTy::Int) => Some(t::TAG_INT),
@@ -819,7 +832,7 @@ fn field_load_expr(interner: &TypeInterner, offset: u32, ty: TypeId) -> String {
 /// for strings, and each struct/union's `$<Type>_hash_code` by type tag. Mirrors
 /// [`emit_object_to_string`]. A null pointer hashes to 0.
 fn emit_object_hash_code(out: &mut String, mir: &super::Mir, tags: &HashMap<TypeId, i32>) {
-    use crate::codegen::wasm::object as t;
+    use super::abi as t;
     out.push_str("(func $object_hash_code (param $ptr i32) (result i32)\n  (local $tag i32)\n");
     out.push_str("  (local.get $ptr) (i32.eqz) (if (then (i32.const 0) (return)))\n");
     out.push_str("  (local.get $ptr) (call $object_tag) (local.set $tag)\n");
@@ -1035,7 +1048,7 @@ fn emit_object_to_string(
     strings: &IndexMap<String, u32>,
     tags: &HashMap<TypeId, i32>,
 ) {
-    use crate::codegen::wasm::object as t;
+    use super::abi as t;
     out.push_str("(func $object_to_string (param $ptr i32) (result i32)\n  (local $tag i32)\n");
     let _ = writeln!(
         out,
@@ -2446,7 +2459,7 @@ mod tests {
         let caller = rb.finish();
 
         let mir = crate::mir::Mir { functions: vec![callee, caller], ..Default::default() };
-        let wat = emit_module(&mir, &i);
+        let wat = emit_module(&mir, &i, false);
         assert!(wat.starts_with("(module"), "should be wrapped in a module:\n{}", wat);
         assert!(wat.contains("(func $callee"), "callee header:\n{}", wat);
         // The call site resolves to the callee's symbol, not a bare def index.
@@ -2558,7 +2571,7 @@ mod tests {
         b.terminate(Terminator::Return(Some(Operand::Const(Const::Str("hi".into())))));
 
         let mir = crate::mir::Mir { functions: vec![b.finish()], ..Default::default() };
-        let wat = emit_module(&mir, &i);
+        let wat = emit_module(&mir, &i, false);
         // The runtime constants are interned first (`true`/`false`/`-` then the object-protocol
         // `null`/`<object>`/`[`/`]`/`, `), so the user's "hi" follows at block 1172 / data pointer 1184.
         assert!(wat.contains("(i32.const 1184)"), "string data pointer:\n{}", wat);
@@ -2627,7 +2640,7 @@ mod tests {
             layouts,
             ..Default::default()
         };
-        let wat = emit_module(&mir, &i);
+        let wat = emit_module(&mir, &i, false);
         // The real gate: the emitted module must assemble to valid WebAssembly.
         wat::parse_str(&wat)
             .unwrap_or_else(|e| panic!("emitted module failed to assemble: {}\n{}", e, wat));
@@ -2652,5 +2665,29 @@ mod tests {
         assert!(wat.contains("i32.add"), "should emit the add instruction:\n{}", wat);
         assert!(wat.contains("(return)"));
         assert!(wat.contains("br_table"));
+    }
+
+    /// Every `{TAG_*}`/`{minus}` placeholder in the object + format runtime must be substituted; a
+    /// stray brace would emit a literal `{` into the module (and fail to assemble). Guards the
+    /// substitution table in [`to_string_runtime`].
+    #[test]
+    fn to_string_runtime_has_no_unsubstituted_placeholders() {
+        let mut strings = IndexMap::new();
+        strings.insert("true".to_string(), 0u32);
+        strings.insert("false".to_string(), 8u32);
+        strings.insert("-".to_string(), 16u32);
+        let runtime = to_string_runtime(&strings);
+        assert!(
+            !runtime.contains('{') && !runtime.contains('}'),
+            "object/format runtime still contains an unsubstituted placeholder:\n{runtime}"
+        );
+    }
+
+    /// `--debug` must actually instrument the allocator under the MIR backend: with it on, `$malloc`
+    /// bumps the live/total counters; with it off the hot path stays clean.
+    #[test]
+    fn debug_alloc_toggles_allocator_instrumentation() {
+        assert!(runtime_prelude(true).contains("global.set $live_objects"));
+        assert!(!runtime_prelude(false).contains("global.set $live_objects"));
     }
 }

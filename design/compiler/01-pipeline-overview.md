@@ -17,20 +17,18 @@ flowchart TD
     analyze -->|errors| diag["DiagnosticBag rendered → CompileError::Semantic"]
     analyze -->|ok| info["SemanticInfo\n(tables: structs/unions/enums/functions/symbols)"]
 
-    info --> hir["HIR emission (TARGET)\nlower AST+SemanticInfo → typed HIR"]
+    info --> hir["HIR emission\nlower AST+SemanticInfo → typed HIR"]
     hir --> mir["mir::lower\nHIR → CFG MIR"]
     mir --> rc["RcInsertion pass\n(make ownership explicit)"]
     rc --> opt["PassManager::default_pipeline\nprop, fold, simplify-cfg, dce, rc-elision"]
     opt --> emit["mir::emit\nMIR → WAT (via relooper)"]
 
-    info -.today.-> legacy["codegen::wasm::WasmGenerator\n(AST-walking, re-derives types)"]
-    legacy --> wat
     emit --> wat["WAT text (.wat)"]
     wat --> abi["driver::abi::emit_wasm_and_abi\nwat→wasm + .abi.json"]
 ```
 
-Solid path through `hir → mir → emit` is the **target** pipeline. The dotted path through
-`WasmGenerator` is what runs **today**. The migration document explains the swap.
+The `hir → mir → emit` pipeline is the **only** backend. (The legacy AST-walking `WasmGenerator` has
+been deleted; see the migration document.)
 
 ## Stage-by-stage
 

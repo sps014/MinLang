@@ -1,26 +1,20 @@
 # 09 — Migration Status & The Safe Path to Finish
 
-This document is the honest, current state of the architecture migration: what is **built**, what is
-**wired**, what is **not yet wired**, and the exact order to finish without ever leaving a non-building
-or untestable compiler. Update it as the work lands.
+This document tracks the architecture migration. **The migration is complete:** the multi-pass
+HIR → MIR → WAT backend is the only code path, and the legacy AST-walking backend has been deleted.
+The remaining rows below are analyzer-internal cleanups, not backend work.
 
 ## Status at a glance
 
 ```mermaid
 flowchart LR
-    subgraph Built["Built + unit-tested (additive)"]
-      T[src/types]
-      H[src/hir]
-      M[src/mir + passes + relooper + emit]
+    subgraph Live["Live pipeline (only backend)"]
+      AN[analyzer → SemanticInfo + typed HIR]
+      LO[mir::lower → MIR]
+      PA[prune_unreachable + passes]
+      EM[mir::emit::emit_module → WAT]
     end
-    subgraph Live["Live default pipeline (today)"]
-      AN[analyzer → SemanticInfo, string-keyed tables]
-      LG[codegen::wasm::WasmGenerator → WAT]
-      INF[codegen/wasm/utils/infer.rs + resolve.rs]
-    end
-    AN --> LG
-    LG --> INF
-    Built -.not yet wired into the driver.-> Live
+    AN --> LO --> PA --> EM
 ```
 
 | Component | State |
@@ -32,7 +26,7 @@ flowchart LR
 | Generic representation unified (mangled `List_JsonValue` ≡ structured `List<JsonValue>`) | ✅ done (`TypeCtx.instances` + `lower_name`) |
 | Analyzer assignability on `TypeId` (`compare_data_type`, `type_str_assignable` → `compat::assignable`) | ✅ done |
 | Overload viability on `TypeId` | ◐ deferred — string mirror (`overload_arg_compatible`) is already semantically equivalent; blocked only by the `Fn(&str,&str)` closure signature in `select_overload` |
-| Analyzer tables keyed by `TypeId` (not strings) | ◐ next — tables still store `Type`/strings (legacy-codegen bridge) |
+| Analyzer tables keyed by `TypeId` (not strings) | ◐ tables still store `Type`/strings; no longer a codegen bridge (legacy backend deleted), so this is now a pure analyzer-internal cleanup |
 | New backend pipeline composes (HIR → `mir::lower` → all passes → `emit`) | ✅ proven green by `tests/mir_pipeline.rs` (incl. determinism); the Step C cutover target |
 | MIR backend emits a self-consistent module (`emit_module`) with call sites resolving to headers, and per-`(DefId, instance)` symbols | ✅ done (Step C.0) — `MirFunction.def`/`.instance`, `func_symbol`/`symbol_table`; unblocks generics' distinct symbols |
 | Analyzer **emits** HIR | ✅ complete for everything the current MIR backend can consume — interleaved via `hir_emit.rs`: control flow, `switch`/`match` (statement *and* expression), methods + instance/static calls, constructors, fields, enums, unions, globals (+ initializers), `len()`, async/await, **and generic free functions** (emitted per-monomorphization; see Step C.5) |
@@ -44,11 +38,12 @@ flowchart LR
 | MIR backend handles user-defined constructor bodies | ✅ done (Step C.2c) — `New` carries an optional `ctor` def; when present the backend allocates, zeroes the fields, then calls `$Type_constructor(this, args)` (whose body is emitted via `struct_methods`); otherwise it inlines positional field init |
 | `extend` blocks (generic + non-generic) | ✅ done — extension methods lower exactly like struct methods (`{Type}_{method}` + implicit `this`), so their bodies emit and calls resolve; generic `extend Box<T>` monomorphizes alongside the struct instance (`Box_int_peek`). Covered by `test_hir_emission_extend_{nongeneric,generic}_class` |
 | `del()` destructors | ◐ **body** emits under `{Type}_del` (like any method; `test_hir_emission_destructor_body`), but the release-time **invocation** (per-type deep release: pin refcount → call `$Type_del` → release ref fields → free) is part of the RC runtime, still deferred with the rest of the release layer (Step D) |
-| Driver uses the MIR backend | ◐ **opt-in wired** — `Compiler::with_mir(true)` / CLI `--mir` routes analysis → HIR → `mir::lower` → `prune_unreachable` → passes → `emit_module`. Default is still `WasmGenerator`; the flip is now unblocked (`XFAIL` empty). Gated by `tests/mir_e2e.rs` (**84 / 84** golden e2e cases pass end-to-end through the real driver front-end + MIR backend) |
-| `infer.rs` / `resolve.rs` deletable | ❌ still used by the live backend |
+| Driver uses the MIR backend | ✅ **done (Step D)** — `Compiler::compile` always routes analysis → HIR → `mir::lower` → `prune_unreachable` → passes → `emit_module`. The `--mir` opt-in flag is gone (there is no other backend). Gated by `tests/mir_e2e.rs` + `tests/e2e_tests.rs` (**84 / 84** golden e2e cases pass end-to-end) |
+| `infer.rs` / `resolve.rs` deletable | ✅ **deleted** — the whole legacy `src/codegen/` tree is gone |
 
-The new architecture is **complete as modules** but **not on the critical path**. The legacy backend is
-still the only thing that compiles real programs.
+The new architecture is now **the only backend**. The legacy AST-walking `WasmGenerator` and its
+`infer`/`resolve` re-derivation helpers have been deleted; the shared runtime `.wat` layers and heap
+tag constants moved to `src/mir/runtime/` + `src/mir/abi.rs`.
 
 ## The ordering constraint (why we can't just delete the old code)
 
@@ -632,38 +627,39 @@ the coverage gap so the default can flip.
   `JSON.deserialize<T>(text)` → `<T>.from_json(JSON.parse(text))`, where `to_json`/`from_json` are the
   derived methods and `JSON.stringify`/`JSON.parse` are the ordinary stdlib statics. With the call
   site lowering through MIR, the whole cluster (nested `@json` classes, nullable fields, renamed keys,
-  deep nesting, and `@json` discriminated unions) runs, matching the legacy expansion in
-  `codegen/wasm/expression.rs`.
+  deep nesting, and `@json` discriminated unions) runs.
 
 **Coverage gap — closed.** Every case in `tests/cases` compiles and runs through the MIR backend;
 `XFAIL` is empty. The categories that used to appear here (`main` dropped, callee-unresolved
 (`$def{N}`), constructor/layout, async, and `@json`) are all resolved.
 
-**The switch (now unblocked — `XFAIL` is empty):**
-1. Flip the `Compiler` default to the MIR backend (`src/driver/compiler.rs`).
-2. **Delete** `src/codegen/wasm/utils/infer.rs` and `resolve.rs`.
-3. **Delete** the AST-walking `WasmGenerator` and now-orphaned `codegen/wasm/*` modules superseded by
-   `emit.rs` + the reused runtime layers.
-4. Remove the legacy string `get_type()` bridges left from Step A.
-5. Re-run the full gate; update `GEMINI.md` and this file.
+## Step D — the cutover (done)
+
+The legacy backend is deleted and the MIR backend is the only code path:
+
+1. **[done]** `Compiler::compile` always emits through `mir::emit::emit_module`; the `use_mir` field and
+   the `--mir` CLI flag are gone (there is no other backend to select).
+2. **[done]** Deleted the entire `src/codegen/` tree — `WasmGenerator`, `infer.rs`, `resolve.rs`, the
+   AST-walking statement/expression/object/memory/string/union/async emit modules, and the
+   `CodeGenerator`/`CodegenError` types (the driver's `CompileError::Codegen` variant went with them).
+3. **[done]** The still-needed shared assets moved out of `codegen` into the MIR backend that owns them:
+   the runtime `.wat` layers → `src/mir/runtime/` (embedded via `include_str!`), and the heap-block tag
+   constants → `src/mir/abi.rs` (the single source of truth mirrored by `execution/host`).
+4. **[done]** `--debug` allocator instrumentation is now honored by the MIR emitter
+   (`emit_module(.., debug_alloc)` → `runtime_prelude`), so the `Debug.*` probes work under the new
+   backend (guarded by `debug_alloc_toggles_allocator_instrumentation`).
+5. **[done]** Full gate green: `cargo test` (lib + `mir_e2e` + `e2e_tests` + `mir_pipeline`),
+   `cargo clippy --all-targets`, and the `codegen_is_deterministic` determinism check.
+
+Remaining follow-up (not blocking, tracked above): the analyzer still stores `Type`/strings in some
+tables — now a pure analyzer-internal cleanup rather than a codegen bridge, since nothing downstream
+re-derives types from strings anymore.
 
 ```mermaid
 flowchart LR
-    A[A. types→TypeId] --> B[B. analyzer emits HIR] --> C[C. backend runtime integ] --> D[D. switch + delete legacy]
-    A -.keeps building.-> g1((green))
-    B -.keeps building.-> g2((green))
-    C -.keeps building.-> g3((green))
-    D -.green again.-> g4((green))
+    A[A. types→TypeId] --> B[B. analyzer emits HIR] --> C[C. backend runtime integ] --> D[D. switch + delete legacy ✅]
+    A -.green.-> g1((green))
+    B -.green.-> g2((green))
+    C -.green.-> g3((green))
+    D -.green.-> g4((green))
 ```
-
-## What "remove the old code that should not be used" means precisely
-
-- **Safe to delete now:** nothing in the legacy backend — it is all still on the live path.
-- **Deleted at Step D:** `infer.rs`, `resolve.rs`, `WasmGenerator`, and the AST-walking emit modules
-  superseded by `emit.rs`.
-- **Already deleted (Phase 0):** `src/driver/source_manager.rs`, the `driver::diagnostics` re-export,
-  and the `dream-syntax` `text` re-export facade — those were back-compat shims with no remaining users.
-
-The guiding rule (from [08](./08-testing-and-determinism.md)): we do not keep dead code, but we also do
-not delete a working path before its replacement passes the same tests. Steps A–C build the
-replacement; Step D is the single destructive cutover, gated on a green e2e + determinism run.

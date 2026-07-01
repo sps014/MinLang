@@ -81,7 +81,7 @@ fn emit_hir_to_module_rc(code: &str) -> String {
     for f in &mut mir.functions {
         crate::mir::passes::RcInsertion.run(f, interner);
     }
-    crate::mir::emit::emit_module(&mir, interner)
+    crate::mir::emit::emit_module(&mir, interner, false)
 }
 
 /// Compiles `code` with RC insertion enabled and runs it, capturing output (see [`run_and_capture`]).
@@ -171,7 +171,7 @@ fn emit_hir_to_module(code: &str) -> String {
     assert!(!diagnostics.has_errors(), "unexpected analysis errors");
     let interner = &analyzer.type_ctx.interner;
     let mir = crate::mir::lower::lower_program(&hir, interner);
-    crate::mir::emit::emit_module(&mir, interner)
+    crate::mir::emit::emit_module(&mir, interner, false)
 }
 
 #[test]
@@ -474,7 +474,7 @@ fn test_hir_emission_global_initializer_runs_in_start() {
 
     let interner = &analyzer.type_ctx.interner;
     let mir = crate::mir::lower::lower_program(&hir, interner);
-    let wat = crate::mir::emit::emit_module(&mir, interner);
+    let wat = crate::mir::emit::emit_module(&mir, interner, false);
     assert!(wat.contains("(func $__dream_init"), "missing init function:\n{}", wat);
     assert!(wat.contains("(start $__dream_init)"), "init must run at start:\n{}", wat);
     assert!(wat.contains("(global.set $g0)"), "init should store the global:\n{}", wat);
@@ -908,7 +908,7 @@ fn indirect_call_demo() -> (crate::mir::Mir, crate::types::TypeInterner) {
 #[test]
 fn test_indirect_call_emits_table_and_signature() {
     let (mir, interner) = indirect_call_demo();
-    let wat = crate::mir::emit::emit_module(&mir, &interner);
+    let wat = crate::mir::emit::emit_module(&mir, &interner, false);
     assert!(wat.contains("(table $__ft 2 funcref)"), "function table missing:\n{}", wat);
     assert!(wat.contains("(elem (i32.const 0) $add $main)"), "elem section missing:\n{}", wat);
     assert!(wat.contains("(type $sig_i32_i32__i32"), "call_indirect signature missing:\n{}", wat);
@@ -925,7 +925,7 @@ fn test_indirect_call_emits_table_and_signature() {
 fn exec_indirect_call_through_function_table() {
     // End-to-end: `f(2, 3)` dispatches through the table to `add`, printing `5`.
     let (mir, interner) = indirect_call_demo();
-    let wat = crate::mir::emit::emit_module(&mir, &interner);
+    let wat = crate::mir::emit::emit_module(&mir, &interner, false);
     assert_eq!(run_wat(&wat, "main"), "5");
 }
 
