@@ -70,11 +70,11 @@ the backend knows how to allocate slots.
 | `Expr(HExpr)` | evaluate for effect |
 | `Return(Option<HExpr>)` | |
 | `If / While / For / Foreach` | structured control flow (typed parts) |
-| `Switch { scrutinee, arms, default }` | `switch`/`match`; arms are `HArm { pattern, body }` |
+| `Switch { scrutinee, arms, default }` | `switch` (both the C-style and pattern-matching forms); arms are `HArm { pattern, body }` |
 | `Break / Continue (Option<label>)` | |
 | `Await(HExpr)` | the only legal `await` *statement* position |
 
-`HPattern` is `Const(HExpr)`, `Variant { def, variant, bindings }` (union-variant match that binds the
+`HPattern` is `Const(HExpr)`, `Variant { def, variant, bindings }` (union-variant pattern that binds the
 payload into fresh locals), or `Wildcard`.
 
 `HPlace` is the assignable subset: `Local`, `Global`, `Field { obj, field }` (resolved field **index**,

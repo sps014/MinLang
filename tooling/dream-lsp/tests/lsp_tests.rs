@@ -227,14 +227,14 @@ fun main(): void {
 }
 
 #[test]
-fn hover_on_union_variant_in_match_arm() {
+fn hover_on_union_variant_in_switch_arm() {
     let src = "
 enum Shape {
     Circle(radius: int),
     Rect(width: int, height: int),
 }
 fun area(s: Shape): int {
-    return match (s) {
+    return switch (s) {
         Circle(r) => r,
         R|ect(w, h) => w * h,
     };

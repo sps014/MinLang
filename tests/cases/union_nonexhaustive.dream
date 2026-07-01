@@ -1,4 +1,4 @@
-// Non-exhaustive match: the `Blue` variant is neither covered nor caught by a `_` arm, so the
+// Non-exhaustive switch: the `Blue` variant is neither covered nor caught by a `_` arm, so the
 // analyzer must reject this at compile time.
 
 enum Light {
@@ -8,7 +8,7 @@ enum Light {
 }
 
 fun name(l: Light): string {
-    return match (l) {
+    return switch (l) {
         Red(b) => "red",
         Green  => "green",
     };

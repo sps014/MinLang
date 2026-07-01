@@ -516,9 +516,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 
         //eat the fun keyword
         self.match_token(TokenKind::FunToken);
-        // `match` is a soft keyword, so it remains a legal function/method name (e.g. the stdlib
-        // `regex.match`).
-        let mut function_name = self.match_name_token();
+        let mut function_name = self.match_token(TokenKind::IdentifierToken);
         Self::splice_leading_trivia(&mut function_name, first_trivia);
 
         let generic_parameters = self.parse_identifier_generic_params();

@@ -26,7 +26,8 @@ println(c.name());             // Green
 ## Enums with data
 
 When a variant carries a typed payload `(...)`, the `enum` becomes a heap-backed *discriminated
-union*: each variant can hold its own data, and you read it back with `match` instead of `switch`.
+union*: each variant can hold its own data, and you read it back with the pattern-matching form of
+`switch` (`pattern => body`) instead of the C-style `case`/`default` form.
 
 ```dream
 enum Shape {

@@ -12,13 +12,13 @@ fun main() {
     let r1 = safe_div(10, 2);
     let r2 = safe_div(1, 0);
 
-    let v = match (r1) {
+    let v = switch (r1) {
         Ok(n)  => n,
         Err(e) => 0 - 1,
     };
     System.println(v);
 
-    match (r2) {
+    switch (r2) {
         Ok(n)  => { System.println(n); }
         Err(e) => { System.print("error: "); System.println(e); }
     }

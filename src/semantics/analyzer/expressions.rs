@@ -218,9 +218,9 @@ impl<'a> Analyzer<'a> {
                 self.hir_set_ternary(cond_hir, then_hir, else_hir, &then_type);
                 Ok(then_type)
             }
-            ExpressionNode::Match(subject, arms) => {
-                // `analyze_match` desugars the value-position match and records its result temp read.
-                let t = self.analyze_match(
+            ExpressionNode::Switch(subject, arms) => {
+                // `analyze_pattern_switch` desugars the value-position switch and records its result temp read.
+                let t = self.analyze_pattern_switch(
                     subject,
                     arms,
                     parent_function,

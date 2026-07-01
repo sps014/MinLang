@@ -47,7 +47,7 @@ let s = "hello world".substring(6, 11);   // "world"
 
 ## index_of
 
-Returns the index of the first occurrence of character `target` as an `Option<int>`: `Some(index)`, or `None` if absent. Use `unwrap_or` (or `match`) to read it.
+Returns the index of the first occurrence of character `target` as an `Option<int>`: `Some(index)`, or `None` if absent. Use `unwrap_or` (or `switch`) to read it.
 
 ```dream
 let i = "hello".index_of('l').unwrap_or(0 - 1);   // 2

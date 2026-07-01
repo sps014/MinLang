@@ -10,7 +10,7 @@ enum Pair {
 // `Both(...)` is covered by refutable nested patterns, so a `_` arm is required for
 // exhaustiveness (v1 does not enumerate inner variants); `Neither` is covered explicitly.
 fun classify(p: Pair): string {
-    return match (p) {
+    return switch (p) {
         Both(Some(0), None)    => "zero-left, empty-right",
         Both(Some(x), Some(y)) => "two values",
         Both(None, None)       => "both empty",

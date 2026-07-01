@@ -1,9 +1,9 @@
-# Discriminated Unions & `match`
+# Discriminated Unions & pattern `switch`
 
 A plain [`enum`](types.md#enums) is a set of integer constants. When **any** variant carries a
 payload `(...)`, the whole `enum` becomes a *discriminated union* (also called a tagged union or
 algebraic data type): a value is exactly one of its variants, and each variant can hold its own
-typed data. You take the data back out with an exhaustive `match`.
+typed data. You take the data back out with an exhaustive pattern-matching `switch`.
 
 ```dream
 enum Shape {
@@ -26,30 +26,32 @@ let r = Shape.Rect(3.0, 4.0);
 let e = Shape.Empty;
 ```
 
-## `match`
+## Pattern-matching `switch`
 
-`match` inspects a union value and runs the first arm whose pattern fits. It works as both an
-**expression** (every arm is `pattern => expr`, and all arms share one type) and a **statement**
-(arms may be `=> { ... }` blocks run for their effects).
+The pattern-matching form of [`switch`](control-flow.md#switch) inspects a union value and runs the
+first arm whose pattern fits. (When a `switch` body starts with a pattern arm rather than
+`case`/`default`, it is this form.) It works as both an **expression** (every arm is
+`pattern => expr`, and all arms share one type) and a **statement** (arms may be `=> { ... }` blocks
+run for their effects).
 
 ```dream
 // expression position: yields a value
-let area = match (s) {
+let area = switch (s) {
     Circle(r)  => 3.14 * r * r,
     Rect(w, h) => w * h,
     Empty      => 0.0,
 };
 
 // statement position: arms may be blocks
-match (s) {
+switch (s) {
     Circle(r)  => { println(r); }
     Rect(w, h) => println(w * h),
     Empty      => println("empty"),
 }
 ```
 
-The variant qualifier is optional inside `match` because the subject type is already known:
-`Circle(r)` and `Shape.Circle(r)` are equivalent.
+The variant qualifier is optional inside a pattern `switch` because the subject type is already
+known: `Circle(r)` and `Shape.Circle(r)` are equivalent.
 
 ### Patterns
 
@@ -63,7 +65,7 @@ The variant qualifier is optional inside `match` because the subject type is alr
 Patterns nest, so a variant's fields can themselves be matched:
 
 ```dream
-match (pair) {
+switch (pair) {
     Both(Some(x), None) => x,
     _                   => 0,
 }
@@ -75,7 +77,7 @@ An arm may add an `if <bool>` guard. A guarded arm matches only when its pattern
 guard is true:
 
 ```dream
-match (opt) {
+switch (opt) {
     Some(n) if n > 10 => println("big"),
     Some(n)           => println(n),
     None              => println("none"),
@@ -84,12 +86,12 @@ match (opt) {
 
 ## Exhaustiveness
 
-`match` must cover every case. The compiler rejects a `match` that omits a variant unless a `_`
+A pattern `switch` must cover every case. The compiler rejects one that omits a variant unless a `_`
 (or a bare binding) catches the rest:
 
 ```dream
 // error: missing variant(s) Empty
-let area = match (s) {
+let area = switch (s) {
     Circle(r)  => 3.14 * r * r,
     Rect(w, h) => w * h,
 };
@@ -133,13 +135,13 @@ enum Option<T> { Some(value: T), None }
 
 extend Option<T> {
     public fun unwrap_or(fallback: T): T {
-        return match (this) {
+        return switch (this) {
             Some(v) => v,
             None    => fallback,
         };
     }
     public fun is_some(): bool {
-        return match (this) { Some(v) => true, None => false };
+        return switch (this) { Some(v) => true, None => false };
     }
 }
 
@@ -152,7 +154,7 @@ fun main(): void {
 
 The prelude uses exactly this mechanism to give [`Option<T>`](../stdlib/option.md) and
 [`Result<T, E>`](../stdlib/result.md) their `unwrap_or` / `is_some` / `is_ok` helpers, so you rarely
-need to write the `match` by hand.
+need to write the `switch` by hand.
 
 ## Built-in `Option<T>` and `Result<T, E>`
 
@@ -166,7 +168,7 @@ enum Result<T, E> { Ok(value: T), Err(error: E) } // provided by the prelude
 ```
 
 Use `Option<T>` for a value that may be absent and `Result<T, E>` for an operation that may fail.
-Because they are ordinary discriminated unions, you read them back with `match` exactly as above.
+Because they are ordinary discriminated unions, you read them back with `switch` exactly as above.
 (Do not redeclare them in your own program — that is a duplicate-definition error.)
 
 ## `to_string`, `hash_code`, and `object`
@@ -203,8 +205,9 @@ let text = JSON.serialize(Shape.Circle(7));   // {"type":"Circle","radius":7}
 let back = JSON.deserialize<Shape>(text);      // Shape.Circle(7)
 ```
 
-## When to use `match` vs `switch`
+## Which `switch` form to use
 
-Use [`switch`](control-flow.md#switch) for plain C-style enums and integer/string values. Use
-`match` for discriminated unions: it destructures payloads and is checked for exhaustiveness, which
-`switch` is not.
+Both forms share the `switch` keyword. Use the **C-style** form (`case`/`default`) for plain enums
+and integer/string/bool values. Use the **pattern-matching** form (`pattern => body`) for
+discriminated unions: it destructures payloads and is checked for exhaustiveness, which the C-style
+form is not.

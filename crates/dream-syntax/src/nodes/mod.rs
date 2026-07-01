@@ -6,7 +6,7 @@ pub mod statement;
 pub mod struct_node;
 pub mod types;
 
-pub use expression::{ExpressionNode, MatchArm, MatchArmBody};
+pub use expression::{ExpressionNode, SwitchArm, SwitchArmBody};
 pub use function::{FunctionNode, ParameterNode};
 pub use pattern::PatternNode;
 pub use program::{

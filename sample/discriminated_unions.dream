@@ -1,4 +1,4 @@
-// Discriminated unions + exhaustive `match`.
+// Discriminated unions + exhaustive `switch`.
 //
 // Run with:  cargo run -- run sample/discriminated_unions.dream
 
@@ -9,18 +9,18 @@ enum Shape {
     Empty,
 }
 
-// `match` as an expression: every arm yields an int.
+// `switch` as an expression: every arm yields an int.
 fun area(s: Shape): int {
-    return match (s) {
+    return switch (s) {
         Circle(r)  => r * r * 3,
         Rect(w, h) => w * h,
         Empty      => 0,
     };
 }
 
-// Literal sub-patterns and a guard; a trailing binding keeps the match exhaustive.
+// Literal sub-patterns and a guard; a trailing binding keeps the switch exhaustive.
 fun describe(o: Option<int>): string {
-    return match (o) {
+    return switch (o) {
         Some(0)           => "zero",
         Some(n) if n > 10 => "big",
         Some(n)           => "small",
@@ -47,12 +47,12 @@ fun main() {
     System.println(describe(b));              // big
     System.println(describe(n));              // nothing
 
-    // `match` as a statement with block arms.
-    match (safe_div(10, 2)) {
+    // `switch` as a statement with block arms.
+    switch (safe_div(10, 2)) {
         Ok(v)  => { System.print("ok "); System.println(v); }
         Err(e) => { System.print("err "); System.println(e); }
     }
-    match (safe_div(1, 0)) {
+    switch (safe_div(1, 0)) {
         Ok(v)  => { System.print("ok "); System.println(v); }
         Err(e) => { System.print("err "); System.println(e); }
     }

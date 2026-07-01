@@ -1,6 +1,6 @@
 //! Analysis of discriminated-union construction (`Enum.Variant(args)` / unit `Enum.Variant`) and
-//! of `match` expressions/statements: pattern typing, binding scopes, guards, arm-type
-//! unification, exhaustiveness, and unreachable-arm detection.
+//! of pattern-matching `switch` expressions/statements: pattern typing, binding scopes, guards,
+//! arm-type unification, exhaustiveness, and unreachable-arm detection.
 
 use super::*;
 use crate::diagnostics::DiagnosticBag;
@@ -9,7 +9,7 @@ use crate::semantics::symbol_table::SymbolTable;
 use crate::semantics::union_table::UnionInfo;
 use crate::syntax::nodes::types::strip_nullable;
 use crate::syntax::nodes::{
-    ExpressionNode, FunctionNode, MatchArm, MatchArmBody, PatternNode, Type,
+    ExpressionNode, FunctionNode, PatternNode, SwitchArm, SwitchArmBody, Type,
 };
 use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
@@ -17,7 +17,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-/// The HIR shape a match pattern lowers to (for statement-position `match` → [`HStmt::Switch`]).
+/// The HIR shape a switch pattern lowers to (for statement-position `switch` → [`HStmt::Switch`]).
 enum HirArmShape {
     /// A `Const` arm (literal pattern).
     Const(crate::hir::HExpr),
@@ -247,10 +247,9 @@ impl<'a> Analyzer<'a> {
         Ok(Some(result_ty))
     }
 
-    /// Analyzes a `match`. `is_expression` is true when the match is used in value position (all
-    /// Classifies a match pattern for HIR statement-`match` lowering, allocating HIR locals for any
+    /// Classifies a switch pattern for HIR statement-`switch` lowering, allocating HIR locals for any
     /// variant-payload bindings *before* the arm body is lowered so the body can resolve them.
-    fn hir_match_pattern(
+    fn hir_switch_pattern(
         &mut self,
         pattern: &PatternNode,
         union_info: &Option<UnionInfo>,
@@ -303,7 +302,7 @@ impl<'a> Analyzer<'a> {
                     let (slot_name, fty) = match sub {
                         PatternNode::Binding(bn) => (bn.text.clone(), fields[i].1.clone()),
                         PatternNode::Wildcard(_) => {
-                            (format!("__match_{}_{}", variant, i), fields[i].1.clone())
+                            (format!("__switch_{}_{}", variant, i), fields[i].1.clone())
                         }
                         _ => return HirArmShape::Unsupported,
                     };
@@ -323,7 +322,7 @@ impl<'a> Analyzer<'a> {
 
     /// True when `arms` need the general if-chain lowering rather than a `Switch`: any arm has a
     /// guard, or a variant pattern has a non-flat sub-pattern (a literal or a nested variant).
-    fn match_needs_chain(arms: &[MatchArm]) -> bool {
+    fn pattern_switch_needs_chain(arms: &[SwitchArm]) -> bool {
         arms.iter().any(|a| a.guard.is_some() || Self::pattern_is_nested(&a.pattern))
     }
 
@@ -333,7 +332,7 @@ impl<'a> Analyzer<'a> {
             if subs.iter().any(|s| !matches!(s, PatternNode::Binding(_) | PatternNode::Wildcard(_))))
     }
 
-    // -- small typed-HExpr builders used by the if-chain match lowering --
+    // -- small typed-HExpr builders used by the if-chain switch lowering --
     fn hx_bool(&self, v: bool) -> crate::hir::HExpr {
         crate::hir::HExpr::new(self.type_ctx.interner.bool(), crate::hir::HExprKind::BoolLit(v))
     }
@@ -434,15 +433,15 @@ impl<'a> Analyzer<'a> {
         }
     }
 
-    /// General `match` lowering (guards + nested/literal sub-patterns) as a flag-gated if-chain:
-    /// evaluates the subject once, then for each arm emits `if (!done && <tests>) { <binds>; [if
-    /// (<guard>)] { done = true; <body> } }`. A failed guard leaves `done` false so the next arm is
-    /// tried. Type-checking (pattern checks, guard/body analysis, exhaustiveness) mirrors the
-    /// `Switch` path.
-    fn analyze_match_chain(
+    /// General pattern-`switch` lowering (guards + nested/literal sub-patterns) as a flag-gated
+    /// if-chain: evaluates the subject once, then for each arm emits `if (!done && <tests>) {
+    /// <binds>; [if (<guard>)] { done = true; <body> } }`. A failed guard leaves `done` false so the
+    /// next arm is tried. Type-checking (pattern checks, guard/body analysis, exhaustiveness) mirrors
+    /// the `Switch` path.
+    fn analyze_pattern_switch_chain(
         &mut self,
         subject: &ExpressionNode<'a>,
-        arms: &[MatchArm<'a>],
+        arms: &[SwitchArm<'a>],
         parent_function: &FunctionNode<'a>,
         symbol_table: &Rc<RefCell<SymbolTable>>,
         is_expression: bool,
@@ -468,14 +467,14 @@ impl<'a> Analyzer<'a> {
         let mut emit_ok = subject_hir.is_some();
 
         // Bind the subject once and initialize the `done` flag.
-        let subj_local = self.hir_alloc_local("__match_subj", &subject_type);
+        let subj_local = self.hir_alloc_local("__switch_subj", &subject_type);
         match (subj_local, subject_hir) {
             (Some(local), Some(sh)) => {
                 self.hir_push_stmt(HStmt::Let { local, ty: subj_ty_id, value: sh })
             }
             _ => emit_ok = false,
         }
-        let done_local = self.hir_alloc_local("__match_done", &bool_type);
+        let done_local = self.hir_alloc_local("__switch_done", &bool_type);
         if let Some(done) = done_local {
             let init = self.hx_bool(false);
             self.hir_push_stmt(HStmt::Let { local: done, ty: bool_ty, value: init });
@@ -493,7 +492,7 @@ impl<'a> Analyzer<'a> {
         for (i, arm) in arms.iter().enumerate() {
             if catch_all_index.is_some() {
                 diagnostics.report_error(
-                    "Unreachable match arm: a previous arm already matches everything".to_string(),
+                    "Unreachable switch arm: a previous arm already matches everything".to_string(),
                     arm.pattern.position(),
                 );
             }
@@ -525,7 +524,7 @@ impl<'a> Analyzer<'a> {
                     s.hir_assign_local_id(done, Some(t));
                 }
                 match &arm.body {
-                    MatchArmBody::Expr(expr) => {
+                    SwitchArmBody::Expr(expr) => {
                         let t = s.analyze_expression(expr, parent_function, &arm_scope, diags)?;
                         let arm_hir = s.hir_take();
                         if is_expression {
@@ -534,7 +533,7 @@ impl<'a> Analyzer<'a> {
                                 Some(prev) => s.compare_data_type(prev, &t, &empty_span(), diags)?,
                             }
                             if result_temp.is_none() {
-                                result_temp = s.hir_alloc_local("__match_result", &t);
+                                result_temp = s.hir_alloc_local("__switch_result", &t);
                                 result_ty_id = Some(s.type_ctx.lower(&t));
                             }
                             match result_temp {
@@ -545,10 +544,10 @@ impl<'a> Analyzer<'a> {
                             s.hir_expr_stmt(arm_hir);
                         }
                     }
-                    MatchArmBody::Block(stmts) => {
+                    SwitchArmBody::Block(stmts) => {
                         if is_expression {
                             diags.report_error(
-                                "A block arm (`=> { ... }`) is only allowed when `match` is used as a statement; use `=> expr` in expression position".to_string(),
+                                "A block arm (`=> { ... }`) is only allowed when `switch` is used as a statement; use `=> expr` in expression position".to_string(),
                                 arm.pattern.position(),
                             );
                         }
@@ -563,7 +562,7 @@ impl<'a> Analyzer<'a> {
                 let guard_hir = self.hir_take();
                 if !gt.is_unknown() && !gt.is_bool() {
                     diagnostics.report_error(
-                        format!("match guard must be a bool, got {}", gt.get_type()),
+                        format!("switch guard must be a bool, got {}", gt.get_type()),
                         guard.position(),
                     );
                 }
@@ -625,7 +624,7 @@ impl<'a> Analyzer<'a> {
                 if !missing.is_empty() {
                     diagnostics.report_error(
                         format!(
-                            "Non-exhaustive match on '{}': missing variant(s) {}. Add the missing arm(s) or a `_` arm",
+                            "Non-exhaustive switch on '{}': missing variant(s) {}. Add the missing arm(s) or a `_` arm",
                             subject_base,
                             missing.join(", ")
                         ),
@@ -635,7 +634,7 @@ impl<'a> Analyzer<'a> {
             } else if !subject_type.is_unknown() {
                 diagnostics.report_error(
                     format!(
-                        "Non-exhaustive match on '{}': add a `_` arm to cover all cases",
+                        "Non-exhaustive switch on '{}': add a `_` arm to cover all cases",
                         subject_base
                     ),
                     subject.position(),
@@ -650,21 +649,22 @@ impl<'a> Analyzer<'a> {
         }
     }
 
-    /// arms must be `=> expr` and share one type); false in statement position (block arms are
-    /// allowed and the result is `void`). Returns the unified arm type (or `void`).
-    pub(super) fn analyze_match(
+    /// Analyzes a pattern-matching `switch`. `is_expression` is true when the switch is used in
+    /// value position (all arms must be `=> expr` and share one type); false in statement position
+    /// (block arms are allowed and the result is `void`). Returns the unified arm type (or `void`).
+    pub(super) fn analyze_pattern_switch(
         &mut self,
         subject: &ExpressionNode<'a>,
-        arms: &[MatchArm<'a>],
+        arms: &[SwitchArm<'a>],
         parent_function: &FunctionNode<'a>,
         symbol_table: &Rc<RefCell<SymbolTable>>,
         is_expression: bool,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<Type, SemanticError> {
-        // A `Switch` (br_table) can only express flat, unguarded variant/const arms. Matches with a
+        // A `Switch` (br_table) can only express flat, unguarded variant/const arms. Switches with a
         // guard or a nested/literal sub-pattern lower through the general if-chain path instead.
-        if Self::match_needs_chain(arms) {
-            return self.analyze_match_chain(
+        if Self::pattern_switch_needs_chain(arms) {
+            return self.analyze_pattern_switch_chain(
                 subject,
                 arms,
                 parent_function,
@@ -695,8 +695,8 @@ impl<'a> Analyzer<'a> {
         let mut has_catch_all = false;
         let mut catch_all_index: Option<usize> = None;
 
-        // HIR: build `Switch` arms + a default block. A statement-position match lowers directly; a
-        // value-position match desugars to `<result temp> = arm; … ; <result temp read>`, with each
+        // HIR: build `Switch` arms + a default block. A statement-position switch lowers directly; a
+        // value-position switch desugars to `<result temp> = arm; … ; <result temp read>`, with each
         // arm body assigning the shared result temporary.
         let mut hir_arms: Vec<crate::hir::HArm> = Vec::new();
         let mut hir_default: Vec<crate::hir::HStmt> = Vec::new();
@@ -707,7 +707,7 @@ impl<'a> Analyzer<'a> {
         for (i, arm) in arms.iter().enumerate() {
             if catch_all_index.is_some() {
                 diagnostics.report_error(
-                    "Unreachable match arm: a previous arm already matches everything".to_string(),
+                    "Unreachable switch arm: a previous arm already matches everything".to_string(),
                     arm.pattern.position(),
                 );
             }
@@ -725,18 +725,18 @@ impl<'a> Analyzer<'a> {
                     self.analyze_expression(guard, parent_function, &arm_scope, diagnostics)?;
                 if !gt.is_unknown() && !gt.is_bool() {
                     diagnostics.report_error(
-                        format!("match guard must be a bool, got {}", gt.get_type()),
+                        format!("switch guard must be a bool, got {}", gt.get_type()),
                         guard.position(),
                     );
                 }
             }
 
             // Classify the pattern (allocating payload binding slots) before the body is lowered.
-            let shape = self.hir_match_pattern(&arm.pattern, &union_info, union_def);
+            let shape = self.hir_switch_pattern(&arm.pattern, &union_info, union_def);
 
             self.hir_open_block();
             match &arm.body {
-                MatchArmBody::Expr(expr) => {
+                SwitchArmBody::Expr(expr) => {
                     let t =
                         self.analyze_expression(expr, parent_function, &arm_scope, diagnostics)?;
                     let arm_hir = self.hir_take();
@@ -750,7 +750,7 @@ impl<'a> Analyzer<'a> {
                         // Desugar: assign the arm value to the shared result temp (allocated from the
                         // first arm's type), so the whole match reads back as one value.
                         if result_temp.is_none() {
-                            result_temp = self.hir_alloc_local("__match_result", &t);
+                            result_temp = self.hir_alloc_local("__switch_result", &t);
                             result_ty_id = Some(self.type_ctx.lower(&t));
                         }
                         match result_temp {
@@ -761,10 +761,10 @@ impl<'a> Analyzer<'a> {
                         self.hir_expr_stmt(arm_hir);
                     }
                 }
-                MatchArmBody::Block(stmts) => {
+                SwitchArmBody::Block(stmts) => {
                     if is_expression {
                         diagnostics.report_error(
-                            "A block arm (`=> { ... }`) is only allowed when `match` is used as a statement; use `=> expr` in expression position".to_string(),
+                            "A block arm (`=> { ... }`) is only allowed when `switch` is used as a statement; use `=> expr` in expression position".to_string(),
                             arm.pattern.position(),
                         );
                     }
@@ -832,7 +832,7 @@ impl<'a> Analyzer<'a> {
                 if !missing.is_empty() {
                     diagnostics.report_error(
                         format!(
-                            "Non-exhaustive match on '{}': missing variant(s) {}. Add the missing arm(s) or a `_` arm",
+                            "Non-exhaustive switch on '{}': missing variant(s) {}. Add the missing arm(s) or a `_` arm",
                             subject_base,
                             missing.join(", ")
                         ),
@@ -842,7 +842,7 @@ impl<'a> Analyzer<'a> {
             } else if !subject_type.is_unknown() {
                 diagnostics.report_error(
                     format!(
-                        "Non-exhaustive match on '{}': add a `_` arm to cover all cases",
+                        "Non-exhaustive switch on '{}': add a `_` arm to cover all cases",
                         subject_base
                     ),
                     subject.position(),

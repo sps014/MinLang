@@ -16,7 +16,7 @@ The API is identical across all three; only the browser differs in that writes l
 
 ## Reading and writing text
 
-`File.read` returns the whole file as a UTF-8 string; `File.write` replaces its contents and `File.append` adds to the end. Each resolves a `Future`, so `await` them inside an `async fun`. Fallible operations resolve with a `Result`, so a failure is explicit — read the value with `unwrap_or` (or `match`):
+`File.read` returns the whole file as a UTF-8 string; `File.write` replaces its contents and `File.append` adds to the end. Each resolves a `Future`, so `await` them inside an `async fun`. Fallible operations resolve with a `Result`, so a failure is explicit — read the value with `unwrap_or` (or `switch`):
 
 ```dream
 async fun main(): void {

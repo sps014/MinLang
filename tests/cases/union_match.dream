@@ -6,7 +6,7 @@ enum Shape {
 }
 
 fun area(s: Shape): int {
-    return match (s) {
+    return switch (s) {
         Circle(r)  => r * r * 3,
         Rect(w, h) => w * h,
         Empty      => 0,
@@ -14,7 +14,7 @@ fun area(s: Shape): int {
 }
 
 fun describe(o: Option<int>): string {
-    return match (o) {
+    return switch (o) {
         Some(0)           => "zero",
         Some(n) if n > 10 => "big",
         Some(n)           => "small",
@@ -39,7 +39,7 @@ fun main(): void {
     System.println(describe(d));
     System.println(describe(n));
 
-    match (b) {
+    switch (b) {
         Some(x) => { System.println(x); }
         None    => System.println(0),
     }

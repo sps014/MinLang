@@ -1141,14 +1141,14 @@ fn test_hir_emission_switch_statement() {
 }
 
 #[test]
-fn test_hir_emission_match_statement_with_variant_binding() {
-    // A statement-position `match` lowers to `HStmt::Switch`; a variant pattern binds its payload to
-    // fresh locals that the arm body resolves.
+fn test_hir_emission_switch_statement_with_variant_binding() {
+    // A statement-position pattern `switch` lowers to `HStmt::Switch`; a variant pattern binds its
+    // payload to fresh locals that the arm body resolves.
     let code = "
         enum Shape { Circle(radius: int), Empty }
         fun describe(s: Shape): int {
             let r: int = 0;
-            match (s) {
+            switch (s) {
                 Circle(rad) => { r = rad; }
                 Empty => { r = 0; }
             }
@@ -1156,8 +1156,8 @@ fn test_hir_emission_match_statement_with_variant_binding() {
         }
     ";
     let (wat, count) = emit_hir_to_wat(code);
-    assert_eq!(count, 1, "the match function should be emitted:\n{}", wat);
-    assert!(wat.contains("(func $describe"), "missing match function:\n{}", wat);
+    assert_eq!(count, 1, "the switch function should be emitted:\n{}", wat);
+    assert!(wat.contains("(func $describe"), "missing switch function:\n{}", wat);
 }
 
 #[test]
@@ -1179,12 +1179,12 @@ fn test_hir_emission_len_builtin() {
 }
 
 #[test]
-fn test_hir_emission_match_expression() {
-    // A value-position `match` desugars to a result temp + `Switch`, read back as the match value.
+fn test_hir_emission_switch_expression() {
+    // A value-position `switch` desugars to a result temp + `Switch`, read back as the switch value.
     let code = "
         enum Shape { Circle(radius: int), Rect(width: int, height: int), Empty }
         fun area(s: Shape): int {
-            return match (s) {
+            return switch (s) {
                 Circle(r)  => r * r,
                 Rect(w, h) => w * h,
                 Empty      => 0,
@@ -1192,8 +1192,8 @@ fn test_hir_emission_match_expression() {
         }
     ";
     let (wat, count) = emit_hir_to_wat(code);
-    assert_eq!(count, 1, "the match-expression function should be emitted:\n{}", wat);
-    assert!(wat.contains("(func $area"), "missing match-expression function:\n{}", wat);
+    assert_eq!(count, 1, "the switch-expression function should be emitted:\n{}", wat);
+    assert!(wat.contains("(func $area"), "missing switch-expression function:\n{}", wat);
 }
 
 #[test]
@@ -1454,11 +1454,11 @@ fn test_unknown_call_result_does_not_cascade() {
 }
 
 #[test]
-fn test_analyze_union_match_ok() {
+fn test_analyze_union_switch_ok() {
     let code = "
         enum Shape { Circle(radius: int), Rect(width: int, height: int), Empty }
         fun area(s: Shape): int {
-            return match (s) {
+            return switch (s) {
                 Circle(r)  => r * r,
                 Rect(w, h) => w * h,
                 Empty      => 0,
@@ -1471,11 +1471,11 @@ fn test_analyze_union_match_ok() {
 }
 
 #[test]
-fn test_analyze_union_match_non_exhaustive() {
+fn test_analyze_union_switch_non_exhaustive() {
     let code = "
         enum Shape { Circle(radius: int), Rect(width: int, height: int), Empty }
         fun area(s: Shape): int {
-            return match (s) {
+            return switch (s) {
                 Circle(r)  => r * r,
                 Rect(w, h) => w * h,
             };
@@ -1487,7 +1487,7 @@ fn test_analyze_union_match_non_exhaustive() {
     assert!(diagnostics
         .diagnostics
         .iter()
-        .any(|d| d.message.contains("Non-exhaustive match") && d.message.contains("Empty")));
+        .any(|d| d.message.contains("Non-exhaustive switch") && d.message.contains("Empty")));
 }
 
 #[test]
@@ -1518,11 +1518,11 @@ fn test_analyze_generic_union_inference() {
 }
 
 #[test]
-fn test_analyze_match_expression_arm_type_mismatch() {
+fn test_analyze_switch_expression_arm_type_mismatch() {
     let code = "
         enum Shape { Circle(radius: int), Empty }
         fun f(s: Shape): int {
-            return match (s) {
+            return switch (s) {
                 Circle(r) => r,
                 Empty     => \"oops\",
             };

@@ -166,8 +166,6 @@ pub enum TokenKind {
     CaseToken,
     #[token("default")]
     DefaultToken,
-    #[token("match")]
-    MatchToken,
 
     #[token("@")]
     AtToken,
@@ -267,7 +265,6 @@ impl TokenKind {
             TokenKind::SwitchToken => "'switch'",
             TokenKind::CaseToken => "'case'",
             TokenKind::DefaultToken => "'default'",
-            TokenKind::MatchToken => "'match'",
             TokenKind::AtToken => "'@'",
             TokenKind::DataTypeToken => "data type",
             TokenKind::LineCommentToken | TokenKind::BlockCommentToken => "comment",

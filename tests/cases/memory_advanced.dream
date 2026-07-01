@@ -37,7 +37,7 @@ fun build_list(n: int): IntList {
 }
 
 fun sum_list(list: IntList): int {
-    return match (list) {
+    return switch (list) {
         Cons(h, t) => h + sum_list(t),
         Nil        => 0,
     };
@@ -51,7 +51,7 @@ fun build_tree(depth: int): Tree {
 }
 
 fun sum_tree(t: Tree): int {
-    return match (t) {
+    return switch (t) {
         Leaf(v)      => v,
         Branch(l, r) => sum_tree(l) + sum_tree(r),
     };

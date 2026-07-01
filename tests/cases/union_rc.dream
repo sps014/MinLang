@@ -20,7 +20,7 @@ enum Box {
 }
 
 fun open(b: Box): int {
-    return match (b) {
+    return switch (b) {
         Full(t) => t.id,
         Empty   => 0 - 1,
     };

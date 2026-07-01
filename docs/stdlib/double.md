@@ -28,7 +28,7 @@ println(2.0d.max(5.0d));   // 5.0
 
 ## double.parse (static)
 
-Parses a decimal `double` from a string, supporting an optional sign, a fractional part, and an `e`/`E` exponent. Returns a `Result<double, string>`: `Ok(value)` on success, or `Err(message)` for an empty string or one containing no digits. Use `unwrap_or` (or `match`) to read the value.
+Parses a decimal `double` from a string, supporting an optional sign, a fractional part, and an `e`/`E` exponent. Returns a `Result<double, string>`: `Ok(value)` on success, or `Err(message)` for an empty string or one containing no digits. Use `unwrap_or` (or `switch`) to read the value.
 
 ```dream
 let x = double.parse("3.14").unwrap_or(0.0d);    // 3.14

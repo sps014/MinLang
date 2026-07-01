@@ -66,7 +66,9 @@ The loop variable is bound to each element in turn (its type is the array's elem
 
 ## switch
 
-`switch` matches a subject against one or more constant labels. There is **no implicit fallthrough** - each `case` runs only its own block. A case may list several comma-separated labels, and a `default` clause is optional:
+`switch` has two forms. The **C-style** form (described here) matches a subject against one or more constant labels; the **pattern-matching** form destructures [discriminated unions](discriminated-unions.md) with `pattern => body` arms. The parser picks the form from the body: a leading `case`/`default` is the C-style form, anything else is the pattern form.
+
+The C-style form has **no implicit fallthrough** - each `case` runs only its own block. A case may list several comma-separated labels, and a `default` clause is optional:
 
 ```dream
 switch (code) {

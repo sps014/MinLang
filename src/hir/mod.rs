@@ -3,7 +3,7 @@
 //! The analyzer lowers the AST to HIR after type-checking, recording everything codegen used to
 //! re-derive: every expression carries a [`TypeId`]; every variable reference is a resolved
 //! [`Binding`]; every call names a resolved [`Callee`] (def + chosen overload + monomorphization
-//! instance). Control flow is still structured here (if/while/for/switch/match) — desugaring into a
+//! instance). Control flow is still structured here (if/while/for/switch) — desugaring into a
 //! CFG happens in the MIR . Monomorphization is recorded as an explicit
 //! [`MonoInstance`] worklist instead of being rediscovered from mangled names.
 
@@ -177,8 +177,8 @@ pub enum HStmt {
         body: Vec<HStmt>,
         label: Option<String>,
     },
-    /// A `switch`/`match` over a scrutinee. Each arm is a typed pattern + body; `default` runs when
-    /// no arm matches.
+    /// A `switch` over a scrutinee (both the C-style and pattern-matching forms lower here). Each
+    /// arm is a typed pattern + body; `default` runs when no arm matches.
     Switch {
         scrutinee: HExpr,
         arms: Vec<HArm>,
@@ -190,14 +190,14 @@ pub enum HStmt {
     Await(HExpr),
 }
 
-/// One arm of a `switch`/`match`.
+/// One arm of a `switch`.
 #[derive(Debug, Clone)]
 pub struct HArm {
     pub pattern: HPattern,
     pub body: Vec<HStmt>,
 }
 
-/// Match patterns. Union-variant patterns bind their payload to fresh locals.
+/// Switch patterns. Union-variant patterns bind their payload to fresh locals.
 #[derive(Debug, Clone)]
 pub enum HPattern {
     /// A constant value (enum member, integer, etc.).
@@ -348,7 +348,7 @@ pub enum HExprKind {
     /// An enum member reference resolved to its integer value.
     EnumValue(i64),
     /// Reads a union value's discriminant (the `i32` variant tag). Emitted when a guarded/nested
-    /// `match` is lowered to an if-chain instead of a `Switch`.
+    /// pattern `switch` is lowered to an if-chain instead of a `Switch`.
     Discriminant(Box<HExpr>),
     /// Reads payload field `field` of `variant` from union value `base` (whose interned union type is
     /// `union_ty`). Only valid once the discriminant is known to select `variant`.

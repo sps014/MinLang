@@ -234,8 +234,8 @@ fn generate_json_union(
 ) -> Option<String> {
     let name = &enum_decl.name.text;
 
-    // `to_json`: a `match` over the variant fills a tagged dict. Block arms run for effect.
-    let mut to_body = String::from("        let __o = JsonValue.dict();\n        match (this) {\n");
+    // `to_json`: a `switch` over the variant fills a tagged dict. Block arms run for effect.
+    let mut to_body = String::from("        let __o = JsonValue.dict();\n        switch (this) {\n");
     // `from_json`: dispatch on the `"type"` tag, reconstructing the matching variant.
     let mut from_arms = String::new();
 

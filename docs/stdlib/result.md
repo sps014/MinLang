@@ -27,17 +27,17 @@ arbitrary — a `string` message, an error code, or your own class.
 
 ## Handling a result
 
-Destructure a `Result<T, E>` with [`match`](../language/discriminated-unions.md). Both variants
-must be handled:
+Destructure a `Result<T, E>` with a pattern [`switch`](../language/discriminated-unions.md). Both
+variants must be handled:
 
 ```dream
 fun main(): void {
-    match (safe_div(10, 2)) {
+    switch (safe_div(10, 2)) {
         Ok(v)  => println(v),    // 5
         Err(e) => println(e),
     }
 
-    match (safe_div(1, 0)) {
+    switch (safe_div(1, 0)) {
         Ok(v)  => println(v),
         Err(e) => println(e),    // divide by zero
     }
@@ -47,7 +47,7 @@ fun main(): void {
 ## Helper methods
 
 For the common cases the prelude provides methods on `Result<T, E>` so you do not have to write a
-full `match` every time:
+full `switch` every time:
 
 | Method | Returns |
 | --- | --- |
@@ -66,7 +66,7 @@ println(e.unwrap_or(0 - 1));   // -1
 
 These are defined with a generic `extend Result<T, E> { ... }` block (see [Discriminated
 unions](../language/discriminated-unions.md#methods-on-generic-unions)). There is deliberately no
-panicking `unwrap()` — use `unwrap_or` or `match` so the error case is always handled.
+panicking `unwrap()` — use `unwrap_or` or `switch` so the error case is always handled.
 
 ## `Result<T, E>` vs `Option<T>`
 

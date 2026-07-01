@@ -30,7 +30,7 @@ class DreamLexer(RegexLexer):
     # Keyword groups mirror tooling/vscode/syntaxes/dream.tmLanguage.json.
     _control = (
         "if", "else", "for", "while", "do", "return", "break", "continue",
-        "switch", "case", "default", "match", "is", "in", "async", "await",
+        "switch", "case", "default", "is", "in", "async", "await",
     )
     _declaration = (
         "let", "const", "class", "enum", "type", "extend", "fun",

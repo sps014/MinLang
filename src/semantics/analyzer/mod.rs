@@ -25,8 +25,8 @@ mod declarations;
 mod expressions;
 mod generics;
 mod hir_emit;
-mod match_unions;
 mod statements;
+mod switch_unions;
 mod type_checker;
 
 /// Converts an AST node's `Rc<str>` source-file tag into the `String` form stored on the

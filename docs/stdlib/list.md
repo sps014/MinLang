@@ -31,7 +31,7 @@ println(nums.size());   // 3
 
 ### get
 
-Returns the element at `index` as an `Option<T>`: `Some(value)` when in range, or `None` when `index` is negative or `>= size()`. Use `unwrap_or` (or `match`) to read it.
+Returns the element at `index` as an `Option<T>`: `Some(value)` when in range, or `None` when `index` is negative or `>= size()`. Use `unwrap_or` (or `switch`) to read it.
 
 ```dream
 println(nums.get(0).unwrap_or(0 - 1));   // 10

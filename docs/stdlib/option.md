@@ -24,12 +24,12 @@ type) when constructing a bare `None`.
 
 ## Reading the value
 
-Destructure an `Option<T>` with [`match`](../language/discriminated-unions.md). The match is
-checked for exhaustiveness, so both variants must be handled:
+Destructure an `Option<T>` with a pattern [`switch`](../language/discriminated-unions.md). The
+switch is checked for exhaustiveness, so both variants must be handled:
 
 ```dream
 fun unwrap_or(o: Option<int>, fallback: int): int {
-    return match (o) {
+    return switch (o) {
         Some(v) => v,
         None    => fallback,
     };
@@ -44,7 +44,7 @@ fun main(): void {
 A guard narrows an arm further:
 
 ```dream
-match (o) {
+switch (o) {
     Some(n) if n > 100 => println("large"),
     Some(n)            => println(n),
     None               => println("absent"),
@@ -54,7 +54,7 @@ match (o) {
 ## Helper methods
 
 For the common cases the prelude provides methods on `Option<T>` so you do not have to write a full
-`match` every time:
+`switch` every time:
 
 | Method | Returns |
 | --- | --- |
@@ -73,10 +73,10 @@ println(n.unwrap_or(0));   // 0
 
 These are defined with a generic `extend Option<T> { ... }` block (see [Discriminated
 unions](../language/discriminated-unions.md#methods-on-generic-unions)). There is deliberately no
-panicking `unwrap()` — use `unwrap_or` or `match` so the empty case is always handled.
+panicking `unwrap()` — use `unwrap_or` or `switch` so the empty case is always handled.
 
 ## `Option<T>` vs `T?`
 
 A nullable type (`T?`) and `Option<T>` both model absence. Prefer `Option<T>` when you want the
-compiler to force every reader to handle the empty case through `match`; prefer `T?` for the
+compiler to force every reader to handle the empty case through `switch`; prefer `T?` for the
 lightweight `null` checks and `??` fallback described in [Types](../language/types.md#nullable-types).

@@ -1,4 +1,4 @@
-// Unreachable arm: a `_` catch-all precedes a concrete arm, so the trailing arm can never match.
+// Unreachable arm: a `_` catch-all precedes a concrete arm, so the trailing arm can never be reached.
 
 enum Light {
     Red(brightness: int),
@@ -7,7 +7,7 @@ enum Light {
 }
 
 fun name(l: Light): string {
-    return match (l) {
+    return switch (l) {
         Red(b) => "red",
         _      => "other",
         Blue   => "blue",

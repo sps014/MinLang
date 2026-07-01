@@ -1,6 +1,6 @@
 use super::Parser;
 use crate::lexer::Lexer;
-use crate::nodes::{ExpressionNode, MatchArm, MatchArmBody, PatternNode, Type};
+use crate::nodes::{ExpressionNode, PatternNode, SwitchArm, SwitchArmBody, Type};
 use crate::token::syntax_token::SyntaxToken;
 use crate::token::token_kind::TokenKind;
 use crate::token::token_kind::TokenKind::{EndOfFileToken, IdentifierToken};
@@ -65,9 +65,9 @@ impl<'a, 'b> Parser<'a, 'b> {
     }
     /// Parses a primary expression (literal, identifier, parenthesized expression, or function call)
     pub(super) fn parse_primary_expression(&mut self) -> Result<ExpressionNode<'a>, Error> {
-        // `match (subject) { ... }` expression.
-        if self.current_token().kind == TokenKind::MatchToken {
-            return self.parse_match();
+        // `switch (subject) { pattern => body, ... }` in expression (pattern-matching) form.
+        if self.current_token().kind == TokenKind::SwitchToken {
+            return self.parse_switch_expr();
         }
         //parse parenthesized expressions or cast
         if self.current_token().kind == TokenKind::OpenParenthesisToken {
@@ -261,7 +261,7 @@ impl<'a, 'b> Parser<'a, 'b> {
         base: ExpressionNode<'a>,
     ) -> Result<ExpressionNode<'a>, Error> {
         self.match_token(TokenKind::DotToken);
-        let member = self.match_name_token();
+        let member = self.match_token(TokenKind::IdentifierToken);
 
         let mut generic_args = None;
         if self.current_token().kind == TokenKind::SmallerThanToken {
@@ -329,17 +329,24 @@ impl<'a, 'b> Parser<'a, 'b> {
         ))
     }
 
-    /// Parses a `match (subject) { pattern [if guard] => body, ... }` expression. Each arm body is
-    /// either an expression (`=> expr`) or a statement block (`=> { ... }`); a trailing comma after
-    /// an arm is optional.
-    pub(super) fn parse_match(&mut self) -> Result<ExpressionNode<'a>, Error> {
-        self.match_token(TokenKind::MatchToken);
+    /// Parses the shared `switch (subject) {` header, returning the subject. Both the
+    /// pattern-matching form ([`parse_switch_expr`]) and the C-style `case`/`default` form
+    /// ([`parse_switch`](Self::parse_switch)) start here, then branch on the body.
+    pub(super) fn parse_switch_header(&mut self) -> Result<ExpressionNode<'a>, Error> {
+        self.match_token(TokenKind::SwitchToken);
         self.match_token(TokenKind::OpenParenthesisToken);
         let subject = self.parse_expression(0)?;
         self.match_token(TokenKind::CloseParenthesisToken);
         self.match_token(TokenKind::CurlyOpenBracketToken);
+        Ok(subject)
+    }
 
-        let arms = self.parse_delimited_list(TokenKind::CurlyCloseBracketToken, |p| {
+    /// Parses the pattern-matching arms `pattern [if guard] => body, ...` up to and including the
+    /// closing `}`, assuming the `switch (...) {` header has already been consumed. Each arm body is
+    /// either an expression (`=> expr`) or a statement block (`=> { ... }`); a trailing comma after
+    /// an arm is optional.
+    pub(super) fn parse_switch_arms(&mut self) -> Result<Vec<SwitchArm<'a>>, Error> {
+        self.parse_delimited_list(TokenKind::CurlyCloseBracketToken, |p| {
             let pattern = p.parse_pattern()?;
 
             // Optional `if <guard>` after the pattern.
@@ -353,18 +360,26 @@ impl<'a, 'b> Parser<'a, 'b> {
             p.match_token(TokenKind::FatArrowToken);
 
             let body = if p.current_token().kind == TokenKind::CurlyOpenBracketToken {
-                MatchArmBody::Block(p.parse_block()?)
+                SwitchArmBody::Block(p.parse_block()?)
             } else {
-                MatchArmBody::Expr(p.parse_expression(0)?)
+                SwitchArmBody::Expr(p.parse_expression(0)?)
             };
 
-            Ok(MatchArm {
+            Ok(SwitchArm {
                 pattern,
                 guard,
                 body,
             })
-        })?;
-        Ok(ExpressionNode::Match(self.arena.alloc(subject), arms))
+        })
+    }
+
+    /// Parses a `switch (subject) { pattern [if guard] => body, ... }` expression (the
+    /// pattern-matching form). The C-style `case`/`default` form is a statement and is parsed by
+    /// [`parse_switch`](Self::parse_switch).
+    pub(super) fn parse_switch_expr(&mut self) -> Result<ExpressionNode<'a>, Error> {
+        let subject = self.parse_switch_header()?;
+        let arms = self.parse_switch_arms()?;
+        Ok(ExpressionNode::Switch(self.arena.alloc(subject), arms))
     }
 
     /// Parses a single match pattern: `_` (wildcard), a literal, a bare identifier (a binding,

@@ -1,11 +1,11 @@
 // `Option<T>` - a value that is either present (`Some`) or absent (`None`). A discriminated union,
-// so it is matched exhaustively with `match` and destructured to read the contained value.
+// so it is matched exhaustively with `switch` and destructured to read the contained value.
 // Auto-imported into every program.
 //
 //   let o = Option.Some(42);          // inferred Option<int>
 //   let n: Option<int> = Option.None; // annotation needed for the unit variant
 //
-//   let label = match (o) {
+//   let label = switch (o) {
 //       Some(v) => v,
 //       None    => 0,
 //   };
@@ -14,12 +14,12 @@ enum Option<T> {
     None,
 }
 
-// Ergonomic accessors so callers can read an `Option` without writing a full `match` each time.
+// Ergonomic accessors so callers can read an `Option` without writing a full `switch` each time.
 // These are ordinary methods (made possible by generic `extend` blocks) and never panic.
 extend Option<T> {
     // True when this is `Some`.
     public fun is_some(): bool {
-        return match (this) {
+        return switch (this) {
             Some(v) => true,
             None    => false,
         };
@@ -27,7 +27,7 @@ extend Option<T> {
 
     // True when this is `None`.
     public fun is_none(): bool {
-        return match (this) {
+        return switch (this) {
             Some(v) => false,
             None    => true,
         };
@@ -35,7 +35,7 @@ extend Option<T> {
 
     // The contained value when `Some`, otherwise `fallback`.
     public fun unwrap_or(fallback: T): T {
-        return match (this) {
+        return switch (this) {
             Some(v) => v,
             None    => fallback,
         };

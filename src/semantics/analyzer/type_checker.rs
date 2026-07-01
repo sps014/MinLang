@@ -159,7 +159,7 @@ impl<'a> Analyzer<'a> {
                 self.analyze_for(init, condition, increment, body, &ctx, diagnostics)?
             }
             StatementNode::ForEach(..) => self.analyze_foreach(statement, &ctx, diagnostics)?,
-            StatementNode::Switch(subject, cases, default_body) => self.analyze_switch(
+            StatementNode::Switch(subject, cases, default_body) => self.analyze_case_switch(
                 subject,
                 cases,
                 default_body,
@@ -201,11 +201,11 @@ impl<'a> Analyzer<'a> {
                 self.hir_expr_stmt(value);
             }
             StatementNode::ExpressionStatement(expr) => {
-                // A statement-position `match` allows block arms and yields no value.
-                if let crate::syntax::nodes::ExpressionNode::Match(subject, arms) = expr {
-                    // `analyze_match` emits the `Switch` itself (or fails the function) in statement
-                    // position; no separate expression-statement is needed.
-                    let _ = self.analyze_match(
+                // A statement-position pattern `switch` allows block arms and yields no value.
+                if let crate::syntax::nodes::ExpressionNode::Switch(subject, arms) = expr {
+                    // `analyze_pattern_switch` emits the `Switch` itself (or fails the function) in
+                    // statement position; no separate expression-statement is needed.
+                    let _ = self.analyze_pattern_switch(
                         subject,
                         arms,
                         parent_function,

@@ -39,7 +39,7 @@ user.set("tags", tags);
 | `is_null(): bool` | true for `null` |
 
 `get`, `at`, and `key_at` return an `Option` rather than a sentinel, so a miss is explicit. Read
-the value with `unwrap_or(JsonValue.none())` (or `match`); chaining looks like
+the value with `unwrap_or(JsonValue.none())` (or `switch`); chaining looks like
 `v.get("a").unwrap_or(JsonValue.none()).at(0).unwrap_or(JsonValue.none())`.
 
 ## `JSON.parse` and `JSON.stringify`

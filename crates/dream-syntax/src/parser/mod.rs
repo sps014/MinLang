@@ -118,19 +118,6 @@ impl<'a, 'b> Parser<'a, 'b> {
             SyntaxToken::new(kind, err_pos, "".to_string())
         }
     }
-    /// Consumes a name in a position where an identifier is expected, but where the contextual
-    /// keyword `match` is also allowed (declaration names and member/method names). `match` is a
-    /// soft keyword: it only introduces a `match` expression in statement/expression position, so
-    /// it stays usable as an ordinary name (e.g. the stdlib `regex.match(...)`). The returned token
-    /// is normalized to an `IdentifierToken` so downstream code treats it uniformly.
-    fn match_name_token(&mut self) -> SyntaxToken {
-        if self.current_token().kind == TokenKind::MatchToken {
-            let mut tok = self.next_token();
-            tok.kind = TokenKind::IdentifierToken;
-            return tok;
-        }
-        self.match_token(TokenKind::IdentifierToken)
-    }
     /// True if the current token can close a generic argument list: either a plain `>` or the
     /// first half of a `>>` (`ShiftRightToken`), which appears when two generic lists end
     /// together, e.g. the `>>` in `Box<Box<int>>`.

@@ -194,15 +194,15 @@ fn test_parse_data_enum_with_generics() {
 }
 
 #[test]
-fn test_parse_match_expression_with_patterns() {
-    let code = "fun f(s: Shape): int { return match (s) { Circle(r) => r, Empty => 0, _ => 1 }; }";
+fn test_parse_switch_expression_with_patterns() {
+    let code = "fun f(s: Shape): int { return switch (s) { Circle(r) => r, Empty => 0, _ => 1 }; }";
     let arena = bumpalo::Bump::new();
     let (program, diagnostics) = parse_code(code, &arena);
 
     assert_eq!(diagnostics.has_errors(), false);
     let func = &program.functions[0];
-    let StatementNode::Return(Some(ExpressionNode::Match(_subject, arms))) = &func.body[0] else {
-        panic!("expected a return of a match expression");
+    let StatementNode::Return(Some(ExpressionNode::Switch(_subject, arms))) = &func.body[0] else {
+        panic!("expected a return of a switch expression");
     };
     assert_eq!(arms.len(), 3);
 
@@ -212,18 +212,35 @@ fn test_parse_match_expression_with_patterns() {
 }
 
 #[test]
-fn test_parse_match_arm_guard() {
-    let code = "fun f(o: Option): int { return match (o) { Some(n) if n > 0 => n, _ => 0 }; }";
+fn test_parse_switch_arm_guard() {
+    let code = "fun f(o: Option): int { return switch (o) { Some(n) if n > 0 => n, _ => 0 }; }";
     let arena = bumpalo::Bump::new();
     let (program, diagnostics) = parse_code(code, &arena);
 
     assert_eq!(diagnostics.has_errors(), false);
     let func = &program.functions[0];
-    let StatementNode::Return(Some(ExpressionNode::Match(_subject, arms))) = &func.body[0] else {
-        panic!("expected a return of a match expression");
+    let StatementNode::Return(Some(ExpressionNode::Switch(_subject, arms))) = &func.body[0] else {
+        panic!("expected a return of a switch expression");
     };
     assert!(arms[0].guard.is_some(), "first arm should have a guard");
     assert!(arms[1].guard.is_none());
+}
+
+#[test]
+fn test_parse_switch_statement_pattern_arms() {
+    // A pattern-arm `switch` used as a statement parses to an `ExpressionStatement` wrapping an
+    // `ExpressionNode::Switch` (distinct from the C-style `case`/`default` form).
+    let code = "fun f(o: Option): void { switch (o) { Some(n) => { System.println(n); } None => {} } }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    let func = &program.functions[0];
+    let StatementNode::ExpressionStatement(ExpressionNode::Switch(_subject, arms)) = &func.body[0]
+    else {
+        panic!("expected a statement-position switch expression");
+    };
+    assert_eq!(arms.len(), 2);
 }
 
 #[test]
@@ -303,8 +320,8 @@ fn test_parse_interpolated_string_brace_escapes() {
 }
 
 #[test]
-fn test_match_is_a_soft_keyword() {
-    // `match` remains usable as a method name (the stdlib `regex.match`).
+fn test_match_is_an_ordinary_identifier() {
+    // `match` is no longer a keyword, so it is usable as a method name (the stdlib `regex.match`).
     let code = "fun f(r: Regex): string[] { return r.match(\"x\"); }";
     let arena = bumpalo::Bump::new();
     let (program, diagnostics) = parse_code(code, &arena);

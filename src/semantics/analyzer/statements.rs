@@ -133,7 +133,7 @@ impl<'a> Analyzer<'a> {
         self.hir_foreach(elem_slot, iter_hir, body_hir, label);
         Ok(())
     }
-    pub(super) fn analyze_switch(
+    pub(super) fn analyze_case_switch(
         &mut self,
         subject: &ExpressionNode<'a>,
         cases: &Vec<(Vec<ExpressionNode<'a>>, &'a [StatementNode<'a>])>,

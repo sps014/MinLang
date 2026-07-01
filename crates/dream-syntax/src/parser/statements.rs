@@ -110,12 +110,6 @@ impl<'a, 'b> Parser<'a, 'b> {
             TokenKind::DoToken => Ok(self.parse_do_while()?),
             TokenKind::ForToken => Ok(self.parse_for()?),
             TokenKind::SwitchToken => Ok(self.parse_switch()?),
-            // `match (...) { ... }` as a statement: parse the match expression and wrap it. No
-            // trailing semicolon is required (it ends with `}`), like `if`/`switch`/`while`.
-            TokenKind::MatchToken => {
-                let expr = self.parse_match()?;
-                Ok(StatementNode::ExpressionStatement(expr))
-            }
             TokenKind::BreakToken => Ok(self.parse_break()?),
             TokenKind::ContinueToken => Ok(self.parse_continue()?),
             // `await <future-expr>;` as a statement, discarding the resolved value.
@@ -457,15 +451,24 @@ impl<'a, 'b> Parser<'a, 'b> {
         self.match_token(TokenKind::SemicolonToken);
         Ok(StatementNode::DoWhile(body, condition))
     }
-    /// Parses a switch statement:
-    /// `switch (expr) { case v1, v2: stmt* case v3: stmt* default: stmt* }`.
-    /// Each case body runs until the next `case`/`default`/`}` and there is no implicit fallthrough.
+    /// Parses a `switch` statement. After the shared `switch (subject) {` header, the body decides
+    /// the form: a leading `case`/`default` (or an empty body) is the C-style form
+    /// `switch (expr) { case v1, v2: stmt* case v3: stmt* default: stmt* }` (each case body runs
+    /// until the next `case`/`default`/`}` with no implicit fallthrough); anything else is the
+    /// pattern-matching form `switch (expr) { pattern [if guard] => body, ... }`, which is parsed as
+    /// an [`ExpressionNode::Switch`] and wrapped in an `ExpressionStatement` (no trailing `;`).
     pub(super) fn parse_switch(&mut self) -> Result<StatementNode<'a>, Error> {
-        self.match_token(TokenKind::SwitchToken);
-        self.match_token(TokenKind::OpenParenthesisToken);
-        let subject = self.parse_expression(0)?;
-        self.match_token(TokenKind::CloseParenthesisToken);
-        self.match_token(TokenKind::CurlyOpenBracketToken);
+        let subject = self.parse_switch_header()?;
+
+        // Pattern form: the body starts with a pattern/`=>` arm rather than `case`/`default`.
+        if !matches!(
+            self.current_token().kind,
+            TokenKind::CaseToken | TokenKind::DefaultToken | TokenKind::CurlyCloseBracketToken
+        ) {
+            let arms = self.parse_switch_arms()?;
+            let expr = ExpressionNode::Switch(self.arena.alloc(subject), arms);
+            return Ok(StatementNode::ExpressionStatement(expr));
+        }
 
         let mut cases: Vec<(Vec<ExpressionNode<'a>>, &'a [StatementNode<'a>])> = Vec::new();
         let mut default_body: Option<&'a [StatementNode<'a>]> = None;

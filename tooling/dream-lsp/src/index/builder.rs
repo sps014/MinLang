@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use dream::syntax::nodes::struct_node::StructDeclarationNode;
 use dream::syntax::nodes::{
-    ExpressionNode, FunctionNode, MatchArmBody, PatternNode, ProgramNode, StatementNode, Type,
+    ExpressionNode, FunctionNode, PatternNode, ProgramNode, StatementNode, SwitchArmBody, Type,
 };
 use dream::syntax::token::syntax_token::SyntaxToken;
 
@@ -579,7 +579,7 @@ impl Builder {
                 }
             }
             ExpressionNode::Await(e) => self.walk_expr(e, scope),
-            ExpressionNode::Match(subject, arms) => {
+            ExpressionNode::Switch(subject, arms) => {
                 self.walk_expr(subject, scope);
                 for arm in arms {
                     self.walk_pattern(&arm.pattern, scope);
@@ -587,8 +587,8 @@ impl Builder {
                         self.walk_expr(guard, scope);
                     }
                     match &arm.body {
-                        MatchArmBody::Expr(e) => self.walk_expr(e, scope),
-                        MatchArmBody::Block(stmts) => self.walk_block(stmts, scope),
+                        SwitchArmBody::Expr(e) => self.walk_expr(e, scope),
+                        SwitchArmBody::Block(stmts) => self.walk_block(stmts, scope),
                     }
                 }
             }
