@@ -6,7 +6,7 @@ use wasmtime::*;
 
 use super::memory::{read_arg_bytes, read_arg_string, write_bytes_to_memory};
 
-/// Future heap-block sizing/kind, mirroring `codegen::wasm::async_support` (`F_SLOTS` = 56) and
+/// Future heap-block sizing/kind, mirroring `mir::async_emit` (`F_SLOTS` = 56) and
 /// `runtime/dream.js` (`FUTURE_KIND_HOST` = 1). A host future saves no locals, so its block is
 /// exactly the fixed header region.
 const FUTURE_SLOTS_SIZE: i32 = 56;

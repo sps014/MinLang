@@ -2,8 +2,6 @@ use bumpalo::Bump;
 use std::fs;
 use tracing::info;
 
-use crate::codegen::wasm::WasmGenerator;
-use crate::codegen::CodeGenerator;
 use crate::diagnostics::{render, DiagnosticBag};
 use crate::driver::abi::emit_wasm_and_abi;
 use crate::driver::error::CompileError;
@@ -18,7 +16,7 @@ pub enum Target {
     Wasm,
 }
 
-/// Orchestrates the compilation pipeline: source loading (delegated to `source_manager`),
+/// Orchestrates the compilation pipeline: source loading (delegated to `source_loader`/`prelude`),
 /// semantic analysis, code generation, and artifact emission (delegated to `abi`). Diagnostic
 /// rendering is delegated to the `diagnostics` module.
 pub struct Compiler {
@@ -108,13 +106,28 @@ impl Compiler {
         info!("finished semantic analysis");
         info!("starting code generation");
 
-        let mut generator: Box<dyn CodeGenerator> = match self.target {
-            Target::Wasm => {
-                Box::new(WasmGenerator::new(&ast, &symbol_info).with_debug_alloc(self.debug_alloc))
+        // Lower the analyzer-emitted HIR to MIR, optimize, and emit a self-contained module.
+        // Destructuring moves the owned `hir` out and drops `symbol_info`'s borrowing references,
+        // releasing the `&mut analyzer` borrow so the shared interner can be read (the HIR references
+        // its `TypeId`s, so both must come from this same analyzer instance).
+        let text = {
+            let crate::semantics::analyzer::SemanticInfo { hir, .. } = symbol_info;
+            let interner = analyzer.interner();
+            let mut mir = crate::mir::lower::lower_program(&hir, interner);
+            // Drop unused prelude helpers before optimizing/emitting so the module only carries code
+            // reachable from `main` (see `mir::prune_unreachable`).
+            crate::mir::prune_unreachable(&mut mir);
+            let rc = crate::mir::passes::RcInsertion;
+            let pipeline = crate::mir::passes::PassManager::default_pipeline();
+            for f in &mut mir.functions {
+                use crate::mir::passes::MirPass;
+                rc.run(f, interner);
+                pipeline.run(f, interner);
+            }
+            match self.target {
+                Target::Wasm => crate::mir::emit::emit_module(&mir, interner, self.debug_alloc),
             }
         };
-
-        let text = generator.generate()?;
 
         info!("finished code generation");
         fs::write(out_path, &text)?;

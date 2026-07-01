@@ -2,14 +2,12 @@
 //! identifier resolution.
 
 use super::*;
-use crate::driver::diagnostics::DiagnosticBag;
+use crate::diagnostics::DiagnosticBag;
 use crate::semantics::errors::SemanticError;
 use crate::semantics::symbol_table::SymbolTable;
-use crate::syntax::nodes::types::{
-    is_numeric_primitive, mangle_generic, numeric_widen, strip_nullable,
-};
+use crate::syntax::nodes::types::{is_numeric_primitive, mangle_generic, strip_nullable};
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, Type};
-use crate::syntax::text::text_span::TextSpan;
+use crate::text::text_span::TextSpan;
 use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
 use std::cell::RefCell;
@@ -24,9 +22,19 @@ impl<'a> Analyzer<'a> {
         diagnostics: &mut DiagnosticBag,
     ) -> Result<Type, SemanticError> {
         match expression {
-            ExpressionNode::Literal(number) => Ok(number.clone()),
+            ExpressionNode::Literal(number) => {
+                self.hir_set_literal(number);
+                Ok(number.clone())
+            }
             ExpressionNode::ArrayLiteral(elements) => {
                 if elements.is_empty() {
+                    // The element type comes from the surrounding annotation (`let xs: int[] = [];`),
+                    // published as the expected type. Without one, the literal is untyped: reject it.
+                    if let Some(Type::Array(elem)) = self.current_expected_type.clone() {
+                        self.hir_set_empty_array(&elem);
+                        return Ok(Type::Array(elem));
+                    }
+                    self.hir_none();
                     diagnostics.report_error(
                         "Empty array literals are not supported yet".to_string(),
                         None,
@@ -40,14 +48,18 @@ impl<'a> Analyzer<'a> {
                     symbol_table,
                     diagnostics,
                 )?;
+                let mut elem_hirs = vec![self.hir_take()];
 
                 for elem in elements.iter().skip(1) {
                     let element_type =
                         self.analyze_expression(elem, parent_function, symbol_table, diagnostics)?;
+                    elem_hirs.push(self.hir_take());
                     self.compare_data_type(&first_type, &element_type, &empty_span(), diagnostics)?;
                 }
 
-                Ok(Type::Array(Box::new(first_type)))
+                let array_type = Type::Array(Box::new(first_type));
+                self.hir_set_array_lit(elem_hirs, &array_type);
+                Ok(array_type)
             }
             ExpressionNode::IndexAccess(array_expr, index_expr) => {
                 let array_type = self.analyze_expression(
@@ -56,6 +68,7 @@ impl<'a> Analyzer<'a> {
                     symbol_table,
                     diagnostics,
                 )?;
+                let array_hir = self.hir_take();
                 let inner_type = match array_type {
                     Type::Array(inner) => *inner,
                     // Don't cascade if the base was already poisoned by an earlier error.
@@ -75,6 +88,7 @@ impl<'a> Analyzer<'a> {
                     symbol_table,
                     diagnostics,
                 )?;
+                let index_hir = self.hir_take();
                 if !index_type.is_unknown() && index_type.get_type() != "int" {
                     diagnostics.report_error(
                         format!(
@@ -85,11 +99,13 @@ impl<'a> Analyzer<'a> {
                     );
                 }
 
+                self.hir_set_index(array_hir, index_hir, &inner_type);
                 Ok(inner_type)
             }
             ExpressionNode::Unary(opr, right) => {
                 let right_type =
                     self.analyze_expression(right, parent_function, symbol_table, diagnostics)?;
+                let operand = self.hir_take();
                 match opr.kind {
                     TokenKind::BangToken => {
                         if !right_type.is_unknown() && right_type.get_type() != "bool" {
@@ -98,7 +114,9 @@ impl<'a> Analyzer<'a> {
                                 Some(opr.position),
                             );
                         }
-                        Ok(Type::Boolean(opr.clone()))
+                        let result = Type::Boolean(opr.clone());
+                        self.hir_set_unary(opr, operand, &result);
+                        Ok(result)
                     }
                     TokenKind::PlusToken | TokenKind::MinusToken => {
                         if !right_type.is_unknown()
@@ -114,6 +132,7 @@ impl<'a> Analyzer<'a> {
                                 Some(opr.position),
                             );
                         }
+                        self.hir_set_unary(opr, operand, &right_type);
                         Ok(right_type)
                     }
                     _ => {
@@ -121,6 +140,7 @@ impl<'a> Analyzer<'a> {
                             format!("unknown unary operator {}", opr.text),
                             Some(opr.position),
                         );
+                        self.hir_none();
                         Ok(right_type)
                     }
                 }
@@ -136,18 +156,35 @@ impl<'a> Analyzer<'a> {
             ExpressionNode::Identifier(id) => {
                 Ok(self.analyze_identifier(id, symbol_table, diagnostics)?)
             }
-            ExpressionNode::FunctionCall(name, generic_args, params) => Ok(self
-                .analyze_function_call(
+            ExpressionNode::FunctionCall(name, generic_args, params) => {
+                // `analyze_function_call` records the call's HIR itself (only for a resolvable,
+                // non-generic, non-overloaded, non-async free function; otherwise it clears `last`).
+                let t = self.analyze_function_call(
                     name,
                     generic_args,
                     params,
                     parent_function,
                     symbol_table,
                     diagnostics,
-                )?),
-            ExpressionNode::IsExpression(left, _right_type) => {
-                // `is` always evaluates to a bool; the actual comparison is resolved at compile time.
-                self.analyze_expression(left, parent_function, symbol_table, diagnostics)?;
+                )?;
+                Ok(t)
+            }
+            ExpressionNode::IsExpression(left, right_type) => {
+                // `is` always evaluates to a bool. A concrete static operand folds to a compile-time
+                // result; an `object` operand emits a runtime `$object_tag` comparison.
+                let left_type =
+                    self.analyze_expression(left, parent_function, symbol_table, diagnostics)?;
+                let left_hir = self.hir_take();
+                let left_name = left_type.get_type();
+                let right_name = right_type.get_type();
+                let stripped = strip_nullable(&left_name);
+                if left_type.is_unknown() {
+                    self.hir_none();
+                } else if stripped == "object" {
+                    self.hir_set_is_type(left_hir, right_type);
+                } else {
+                    self.hir_set_bool(stripped == strip_nullable(&right_name));
+                }
                 Ok(Type::Boolean(synthetic_token(
                     TokenKind::BooleanToken,
                     "true",
@@ -159,6 +196,7 @@ impl<'a> Analyzer<'a> {
             ExpressionNode::Ternary(condition, then_expr, else_expr) => {
                 let cond_type =
                     self.analyze_expression(condition, parent_function, symbol_table, diagnostics)?;
+                let cond_hir = self.hir_take();
                 if cond_type.get_type() != "bool" {
                     diagnostics.report_error(
                         format!(
@@ -170,46 +208,75 @@ impl<'a> Analyzer<'a> {
                 }
                 let then_type =
                     self.analyze_expression(then_expr, parent_function, symbol_table, diagnostics)?;
+                let then_hir = self.hir_take();
                 let else_type =
                     self.analyze_expression(else_expr, parent_function, symbol_table, diagnostics)?;
+                let else_hir = self.hir_take();
                 // Both branches must agree; reuse the standard compatibility check.
                 self.compare_data_type(&then_type, &else_type, &empty_span(), diagnostics)?;
+                self.hir_set_ternary(cond_hir, then_hir, else_hir, &then_type);
                 Ok(then_type)
             }
-            ExpressionNode::Match(subject, arms) => self.analyze_match(
-                subject,
-                arms,
-                parent_function,
-                symbol_table,
-                true,
-                diagnostics,
-            ),
+            ExpressionNode::Match(subject, arms) => {
+                // `analyze_match` desugars the value-position match and records its result temp read.
+                let t = self.analyze_match(
+                    subject,
+                    arms,
+                    parent_function,
+                    symbol_table,
+                    true,
+                    diagnostics,
+                )?;
+                Ok(t)
+            }
             ExpressionNode::MemberAccess(obj, member) => {
-                self.analyze_member_access(obj, member, parent_function, symbol_table, diagnostics)
+                // `analyze_member_access` records the HIR itself (struct-field read / enum value).
+                let t = self.analyze_member_access(
+                    obj,
+                    member,
+                    parent_function,
+                    symbol_table,
+                    diagnostics,
+                )?;
+                Ok(t)
             }
             ExpressionNode::Cast(target_type, expr) => {
-                self.analyze_cast(target_type, expr, parent_function, symbol_table, diagnostics)
+                // `analyze_cast` records the cast's HIR itself.
+                let t = self
+                    .analyze_cast(target_type, expr, parent_function, symbol_table, diagnostics)?;
+                Ok(t)
             }
             ExpressionNode::MethodCall(obj, method, generic_args, params) => {
                 let ctx = super::AnalyzerContext {
                     parent_function,
                     symbol_table,
                 };
-                self.analyze_method_call(obj, method, generic_args, params, &ctx, diagnostics)
+                let t =
+                    self.analyze_method_call(obj, method, generic_args, params, &ctx, diagnostics)?;
+                // `analyze_method_call` records the `MethodCall`/`Call` (or clears `last`) itself.
+                Ok(t)
             }
             ExpressionNode::Await(inner) => {
                 let fut =
                     self.analyze_expression(inner, parent_function, symbol_table, diagnostics)?;
+                let inner_hir = self.hir_take();
                 if fut.is_unknown() {
+                    self.hir_none();
                     return Ok(Type::Unknown);
                 }
                 match Self::future_inner_type(&fut) {
-                    Some(t) => Ok(t),
-                    None => Err(report(
-                        diagnostics,
-                        format!("'await' expects a Future value, got {}", fut.get_type()),
-                        inner.position(),
-                    )),
+                    Some(t) => {
+                        self.hir_set_await(inner_hir, &t);
+                        Ok(t)
+                    }
+                    None => {
+                        self.hir_none();
+                        Err(report(
+                            diagnostics,
+                            format!("'await' expects a Future value, got {}", fut.get_type()),
+                            inner.position(),
+                        ))
+                    }
                 }
             }
         }
@@ -237,32 +304,41 @@ impl<'a> Analyzer<'a> {
                 symbol_table,
                 diagnostics,
             )? {
+                // `analyze_variant_construction` records the `UnionNew` (or clears `last`) itself.
                 return Ok(t);
             }
         }
         // Enum member access `EnumName.Member` resolves to the enum type (an i32 at runtime).
         if let ExpressionNode::Identifier(id) = obj {
             if self.enum_table.contains_key(&id.text) {
-                if self.enum_member_value(&id.text, &member.text).is_none() {
-                    diagnostics.report_error(
-                        format!("Enum '{}' has no member '{}'", id.text, member.text),
-                        Some(member.position),
-                    );
+                let enum_ty = Type::Struct(id.clone(), None);
+                match self.enum_member_value(&id.text, &member.text) {
+                    Some(value) => self.hir_set_enum_value(value as i64, &enum_ty),
+                    None => {
+                        diagnostics.report_error(
+                            format!("Enum '{}' has no member '{}'", id.text, member.text),
+                            Some(member.position),
+                        );
+                        self.hir_none();
+                    }
                 }
-                return Ok(Type::Struct(id.clone(), None));
+                return Ok(enum_ty);
             }
         }
         let obj_type =
             self.analyze_expression(obj, parent_function, symbol_table, diagnostics)?;
+        let obj_hir = self.hir_take();
 
         // The receiver was already poisoned by an earlier error: stay quiet and stay poison.
         if obj_type.is_unknown() {
+            self.hir_none();
             return Ok(Type::Unknown);
         }
 
         let (base_name, generic_args) = match Self::resolve_struct_parts(&obj_type) {
             Some(parts) => parts,
             None => {
+                self.hir_none();
                 return Err(report(
                     diagnostics,
                     format!(
@@ -285,6 +361,7 @@ impl<'a> Analyzer<'a> {
         let struct_info = match self.struct_table.get_struct(&struct_name) {
             Some(info) => info,
             None => {
+                self.hir_none();
                 return Err(report(
                     diagnostics,
                     format!("Struct '{}' not found", struct_name),
@@ -296,6 +373,7 @@ impl<'a> Analyzer<'a> {
         let field_info = match struct_info.fields.get(&member.text) {
             Some(info) => info,
             None => {
+                self.hir_none();
                 return Err(report(
                     diagnostics,
                     format!(
@@ -319,6 +397,10 @@ impl<'a> Analyzer<'a> {
             );
         }
 
+        match self.struct_field_index(&struct_name, &member.text) {
+            Some(index) => self.hir_set_field(obj_hir, index, &field_type),
+            None => self.hir_none(),
+        }
         Ok(field_type)
     }
 
@@ -336,6 +418,7 @@ impl<'a> Analyzer<'a> {
     ) -> Result<Type, SemanticError> {
         let expr_type =
             self.analyze_expression(expr, parent_function, symbol_table, diagnostics)?;
+        let inner_hir = self.hir_take();
 
         let target_type_str = target_type.get_type();
         let expr_type_str = expr_type.get_type();
@@ -353,6 +436,10 @@ impl<'a> Analyzer<'a> {
                 diagnostics,
             );
         }
+
+        // The cast yields `target_type` regardless of whether the conversion is allowed (a
+        // disallowed one is reported below); record its HIR before the validation branches.
+        self.hir_set_cast(inner_hir, target_type);
 
         if target_type_str == expr_type_str ||
            (is_numeric_primitive(&target_type_str) && is_numeric_primitive(&expr_type_str)) ||
@@ -392,8 +479,10 @@ impl<'a> Analyzer<'a> {
     ) -> Result<Type, SemanticError> {
         let left_value =
             self.analyze_expression(left, parent_function, symbol_table, diagnostics)?;
+        let left_hir = self.hir_take();
         let right_value =
             self.analyze_expression(right, parent_function, symbol_table, diagnostics)?;
+        let right_hir = self.hir_take();
 
         // Null-coalescing `a ?? b`: `a` should be nullable; the result is the unwrapped element
         // type, and `b` must be assignable to it (or itself nullable of the same element type).
@@ -407,6 +496,7 @@ impl<'a> Analyzer<'a> {
                 other => other.clone(),
             };
             self.compare_data_type(&result_type, &right_unwrapped, &opr.position, diagnostics)?;
+            self.hir_set_coalesce(left_hir, right_hir, &result_type);
             return Ok(result_type);
         }
 
@@ -417,6 +507,7 @@ impl<'a> Analyzer<'a> {
             let left_is_string = left_value.get_type() == "string";
             let right_is_string = right_value.get_type() == "string";
             if left_is_string || right_is_string {
+                self.hir_set_concat(left_hir, left_is_string, right_hir, right_is_string);
                 return Ok(if left_is_string {
                     left_value
                 } else {
@@ -440,17 +531,24 @@ impl<'a> Analyzer<'a> {
             (_, _) => {}
         };
 
-        match opr.kind {
+        let is_bool_result = matches!(
+            opr.kind,
             TokenKind::EqualEqualToken
-            | TokenKind::NotEqualToken
-            | TokenKind::GreaterThanToken
-            | TokenKind::GreaterThanEqualToken
-            | TokenKind::SmallerThanToken
-            | TokenKind::SmallerThanEqualToken
-            | TokenKind::AmpersandAmpersandToken
-            | TokenKind::PipePipeToken => Ok(Type::Boolean(opr.clone())),
-            _ => Ok(left_value),
-        }
+                | TokenKind::NotEqualToken
+                | TokenKind::GreaterThanToken
+                | TokenKind::GreaterThanEqualToken
+                | TokenKind::SmallerThanToken
+                | TokenKind::SmallerThanEqualToken
+                | TokenKind::AmpersandAmpersandToken
+                | TokenKind::PipePipeToken
+        );
+        let result_type = if is_bool_result {
+            Type::Boolean(opr.clone())
+        } else {
+            left_value.clone()
+        };
+        self.hir_set_binary(left_hir, opr, right_hir, &result_type);
+        Ok(result_type)
     }
     pub(super) fn compare_data_type(
         &mut self,
@@ -464,51 +562,20 @@ impl<'a> Analyzer<'a> {
         if left.is_unknown() || right.is_unknown() {
             return Ok(());
         }
-        if left.get_type() == right.get_type() {
-            return Ok(());
-        }
-        if self.enum_int_compatible(&left.get_type(), &right.get_type()) {
-            return Ok(());
-        }
 
-        // Implicit numeric widening: a narrower numeric value (`right`) may flow into a wider
-        // numeric target (`left`) without a cast (e.g. `let x: long = 5`, returning an `int`
-        // where a `double` is expected). Narrowing is rejected here and requires a cast.
-        if numeric_widen(
-            strip_nullable(&right.get_type()),
-            strip_nullable(&left.get_type()),
-        ) {
+        // Directional assignability over interned types: `right` (value) must be assignable to
+        // `left` (target). Covers identity, `object` widening, enum/int, numeric widening, and
+        // nullable/`null` handling via the structured rules.
+        let l = self.type_ctx.lower(left);
+        let r = self.type_ctx.lower(right);
+        if crate::types::assignable(&self.type_ctx.interner, l, r) {
             return Ok(());
         }
-
-        // Any value may be assigned (boxed) into an `object` target; the reverse requires a
-        // cast and is rejected here.
-        if left.get_type() == "object" {
-            return Ok(());
-        }
-
-        // A nullable `T?` accepts another `T?`, a plain `T`, or the `null` literal (`void?`).
-        if let Type::Nullable(inner) = left {
-            if let Type::Nullable(inner_right) = right {
-                if inner.get_type() == inner_right.get_type() {
-                    return Ok(());
-                }
-            } else if inner.get_type() == right.get_type() {
-                return Ok(());
-            }
-            if right.get_type() == "void?" {
-                return Ok(());
-            }
-        }
-
-        // Any reference type (or nullable) can be compared against the `null` literal.
-        if (left.get_type().ends_with("?") || self.is_reference_type(&left.get_type()))
-            && right.get_type() == "void?"
-        {
-            return Ok(());
-        }
-        if (right.get_type().ends_with("?") || self.is_reference_type(&right.get_type()))
-            && left.get_type() == "void?"
+        // `compare_data_type` also backs equality comparisons (`ref == null`, `null == ref`),
+        // where `null` may appear on either side. Accept the reverse direction, but only for the
+        // `null`-literal case so a narrowing assignment is still rejected.
+        if (left.get_type() == "void?" || right.get_type() == "void?")
+            && crate::types::assignable(&self.type_ctx.interner, r, l)
         {
             return Ok(());
         }
@@ -523,6 +590,17 @@ impl<'a> Analyzer<'a> {
             Some(*position),
         );
         Ok(())
+    }
+
+    /// Resolves a field's position in a struct's layout (offset order, matching the
+    /// auto-generated constructor's argument order and the backend's field indexing). Returns
+    /// `None` if the struct or field is unknown.
+    pub(super) fn struct_field_index(&self, struct_name: &str, field: &str) -> Option<usize> {
+        let info = self.struct_table.get_struct(struct_name)?;
+        let mut ordered: Vec<(&String, &crate::semantics::struct_table::StructFieldInfo)> =
+            info.fields.iter().collect();
+        ordered.sort_by_key(|(_, f)| f.offset);
+        ordered.iter().position(|(n, _)| n.as_str() == field)
     }
 
     pub fn is_reference_type(&self, type_name: &str) -> bool {
@@ -550,13 +628,16 @@ impl<'a> Analyzer<'a> {
                         .map(|p| Self::type_from_name(p))
                         .collect();
                     let ret = sig.return_type.clone().unwrap_or(Type::Void);
-                    return Ok(Type::Function(params, Box::new(ret)));
+                    let func_ty = Type::Function(params, Box::new(ret.clone()));
+                    self.hir_set_func_value(&id.text, &func_ty, &ret);
+                    return Ok(func_ty);
                 }
                 // Unresolved name: report and short-circuit. Statement-level callers recover
                 // (poisoning the binding with `Type::Unknown`) so sibling errors still surface.
                 return Err(report(diagnostics, e.to_string(), Some(id.position)));
             }
         };
+        self.hir_set_var(&id.text);
         Ok(r)
     }
 

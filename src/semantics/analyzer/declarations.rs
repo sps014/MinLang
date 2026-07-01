@@ -1,5 +1,5 @@
 use super::*;
-use crate::driver::diagnostics::DiagnosticBag;
+use crate::diagnostics::DiagnosticBag;
 use crate::semantics::errors::SemanticError;
 use crate::semantics::function_table::FunctionTableInfo;
 use crate::semantics::symbol_table::SymbolTable;
@@ -11,7 +11,7 @@ use crate::syntax::nodes::types::{
     mangle_generic, method_fn, strip_array, strip_nullable, value_size_align,
 };
 use crate::syntax::nodes::{EnumVariantNode, FunctionNode, ProgramNode, Type};
-use crate::syntax::text::text_span::TextSpan;
+use crate::text::text_span::TextSpan;
 use crate::syntax::token::token_kind::TokenKind;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -46,6 +46,8 @@ impl<'a> Analyzer<'a> {
             if enum_decl.is_data_enum() {
                 // Generic discriminated unions are templates, monomorphized on first use.
                 if enum_decl.generic_parameters.is_some() {
+                    self.type_ctx
+                        .register(DefKind::Union, name, generic_param_names(&enum_decl.generic_parameters));
                     self.generic_unions.insert(name.clone(), enum_decl);
                 }
                 continue;
@@ -67,6 +69,7 @@ impl<'a> Analyzer<'a> {
                 }
                 members.insert(variant.name.text.clone(), variant.value);
             }
+            self.type_ctx.register(DefKind::Enum, name, vec![]);
             self.enum_table.insert(name.clone(), members);
         }
 
@@ -143,6 +146,7 @@ impl<'a> Analyzer<'a> {
         // Align the block to 8 bytes so a `double` payload stays naturally aligned.
         let size = block_end.div_ceil(8) * 8;
 
+        self.type_ctx.register(DefKind::Union, union_name, vec![]);
         if let Err(e) = self.struct_table.add_union(union_name, size, true) {
             diagnostics.report_error(e, None);
             return;
@@ -167,6 +171,8 @@ impl<'a> Analyzer<'a> {
         diagnostics: &mut DiagnosticBag,
     ) {
         let mangled = mangle_generic(base_name, args);
+        self.type_ctx
+            .register_instance(DefKind::Union, base_name, args);
         if self.union_table.contains_key(&mangled) {
             return;
         }
@@ -248,6 +254,11 @@ impl<'a> Analyzer<'a> {
     ) {
         for struct_decl in node.structs.iter() {
             diagnostics.file_path = file_path_string(&struct_decl.file_path);
+            self.type_ctx.register(
+                DefKind::Struct,
+                &struct_decl.name.text,
+                generic_param_names(&struct_decl.generic_parameters),
+            );
             if struct_decl.generic_parameters.is_some() {
                 // v1 restriction: async methods on generic classes are not supported (the async
                 // state machine would have to be re-generated per monomorphization).
@@ -320,9 +331,11 @@ impl<'a> Analyzer<'a> {
             }
 
             let gtable = self.global_symbol_table.clone();
+            self.hir_global_init_begin();
             let init_type = self
                 .analyze_expression(&global.initializer, &init_fn, &gtable, diagnostics)
                 .unwrap_or(Type::Void);
+            self.hir_global_init_finish(&global.name.text);
 
             let resolved = match &global.declared_type {
                 Some(declared) => {
@@ -359,6 +372,9 @@ impl<'a> Analyzer<'a> {
                 is_public: global.is_public,
                 is_static: global.is_static,
             });
+            // Register the HIR slot now (in declaration order) so a subsequent global's initializer
+            // can resolve this one as a `Binding::Global`.
+            self.hir_register_global(&global.name.text, &resolved.get_type(), global.is_const);
         }
     }
 
@@ -372,6 +388,11 @@ impl<'a> Analyzer<'a> {
             diagnostics.file_path = file_path_string(&function.file_path);
             self.check_reserved_name(&function.name, "function", diagnostics);
             if function.generic_parameters.is_some() {
+                self.type_ctx.register(
+                    DefKind::Function,
+                    &function.name.text,
+                    generic_param_names(&function.generic_parameters),
+                );
                 self.generic_functions
                     .insert(function.name.text.clone(), function);
                 continue;
@@ -385,6 +406,23 @@ impl<'a> Analyzer<'a> {
             {
                 diagnostics.report_error(e.to_string(), Some(function.name.position));
             }
+        }
+        // Register a distinct `DefId` for every non-generic function under its *emitted* name (the
+        // bare base when unique, the signature-mangled key when overloaded). Deferred to here so the
+        // full overload set is known: overloaded declarations must not collide on a single base def.
+        for function in node.functions.iter() {
+            if function.generic_parameters.is_some() {
+                continue;
+            }
+            let param_types: Vec<String> = function
+                .parameters
+                .iter()
+                .map(|p| p.type_.get_type())
+                .collect();
+            let emitted = self
+                .function_table
+                .resolve_emitted_name(&function.name.text, &param_types);
+            self.type_ctx.register(DefKind::Function, &emitted, vec![]);
         }
         // The entry point is exported under the fixed name `main`. It may be declared as `main()`
         // or `main(args: string[])`, but not overloaded or given any other signature.
@@ -536,6 +574,10 @@ impl<'a> Analyzer<'a> {
         diagnostics: &mut DiagnosticBag,
     ) {
         let mangled_name = mangle_generic(base_name, args);
+        // Canonicalize the mangled bare name to the structured `(base def, args)` id so both
+        // spellings of this instance lower identically.
+        self.type_ctx
+            .register_instance(DefKind::Struct, base_name, args);
         if self.struct_table.get_struct(&mangled_name).is_some() {
             return;
         }
@@ -614,12 +656,21 @@ impl<'a> Analyzer<'a> {
         bindings: &[(String, String)],
         diagnostics: &mut DiagnosticBag,
     ) {
+        // Collect the mangled name + full parameter list (with the implicit `this`) of each method so
+        // overloaded methods can be registered under their signature-mangled *emitted* names in a
+        // second pass, once the whole overload set for this target is known.
+        let mut registered: Vec<(String, Vec<String>)> = Vec::new();
         for method in methods {
             // Validate object-protocol overrides once (on the non-monomorphized declaration).
             if bindings.is_empty() {
                 self.validate_protocol_override(method, diagnostics);
             }
             let mangled_name = method_fn(target_type_str, &method.name.text);
+            self.type_ctx.register(
+                DefKind::Function,
+                &mangled_name,
+                generic_param_names(&method.generic_parameters),
+            );
 
             if method.generic_parameters.is_some() {
                 self.generic_functions.insert(mangled_name.clone(), method);
@@ -639,6 +690,8 @@ impl<'a> Analyzer<'a> {
                     .insert(0, Self::make_this_param(target_type_str));
             }
 
+            let param_types: Vec<String> =
+                new_method.parameters.iter().map(|p| p.type_.get_type()).collect();
             let method_ref = self.arena.alloc(new_method);
             self.struct_methods.push((method_ref, bindings.to_vec()));
 
@@ -647,6 +700,20 @@ impl<'a> Analyzer<'a> {
                 .add_overload(&mangled_name, FunctionTableInfo::from(method_ref))
             {
                 diagnostics.report_error(e.to_string(), Some(method.name.position));
+            }
+            if method.generic_parameters.is_none() {
+                registered.push((mangled_name, param_types));
+            }
+        }
+        // Register a distinct `DefId` for each overloaded method under its emitted (signature-mangled)
+        // name, so overloads don't collide on the single base-mangled def (mirrors free functions).
+        for (mangled_name, param_types) in registered {
+            let emitted = self
+                .function_table
+                .resolve_emitted_name(&mangled_name, &param_types);
+            if emitted != mangled_name {
+                self.type_ctx
+                    .register(DefKind::Function, &emitted, vec![]);
             }
         }
     }

@@ -7,9 +7,3 @@ pub mod parser;
 pub mod precedence;
 pub mod syntax_tree;
 pub mod token;
-
-/// Back-compat re-export of the source-text primitives. Existing `syntax::text::*` paths (used by
-/// the semantics and codegen layers via the main crate's `syntax` re-export) keep resolving here.
-pub mod text {
-    pub use dream_text::{indented_text_writer, line_text, text_span};
-}

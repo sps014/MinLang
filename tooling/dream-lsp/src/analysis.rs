@@ -3,7 +3,7 @@
 //! access is involved (the prelude is embedded with `include_str!`), so it runs in the browser.
 
 use bumpalo::Bump;
-use dream::driver::diagnostics::{DiagnosticBag, Severity};
+use dream::diagnostics::{DiagnosticBag, Severity};
 use dream::driver::source_loader::collect_declarations;
 use dream::semantics::analyzer::Analyzer;
 use dream::syntax::lexer::Lexer;
@@ -38,7 +38,7 @@ pub fn collect_diagnostics(file_path: Option<&str>, text: &str) -> Vec<Diagnosti
 
     let mut diagnostics = DiagnosticBag::new(None);
 
-    let mut acc = dream::driver::source_manager::ProgramAccumulator::default();
+    let mut acc = dream::driver::source_loader::ProgramAccumulator::default();
 
     // Parse the user's document. Parsing reports lexical/syntactic errors into `user_bag`.
     let mut user_bag = DiagnosticBag::new(Some(MAIN_FILE.to_string()));
@@ -71,11 +71,11 @@ pub fn collect_diagnostics(file_path: Option<&str>, text: &str) -> Vec<Diagnosti
             for import in &program.imports {
                 let module_name = import.module_name.text.trim_matches('"');
                 let import_path =
-                    dream::driver::source_manager::resolve_import_path(parent_dir, module_name);
+                    dream::driver::source_loader::resolve_import_path(parent_dir, module_name);
 
                 if let Some(import_path_str) = import_path.to_str() {
                     if import_path.exists() {
-                        let _ = dream::driver::source_manager::parse_file_recursive(
+                        let _ = dream::driver::source_loader::parse_file_recursive(
                             &import_path_str.to_string(),
                             &mut acc,
                             &arena,

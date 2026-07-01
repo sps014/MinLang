@@ -361,6 +361,8 @@ impl LanguageServer for Backend {
                     start: map_position(line_index.position(d.start)),
                     end: map_position(line_index.position(d.end)),
                 };
+                // `DocumentSymbol::deprecated` is a deprecated field in the external `lsp-types`
+                // crate; we must still initialize it, so the allow is unavoidable (not our API).
                 #[allow(deprecated)]
                 DocumentSymbol {
                     name: d.name.clone(),

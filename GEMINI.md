@@ -2,6 +2,8 @@
 
 This document serves as the foundational instruction manual and architectural guide for any AI-assisted developments, refactorings, or explorations of the Dream language codebase.
 
+> **In-depth compiler architecture docs live in [`design/compiler/`](./design/compiler/README.md)** — the pipeline, type system, HIR, MIR, how to write optimization passes, the relooper/backend, how to add a language feature, testing/determinism, and the migration status. Start there for the middle/back end.
+
 ---
 
 ## 1. Project Overview
@@ -20,7 +22,7 @@ The repository is structured as a Rust-centric multi-component monorepo:
 *   **`crates/` (Front-end crates):** The front-end is split into three layered library crates so the layering (`dream-text` <- `dream-diagnostics` <- `dream-syntax`) is enforced by the crate graph rather than convention. The root `dream` crate depends on all three and re-exports them from `lib.rs` (`pub use dream_syntax as syntax;`, etc.) so every existing `crate::{syntax,diagnostics,text}::...` path keeps resolving.
     *   `crates/dream-text/`: Leaf crate for source-position primitives (`text_span.rs`, `line_text.rs`, `indented_text_writer.rs`); depends on nothing else in the workspace.
     *   `crates/dream-diagnostics/`: Collects, stores, and pretty-prints errors and warnings with inline source excerpts and squigglies. Depends only on `dream-text`.
-    *   `crates/dream-syntax/`: Lexer, AST node definitions, parser, and syntax tree. Depends on `dream-text` and `dream-diagnostics` (and `logos`/`bumpalo`). Re-exports the text primitives as a `text` submodule for back-compat (`syntax::text::*`).
+    *   `crates/dream-syntax/`: Lexer, AST node definitions, parser, and syntax tree. Depends on `dream-text` and `dream-diagnostics` (and `logos`/`bumpalo`).
 *   **`src/` (Core Compiler):**
     *   `main.rs`: Entry point for the compiler CLI. Manages verbosity, compilation target selection, and invoking the runner.
     *   `lib.rs`: Re-exports the front-end crates (`syntax`, `diagnostics`, `text`) and exposes the semantic analyzer, codegen, and driver APIs.
@@ -28,15 +30,16 @@ The repository is structured as a Rust-centric multi-component monorepo:
         *   `source_loader.rs`: Recursively resolves imports, parses multiple files, and merges every file's declarations into a `ProgramAccumulator`.
         *   `prelude.rs`: Merges the embedded standard-library prelude.
         *   `json_derive.rs`: Generates `to_json`/`from_json` `extend` blocks for `@json` classes and discriminated unions.
-        *   `source_manager.rs`: Thin compatibility facade re-exporting the three modules above.
         *   `error.rs`: Top-level `CompileError` enum returned by the pipeline.
         *   `compiler.rs`: High-level orchestrator starting with parsing and concluding with code generation and artifact emission.
     *   *Parsing stage:* lives in the `crates/dream-syntax/` crate (re-exported as `crate::syntax`). `lexer.rs` tokenizes with `logos`; `parser/` is recursive descent over declarations/statements/expressions; `nodes/` defines the AST (`ProgramNode`, `Type`, `ExpressionNode`, `StatementNode`, etc.).
     *   `semantics/`: Semantic analysis stage.
         *   `analyzer/`: Implements type check, scope validation, `async`/`await` compliance, and generic instantiation.
         *   `symbol_table.rs`, `function_table.rs`, & `struct_table.rs`: Context-tracking databases for semantic validation.
-    *   `codegen/`: Code generation stage.
-        *   `wasm/`: Produces WebAssembly Text representation (`.wat`). Contains submodules for statements, expressions, async support, objects, memory, and string operations.
+    *   *Multi-pass middle/back-end (the only backend):* a structured-types -> typed HIR -> CFG MIR -> optimization passes -> MIR->WAT pipeline. (The legacy AST-walking `codegen/` backend has been deleted; `src/mir/` is now the sole code generator.)
+        *   `types/`: The structured type system. A `TypeInterner` hash-conses type shapes (`TyKind`) to compact `TypeId`s; a `DefTable` names nominal declarations by `DefId`; `compat` holds structural assignability/widening/overload rules; `display_name` renders `Box<int>`; `TypeCtx` lowers AST `Type` -> `TypeId`. Replaces stringly-typed names (`Box_int`).
+        *   `hir/`: Typed, name-resolved High-level IR — every node carries a `TypeId`, every reference a resolved `Binding`, every call a `Callee`; monomorphization is an explicit instance worklist. Control flow is still structured.
+        *   `mir/`: CFG-based Mid-level IR (basic blocks + terminators, explicit `Retain`/`Release`/alloc). `lower` desugars HIR control flow into the CFG; `passes/` is a pass manager with const-fold, copy/const-prop, DCE, simplify-CFG, and RC insertion/elision; `relooper` recovers structured shapes; `emit` lowers MIR to WAT. `abi.rs` holds the heap-block tag constants and `runtime/*.wat` are the embedded runtime layers (allocator, strings, object protocol, float/double format, async scheduler).
     *   `stdlib/`: Standard library implementations.
         *   `mod.rs`: Registers host and inline functions. Defines the exact ordering for standard prelude modules.
         *   `*.dream`: Standard collections (`list.dream`, `map.dream`) and primitive type extensions (`string.dream`, `int.dream`, `char.dream`, etc.).
@@ -96,7 +99,7 @@ Adhere to strict software engineering standards to maintain long-term scalabilit
     *   **Lexing (`lexer.rs`):** Translates source strings into token streams. Must not embed syntactic rules or diagnostic assumptions.
     *   **Parsing (`parser/`):** Builds AST nodes from token streams. Must not evaluate type correctness or enforce binding scopes.
     *   **Semantic Analyzer (`analyzer/`):** Validates type correctness, variable scopes, and async constraints. Must not modify AST structure or introduce target code generation.
-    *   **Code Generation (`codegen/`):** Emits target representation (`.wat`). Expects a fully validated AST and resolved symbols; must never perform type checks or emit compile-time errors.
+    *   **Code Generation (`mir/`):** Lowers typed HIR → MIR → target representation (`.wat`). Expects a fully validated program and resolved symbols/types; must never perform type checks or emit compile-time errors.
 *   **Don't Repeat Yourself (DRY):**
     *   Consolidate common type-checking routines, helper operations, or expression evaluations into shared helper traits/methods inside `src/semantics/` or `crates/dream-syntax/src/nodes/`.
     *   The standard library files in `src/stdlib/*.dream` are the single source of truth. Both the main compiler and the `dream-lsp` reuse these exact files via `PRELUDE_FILES` to prevent behavior and definitions from drifting.

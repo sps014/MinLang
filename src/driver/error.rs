@@ -1,7 +1,6 @@
 //! The top-level, typed error returned by [`crate::driver::compiler::Compiler::compile`]. Each
 //! variant names the pipeline phase that failed. User-facing detail for `Syntax`/`Semantic` lives
-//! in the diagnostics that were already rendered; `Io` wraps a lower-level failure (reading
-//! sources, writing artifacts, or the few `std::io::Error` paths still used inside codegen).
+//! in the diagnostics that were already rendered; `Io` wraps lower-level source/artifact failures.
 
 use std::fmt;
 
@@ -11,7 +10,7 @@ pub enum CompileError {
     Syntax,
     /// One or more semantic errors were reported during analysis.
     Semantic,
-    /// An I/O failure (or another lower-level `std::io::Error`) during the pipeline.
+    /// An I/O failure during the pipeline (reading sources, writing artifacts).
     Io(std::io::Error),
 }
 

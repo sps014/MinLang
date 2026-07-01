@@ -8,8 +8,9 @@ use crate::syntax::nodes::types::{mangle_with_suffixes, primitive_type, FUTURE_T
 use crate::syntax::nodes::{EnumDeclarationNode, ExtendNode};
 use crate::syntax::nodes::{FunctionNode, ProgramNode, Type};
 use crate::syntax::syntax_tree::SyntaxTree;
-use crate::syntax::text::line_text::LineText;
-use crate::syntax::text::text_span::TextSpan;
+use crate::types::{DefKind, TypeCtx};
+use crate::text::line_text::LineText;
+use crate::text::text_span::TextSpan;
 use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
 use bumpalo::Bump;
@@ -23,6 +24,7 @@ mod calls;
 mod declarations;
 mod expressions;
 mod generics;
+mod hir_emit;
 mod match_unions;
 mod statements;
 mod type_checker;
@@ -140,6 +142,15 @@ fn bind_concrete(name: &str, bindings: &[(String, String)]) -> Option<Type> {
     Type::from_token(synthetic_token(TokenKind::IdentifierToken, &concrete)).ok()
 }
 
+/// Extracts the declared generic parameter names (`["T", "V"]`) from an optional parameter-token
+/// list, for registering a nominal def's arity in the [`TypeCtx`].
+fn generic_param_names(params: &Option<Vec<SyntaxToken>>) -> Vec<String> {
+    params
+        .as_deref()
+        .map(|ps| ps.iter().map(|p| p.text.clone()).collect())
+        .unwrap_or_default()
+}
+
 /// Maps each generic parameter name to the concrete type bound to it for one monomorphization.
 pub type GenericBindings = Vec<(String, String)>;
 
@@ -171,6 +182,10 @@ pub struct SemanticInfo<'a> {
     /// allocate variant blocks, lower `match`, and emit discriminant-aware releases.
     pub unions: UnionTable,
     pub globals: Vec<GlobalSymbol>,
+    /// The typed, name-resolved HIR emitted alongside analysis. It is the sole input the MIR backend
+    /// consumes; a function whose every construct is representable is emitted here (all others are
+    /// skipped and produce no backend output).
+    pub hir: crate::hir::Hir,
 }
 
 /// Groups context arguments frequently passed together to simplify function signatures.
@@ -211,6 +226,9 @@ pub struct Analyzer<'a> {
     /// Stack of loop labels currently in scope, so `break label;`/`continue label;` can be
     /// validated against an enclosing labeled loop.
     loop_labels: Vec<String>,
+    /// Label attached to the immediately-following loop (`outer: for ...`), consumed by that loop's
+    /// analyzer so it can be threaded into the loop's HIR node. `None` for unlabeled loops.
+    pending_loop_label: Option<String>,
     /// True while analyzing the body of an `async fun`. Gates the use of `await`.
     current_function_is_async: bool,
     /// Resolved top-level variables, in declaration order. Surfaced to codegen via [`SemanticInfo`].
@@ -219,6 +237,12 @@ pub struct Analyzer<'a> {
     /// every function's parameter table, so function bodies resolve global identifiers (and their
     /// `const`-ness) through ordinary lexical lookup.
     global_symbol_table: Rc<RefCell<SymbolTable>>,
+    /// The structured type context (interner + def table). Nominal declarations register their
+    /// `DefId` here and AST type annotations lower to interned `TypeId`s, so type identity,
+    /// compatibility, and monomorphization keys move off strings onto the structured type system.
+    type_ctx: TypeCtx,
+    /// Interleaved HIR-emission state and the accumulated emitted functions.
+    hir: hir_emit::HirEmit,
 }
 impl<'a> Analyzer<'a> {
     pub fn new(tree: &'a SyntaxTree<'a>, arena: &'a Bump) -> Self {
@@ -238,10 +262,19 @@ impl<'a> Analyzer<'a> {
             current_expected_type: None,
             current_generic_bindings: Vec::new(),
             loop_labels: Vec::new(),
+            pending_loop_label: None,
             current_function_is_async: false,
             globals: Vec::new(),
             global_symbol_table: Rc::new(RefCell::new(SymbolTable::new(None))),
+            type_ctx: TypeCtx::new(),
+            hir: hir_emit::HirEmit::default(),
         }
+    }
+
+    /// The type interner backing analysis. Its `TypeId`s are the ones referenced by the emitted HIR
+    /// (`SemanticInfo::hir`), so the MIR backend must be handed *this* interner to lower that HIR.
+    pub(crate) fn interner(&self) -> &crate::types::TypeInterner {
+        &self.type_ctx.interner
     }
 
     /// Builds the `Future<T>` type carrying inner type `inner`. Async-call results are this type,
@@ -348,6 +381,8 @@ impl<'a> Analyzer<'a> {
         self.register_functions(node, diagnostics);
         // Globals are analyzed after functions/types are known (so initializers can call them) but
         // before function bodies, so those bodies can resolve global identifiers.
+        // HIR global slots are assigned incrementally inside `register_globals` (in declaration
+        // order) so both later initializers and function bodies can resolve global identifiers.
         self.register_globals(node, diagnostics);
         self.analyze_function_bodies(node, &mut symbol_table_map, diagnostics)?;
         self.analyze_pending_instantiations(&mut symbol_table_map, diagnostics)?;
@@ -360,6 +395,14 @@ impl<'a> Analyzer<'a> {
             return Err(SemanticError::AnalysisFailed);
         }
 
+        // Built before the borrow-immutable `SemanticInfo` literal below, since lowering field types
+        // needs `&mut self.type_ctx`.
+        let layouts = self.hir_build_layouts();
+        let imports = self.hir_build_imports(node);
+        let intrinsics = self.hir_build_intrinsics(node);
+        let hir_functions = std::mem::take(&mut self.hir.functions);
+        let hir_globals = std::mem::take(&mut self.hir.global_decls);
+
         Ok(SemanticInfo {
             hash_map: symbol_table_map,
             function_table: &self.function_table,
@@ -369,6 +412,14 @@ impl<'a> Analyzer<'a> {
             enums: self.enum_table.clone(),
             unions: self.union_table.clone(),
             globals: self.globals.clone(),
+            hir: crate::hir::Hir {
+                functions: hir_functions,
+                globals: hir_globals,
+                instances: vec![],
+                layouts,
+                imports,
+                intrinsics,
+            },
         })
     }
 }

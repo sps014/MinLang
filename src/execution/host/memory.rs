@@ -4,12 +4,12 @@
 
 use wasmtime::*;
 
-/// The heap-block tag codegen uses for strings (mirrors `codegen::wasm::object::TAG_STRING`).
+/// The heap-block tag codegen uses for strings (mirrors `mir::abi::TAG_STRING`).
 /// A host that allocates a string into linear memory must tag the block with this so the runtime
 /// treats it as a string.
 const TAG_STRING: i32 = 5;
 
-/// The heap-block tag codegen uses for arrays (mirrors `codegen::wasm::object::TAG_ARRAY`). A
+/// The heap-block tag codegen uses for arrays (mirrors `mir::abi::TAG_ARRAY`). A
 /// `char[]` (byte array) is laid out as `[count: i32][bytes...]` at the data pointer.
 const TAG_ARRAY: i32 = 6;
 

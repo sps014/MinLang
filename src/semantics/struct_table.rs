@@ -16,7 +16,7 @@ pub struct StructFieldInfo {
 pub struct StructInfo {
     pub name: String,
     /// Insertion-ordered (declaration order) so field-release emission is deterministic. Field
-    /// emission that must follow byte-offset order uses [`crate::codegen::wasm::WasmGenerator::sorted_fields`].
+    /// emission that must follow byte-offset order sorts these by their recorded `offset`.
     pub fields: IndexMap<String, StructFieldInfo>,
     pub size: usize,
     pub is_public: bool,
