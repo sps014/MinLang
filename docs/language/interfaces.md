@@ -160,8 +160,11 @@ fun main(): void {
     let b = Box<int>(7);
     describe(b);              // implicit upcast Box<int> -> Container<int>
 
-    let c: Container<int> = b;
-    println(c.get());        // dispatches to Box<int>.get
+    let c: Container<int> = b;   // implicit upcast via annotation
+    println(c.get());            // dispatches to Box<int>.get
+
+    let d = (Container<int>)b;   // explicit upcast to a generic interface
+    println(d.get());
 }
 ```
 
@@ -205,9 +208,6 @@ entirely at compile time.
 ## Limits (current version)
 
 - Interfaces declare method signatures only — no fields and no default method bodies.
-- A generic interface instance can be named in a type annotation (`let c: Container<int> = ...`) and
-  reached by implicit upcast, but an explicit cast to a *generic* interface (`(Container<int>)b`) is
-  not yet parsed — use an annotated binding instead.
 
 ## See also
 

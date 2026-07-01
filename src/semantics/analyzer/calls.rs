@@ -273,6 +273,32 @@ impl<'a> Analyzer<'a> {
             || base_name.starts_with(&format!("{}_", this_base))
     }
 
+    /// Appends the default values of any omitted trailing parameters to a call's argument lists.
+    /// `defaults` is the callee's per-parameter default slice (parallel to its parameters); for each
+    /// index at or past the number of supplied arguments that carries a default, its constant
+    /// literal is analyzed exactly like an explicit literal argument, extending both `params_types`
+    /// (for the per-index type check) and `arg_hirs` (for the emitted call). Callers must have
+    /// already validated arity (supplied count within `required..=total`).
+    fn substitute_default_args(
+        &mut self,
+        defaults: &[Option<Type>],
+        params_types: &mut Vec<String>,
+        arg_hirs: &mut Vec<Option<crate::hir::HExpr>>,
+        parent_function: &FunctionNode<'a>,
+        symbol_table: &Rc<RefCell<SymbolTable>>,
+        diagnostics: &mut DiagnosticBag,
+    ) -> Result<(), SemanticError> {
+        for i in params_types.len()..defaults.len() {
+            if let Some(default) = defaults.get(i).and_then(|d| d.clone()) {
+                let lit = ExpressionNode::Literal(default);
+                let t = self.analyze_expression(&lit, parent_function, symbol_table, diagnostics)?;
+                arg_hirs.push(self.hir_take());
+                params_types.push(t.get_type());
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn analyze_function_call(
         &mut self,
         name: &SyntaxToken,
@@ -358,8 +384,15 @@ impl<'a> Analyzer<'a> {
                     .map(|t| Self::monomorphize_type(t, &self.current_generic_bindings))
                     .collect()
             });
-            let t =
-                self.analyze_constructor_call(name, &concrete_generic_args, &params_types, diagnostics)?;
+            let t = self.analyze_constructor_call(
+                name,
+                &concrete_generic_args,
+                &mut params_types,
+                &mut arg_hirs,
+                parent_function,
+                symbol_table,
+                diagnostics,
+            )?;
             // The concrete struct whose layout the backend uses: a plain struct is its own name, a
             // generic instance (`Box<int>`) its mangled name (`Box_int`), which
             // `ensure_struct_instantiated` has already added to the struct table. A generic base with
@@ -426,6 +459,7 @@ impl<'a> Analyzer<'a> {
                         .iter()
                         .map(|p| Self::monomorphize_type(&p.type_, &bindings).get_type())
                         .collect(),
+                    defaults: template.parameters.iter().map(|p| p.default.clone()).collect(),
                     return_type: template
                         .return_type
                         .as_ref()
@@ -459,18 +493,36 @@ impl<'a> Analyzer<'a> {
             }
         };
 
-        if store_sig.parameters.len() != params_types.len() {
-            diagnostics.report_error(
+        let required = store_sig.required_params();
+        let total = store_sig.parameters.len();
+        let given = params_types.len();
+        if given < required || given > total {
+            let message = if required == total {
                 format!(
                     "Function {} has {} params but {} params are given",
-                    function_name,
-                    store_sig.parameters.len(),
-                    params_types.len()
-                ),
-                Some(name.position),
-            );
+                    function_name, total, given
+                )
+            } else {
+                format!(
+                    "Function {} expects between {} and {} arguments, got {}",
+                    function_name, required, total, given
+                )
+            };
+            diagnostics.report_error(message, Some(name.position));
             return Ok(Type::Void);
         }
+
+        // Substitute default values for any omitted trailing parameters. Each default is a constant
+        // literal, so analyzing `Literal(default)` produces the same type-string and HIR an explicit
+        // literal argument would, and feeds the per-index checks and `hir_set_call` below unchanged.
+        self.substitute_default_args(
+            &store_sig.defaults,
+            &mut params_types,
+            &mut arg_hirs,
+            parent_function,
+            symbol_table,
+            diagnostics,
+        )?;
 
         for i in 0..params_types.len() {
             // A parameter declared `object` accepts any argument type (boxing happens in codegen).
@@ -665,7 +717,10 @@ impl<'a> Analyzer<'a> {
         &mut self,
         name: &SyntaxToken,
         generic_args: &Option<Vec<Type>>,
-        params_types: &[String],
+        params_types: &mut Vec<String>,
+        arg_hirs: &mut Vec<Option<crate::hir::HExpr>>,
+        parent_function: &FunctionNode<'a>,
+        symbol_table: &Rc<RefCell<SymbolTable>>,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<Type, SemanticError> {
         let struct_name = match generic_args {
@@ -688,29 +743,57 @@ impl<'a> Analyzer<'a> {
         };
 
         let init_name = constructor_fn(&struct_name);
-        let expected: Vec<String> = if let Ok(sig) = self.function_table.get_function(&init_name) {
-            // `constructor` is registered as a method, so parameter 0 is the implicit `this`.
-            sig.parameters.iter().skip(1).cloned().collect()
-        } else if let Some(info) = self.struct_table.get_struct(&struct_name) {
-            let mut ordered: Vec<(&String, &crate::semantics::struct_table::StructFieldInfo)> =
-                info.fields.iter().collect();
-            ordered.sort_by_key(|(_, f)| f.offset);
-            ordered.iter().map(|(_, f)| f.type_.get_type()).collect()
-        } else {
-            Vec::new()
-        };
+        // `expected` are the constructor's parameter types (a user `constructor` skips its implicit
+        // `this`); `expected_defaults` are the parallel default values. The field-initializing
+        // auto-constructor never has defaults.
+        let (expected, expected_defaults): (Vec<String>, Vec<Option<Type>>) =
+            if let Ok(sig) = self.function_table.get_function(&init_name) {
+                // `constructor` is registered as a method, so parameter 0 is the implicit `this`.
+                (
+                    sig.parameters.iter().skip(1).cloned().collect(),
+                    sig.defaults.iter().skip(1).cloned().collect(),
+                )
+            } else if let Some(info) = self.struct_table.get_struct(&struct_name) {
+                let mut ordered: Vec<(&String, &crate::semantics::struct_table::StructFieldInfo)> =
+                    info.fields.iter().collect();
+                ordered.sort_by_key(|(_, f)| f.offset);
+                let types: Vec<String> = ordered.iter().map(|(_, f)| f.type_.get_type()).collect();
+                let defaults = vec![None; types.len()];
+                (types, defaults)
+            } else {
+                (Vec::new(), Vec::new())
+            };
 
-        if expected.len() != params_types.len() {
-            diagnostics.report_error(
+        let required = expected_defaults
+            .iter()
+            .position(|d| d.is_some())
+            .unwrap_or(expected.len());
+        let total = expected.len();
+        let given = params_types.len();
+        if given < required || given > total {
+            let message = if required == total {
                 format!(
                     "Constructor for '{}' expects {} argument(s), but {} were given",
-                    struct_name,
-                    expected.len(),
-                    params_types.len()
-                ),
-                Some(name.position),
-            );
+                    struct_name, total, given
+                )
+            } else {
+                format!(
+                    "Constructor for '{}' expects between {} and {} argument(s), but {} were given",
+                    struct_name, required, total, given
+                )
+            };
+            diagnostics.report_error(message, Some(name.position));
         } else {
+            // Fill omitted trailing arguments with their defaults (extends both the type list and
+            // the emitted argument HIR so the generated `New` receives the complete argument set).
+            self.substitute_default_args(
+                &expected_defaults,
+                params_types,
+                arg_hirs,
+                parent_function,
+                symbol_table,
+                diagnostics,
+            )?;
             for i in 0..expected.len() {
                 let e = expected[i].as_str();
                 let g = params_types[i].as_str();
@@ -1362,25 +1445,48 @@ impl<'a> Analyzer<'a> {
         }
 
         let mut expected_params = store_sig.parameters.clone();
+        let mut expected_defaults = store_sig.defaults.clone();
 
         // Remove 'this' from the expected params check since we supply it implicitly
         if !expected_params.is_empty() {
             expected_params.remove(0);
         }
+        if !expected_defaults.is_empty() {
+            expected_defaults.remove(0);
+        }
 
-        if expected_params.len() != arg_types.len() {
-            diagnostics.report_error(
+        let required = expected_defaults
+            .iter()
+            .position(|d| d.is_some())
+            .unwrap_or(expected_params.len());
+        let total = expected_params.len();
+        let given = arg_types.len();
+        if given < required || given > total {
+            let message = if required == total {
                 format!(
                     "function {} expects {} parameters, got {}",
-                    mangled_name,
-                    expected_params.len(),
-                    arg_types.len()
-                ),
-                Some(method.position),
-            );
+                    mangled_name, total, given
+                )
+            } else {
+                format!(
+                    "function {} expects between {} and {} parameters, got {}",
+                    mangled_name, required, total, given
+                )
+            };
+            diagnostics.report_error(message, Some(method.position));
             self.hir_none();
             return Ok(store_sig.return_type.unwrap_or(Type::Void));
         }
+
+        // Fill omitted trailing arguments with their default values before type-checking/emit.
+        self.substitute_default_args(
+            &expected_defaults,
+            &mut arg_types,
+            &mut arg_hirs,
+            ctx.parent_function,
+            ctx.symbol_table,
+            diagnostics,
+        )?;
 
         for (i, given_type) in arg_types.iter().enumerate() {
             let expected_type_str = &expected_params[i];

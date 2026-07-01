@@ -33,7 +33,8 @@ fun main(): void {
     let p = Pair<int>(10, 20);
     describe(p);
 
-    // Implicit upcast to the monomorphized interface, then dynamic dispatch.
-    let c: Container<int> = b;
+    // Explicit cast to the monomorphized interface, then dynamic dispatch. The cast parser now
+    // accepts generic type arguments, so this direct `(Container<int>)b` form works.
+    let c = (Container<int>)b;
     System.println(c.get());
 }

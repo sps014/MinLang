@@ -93,6 +93,24 @@ impl FunctionTable {
             self.functions.insert(base.to_string(), info);
             return Ok(base.to_string());
         }
+        // Default parameter values are only supported on non-overloaded functions: an omitted
+        // trailing argument would make overload resolution ambiguous. Reject the combination
+        // whether the default is on the new overload or on one already registered. (An explicit
+        // loop rather than a closure, so it borrows only `self.functions`, disjoint from the
+        // mutable `existing` borrow of `self.overloads`.)
+        let mut existing_has_defaults = false;
+        for k in existing.iter() {
+            if self.functions.get(k).map(|f| f.has_defaults()).unwrap_or(false) {
+                existing_has_defaults = true;
+                break;
+            }
+        }
+        if info.has_defaults() || existing_has_defaults {
+            return Err(SymbolError::new(format!(
+                "function '{}' cannot be overloaded because it uses default parameter values",
+                base
+            )));
+        }
         // Promote a lone bare singleton to its mangled key the moment a second overload appears.
         if existing.len() == 1 && existing[0] == base {
             if let Some(mut first) = self.functions.remove(base) {
@@ -210,6 +228,10 @@ pub struct FunctionTableInfo {
     pub name: String,
     pub return_type: Option<Type>,
     pub parameters: Vec<String>,
+    /// Per-parameter constant-literal default values, parallel to `parameters`. `None` means the
+    /// parameter is required. Defaults are always trailing (enforced by the parser), so a call may
+    /// omit the trailing defaulted arguments and the analyzer substitutes these literals.
+    pub defaults: Vec<Option<Type>>,
     /// True when the declaration is `async fun`: calling it eagerly starts a task and yields
     /// `Future<T>` (where `T` is `return_type`). Awaiting a call to it produces `T`.
     pub is_async: bool,
@@ -230,10 +252,12 @@ impl FunctionTableInfo {
         return_type: Option<Type>,
         parameters: Vec<String>,
     ) -> FunctionTableInfo {
+        let defaults = vec![None; parameters.len()];
         FunctionTableInfo {
             name,
             return_type,
             parameters,
+            defaults,
             is_async: false,
             is_static: false,
             intrinsic_name: None,
@@ -244,12 +268,15 @@ impl FunctionTableInfo {
         let name = func.name.clone();
         let return_type = func.return_type.clone();
         let mut parameters: Vec<String> = vec![];
+        let mut defaults: Vec<Option<Type>> = vec![];
         for i in func.parameters.iter() {
             let j = i.clone();
             parameters.push(j.type_.get_type());
+            defaults.push(j.default);
         }
         let intrinsic_name = crate::intrinsics::intrinsic_key(&func.attributes);
         let mut info = FunctionTableInfo::new(name.text, return_type, parameters);
+        info.defaults = defaults;
         info.is_async = func.is_async;
         info.is_static = func.is_static;
         info.intrinsic_name = intrinsic_name;
@@ -257,5 +284,20 @@ impl FunctionTableInfo {
         // host-exported and privacy is meaningless for them, so they are always call-visible.
         info.is_public = func.is_public || func.is_extern;
         info
+    }
+
+    /// The number of leading required parameters: the index of the first parameter that has a
+    /// default value, or the full parameter count when none do. A call must supply at least this
+    /// many arguments; the remaining trailing parameters may be omitted (their defaults are used).
+    pub fn required_params(&self) -> usize {
+        self.defaults
+            .iter()
+            .position(|d| d.is_some())
+            .unwrap_or(self.parameters.len())
+    }
+
+    /// True if any parameter carries a default value.
+    pub fn has_defaults(&self) -> bool {
+        self.defaults.iter().any(|d| d.is_some())
     }
 }

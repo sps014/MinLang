@@ -746,12 +746,15 @@ impl<'a, 'b> Parser<'a, 'b> {
         })
     }
 
-    /// Parses formal parameters for a function declaration
+    /// Parses formal parameters for a function declaration. A parameter may carry a constant-literal
+    /// default value (`name: type = <literal>`); once one parameter has a default, every parameter
+    /// after it must also have one (defaults must be trailing).
     pub(super) fn parse_formal_parameters(&mut self) -> Result<Vec<ParameterNode>, Error> {
         let mut params = vec![];
         //eat the open parenthesis
         self.match_token(TokenKind::OpenParenthesisToken);
 
+        let mut seen_default = false;
         while self.current_token().kind != TokenKind::CloseParenthesisToken
             && self.current_token().kind != TokenKind::EndOfFileToken
         {
@@ -762,7 +765,26 @@ impl<'a, 'b> Parser<'a, 'b> {
             self.match_token(TokenKind::ColonToken);
 
             let param_type = self.parse_type()?;
-            params.push(ParameterNode::new(param, param_type));
+
+            // Optional default value: `= <literal>`. Restricted to constant literals so no
+            // evaluation is needed at the call site.
+            let default = if self.current_token().kind == TokenKind::EqualToken {
+                self.match_token(TokenKind::EqualToken);
+                seen_default = true;
+                Some(self.parse_literal_pattern()?)
+            } else {
+                if seen_default {
+                    self.diagnostics.report_error(
+                        format!(
+                            "required parameter '{}' cannot follow a parameter with a default value",
+                            param.text
+                        ),
+                        Some(param.position),
+                    );
+                }
+                None
+            };
+            params.push(ParameterNode::with_default(param, param_type, default));
 
             // Safety: if a malformed parameter consumed no tokens (e.g. a reserved keyword used
             // as a parameter name), advance one token to avoid an infinite loop.

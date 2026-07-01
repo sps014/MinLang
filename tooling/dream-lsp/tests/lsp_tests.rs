@@ -712,6 +712,73 @@ async fun main(): void {
 }
 
 #[test]
+fn arithmetic_binary_infers_operand_type() {
+    use dream_lsp::index::{Index, InlayKind};
+    let src = "
+fun main(): void {
+    let c: int = 3;
+    let a = c * 5;
+}
+";
+    let index = Index::build(None, src);
+    let labels: Vec<&str> = index
+        .inlay_hints
+        .iter()
+        .filter(|h| h.kind == InlayKind::Type)
+        .map(|h| h.label.as_str())
+        .collect();
+    assert!(
+        labels.contains(&": int"),
+        "`let a = c * 5` should infer `: int`, not unknown; got {:?}",
+        labels
+    );
+}
+
+#[test]
+fn hover_on_arithmetic_binding_shows_type() {
+    let src = "
+fun main(): void {
+    let c: int = 3;
+    let |a = c * 5;
+}
+";
+    let harness = TestHarness::new(src);
+    let hover = harness
+        .index()
+        .hover(harness.offset, &harness.src)
+        .expect("Expected hover info on `a`");
+    assert!(
+        hover.contents.contains("int"),
+        "hover on `a` should show `int`, got {:?}",
+        hover.contents
+    );
+}
+
+#[test]
+fn arithmetic_binary_falls_back_to_left_operand_double() {
+    use dream_lsp::index::{Index, InlayKind};
+    // The left operand's type wins, matching the compiler's arithmetic result rule.
+    let src = "
+fun main(): void {
+    let d: double = 1.5;
+    let a = d + 1;
+}
+";
+    let index = Index::build(None, src);
+    let labels: Vec<&str> = index
+        .inlay_hints
+        .iter()
+        .filter(|h| h.kind == InlayKind::Type)
+        .map(|h| h.label.as_str())
+        .collect();
+    assert!(
+        labels.contains(&": double"),
+        "`let a = d + 1` should infer `: double` from the left operand; got {:?}",
+        labels
+    );
+}
+
+#[test]
 fn hover_shows_doc_comment_above_attribute() {
     let src = "
 class System {
@@ -834,6 +901,75 @@ class Point {
         assert!(
             names.contains(&expected),
             "expected `{}` in document symbols, got {:?}",
+            expected,
+            names
+        );
+    }
+}
+
+#[test]
+fn workspace_symbols_match_by_substring() {
+    let src = "
+fun compute(): int { return 1; }
+class Container {
+    public value: int;
+    public fun getValue(): int { return value; }
+}
+fun main(): void {
+    let temp: int = 3;
+}
+|";
+    let harness = TestHarness::new(src);
+    let index = harness.index();
+
+    // A substring query matches names case-insensitively across the whole document.
+    let names: Vec<&str> = index
+        .symbols_matching("value")
+        .iter()
+        .map(|d| d.name.as_str())
+        .collect();
+    assert!(
+        names.contains(&"value"),
+        "expected field `value` in workspace symbols, got {:?}",
+        names
+    );
+    assert!(
+        names.contains(&"getValue"),
+        "expected method `getValue` in workspace symbols, got {:?}",
+        names
+    );
+    assert!(
+        !names.contains(&"compute"),
+        "did not expect `compute` for query `value`, got {:?}",
+        names
+    );
+}
+
+#[test]
+fn workspace_symbols_include_functions_types_and_locals() {
+    let src = "
+fun compute(): int { return 1; }
+class Container {
+    public value: int;
+}
+fun main(): void {
+    let localThing: int = 3;
+}
+|";
+    let harness = TestHarness::new(src);
+    let index = harness.index();
+
+    // An empty query returns every named declaration, including function-scoped locals (which
+    // document symbols exclude) but never parameters/keywords/type references.
+    let names: Vec<&str> = index
+        .symbols_matching("")
+        .iter()
+        .map(|d| d.name.as_str())
+        .collect();
+    for expected in ["compute", "Container", "value", "main", "localThing"] {
+        assert!(
+            names.contains(&expected),
+            "expected `{}` in workspace symbols, got {:?}",
             expected,
             names
         );

@@ -170,6 +170,7 @@ impl LanguageServer for Backend {
                 definition_provider: Some(OneOf::Left(true)),
                 references_provider: Some(OneOf::Left(true)),
                 document_symbol_provider: Some(OneOf::Left(true)),
+                workspace_symbol_provider: Some(OneOf::Left(true)),
                 document_formatting_provider: Some(OneOf::Left(true)),
                 inlay_hint_provider: Some(OneOf::Left(true)),
                 signature_help_provider: Some(SignatureHelpOptions {
@@ -377,6 +378,50 @@ impl LanguageServer for Backend {
             })
             .collect();
         Ok(Some(DocumentSymbolResponse::Nested(symbols)))
+    }
+
+    async fn symbol(
+        &self,
+        params: WorkspaceSymbolParams,
+    ) -> Result<Option<Vec<SymbolInformation>>> {
+        let query = params.query;
+        let mut out = Vec::new();
+        // Workspace symbols are gathered from every currently-open document. Each document's index
+        // is version-cached, so repeated lookups are cheap.
+        let keys: Vec<String> = self.documents.iter().map(|e| e.key().clone()).collect();
+        for key in keys {
+            let Ok(uri) = Url::parse(&key) else {
+                continue;
+            };
+            let Some(text) = self.document_text(&key) else {
+                continue;
+            };
+            let Some(idx) = self.index_for(&key, Self::file_path_of(&uri).as_deref()) else {
+                continue;
+            };
+            let line_index = LineIndex::new(&text);
+            for d in idx.symbols_matching(&query) {
+                let range = Range {
+                    start: map_position(line_index.position(d.start)),
+                    end: map_position(line_index.position(d.end)),
+                };
+                // `SymbolInformation::deprecated` is a deprecated field in `lsp-types` that must
+                // still be initialized; the allow is unavoidable (not our API).
+                #[allow(deprecated)]
+                out.push(SymbolInformation {
+                    name: d.name.clone(),
+                    kind: symbol_kind(d.kind),
+                    tags: None,
+                    deprecated: None,
+                    location: Location {
+                        uri: uri.clone(),
+                        range,
+                    },
+                    container_name: None,
+                });
+            }
+        }
+        Ok(Some(out))
     }
 
     async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {

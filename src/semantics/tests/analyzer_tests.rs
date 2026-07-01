@@ -955,6 +955,83 @@ fn exec_first_class_function_from_source() {
     assert_eq!(run_and_capture(&code, "main"), "5");
 }
 
+#[test]
+fn func_value_argument_is_not_reference_counted() {
+    // Documents how memory is managed when a function is passed as an argument: it isn't. A
+    // `fun(...)` value is a plain `i32` table index, not a heap reference, so the RC pass never
+    // retains or releases it. A `string` bound alongside it in the same scope still gets its normal
+    // reference-counting treatment — proving the distinction is real, not that RC is globally off.
+    let code = format!(
+        "{SYSTEM_STUB}
+        fun twice(x: int): int {{ return x * 2; }}
+        fun apply(f: fun(int): int, s: string): int {{ return f(3); }}
+        fun main(): void {{
+            let g: fun(int): int = twice;
+            let s: string = \"hi\";
+            let r: int = apply(g, s);
+        }}"
+    );
+
+    let mut diagnostics = DiagnosticBag::new(None);
+    let lexer = Lexer::new(code.to_string());
+    let parse_arena = bumpalo::Bump::new();
+    let mut parser = Parser::new(lexer, &parse_arena, &mut diagnostics);
+    let tree = parser.parse().expect("parse should succeed");
+    let arena = bumpalo::Bump::new();
+    let mut analyzer = Analyzer::new(&tree, &arena);
+    let hir = analyzer
+        .analyze(&mut diagnostics)
+        .expect("analysis should succeed")
+        .hir;
+    assert!(!diagnostics.has_errors(), "unexpected analysis errors");
+    let interner = &analyzer.type_ctx.interner;
+    let mut mir = crate::mir::lower::lower_program(&hir, interner);
+    use crate::mir::passes::MirPass;
+    for f in &mut mir.functions {
+        crate::mir::passes::RcInsertion.run(f, interner);
+    }
+
+    use crate::mir::{Operand, Place, Statement};
+    let main = mir
+        .functions
+        .iter()
+        .find(|f| f.name == "main")
+        .expect("main should be lowered");
+
+    let mut func_value_rc = 0usize;
+    let mut reference_rc = 0usize;
+    for block in &main.blocks {
+        for stmt in &block.stmts {
+            let op = match stmt {
+                Statement::Retain(o) | Statement::Release(o) => o,
+                _ => continue,
+            };
+            if let Operand::Copy(Place::Local(l)) = op {
+                let ty = main.locals[l.0 as usize].ty;
+                if matches!(
+                    interner.kind(interner.strip_nullable(ty)),
+                    crate::types::TyKind::Func(_, _)
+                ) {
+                    func_value_rc += 1;
+                } else if interner.is_reference(ty) {
+                    reference_rc += 1;
+                }
+            }
+        }
+    }
+
+    assert_eq!(
+        func_value_rc, 0,
+        "a function value is a scalar table index and must never be retained/released:\n{:#?}",
+        main
+    );
+    assert!(
+        reference_rc > 0,
+        "the string local should still be reference-counted:\n{:#?}",
+        main
+    );
+}
+
 #[cfg(feature = "native")]
 #[test]
 fn exec_print_escapes_in_string_literal() {
@@ -1896,4 +1973,76 @@ fn test_is_binding_not_visible_outside_branch() {
         .diagnostics
         .iter()
         .any(|d| d.message.contains("does not exist")));
+}
+
+#[test]
+fn test_default_param_call_with_and_without_optional_arg() {
+    // A trailing default parameter may be supplied or omitted; both calls are well-typed.
+    let code = "
+        fun greet(name: string, times: int = 1): void {}
+        fun main(): void {
+            greet(\"hi\");
+            greet(\"hi\", 2);
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), false);
+}
+
+#[test]
+fn test_default_param_missing_required_arg_errors() {
+    // The leading required parameter still must be supplied: `greet()` provides fewer than the
+    // required count and is an error.
+    let code = "
+        fun greet(name: string, times: int = 1): void {}
+        fun main(): void {
+            greet();
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+}
+
+#[test]
+fn test_default_param_too_many_args_errors() {
+    // Supplying more than the total parameter count is still an arity error, reported with the
+    // range message.
+    let code = "
+        fun greet(name: string, times: int = 1): void {}
+        fun main(): void {
+            greet(\"hi\", 1, 2);
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("between 1 and 2 arguments")));
+}
+
+#[test]
+fn test_default_param_after_required_used_in_call() {
+    // The default's value is substituted, so a numeric default type-checks against its declared
+    // parameter type without error.
+    let code = "
+        fun scale(base: int, factor: int = 2): int { return base * factor; }
+        fun main(): void {
+            let a: int = scale(5);
+            let b: int = scale(5, 3);
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), false);
+}
+
+#[test]
+fn test_default_param_rejected_after_required_at_analysis() {
+    // The parser reports a required parameter following a defaulted one; analysis surfaces it too.
+    let code = "
+        fun bad(x: int = 1, y: int): void {}
+        fun main(): void {}
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
 }

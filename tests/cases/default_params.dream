@@ -1,0 +1,30 @@
+// Default parameter values (literal-only) across a free function, a constructor, and a method.
+// Each optional trailing parameter is exercised both omitted (default substituted) and supplied.
+
+fun add(base: int, delta: int = 10): int {
+    return base + delta;
+}
+
+class Greeter {
+    public factor: int;
+
+    constructor(factor: int = 3) {
+        this.factor = factor;
+    }
+
+    public fun scale(n: int, by: int = 2): int {
+        return n * by * this.factor;
+    }
+}
+
+fun main(): void {
+    System.println(add(5));        // 5 + 10 = 15
+    System.println(add(5, 1));     // 5 + 1  = 6
+
+    let g = Greeter();             // factor defaults to 3
+    let h = Greeter(10);           // factor = 10
+
+    System.println(g.scale(4));    // 4 * 2 * 3  = 24
+    System.println(g.scale(4, 5)); // 4 * 5 * 3  = 60
+    System.println(h.scale(4));    // 4 * 2 * 10 = 80
+}

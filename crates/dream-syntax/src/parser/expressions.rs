@@ -187,25 +187,44 @@ impl<'a, 'b> Parser<'a, 'b> {
             // Could be `(Node)0` or `(x) + 1`
             // Let's check token after `)`
             let mut i = 2;
-            while self.peek_token(i).kind == TokenKind::OpenBracketToken {
-                i += 2; // skip `[` and `]`
-            }
-            if self.peek_token(i).kind == TokenKind::CloseParenthesisToken {
-                let next_kind = self.peek_token(i + 1).kind;
-                // If the token after `)` is an expression starter, it's a cast
-                matches!(
-                    next_kind,
-                    TokenKind::NumberToken
-                        | TokenKind::StringToken
-                        | TokenKind::BooleanToken
-                        | TokenKind::IdentifierToken
-                        | TokenKind::OpenParenthesisToken
-                        | TokenKind::OpenBracketToken
-                        | TokenKind::MinusToken
-                        | TokenKind::BangToken
-                )
+            // Skip a generic argument list so `(Container<int>)b` (and nested forms like
+            // `(Pair<Box<int>, int>)x`) are recognized as casts. `scan_generic_args` tracks `<`/`>`
+            // nesting (treating `>>` as two closes) and returns the peek offset after the matching
+            // close; `None` means it is not a balanced generic list, so this is not a cast.
+            let generic_ok = if self.peek_token(i).kind == TokenKind::SmallerThanToken {
+                match self.scan_generic_args(i + 1) {
+                    Some(after) => {
+                        i = after;
+                        true
+                    }
+                    None => false,
+                }
             } else {
+                true
+            };
+            if !generic_ok {
                 false
+            } else {
+                while self.peek_token(i).kind == TokenKind::OpenBracketToken {
+                    i += 2; // skip `[` and `]`
+                }
+                if self.peek_token(i).kind == TokenKind::CloseParenthesisToken {
+                    let next_kind = self.peek_token(i + 1).kind;
+                    // If the token after `)` is an expression starter, it's a cast
+                    matches!(
+                        next_kind,
+                        TokenKind::NumberToken
+                            | TokenKind::StringToken
+                            | TokenKind::BooleanToken
+                            | TokenKind::IdentifierToken
+                            | TokenKind::OpenParenthesisToken
+                            | TokenKind::OpenBracketToken
+                            | TokenKind::MinusToken
+                            | TokenKind::BangToken
+                    )
+                } else {
+                    false
+                }
             }
         } else {
             false
@@ -458,8 +477,9 @@ impl<'a, 'b> Parser<'a, 'b> {
         }
     }
 
-    /// Parses a literal used as a pattern (`0`, `-5`, `3.14`, `"s"`, `'c'`, `true`, `null`).
-    fn parse_literal_pattern(&mut self) -> Result<Type, Error> {
+    /// Parses a literal used as a pattern (`0`, `-5`, `3.14`, `"s"`, `'c'`, `true`, `null`). Also
+    /// reused to parse constant-literal default parameter values.
+    pub(super) fn parse_literal_pattern(&mut self) -> Result<Type, Error> {
         let cur = self.current_token();
         match cur.kind {
             TokenKind::BooleanToken => Ok(Type::Boolean(self.match_token(TokenKind::BooleanToken))),

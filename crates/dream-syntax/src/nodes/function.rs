@@ -8,12 +8,29 @@ use std::rc::Rc;
 pub struct ParameterNode {
     pub name: SyntaxToken,
     pub type_: Type,
+    /// An optional default value, restricted to a constant literal (`= 5`, `= "hi"`, `= true`,
+    /// `= -1`, `= null`). When present, the parameter may be omitted at a call site and the default
+    /// is substituted. `None` for required parameters and all synthesized parameters (e.g. `this`).
+    pub default: Option<Type>,
 }
 
 impl ParameterNode {
-    /// Creates a new parameter node
+    /// Creates a new required parameter node (no default value).
     pub fn new(name: SyntaxToken, type_: Type) -> ParameterNode {
-        ParameterNode { name, type_ }
+        ParameterNode {
+            name,
+            type_,
+            default: None,
+        }
+    }
+
+    /// Creates a parameter node with a constant-literal default value.
+    pub fn with_default(name: SyntaxToken, type_: Type, default: Option<Type>) -> ParameterNode {
+        ParameterNode {
+            name,
+            type_,
+            default,
+        }
     }
 }
 

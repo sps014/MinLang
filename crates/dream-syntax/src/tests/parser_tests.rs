@@ -803,3 +803,115 @@ fn fuzz_recovers_and_reports_multiple_errors() {
         "function should still be recovered"
     );
 }
+
+#[test]
+fn test_parse_default_parameter_value() {
+    let code = "fun f(x: int, y: int = 5): void {}";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    let func = &program.functions[0];
+    assert_eq!(func.parameters.len(), 2);
+    assert!(func.parameters[0].default.is_none());
+    match &func.parameters[1].default {
+        Some(Type::Integer(t)) => assert_eq!(t.text, "5"),
+        other => panic!("expected integer default `5`, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_parse_negative_default_parameter_value() {
+    let code = "fun f(z: int = -1): void {}";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    let func = &program.functions[0];
+    match &func.parameters[0].default {
+        Some(Type::Integer(t)) => assert_eq!(t.text, "-1"),
+        other => panic!("expected integer default `-1`, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_parse_string_and_bool_default_parameter_values() {
+    let code = "fun f(name: string = \"anon\", flag: bool = true): void {}";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    let func = &program.functions[0];
+    assert!(matches!(func.parameters[0].default, Some(Type::String(_))));
+    assert!(matches!(func.parameters[1].default, Some(Type::Boolean(_))));
+}
+
+#[test]
+fn test_required_parameter_after_default_is_rejected() {
+    // A required parameter following one with a default must be reported as an error.
+    let code = "fun f(x: int = 1, y: int): void {}";
+    let arena = bumpalo::Bump::new();
+    let (_program, diagnostics) = parse_code(code, &arena);
+
+    assert!(
+        diagnostics.has_errors(),
+        "a required parameter after a defaulted one should be a parse error"
+    );
+}
+
+/// Extracts the single expression from `let _ = <expr>;` inside `main`, for cast-parsing tests.
+fn only_decl_expr<'a>(program: &'a ProgramNode<'a>) -> &'a ExpressionNode<'a> {
+    let func = &program.functions[0];
+    match &func.body[0] {
+        StatementNode::Declaration(_, _, expr, _) => expr,
+        other => panic!("expected a declaration, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_parse_cast_with_generic_type_argument() {
+    let code = "fun main(): void { let c = (Container<int>)b; }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    match only_decl_expr(&program) {
+        ExpressionNode::Cast(Type::Struct(name, Some(args)), _) => {
+            assert_eq!(name.text, "Container");
+            assert_eq!(args.len(), 1);
+            assert!(matches!(args[0], Type::Integer(_)));
+        }
+        other => panic!("expected a cast to Container<int>, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_parse_cast_with_nested_generic_type_argument() {
+    let code = "fun main(): void { let x = (Pair<Box<int>, int>)value; }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    match only_decl_expr(&program) {
+        ExpressionNode::Cast(Type::Struct(name, Some(args)), _) => {
+            assert_eq!(name.text, "Pair");
+            assert_eq!(args.len(), 2);
+        }
+        other => panic!("expected a cast to Pair<Box<int>, int>, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_parenthesized_comparison_is_not_a_cast() {
+    // `(x) < y` is a comparison, not a `(Type)expr` cast: the generic lookahead must not
+    // misclassify it. It should parse as a parenthesized expression on the left of a `<`.
+    let code = "fun main(): void { let r = (x) < y; }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    match only_decl_expr(&program) {
+        ExpressionNode::Binary(_, opr, _) => assert_eq!(opr.kind, TokenKind::SmallerThanToken),
+        other => panic!("expected a `<` comparison, got {:?}", other),
+    }
+}

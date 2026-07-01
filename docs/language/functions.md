@@ -30,6 +30,48 @@ fun greet(): void {
 let result = add(3, 4);
 ```
 
+## Default parameter values
+
+A parameter may declare a default value with `= <literal>`. When a caller omits that argument, the default is substituted:
+
+```dream
+fun greet(name: string, times: int = 1): void {
+    let i = 0;
+    while (i < times) {
+        println("hi " + name);
+        i = i + 1;
+    }
+}
+
+fun main() {
+    greet("Ada");      // times defaults to 1
+    greet("Ada", 3);   // times = 3
+}
+```
+
+Rules:
+
+- A default must be a **constant literal** — a number (optionally negative, e.g. `-1`), `true`/`false`, a string, a char, or `null`. Arbitrary expressions are not allowed.
+- Defaults must be **trailing**: once a parameter has a default, every parameter after it must also have one. A required parameter cannot follow a defaulted one.
+- A call must still supply all leading required arguments; supplying more than the total parameter count is an error.
+- Default parameters work on free functions, methods, and constructors. A function that uses defaults cannot also be overloaded.
+
+Defaults are also honored by constructors and methods:
+
+```dream
+class Greeter {
+    public factor: int;
+    constructor(factor: int = 3) { this.factor = factor; }
+    public fun scale(n: int, by: int = 2): int { return n * by * this.factor; }
+}
+
+fun main() {
+    let g = Greeter();        // factor = 3
+    println(g.scale(4));      // 4 * 2 * 3 = 24
+    println(g.scale(4, 5));   // 4 * 5 * 3 = 60
+}
+```
+
 ## Returning a value
 
 Use `return`:

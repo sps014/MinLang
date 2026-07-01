@@ -41,7 +41,7 @@ impl Builder {
             ExpressionNode::Literal(t) => Some(t.display_name()),
             ExpressionNode::Cast(ty, _) => Some(ty.display_name()),
             ExpressionNode::IsExpression(_, _, _) => Some("bool".to_string()),
-            ExpressionNode::Binary(_, op, _) => match op.kind {
+            ExpressionNode::Binary(left, op, right) => match op.kind {
                 dream::syntax::token::token_kind::TokenKind::EqualEqualToken
                 | dream::syntax::token::token_kind::TokenKind::NotEqualToken
                 | dream::syntax::token::token_kind::TokenKind::GreaterThanToken
@@ -52,6 +52,16 @@ impl Builder {
                 | dream::syntax::token::token_kind::TokenKind::PipePipeToken => {
                     Some("bool".to_string())
                 }
+                // Arithmetic operators (`+ - * /`) yield the type of their left operand, mirroring
+                // the compiler's `analyze_binary_expression` (result type = left operand type). This
+                // is what makes `let a = c * 5` infer `int` for hover/inlay hints. Fall back to the
+                // right operand when the left is unresolvable.
+                dream::syntax::token::token_kind::TokenKind::PlusToken
+                | dream::syntax::token::token_kind::TokenKind::MinusToken
+                | dream::syntax::token::token_kind::TokenKind::StarToken
+                | dream::syntax::token::token_kind::TokenKind::SlashToken => self
+                    .infer_type(left, scope)
+                    .or_else(|| self.infer_type(right, scope)),
                 _ => None,
             },
             ExpressionNode::Identifier(token) => self

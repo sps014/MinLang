@@ -241,6 +241,23 @@ impl Index {
             .collect()
     }
 
+    /// Workspace "go to symbol" candidates whose name matches `query` (case-insensitive substring;
+    /// an empty query matches every candidate). Uses the same named-declaration filter as
+    /// [`document_symbols`](Self::document_symbols) but drops the `scope == GLOBAL` restriction on
+    /// variables so any named declaration is discoverable, mirroring how editors surface symbols
+    /// across a workspace.
+    pub fn symbols_matching(&self, query: &str) -> Vec<&Decl> {
+        let needle = query.to_lowercase();
+        self.decls
+            .iter()
+            .filter(|d| {
+                d.is_main
+                    && !matches!(d.kind, SymKind::Param | SymKind::Keyword | SymKind::Type)
+                    && (needle.is_empty() || d.name.to_lowercase().contains(&needle))
+            })
+            .collect()
+    }
+
     pub fn signature_help(&self, text: &str, offset: usize) -> Option<Decl> {
         let bytes = text.as_bytes();
         let mut i = offset;
