@@ -337,8 +337,10 @@ fn strings_in_rvalue(rv: &Rvalue, out: &mut Vec<String>) {
         | Rvalue::Unary(_, o)
         | Rvalue::ArrayLen(o)
         | Rvalue::StrLen(o)
-        | Rvalue::Cast(o, _) => strings_in_operand(o, out),
-        Rvalue::Binary(_, a, b) => {
+        | Rvalue::Cast(o, _)
+        | Rvalue::Discriminant(o)
+        | Rvalue::UnionField { base: o, .. } => strings_in_operand(o, out),
+        Rvalue::Binary(_, a, b) | Rvalue::CharAt(a, b) => {
             strings_in_operand(a, out);
             strings_in_operand(b, out);
         }
@@ -1490,10 +1492,23 @@ impl Emitter<'_> {
         match rvalue {
             Rvalue::Use(o) => self.emit_operand(o),
             Rvalue::Binary(op, a, b) => {
+                let ty = self.operand_ty(a);
+                // String equality compares contents, not pointers, via the runtime `$string_eq`.
+                let str_eq = matches!(op, BinOp::Eq | BinOp::Ne)
+                    && matches!(
+                        self.interner.kind(self.interner.strip_nullable(ty)),
+                        TyKind::Prim(PrimTy::String)
+                    );
                 self.emit_operand(a);
                 self.emit_operand(b);
-                let ty = self.operand_ty(a);
-                self.line(&format!("     ({})", self.binop_instr(*op, ty)));
+                if str_eq {
+                    self.line("     (call $string_eq)");
+                    if matches!(op, BinOp::Ne) {
+                        self.line("     (i32.eqz)");
+                    }
+                } else {
+                    self.line(&format!("     ({})", self.binop_instr(*op, ty)));
+                }
             }
             Rvalue::Unary(op, a) => {
                 let ty = self.operand_ty(a);
@@ -1643,11 +1658,40 @@ impl Emitter<'_> {
                 self.emit_operand(o);
                 self.line("     (i32.load) ;; array length is the first word");
             }
+            Rvalue::CharAt(s, i) => {
+                self.emit_operand(s);
+                self.emit_operand(i);
+                self.line("     (call $char_at)");
+            }
             Rvalue::StrLen(o) => {
                 self.emit_operand(o);
                 self.line("     (call $strlen) ;; strings are NUL-terminated");
             }
             Rvalue::Cast(o, to) => self.emit_cast(o, *to),
+            Rvalue::Discriminant(o) => {
+                // The discriminant is the `i32` at offset 0 of the union block.
+                self.emit_operand(o);
+                self.line("     (i32.load) ;; union discriminant");
+            }
+            Rvalue::UnionField { base, ty, variant, field } => {
+                let slot = self.layouts.union(*ty).and_then(|u| {
+                    u.variants
+                        .iter()
+                        .find(|v| v.discriminant as usize == *variant)
+                        .and_then(|v| v.fields.get(*field))
+                        .map(|f| (f.offset, f.ty))
+                });
+                if let Some((off, fty)) = slot {
+                    self.emit_operand(base);
+                    if off > 0 {
+                        self.line(&format!("     (i32.const {})", off));
+                        self.line("     (i32.add)");
+                    }
+                    self.line(&format!("     ({})", self.load_instr(fty)));
+                } else {
+                    self.line("     (i32.const 0) ;; TODO(layout): union payload");
+                }
+            }
         }
     }
 

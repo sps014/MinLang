@@ -145,8 +145,8 @@ impl<'a> Analyzer<'a> {
             .unwrap_or(Type::Unknown);
         let subject_hir = self.hir_take();
         let mut hir_arms: Vec<crate::hir::HArm> = Vec::new();
-        // Only single-label cases map to one `HArm`; a multi-label case (`case 1, 2:`) would need
-        // the body duplicated, so it drops the function out of coverage.
+        // A multi-label case (`case 1, 2, 3:`) becomes one `HArm` per label, all sharing a clone of
+        // the case body (each label is a distinct dispatch target hitting the same code).
         let mut hir_ok = true;
         let subject_name = subject_type.get_type();
         let subject_is_enum = self.enum_table.contains_key(&subject_name);
@@ -162,7 +162,7 @@ impl<'a> Analyzer<'a> {
 
         let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         for (labels, body) in cases.iter() {
-            let mut label_hir: Option<HExpr> = None;
+            let mut label_hirs: Vec<Option<HExpr>> = Vec::new();
             for label in labels.iter() {
                 // Labels must be compile-time constants: a literal, or (for enum switches) an
                 // enum member access like `Color.Red`.
@@ -176,7 +176,7 @@ impl<'a> Analyzer<'a> {
                 let label_type = self
                     .analyze_expression(label, ctx.parent_function, ctx.symbol_table, diagnostics)
                     .unwrap_or(Type::Unknown);
-                label_hir = self.hir_take();
+                label_hirs.push(self.hir_take());
                 self.compare_data_type(&subject_type, &label_type, &empty_span(), diagnostics)?;
 
                 let key = match label {
@@ -209,9 +209,12 @@ impl<'a> Analyzer<'a> {
                 diagnostics,
             )?;
             let body_hir = self.hir_close_block();
-            match (labels.len() == 1).then_some(()).and(self.hir_const_arm(label_hir, body_hir)) {
-                Some(arm) => hir_arms.push(arm),
-                None => hir_ok = false,
+            // One arm per label; all labels of a case share (a clone of) its body.
+            for label_hir in label_hirs {
+                match self.hir_const_arm(label_hir, body_hir.clone()) {
+                    Some(arm) => hir_arms.push(arm),
+                    None => hir_ok = false,
+                }
             }
         }
 

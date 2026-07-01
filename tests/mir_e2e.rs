@@ -68,16 +68,8 @@ const XFAIL: &[(&str, &str)] = &[
     ("async_ref_params", "callee unresolved: async method"),
     ("file_io", "callee unresolved: File intrinsics"),
     ("generics", "callee unresolved: generic instance body"),
-    ("int_parse", "callee unresolved: int parsing"),
     ("json_parse", "callee unresolved: json"),
     ("json_roundtrip", "callee unresolved: json"),
-    ("math_advanced", "callee unresolved: math methods"),
-    ("static_methods", "callee unresolved: static method"),
-    ("string_methods", "callee unresolved: string methods"),
-    ("switch_basic", "callee unresolved"),
-    ("union_result", "callee unresolved: union"),
-    // match on union variant patterns (discriminant + payload binding) not lowered yet.
-    ("union_rc", "match: union variant patterns not lowered"),
     // constructor/layout: new reaches $def{N}_constructor fallback.
     ("collections_growth", "constructor/layout: generic collection"),
     ("constructor_advanced", "constructor/layout"),

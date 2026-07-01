@@ -214,6 +214,8 @@ pub enum Rvalue {
     Unary(UnOp, Operand),
     /// `string.len()` via a runtime `$strlen` scan.
     StrLen(Operand),
+    /// `string.char_at(i)` via the runtime `$char_at` helper: `.0` is the string, `.1` the index.
+    CharAt(Operand, Operand),
     /// A direct call returning a value.
     Call { callee: Callee, args: Vec<Operand> },
     /// An indirect call through a function-pointer operand.
@@ -244,6 +246,19 @@ pub enum Rvalue {
     ArrayLen(Operand),
     /// A numeric/object coercion to the target type.
     Cast(Operand, TypeId),
+    /// The active-variant discriminant of a union value (the `i32` at offset 0). Used to drive a
+    /// `match` on union variants.
+    Discriminant(Operand),
+    /// Reads one payload field of a union variant: `base` is the union pointer, `ty` its interned
+    /// union type (the layout key), `variant` the discriminant, and `field` the payload field index.
+    /// The backend resolves the byte offset + load width from the union layout. Only sound in an arm
+    /// already known (by discriminant dispatch) to hold this variant.
+    UnionField {
+        base: Operand,
+        ty: TypeId,
+        variant: usize,
+        field: usize,
+    },
 }
 
 /// A resolved call target carried into MIR. The backend derives the emitted symbol from

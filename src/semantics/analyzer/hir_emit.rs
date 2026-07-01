@@ -1038,6 +1038,25 @@ impl<'a> Analyzer<'a> {
         }
     }
 
+    /// Records `recv.char_at(idx)` (typed `char`): a runtime `$char_at` read. Drops out of coverage
+    /// if either the receiver or the index is not representable.
+    pub(super) fn hir_set_char_at(&mut self, recv: Option<HExpr>, idx: Option<HExpr>) {
+        if !self.active() {
+            self.hir.last = None;
+            return;
+        }
+        match (recv, idx) {
+            (Some(r), Some(i)) => {
+                let char_ty = self.type_ctx.interner.prim(PrimTy::Char);
+                self.hir.last = Some(HExpr::new(
+                    char_ty,
+                    HExprKind::CharAt(Box::new(r), Box::new(i)),
+                ));
+            }
+            _ => self.hir.last = None,
+        }
+    }
+
     /// Records `await e` used as a value (carrying the awaited future's inner type).
     pub(super) fn hir_set_await(&mut self, inner: Option<HExpr>, inner_ty: &Type) {
         if !self.active() {

@@ -79,7 +79,10 @@ fn is_pure(rvalue: &Rvalue) -> bool {
             | Rvalue::Unary(..)
             | Rvalue::ArrayLen(_)
             | Rvalue::StrLen(_)
+            | Rvalue::CharAt(..)
             | Rvalue::Cast(..)
+            | Rvalue::Discriminant(_)
+            | Rvalue::UnionField { .. }
             | Rvalue::FuncRef(_)
     )
 }
@@ -125,10 +128,13 @@ fn read_place_base(place: &Place, read: &mut HashSet<Local>) {
 
 fn read_rvalue(rvalue: &Rvalue, read: &mut HashSet<Local>) {
     match rvalue {
-        Rvalue::Use(o) | Rvalue::ArrayLen(o) | Rvalue::StrLen(o) | Rvalue::Cast(o, _) => {
-            read_operand(o, read)
-        }
-        Rvalue::Binary(_, a, b) => {
+        Rvalue::Use(o)
+        | Rvalue::ArrayLen(o)
+        | Rvalue::StrLen(o)
+        | Rvalue::Cast(o, _)
+        | Rvalue::Discriminant(o)
+        | Rvalue::UnionField { base: o, .. } => read_operand(o, read),
+        Rvalue::Binary(_, a, b) | Rvalue::CharAt(a, b) => {
             read_operand(a, read);
             read_operand(b, read);
         }

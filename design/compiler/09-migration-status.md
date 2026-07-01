@@ -44,7 +44,7 @@ flowchart LR
 | MIR backend handles user-defined constructor bodies | ✅ done (Step C.2c) — `New` carries an optional `ctor` def; when present the backend allocates, zeroes the fields, then calls `$Type_constructor(this, args)` (whose body is emitted via `struct_methods`); otherwise it inlines positional field init |
 | `extend` blocks (generic + non-generic) | ✅ done — extension methods lower exactly like struct methods (`{Type}_{method}` + implicit `this`), so their bodies emit and calls resolve; generic `extend Box<T>` monomorphizes alongside the struct instance (`Box_int_peek`). Covered by `test_hir_emission_extend_{nongeneric,generic}_class` |
 | `del()` destructors | ◐ **body** emits under `{Type}_del` (like any method; `test_hir_emission_destructor_body`), but the release-time **invocation** (per-type deep release: pin refcount → call `$Type_del` → release ref fields → free) is part of the RC runtime, still deferred with the rest of the release layer (Step D) |
-| Driver uses the MIR backend | ◐ **opt-in wired** — `Compiler::with_mir(true)` / CLI `--mir` routes analysis → HIR → `mir::lower` → `prune_unreachable` → passes → `emit_module`. Default is still `WasmGenerator`; the flip waits on full coverage. Gated by `tests/mir_e2e.rs` (**29 / 84** golden e2e cases pass end-to-end through the real driver front-end + MIR backend) |
+| Driver uses the MIR backend | ◐ **opt-in wired** — `Compiler::with_mir(true)` / CLI `--mir` routes analysis → HIR → `mir::lower` → `prune_unreachable` → passes → `emit_module`. Default is still `WasmGenerator`; the flip waits on full coverage. Gated by `tests/mir_e2e.rs` (**44 / 84** golden e2e cases pass end-to-end through the real driver front-end + MIR backend) |
 | `infer.rs` / `resolve.rs` deletable | ❌ still used by the live backend |
 
 The new architecture is **complete as modules** but **not on the critical path**. The legacy backend is
@@ -176,8 +176,8 @@ flips) and attaches the popped statements to the control-flow node it builds.
   `_static_call`, `_global_read_and_write`, `_union_construction`, and
   `_global_initializer_runs_in_start`.
 - ✅ **Slice 3d (done, green):** `switch` statements and **statement-position `match`** both lower to
-  `HStmt::Switch`. `switch` single-label cases become `Const` arms (multi-label `case 1, 2:` would
-  need the body duplicated, so it drops coverage) with the `default` clause as the fallthrough block.
+  `HStmt::Switch`. `switch` cases become `Const` arms — a multi-label `case 1, 2:` emits one arm per
+  label sharing a clone of the body — with the `default` clause as the fallthrough block.
   Statement-`match` builds `Const`/`Variant`/`Wildcard`-as-default arms; a variant pattern allocates
   a fresh HIR local per payload field (in field order) — via `hir_match_pattern` — so the arm body
   resolves the bindings. Guarded arms and bind-whole-value patterns drop coverage. Validated by
@@ -489,7 +489,18 @@ the coverage gap so the default can flip.
 - **Coverage ratchet** (`tests/mir_e2e.rs`). Compiles every `tests/cases/*.dream` through the real
   driver front-end with `--mir`, runs it under `wasmtime`, and diffs against `.expected`. Every case
   not in the annotated `XFAIL` list must pass, so coverage can only grow; removing an `XFAIL` entry is
-  the unit of progress. **Currently 37 pass / 47 xfail.**
+  the unit of progress. **Currently 44 pass / 40 xfail.**
+- **Union variant `match` lowering.** `lower_switch` now handles discriminated-union arms, not just
+  const/enum arms: it reads the value's discriminant (`Rvalue::Discriminant`), `br_table`s on it, and
+  in each arm binds the variant's payload fields (`Rvalue::UnionField`, resolved to layout offsets by
+  the backend) before the body runs. Payload bindings are borrows, so the RC pass retains them like a
+  struct-field read to balance their scope-exit release. This fixed `union_rc` and moved
+  `switch_basic`/`union_result` from *main dropped* to a remaining *callee unresolved* gap.
+- **RC reassignment ordering fix.** `RcInsertion` released a reference local's old value *before*
+  evaluating the assigned rvalue; for a self-referential reassignment (`list = Cons(i, list)`) that
+  freed the old value and then reused it mid-evaluation, silently building a self-referential node.
+  The old value is now stashed and released *after* the rvalue is stored. Latent until union `match`
+  recursion (`sum_list`) actually traversed such lists.
 - **Codegen-bug cluster cleared.** The eight cases that compiled but ran wrong (or failed WASM
   validation) are now fixed, all in already-covered paths:
   - *Numeric casts* — `emit_cast` gained the missing float→int (saturating `trunc_sat`) and
@@ -507,18 +518,29 @@ the coverage gap so the default can flip.
   - *Destructors survive DFE* — `prune_unreachable` keeps `<Type>_del`/`<Type>_to_string` for every
     live (constructed/printed) type and its fields, since they are invoked only by the generated RC
     runtime (`arc_factory`, `constructor_basic`).
+- **`switch` completed + generic unions + `char_at`.** Four self-contained gaps closed the bulk of the
+  *callee unresolved* cluster:
+  - *Multi-label + string `switch`* — a `case 1, 2, 3:` now emits one arm per label sharing a clone of
+    the body, and a `switch` on a `string` lowers to a linear `subject == label` chain (`switch_basic`).
+  - *String equality* — `==`/`!=` on `string` operands now route through the runtime `$string_eq`
+    (content compare) instead of a pointer `i32.eq`; used by the string `switch` chain.
+  - *Generic union construction* — `Result.Ok(..)`/`Option.Some(..)` on a monomorphized union now emit
+    `UnionNew` against the shared template `DefId` + the concrete instance's discriminant; the value's
+    interned `union_ty(def, args)` matches the layout key, so payload offsets resolve (`union_result`,
+    `math_advanced`).
+  - *`char_at`* — `s.char_at(i)` was a builtin that dropped HIR and silently emitted `i32.const 0`; it
+    is now a first-class `CharAt` rvalue (mirroring `StrLen`) lowered to the `$char_at` runtime helper.
+    This unblocked everything routing through `int.parse` / string scanning (`int_parse`,
+    `static_methods`, `string_methods`).
 
 **Remaining coverage gap** (the `XFAIL` categories, in rough priority order):
 1. **`main` dropped** — `main`'s body uses an analyzer construct not yet lowered to HIR (strings/
    interpolation, unions + object protocol, `do/while`, labeled loops, overload resolution, top-level
    statements, json). The whole function is skipped, so the module has no `main` export.
 2. **callee unresolved (`$def{N}`)** — a reachable method/generic-instance body is not emitted
-   (monomorphized methods with their own type params; some static methods).
+   (async methods; monomorphized methods with their own type params; file/json intrinsics).
 3. **constructor/layout (`$def{N}_constructor`)** — a `new` of a (generic) instance whose layout is
    not registered for that type id.
-4. **match on union variant patterns** — `lower_switch` only handles const/enum arms; variant
-   patterns (`Full(t) => …`) need discriminant dispatch + payload binding + an expression result
-   (`union_rc`, and part of `union_match`/`switch_basic`/`union_result`).
 
 **The switch (unchanged, once `XFAIL` is empty):**
 1. Flip the `Compiler` default to the MIR backend (`src/driver/compiler.rs`).

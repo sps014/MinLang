@@ -292,6 +292,8 @@ pub enum HExprKind {
     ArrayLen(Box<HExpr>),
     /// `string.len()` — a runtime `$strlen` scan (strings are null-terminated, not length-prefixed).
     StrLen(Box<HExpr>),
+    /// `string.char_at(i)` — a runtime `$char_at` read: `.0` is the string, `.1` the byte index.
+    CharAt(Box<HExpr>, Box<HExpr>),
     ArrayLit {
         elem_ty: TypeId,
         elems: Vec<HExpr>,

@@ -72,10 +72,15 @@ fn subst_stmt_reads(stmt: &mut Statement, known: &HashMap<Local, Operand>) -> bo
 
 fn subst_rvalue_reads(rvalue: &mut Rvalue, known: &HashMap<Local, Operand>) -> bool {
     match rvalue {
-        Rvalue::Use(o) | Rvalue::ArrayLen(o) | Rvalue::StrLen(o) | Rvalue::Cast(o, _) => {
-            subst_operand(o, known)
+        Rvalue::Use(o)
+        | Rvalue::ArrayLen(o)
+        | Rvalue::StrLen(o)
+        | Rvalue::Cast(o, _)
+        | Rvalue::Discriminant(o)
+        | Rvalue::UnionField { base: o, .. } => subst_operand(o, known),
+        Rvalue::Binary(_, a, b) | Rvalue::CharAt(a, b) => {
+            subst_operand(a, known) | subst_operand(b, known)
         }
-        Rvalue::Binary(_, a, b) => subst_operand(a, known) | subst_operand(b, known),
         Rvalue::Unary(_, a) => subst_operand(a, known),
         Rvalue::Call { args, .. } | Rvalue::New { args, .. } | Rvalue::UnionNew { args, .. }
         | Rvalue::ArrayLit { elems: args, .. } => {

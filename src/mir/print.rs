@@ -80,7 +80,12 @@ fn rvalue(r: &Rvalue) -> String {
         Rvalue::ArrayLit { elems, .. } => format!("[{}]", ops(elems)),
         Rvalue::ArrayLen(o) => format!("len({})", operand(o)),
         Rvalue::StrLen(o) => format!("strlen({})", operand(o)),
+        Rvalue::CharAt(s, i) => format!("char_at({}, {})", operand(s), operand(i)),
         Rvalue::Cast(o, ty) => format!("{} as ty{}", operand(o), ty.0),
+        Rvalue::Discriminant(o) => format!("discriminant({})", operand(o)),
+        Rvalue::UnionField { base, variant, field, .. } => {
+            format!("{}#{}.{}", operand(base), variant, field)
+        }
         Rvalue::FuncRef(callee) => format!("funcref def{}", callee.def.0),
     }
 }

@@ -220,12 +220,31 @@ impl<'a> Analyzer<'a> {
         }
 
         self.ensure_union_instantiated(enum_name, &concrete_args, &variant.position, diagnostics);
-        // Generic union construction needs an `InstanceId` (a later slice); drop out of coverage.
-        self.hir_none();
-        Ok(Some(Type::Struct(
+        // Construct the monomorphized union value. Its interned type (`union_ty(def, args)`) matches
+        // the layout keyed by the mangled instance, so the backend resolves variant offsets. The
+        // shared template `DefId` + the discriminant from the concrete instance name select the arm.
+        let result_ty = Type::Struct(
             synthetic_token(TokenKind::IdentifierToken, enum_name),
             Some(concrete_args),
-        )))
+        );
+        let mangled = crate::syntax::nodes::types::mangle_generic(
+            enum_name,
+            match &result_ty {
+                Type::Struct(_, Some(a)) => a,
+                _ => unreachable!(),
+            },
+        );
+        let def = self.type_ctx.defs.lookup(crate::types::DefKind::Union, enum_name);
+        let disc = self
+            .union_table
+            .get(&mangled)
+            .and_then(|i| i.variant(&variant.text))
+            .map(|v| v.discriminant as usize);
+        match (def, disc) {
+            (Some(def), Some(disc)) => self.hir_set_union_new(def, disc, arg_hirs, &result_ty),
+            _ => self.hir_none(),
+        }
+        Ok(Some(result_ty))
     }
 
     /// Analyzes a `match`. `is_expression` is true when the match is used in value position (all

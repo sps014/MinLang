@@ -891,6 +891,7 @@ impl<'a> Analyzer<'a> {
                     Some(method.position),
                 );
             }
+            let mut idx_hir: Option<crate::hir::HExpr> = None;
             for param in params.iter() {
                 let pt = self.analyze_expression(
                     param,
@@ -898,6 +899,7 @@ impl<'a> Analyzer<'a> {
                     ctx.symbol_table,
                     diagnostics,
                 )?;
+                idx_hir = self.hir_take();
                 if pt.get_type() != "int" && !is_unknown_type_name(&pt.get_type()) {
                     diagnostics.report_error(
                         format!("'char_at' index must be int, got {}", pt.get_type()),
@@ -905,6 +907,7 @@ impl<'a> Analyzer<'a> {
                     );
                 }
             }
+            self.hir_set_char_at(receiver.take(), idx_hir);
             return Ok(Some(Type::Char(synthetic_token(
                 TokenKind::DataTypeToken,
                 "char",

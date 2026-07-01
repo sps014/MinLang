@@ -48,29 +48,56 @@ impl MirPass for RcInsertion {
         };
         let mut changed = false;
 
-        // Rule 1: local-assignment RC (release previous occupant, retain borrowed copies).
+        // Rule 1: local-assignment RC (release previous occupant, retain borrowed copies). When the
+        // new value depends on the *old* one (e.g. `list = Cons(i, list)`), the old value must be
+        // released *after* the rvalue is evaluated (the rvalue's container store retains it), not
+        // before — otherwise a `+0` old value is freed and then reused mid-evaluation. Such cases
+        // stash the old pointer in a synthetic temp and release it after the store.
+        let local_types: Vec<crate::types::TypeId> = func.locals.iter().map(|d| d.ty).collect();
+        let mut extra_locals: Vec<LocalDecl> = Vec::new();
+        let temp_base = func.locals.len() as u32;
         for block in &mut func.blocks {
             let mut out: Vec<Statement> = Vec::with_capacity(block.stmts.len());
             for stmt in block.stmts.drain(..) {
                 let ref_dest = match &stmt {
                     Statement::Assign(Place::Local(dest), rvalue) if is_owned_ref(dest.0) => {
-                        Some((*dest, is_borrowed_copy(rvalue)))
+                        Some((*dest, is_borrowed_copy(rvalue), rvalue_reads_local(rvalue, dest.0)))
                     }
                     _ => None,
                 };
-                if let Some((dest, retain)) = ref_dest {
-                    out.push(Statement::Release(Operand::Copy(Place::Local(dest))));
-                    out.push(stmt);
-                    if retain {
-                        out.push(Statement::Retain(Operand::Copy(Place::Local(dest))));
+                match ref_dest {
+                    Some((dest, retain, true)) => {
+                        // Old value is read by the rvalue: save it, evaluate, then release it.
+                        let tmp = Local(temp_base + extra_locals.len() as u32);
+                        extra_locals.push(LocalDecl { ty: local_types[dest.0 as usize], name: None });
+                        out.push(Statement::Assign(
+                            Place::Local(tmp),
+                            Rvalue::Use(Operand::Copy(Place::Local(dest))),
+                        ));
+                        out.push(stmt);
+                        if retain {
+                            out.push(Statement::Retain(Operand::Copy(Place::Local(dest))));
+                        }
+                        out.push(Statement::Release(Operand::Copy(Place::Local(tmp))));
+                        changed = true;
                     }
-                    changed = true;
-                } else {
-                    out.push(stmt);
+                    Some((dest, retain, false)) => {
+                        out.push(Statement::Release(Operand::Copy(Place::Local(dest))));
+                        out.push(stmt);
+                        if retain {
+                            out.push(Statement::Retain(Operand::Copy(Place::Local(dest))));
+                        }
+                        changed = true;
+                    }
+                    None => out.push(stmt),
                 }
             }
             block.stmts = out;
         }
+        // Synthetic old-value temps are pure aliases used only for the deferred release; they must not
+        // be released again at scope exit (they are beyond `local_is_ref`, so `is_owned_ref` already
+        // excludes them from Rule 3 below).
+        func.locals.extend(extra_locals);
 
         // Rule 3: scope-exit release at every `Return`.
         let owned_locals: Vec<u32> = (0..func.locals.len() as u32).filter(|i| is_owned_ref(*i)).collect();
@@ -114,10 +141,64 @@ impl MirPass for RcInsertion {
 /// copy of an existing reference place, and an interned string literal (which lives at a baseline
 /// refcount of 1 in the string pool, so a binding that will later be released must first retain it
 /// to keep the shared literal alive).
+/// True if `local` is read anywhere in `rvalue` (as a plain operand or through a field/index base).
+/// Used to detect self-referential reassignments (`x = f(x)`) whose old value must outlive the
+/// rvalue's evaluation.
+fn rvalue_reads_local(rvalue: &Rvalue, local: u32) -> bool {
+    let mut hit = false;
+    let mut check = |op: &Operand| {
+        if let Operand::Copy(place) = op {
+            let base = match place {
+                Place::Local(l) => Some(l.0),
+                Place::Field { base, .. } => Some(base.0),
+                Place::Index { base, .. } => Some(base.0),
+                Place::Global(_) => None,
+            };
+            if base == Some(local) {
+                hit = true;
+            }
+            if let Place::Index { index, .. } = place {
+                if let Operand::Copy(Place::Local(l)) = index.as_ref() {
+                    if l.0 == local {
+                        hit = true;
+                    }
+                }
+            }
+        }
+    };
+    match rvalue {
+        Rvalue::Use(o)
+        | Rvalue::Unary(_, o)
+        | Rvalue::ArrayLen(o)
+        | Rvalue::StrLen(o)
+        | Rvalue::Cast(o, _)
+        | Rvalue::Discriminant(o)
+        | Rvalue::UnionField { base: o, .. } => check(o),
+        Rvalue::Binary(_, a, b) | Rvalue::CharAt(a, b) => {
+            check(a);
+            check(b);
+        }
+        Rvalue::Call { args, .. }
+        | Rvalue::New { args, .. }
+        | Rvalue::UnionNew { args, .. }
+        | Rvalue::ArrayLit { elems: args, .. } => args.iter().for_each(&mut check),
+        Rvalue::IndirectCall { target, args } => {
+            check(target);
+            args.iter().for_each(&mut check);
+        }
+        Rvalue::FuncRef(_) => {}
+    }
+    hit
+}
+
 fn is_borrowed_copy(rvalue: &Rvalue) -> bool {
     matches!(
         rvalue,
-        Rvalue::Use(Operand::Copy(_)) | Rvalue::Use(Operand::Const(crate::mir::Const::Str(_)))
+        Rvalue::Use(Operand::Copy(_))
+            | Rvalue::Use(Operand::Const(crate::mir::Const::Str(_)))
+            // A union payload field read is a borrow of the union's own reference (like a struct
+            // field read), so a reference binding must retain it to balance its scope-exit release.
+            | Rvalue::UnionField { .. }
     )
 }
 
