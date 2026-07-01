@@ -214,6 +214,13 @@ pub struct Analyzer<'a> {
     /// the extended type's name. Their methods are monomorphized alongside each concrete
     /// instantiation of the target generic union or struct (see `ensure_*_instantiated`).
     generic_extends: HashMap<String, &'a ExtendNode<'a>>,
+    /// Interface name -> its method signatures in declaration order (the order is the interface's
+    /// local method index, used for itable slot assignment). Each entry is a body-less
+    /// [`FunctionNode`] (no implicit `this`).
+    interface_methods: IndexMap<String, Vec<&'a FunctionNode<'a>>>,
+    /// Class name -> the interfaces it implements (in `class C : A, B` order), recorded after the
+    /// implements clause is validated. Drives interface-typed assignability and itable emission.
+    implements: HashMap<String, Vec<String>>,
     /// An optional expected type for the expression currently being analyzed (from a `let`
     /// annotation or `return` type). Used to resolve the type arguments of a generic union's
     /// nullary variant (`let o: Option<int> = Option.None;`), where they cannot be inferred from
@@ -259,6 +266,8 @@ impl<'a> Analyzer<'a> {
             union_table: IndexMap::new(),
             generic_unions: HashMap::new(),
             generic_extends: HashMap::new(),
+            interface_methods: IndexMap::new(),
+            implements: HashMap::new(),
             current_expected_type: None,
             current_generic_bindings: GenericBindings::new(),
             loop_labels: Vec::new(),
@@ -376,6 +385,9 @@ impl<'a> Analyzer<'a> {
         // extension methods are always available to attach at the first instantiation.
         self.stash_generic_extensions(node);
         self.register_enums(node, diagnostics);
+        // Interfaces are registered before structs so a class's implements clause can be validated
+        // against the interface method signatures during struct registration.
+        self.register_interfaces(node, diagnostics);
         self.register_structs(node, diagnostics);
         self.register_extensions(node, diagnostics);
         self.register_functions(node, diagnostics);
@@ -400,6 +412,7 @@ impl<'a> Analyzer<'a> {
         let layouts = self.hir_build_layouts();
         let imports = self.hir_build_imports(node);
         let intrinsics = self.hir_build_intrinsics(node);
+        let interfaces = self.hir_build_interfaces();
         let hir_functions = std::mem::take(&mut self.hir.functions);
         let hir_globals = std::mem::take(&mut self.hir.global_decls);
 
@@ -419,6 +432,7 @@ impl<'a> Analyzer<'a> {
                 layouts,
                 imports,
                 intrinsics,
+                interfaces,
             },
         })
     }

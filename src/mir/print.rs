@@ -33,6 +33,15 @@ fn stmt(s: &Statement) -> String {
         Statement::Call { callee, args } => {
             format!("call def{}({})", callee.def.0, ops(args))
         }
+        Statement::InterfaceCall { receiver, iface_id, method_slot, args, .. } => {
+            format!(
+                "iface_call I{}#{} {}({})",
+                iface_id,
+                method_slot,
+                operand(receiver),
+                ops(args)
+            )
+        }
         Statement::Print { arg, newline, .. } => {
             let f = if *newline { "println" } else { "print" };
             format!("{}({})", f, operand(arg))
@@ -72,6 +81,15 @@ fn rvalue(r: &Rvalue) -> String {
         Rvalue::Call { callee, args } => format!("call def{}({})", callee.def.0, ops(args)),
         Rvalue::IndirectCall { target, args } => {
             format!("call_indirect {}({})", operand(target), ops(args))
+        }
+        Rvalue::InterfaceCall { receiver, iface_id, method_slot, args, .. } => {
+            format!(
+                "iface_call I{}#{} {}({})",
+                iface_id,
+                method_slot,
+                operand(receiver),
+                ops(args)
+            )
         }
         Rvalue::New { def, args, .. } => format!("new def{}({})", def.0, ops(args)),
         Rvalue::UnionNew { def, variant, args, .. } => {

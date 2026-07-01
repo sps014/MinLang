@@ -137,3 +137,131 @@ pub(super) fn struct_tags(mir: &crate::mir::Mir) -> HashMap<TypeId, i32> {
         .map(|(i, ty)| (*ty, STRUCT_TAG_BASE + i as i32))
         .collect()
 }
+
+/// The symbol of the dispatch trampoline for method slot `method_slot` of the interface with the
+/// stable id `iface_id`. Interface call sites `(call $<sym>)` this trampoline, which performs the
+/// tag-indexed itable lookup and forwards through `$__ft`.
+pub(super) fn iface_dispatch_symbol(iface_id: usize, method_slot: usize) -> String {
+    format!("__iface_dispatch_{}_{}", iface_id, method_slot)
+}
+
+/// The emitted linear-memory data + WAT trampolines that implement interface dispatch.
+pub(super) struct InterfaceDispatch {
+    /// `(data ...)` segments holding the per-interface tag-indexed method tables.
+    pub data: String,
+    /// The `(func $__iface_dispatch_I_S ...)` trampolines, one per interface method slot.
+    pub trampolines: String,
+    /// The heap bump-pointer start, past the emitted itable region (8-byte aligned).
+    pub heap_start: u32,
+}
+
+/// Builds the interface dispatch machinery: a dense, tag-indexed method table per interface plus a
+/// dispatch trampoline per interface method slot.
+///
+/// Each interface `iid` gets a contiguous `i32` table of `num_tags * method_count` entries laid out
+/// in linear memory starting at `itab_base`. Entry `[tag * method_count + slot]` holds the `$__ft`
+/// index of the concrete `{Class}_{method}` that the class with runtime `tag` supplies for that
+/// interface method slot (0 for tags that do not implement the interface). At a call site the
+/// trampoline computes `tag = $object_tag(this)`, loads that entry, and `call_indirect`s it.
+pub(super) fn emit_interface_dispatch(
+    mir: &crate::mir::Mir,
+    interner: &TypeInterner,
+    itab_base: u32,
+) -> InterfaceDispatch {
+    let ifaces = &mir.interfaces.interfaces;
+    if ifaces.is_empty() {
+        return InterfaceDispatch {
+            data: String::new(),
+            trampolines: String::new(),
+            heap_start: itab_base,
+        };
+    }
+
+    let tags = struct_tags(mir);
+    let max_tag = tags.values().copied().max().unwrap_or(STRUCT_TAG_BASE - 1);
+    let num_tags = (max_tag + 1).max(0) as usize;
+
+    // Concrete method symbol -> its `$__ft` slot (the function's position in `mir.functions`).
+    let by_symbol: HashMap<&str, usize> = mir
+        .functions
+        .iter()
+        .enumerate()
+        .map(|(i, f)| (f.name.as_str(), i))
+        .collect();
+
+    // One dense [num_tags * method_count] table per interface, filled from each class's impl.
+    let mut tables: Vec<Vec<i32>> =
+        ifaces.iter().map(|inf| vec![0i32; num_tags * inf.method_count]).collect();
+    for imp in &mir.interfaces.impls {
+        let tag = match tags.get(&imp.class_ty) {
+            Some(t) => *t as usize,
+            None => continue,
+        };
+        for (iid, symbols) in &imp.entries {
+            let k = ifaces[*iid].method_count;
+            for (slot, sym) in symbols.iter().enumerate() {
+                if slot >= k {
+                    continue;
+                }
+                let idx = by_symbol.get(sym.as_str()).copied().unwrap_or(0);
+                tables[*iid][tag * k + slot] = idx as i32;
+            }
+        }
+    }
+
+    // Lay the tables out consecutively (4-byte words), recording each interface's base address.
+    let mut bases: Vec<u32> = Vec::with_capacity(ifaces.len());
+    let mut data = String::new();
+    let mut addr = itab_base;
+    for table in &tables {
+        bases.push(addr);
+        if !table.is_empty() {
+            let mut bytes = String::new();
+            for word in table {
+                for b in word.to_le_bytes() {
+                    let _ = write!(bytes, "\\{:02x}", b);
+                }
+            }
+            let _ = writeln!(data, "(data (i32.const {}) \"{}\")", addr, bytes);
+        }
+        addr += (table.len() as u32) * 4;
+    }
+    let heap_start = (addr.max(itab_base) + 7) & !7;
+
+    // A dispatch trampoline per (interface, method slot): forward the args, look the concrete method
+    // up in the interface's tag-indexed table, and `call_indirect` it through `$__ft`.
+    let mut trampolines = String::new();
+    for (iid, inf) in ifaces.iter().enumerate() {
+        let k = inf.method_count;
+        for slot in 0..k {
+            let (signame, ptys, rty) = match func_sig(interner, inf.sigs[slot]) {
+                Some(s) => s,
+                None => continue,
+            };
+            let _ = write!(trampolines, "(func ${}", iface_dispatch_symbol(iid, slot));
+            for p in &ptys {
+                let _ = write!(trampolines, " (param {})", p);
+            }
+            if let Some(r) = rty {
+                let _ = write!(trampolines, " (result {})", r);
+            }
+            trampolines.push('\n');
+            // Push the forwarded call arguments (param 0 is the receiver / `this`).
+            for i in 0..ptys.len() {
+                let _ = writeln!(trampolines, "  (local.get {})", i);
+            }
+            // idx = itable[base + (object_tag(this) * method_count + slot) * 4]
+            let _ = writeln!(trampolines, "  (local.get 0)");
+            let _ = writeln!(trampolines, "  (call $object_tag)");
+            let _ = writeln!(trampolines, "  (i32.const {}) (i32.mul)", k);
+            let _ = writeln!(trampolines, "  (i32.const {}) (i32.add)", slot);
+            let _ = writeln!(trampolines, "  (i32.const 2) (i32.shl)");
+            let _ = writeln!(trampolines, "  (i32.const {}) (i32.add)", bases[iid]);
+            let _ = writeln!(trampolines, "  (i32.load)");
+            let _ = writeln!(trampolines, "  (call_indirect $__ft (type {}))", signame);
+            let _ = writeln!(trampolines, ")");
+        }
+    }
+
+    InterfaceDispatch { data, trampolines, heap_start }
+}

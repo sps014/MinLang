@@ -491,6 +491,51 @@ impl<'a> Analyzer<'a> {
         ));
     }
 
+    /// Records a dynamically-dispatched interface method call. `iface` is the interface's `DefId`
+    /// and `method_slot` the method's local index within the interface; the backend uses the
+    /// receiver's runtime tag to select the concrete implementation. Drops out of coverage if the
+    /// receiver or any argument is not representable.
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::semantics::analyzer) fn hir_set_interface_call(
+        &mut self,
+        receiver: Option<HExpr>,
+        iface_id: usize,
+        method_slot: usize,
+        sig: TypeId,
+        args: Vec<Option<HExpr>>,
+        ret: &Type,
+    ) {
+        if !self.active() {
+            self.hir.last = None;
+            return;
+        }
+        let Some(receiver) = receiver else {
+            self.hir.last = None;
+            return;
+        };
+        let mut collected = Vec::with_capacity(args.len());
+        for a in args {
+            match a {
+                Some(e) => collected.push(e),
+                None => {
+                    self.hir.last = None;
+                    return;
+                }
+            }
+        }
+        let ret_ty = self.type_ctx.lower(ret);
+        self.hir.last = Some(HExpr::new(
+            ret_ty,
+            HExprKind::InterfaceCall {
+                receiver: Box::new(receiver),
+                iface_id,
+                method_slot,
+                sig,
+                args: collected,
+            },
+        ));
+    }
+
     /// Records a discriminated-union construction `Enum.Variant(args)`. `def` is the union's `DefId`
     /// and `variant` its discriminant; any non-representable argument drops it out of coverage.
     pub(in crate::semantics::analyzer) fn hir_set_union_new(
@@ -544,7 +589,7 @@ impl<'a> Analyzer<'a> {
         // union, array, `object`) renders through the backend's tag-dispatching `$print_object`.
         let printable = matches!(
             self.type_ctx.interner.kind(base),
-            TyKind::Prim(_) | TyKind::Enum(_) | TyKind::Struct(..) | TyKind::Union(..) | TyKind::Array(_) | TyKind::Object
+            TyKind::Prim(_) | TyKind::Enum(_) | TyKind::Struct(..) | TyKind::Union(..) | TyKind::Array(_) | TyKind::Object | TyKind::Interface(..)
         );
         if !printable {
             self.hir.ok = false;

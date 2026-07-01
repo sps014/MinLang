@@ -33,7 +33,7 @@ class DreamLexer(RegexLexer):
         "switch", "case", "default", "is", "in", "async", "await",
     )
     _declaration = (
-        "let", "const", "class", "enum", "type", "extend", "fun",
+        "let", "const", "class", "interface","enum", "type", "extend", "fun",
         "constructor", "del",
     )
     _modifiers = ("static", "public", "extern", "import", "override")

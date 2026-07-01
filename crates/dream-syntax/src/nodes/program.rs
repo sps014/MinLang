@@ -1,5 +1,6 @@
 use super::expression::ExpressionNode;
 use super::function::FunctionNode;
+use super::interface_node::InterfaceDeclarationNode;
 use super::struct_node::{StructDeclarationNode, StructFieldNode};
 use super::types::Type;
 use crate::token::syntax_token::SyntaxToken;
@@ -124,6 +125,7 @@ impl<'a> ExtendNode<'a> {
 pub struct ProgramNode<'a> {
     pub imports: Vec<ImportNode>,
     pub structs: Vec<StructDeclarationNode<'a>>,
+    pub interfaces: Vec<InterfaceDeclarationNode<'a>>,
     pub functions: Vec<FunctionNode<'a>>,
     pub enums: Vec<EnumDeclarationNode>,
     pub extends: Vec<ExtendNode<'a>>,
@@ -136,6 +138,7 @@ impl<'a> ProgramNode<'a> {
     pub fn new(
         imports: Vec<ImportNode>,
         structs: Vec<StructDeclarationNode<'a>>,
+        interfaces: Vec<InterfaceDeclarationNode<'a>>,
         functions: Vec<FunctionNode<'a>>,
         enums: Vec<EnumDeclarationNode>,
         extends: Vec<ExtendNode<'a>>,
@@ -144,6 +147,7 @@ impl<'a> ProgramNode<'a> {
         ProgramNode {
             imports,
             structs,
+            interfaces,
             functions,
             enums,
             extends,

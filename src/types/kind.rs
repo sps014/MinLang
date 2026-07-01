@@ -98,6 +98,10 @@ pub enum TyKind {
     Struct(DefId, Vec<TypeId>),
     /// A discriminated-union definition applied to type arguments.
     Union(DefId, Vec<TypeId>),
+    /// An interface definition applied to zero or more type arguments. Represented at runtime as an
+    /// `i32` pointer to a tagged heap block (identical to `object`): an interface value is just the
+    /// concrete object, and method calls dispatch dynamically through the object's runtime tag.
+    Interface(DefId, Vec<TypeId>),
     /// A C-style enum definition (no type arguments; values are `int` at runtime).
     Enum(DefId),
     /// A first-class function value `fun(params...): ret`, an `i32` table index at runtime.
@@ -116,6 +120,7 @@ impl TyKind {
                 | TyKind::Array(_)
                 | TyKind::Struct(_, _)
                 | TyKind::Union(_, _)
+                | TyKind::Interface(_, _)
         )
     }
 }

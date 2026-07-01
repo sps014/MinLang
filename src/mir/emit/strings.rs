@@ -122,6 +122,10 @@ pub(super) fn strings_in_rvalue(rv: &Rvalue, out: &mut Vec<String>) {
             strings_in_operand(target, out);
             args.iter().for_each(|a| strings_in_operand(a, out));
         }
+        Rvalue::InterfaceCall { receiver, args, .. } => {
+            strings_in_operand(receiver, out);
+            args.iter().for_each(|a| strings_in_operand(a, out));
+        }
         Rvalue::FuncRef(_) => {}
     }
 }
@@ -136,6 +140,10 @@ pub(super) fn strings_in_stmt(s: &Statement, out: &mut Vec<String>) {
         }
         Statement::Retain(o) | Statement::Release(o) => strings_in_operand(o, out),
         Statement::Call { args, .. } => args.iter().for_each(|a| strings_in_operand(a, out)),
+        Statement::InterfaceCall { receiver, args, .. } => {
+            strings_in_operand(receiver, out);
+            args.iter().for_each(|a| strings_in_operand(a, out));
+        }
         Statement::Print { arg, .. } => strings_in_operand(arg, out),
         Statement::Nop => {}
     }

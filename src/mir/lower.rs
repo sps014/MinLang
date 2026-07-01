@@ -60,6 +60,7 @@ pub fn lower_program(hir: &Hir, interner: &TypeInterner) -> Mir {
         layouts: hir.layouts.clone(),
         imports: hir.imports.clone(),
         intrinsics: hir.intrinsics.clone(),
+        interfaces: hir.interfaces.clone(),
     }
 }
 
@@ -242,6 +243,19 @@ impl Lowerer<'_> {
                     lowered.extend(args.iter().map(|a| self.lower_operand(a)));
                     self.b.push(Statement::Call {
                         callee: self.lower_callee(callee),
+                        args: lowered,
+                    });
+                }
+                HExprKind::InterfaceCall { receiver, iface_id, method_slot, sig, args }
+                    if !self.interner.is_reference(e.ty) =>
+                {
+                    let recv = self.lower_operand(receiver);
+                    let lowered = args.iter().map(|a| self.lower_operand(a)).collect();
+                    self.b.push(Statement::InterfaceCall {
+                        receiver: recv,
+                        iface_id: *iface_id,
+                        method_slot: *method_slot,
+                        sig: *sig,
                         args: lowered,
                     });
                 }
@@ -745,6 +759,18 @@ impl Lowerer<'_> {
                 let t = self.lower_operand(target);
                 let lowered = args.iter().map(|a| self.lower_operand(a)).collect();
                 Rvalue::IndirectCall { target: t, args: lowered }
+            }
+            HExprKind::InterfaceCall { receiver, iface_id, method_slot, sig, args } => {
+                let recv = self.lower_operand(receiver);
+                let lowered = args.iter().map(|a| self.lower_operand(a)).collect();
+                Rvalue::InterfaceCall {
+                    receiver: recv,
+                    iface_id: *iface_id,
+                    method_slot: *method_slot,
+                    sig: *sig,
+                    args: lowered,
+                    ret: e.ty,
+                }
             }
             // A function name used as a value becomes its function-table index.
             HExprKind::Var(Binding::Func(callee)) => Rvalue::FuncRef(self.lower_callee(callee)),

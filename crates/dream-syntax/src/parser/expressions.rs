@@ -35,7 +35,13 @@ impl<'a, 'b> Parser<'a, 'b> {
             let operator_token = self.next_token();
             if operator_token.kind == TokenKind::IsToken {
                 let right_type = self.parse_type()?;
-                left = ExpressionNode::IsExpression(self.arena.alloc(left), right_type);
+                // Optional `is`-with-binding: `expr is Type name` binds a narrowed local `name`.
+                let binding = if self.current_token().kind == TokenKind::IdentifierToken {
+                    Some(self.next_token())
+                } else {
+                    None
+                };
+                left = ExpressionNode::IsExpression(self.arena.alloc(left), right_type, binding);
             } else {
                 let right = self.parse_expression(precedence)?;
                 left = ExpressionNode::Binary(

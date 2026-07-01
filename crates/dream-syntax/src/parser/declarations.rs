@@ -176,6 +176,24 @@ impl<'a, 'b> Parser<'a, 'b> {
 
         let generic_parameters = self.parse_identifier_generic_params();
 
+        // Optional `: Iface1, Iface2, ...` implements clause. Each name is an interface the class
+        // declares it satisfies; the class must provide a matching method for every interface
+        // method (validated during semantic analysis).
+        let mut implements = Vec::new();
+        if self.current_token().kind == TokenKind::ColonToken {
+            self.match_token(TokenKind::ColonToken);
+            loop {
+                let iter = self.current_token_index;
+                implements.push(self.match_token(TokenKind::IdentifierToken));
+                if self.current_token().kind == TokenKind::CommaToken {
+                    self.match_token(TokenKind::CommaToken);
+                } else {
+                    break;
+                }
+                self.ensure_progress(iter);
+            }
+        }
+
         self.match_token(TokenKind::CurlyOpenBracketToken);
 
         let mut fields = Vec::new();
@@ -238,16 +256,113 @@ impl<'a, 'b> Parser<'a, 'b> {
         }
 
         self.match_token(TokenKind::CurlyCloseBracketToken);
-        Ok(
-            crate::nodes::struct_node::StructDeclarationNode::new(
-                attributes,
-                struct_name,
-                generic_parameters,
-                fields,
-                methods,
-                is_public,
-            ),
-        )
+        let mut decl = crate::nodes::struct_node::StructDeclarationNode::new(
+            attributes,
+            struct_name,
+            generic_parameters,
+            fields,
+            methods,
+            is_public,
+        );
+        decl.implements = implements;
+        Ok(decl)
+    }
+
+    /// Parses an `interface` declaration: `[public] interface Name [<T>] { method-signature* }`.
+    /// Interface members are body-less method signatures ending in `;` (default bodies are not
+    /// supported in v1).
+    pub(super) fn parse_interface_declaration(
+        &mut self,
+    ) -> Result<crate::nodes::InterfaceDeclarationNode<'a>, Error> {
+        let first_trivia = self.current_token().leading_trivia.clone();
+        let attributes = self.parse_attributes();
+        let doc_trivia = Self::recover_doc_trivia(first_trivia, &attributes);
+
+        let mut is_public = false;
+        if self.current_token().kind == TokenKind::PublicToken {
+            self.match_token(TokenKind::PublicToken);
+            is_public = true;
+        }
+
+        self.match_token(TokenKind::InterfaceToken);
+        let mut name = self.match_token(TokenKind::IdentifierToken);
+        Self::splice_leading_trivia(&mut name, doc_trivia);
+
+        let generic_parameters = self.parse_identifier_generic_params();
+
+        self.match_token(TokenKind::CurlyOpenBracketToken);
+
+        let mut methods = Vec::new();
+        while self.current_token().kind != TokenKind::CurlyCloseBracketToken
+            && self.current_token().kind != TokenKind::EndOfFileToken
+        {
+            let iter = self.current_token_index;
+            let method_attributes = self.parse_attributes();
+            methods.push(self.parse_interface_method(method_attributes)?);
+            self.ensure_progress(iter);
+        }
+
+        self.match_token(TokenKind::CurlyCloseBracketToken);
+        Ok(crate::nodes::InterfaceDeclarationNode::new(
+            attributes,
+            name,
+            generic_parameters,
+            methods,
+            is_public,
+        ))
+    }
+
+    /// Parses one interface method signature: `[public] [static] fun Name[<T>](params)[: ret] ;`.
+    /// The method has no body; a `{ ... }` default body is rejected (deferred to a later version)
+    /// but still consumed so parsing can continue.
+    fn parse_interface_method(
+        &mut self,
+        attributes: Vec<crate::nodes::AttributeNode>,
+    ) -> Result<FunctionNode<'a>, Error> {
+        let FunctionModifiers {
+            is_async,
+            is_public,
+            is_static,
+            is_extern: _,
+        } = self.parse_function_modifiers();
+
+        self.match_token(TokenKind::FunToken);
+        let function_name = self.match_token(TokenKind::IdentifierToken);
+        let generic_parameters = self.parse_identifier_generic_params();
+        let params = self.parse_formal_parameters()?;
+        let mut return_type: Option<Type> = None;
+        if self.current_token().kind == TokenKind::ColonToken {
+            self.match_token(TokenKind::ColonToken);
+            return_type = Some(self.parse_type()?);
+        }
+
+        if self.current_token().kind == TokenKind::CurlyOpenBracketToken {
+            self.diagnostics.report_error(
+                format!(
+                    "interface method '{}' must be a signature ending with ';' (default method bodies are not supported yet)",
+                    function_name.text
+                ),
+                Some(function_name.position),
+            );
+            // Consume the block so parsing can recover.
+            let _ = self.parse_block()?;
+        } else {
+            self.match_token(TokenKind::SemicolonToken);
+        }
+
+        let empty: &'a [StatementNode<'a>] = self.arena.alloc_slice_fill_iter(std::iter::empty());
+        let mut node = FunctionNode::new(
+            attributes,
+            function_name,
+            generic_parameters,
+            return_type,
+            params,
+            empty,
+            is_public,
+        );
+        node.is_static = is_static;
+        node.is_async = is_async;
+        Ok(node)
     }
 
     /// Parses an `extend Type { ... }` block: a set of methods attached to an existing type

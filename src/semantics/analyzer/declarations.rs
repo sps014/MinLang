@@ -251,6 +251,219 @@ impl<'a> Analyzer<'a> {
             || (self.enum_table.contains_key(b) && a == "int")
     }
 
+    /// Pass: register every interface's `DefId` and its method signatures. Interfaces declare
+    /// method signatures only (no fields, no default bodies) in v1; generic interfaces are rejected.
+    /// The declaration order of methods is their local index (used later for itable slots).
+    pub(super) fn register_interfaces(
+        &mut self,
+        node: &'a ProgramNode<'a>,
+        diagnostics: &mut DiagnosticBag,
+    ) {
+        for iface in node.interfaces.iter() {
+            diagnostics.file_path = file_path_string(&iface.file_path);
+            if iface.generic_parameters.is_some() {
+                diagnostics.report_error(
+                    format!(
+                        "Generic interfaces are not supported yet (interface '{}')",
+                        iface.name.text
+                    ),
+                    Some(iface.name.position),
+                );
+            }
+            self.type_ctx
+                .register(DefKind::Interface, &iface.name.text, Vec::new());
+
+            let mut methods: Vec<&'a FunctionNode<'a>> = Vec::new();
+            for method in iface.methods.iter() {
+                if method.is_static {
+                    diagnostics.report_error(
+                        format!(
+                            "Interface method '{}' cannot be 'static' (interface methods are dynamically dispatched instance methods)",
+                            method.name.text
+                        ),
+                        Some(method.name.position),
+                    );
+                    continue;
+                }
+                methods.push(method);
+            }
+            if self
+                .interface_methods
+                .insert(iface.name.text.clone(), methods)
+                .is_some()
+            {
+                diagnostics.report_error(
+                    format!("Interface '{}' is already defined", iface.name.text),
+                    Some(iface.name.position),
+                );
+            }
+        }
+    }
+
+    /// Builds the interface dispatch metadata carried into codegen: the ordered interfaces (index =
+    /// `iface_id`) with each method slot's `call_indirect` signature, and, per implementing class,
+    /// the concrete method symbol filling each `(interface, slot)`.
+    pub(super) fn hir_build_interfaces(&mut self) -> crate::hir::InterfaceTable {
+        use crate::hir::{InterfaceImpl, InterfaceInfo, InterfaceTable};
+
+        let iface_order: Vec<(String, Vec<&'a FunctionNode<'a>>)> = self
+            .interface_methods
+            .iter()
+            .map(|(name, methods)| (name.clone(), methods.clone()))
+            .collect();
+
+        let mut name_to_id: HashMap<String, usize> = HashMap::new();
+        let mut interfaces = Vec::with_capacity(iface_order.len());
+        for (id, (name, methods)) in iface_order.iter().enumerate() {
+            name_to_id.insert(name.clone(), id);
+            let sigs: Vec<crate::types::TypeId> = methods
+                .iter()
+                .map(|m| self.interface_dispatch_sig(m))
+                .collect();
+            interfaces.push(InterfaceInfo {
+                name: name.clone(),
+                method_count: methods.len(),
+                sigs,
+            });
+        }
+
+        let class_impls: Vec<(String, Vec<String>)> = self
+            .implements
+            .iter()
+            .map(|(class, ifaces)| (class.clone(), ifaces.clone()))
+            .collect();
+        let mut impls = Vec::new();
+        for (class, ifaces) in class_impls {
+            let class_ty = self.type_ctx.lower_str(&class);
+            let mut entries = Vec::new();
+            for iface in ifaces {
+                let Some(&id) = name_to_id.get(&iface) else {
+                    continue;
+                };
+                let methods = self.interface_methods.get(&iface).cloned().unwrap_or_default();
+                let symbols: Vec<String> = methods
+                    .iter()
+                    .map(|m| method_fn(&class, &m.name.text))
+                    .collect();
+                entries.push((id, symbols));
+            }
+            impls.push(InterfaceImpl { class_ty, entries });
+        }
+
+        InterfaceTable { interfaces, impls }
+    }
+
+    /// True when `name` (a bare type name, no nullable/array suffix) is a registered interface.
+    pub(super) fn is_interface_name(&self, name: &str) -> bool {
+        self.type_ctx.nominal_kind(name) == Some(DefKind::Interface)
+    }
+
+    /// True when class `class_name` was validated as implementing interface `iface_name`.
+    pub(super) fn class_implements(&self, class_name: &str, iface_name: &str) -> bool {
+        self.implements
+            .get(class_name)
+            .is_some_and(|ifaces| ifaces.iter().any(|i| i == iface_name))
+    }
+
+    /// True when a value of type `value` may be implicitly converted to interface-typed `target`
+    /// (an upcast): `target` names an interface and `value`'s concrete class implements it.
+    /// Nullable wrappers on either side are ignored.
+    pub(super) fn value_assignable_to_interface(&self, target: &Type, value: &Type) -> bool {
+        let iface = strip_nullable(&target.get_type()).to_string();
+        if !self.is_interface_name(&iface) {
+            return false;
+        }
+        let val = strip_nullable(&value.get_type()).to_string();
+        self.class_implements(&val, &iface)
+    }
+
+    /// True when `iface_method` and `class_method` have matching signatures (same parameter types
+    /// in order and the same return type). Both are compared using their surface type spellings.
+    fn interface_method_matches(iface_method: &FunctionNode, class_method: &FunctionNode) -> bool {
+        if iface_method.parameters.len() != class_method.parameters.len() {
+            return false;
+        }
+        for (a, b) in iface_method
+            .parameters
+            .iter()
+            .zip(class_method.parameters.iter())
+        {
+            if a.type_.get_type() != b.type_.get_type() {
+                return false;
+            }
+        }
+        let ret = |m: &FunctionNode| {
+            m.return_type
+                .as_ref()
+                .map(|t| t.get_type())
+                .unwrap_or_else(|| "void".to_string())
+        };
+        ret(iface_method) == ret(class_method)
+    }
+
+    /// Validates a class's `implements` clause: every named interface must exist, and the class
+    /// must provide an instance method with a matching signature for each of the interface's
+    /// methods. Records the validated interface list in `self.implements`.
+    fn validate_implements(
+        &mut self,
+        struct_decl: &'a StructDeclarationNode<'a>,
+        diagnostics: &mut DiagnosticBag,
+    ) {
+        if struct_decl.implements.is_empty() {
+            return;
+        }
+        let class_name = struct_decl.name.text.clone();
+        let mut validated: Vec<String> = Vec::new();
+        for iface_tok in &struct_decl.implements {
+            let iface_name = &iface_tok.text;
+            let iface_methods = match self.interface_methods.get(iface_name) {
+                Some(m) => m.clone(),
+                None => {
+                    diagnostics.report_error(
+                        format!(
+                            "'{}' is not an interface (class '{}' can only implement interfaces)",
+                            iface_name, class_name
+                        ),
+                        Some(iface_tok.position),
+                    );
+                    continue;
+                }
+            };
+            for im in &iface_methods {
+                match struct_decl
+                    .methods
+                    .iter()
+                    .find(|cm| cm.name.text == im.name.text && !cm.is_static)
+                {
+                    Some(cm) => {
+                        if !Self::interface_method_matches(im, cm) {
+                            diagnostics.report_error(
+                                format!(
+                                    "class '{}' method '{}' does not match the signature required by interface '{}'",
+                                    class_name, im.name.text, iface_name
+                                ),
+                                Some(cm.name.position),
+                            );
+                        }
+                    }
+                    None => {
+                        diagnostics.report_error(
+                            format!(
+                                "class '{}' does not implement method '{}' required by interface '{}'",
+                                class_name, im.name.text, iface_name
+                            ),
+                            Some(struct_decl.name.position),
+                        );
+                    }
+                }
+            }
+            if !validated.contains(iface_name) {
+                validated.push(iface_name.clone());
+            }
+        }
+        self.implements.insert(class_name, validated);
+    }
+
     /// Pass 0: register every (non-generic) struct and its methods; stash generic templates.
     pub(super) fn register_structs(
         &mut self,
@@ -265,6 +478,15 @@ impl<'a> Analyzer<'a> {
                 generic_param_names(&struct_decl.generic_parameters),
             );
             if struct_decl.generic_parameters.is_some() {
+                if !struct_decl.implements.is_empty() {
+                    diagnostics.report_error(
+                        format!(
+                            "Generic classes implementing interfaces are not supported yet (class '{}')",
+                            struct_decl.name.text
+                        ),
+                        Some(struct_decl.name.position),
+                    );
+                }
                 // v1 restriction: async methods on generic classes are not supported (the async
                 // state machine would have to be re-generated per monomorphization).
                 for method in struct_decl.methods.iter() {
@@ -288,6 +510,7 @@ impl<'a> Analyzer<'a> {
                 &GenericBindings::new(),
                 diagnostics,
             );
+            self.validate_implements(struct_decl, diagnostics);
         }
     }
 

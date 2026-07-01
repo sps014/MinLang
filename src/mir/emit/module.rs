@@ -37,9 +37,13 @@ pub fn emit_module(mir: &crate::mir::Mir, interner: &TypeInterner, debug_alloc: 
     emit_func_signatures(&mut out, interner);
     emit_func_table(&mut out, mir);
 
-    // Linear memory + allocator runtime state. The heap bump pointer starts above the string data.
+    // Interface dispatch tables live in linear memory just past the interned strings; the heap bump
+    // pointer then starts past those. Its trampolines/data are emitted below.
+    let iface = emit_interface_dispatch(mir, interner, heap_base(&strings));
+
+    // Linear memory + allocator runtime state. The heap bump pointer starts above the itable region.
     let _ = writeln!(out, "(memory {})", MEMORY_PAGES);
-    let _ = writeln!(out, "(global $heap_ptr (mut i32) (i32.const {}))", heap_base(&strings));
+    let _ = writeln!(out, "(global $heap_ptr (mut i32) (i32.const {}))", iface.heap_start);
     out.push_str("(global $free_list_head (mut i32) (i32.const 0))\n");
     out.push_str("(global $live_objects (mut i32) (i32.const 0))\n");
     out.push_str("(global $total_allocations (mut i32) (i32.const 0))\n");
@@ -64,11 +68,20 @@ pub fn emit_module(mir: &crate::mir::Mir, interner: &TypeInterner, debug_alloc: 
     emit_release_funcs(&mut out, mir, interner, &tags);
     out.push('\n');
 
+    // Interface dispatch trampolines (reference `$object_tag` + `$__ft`, both defined above).
+    out.push_str(&iface.trampolines);
+    if !iface.trampolines.is_empty() {
+        out.push('\n');
+    }
+
     for (s, addr) in &strings {
         // The data segment is the full heap block, written at the block start (header before data).
         let block = addr - HEAP_HEADER_SIZE;
         let _ = writeln!(out, "(data (i32.const {}) \"{}\")", block, escape_data(s));
     }
+
+    // Interface itable data segments (tag-indexed method tables), past the string region.
+    out.push_str(&iface.data);
 
     let polls = crate::mir::async_emit::poll_indices(&mir.functions);
     let mut has_init = false;

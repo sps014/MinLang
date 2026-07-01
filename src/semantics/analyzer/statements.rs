@@ -7,7 +7,7 @@ use crate::hir::{HExpr, HStmt};
 use crate::intrinsics;
 use crate::semantics::errors::SemanticError;
 use crate::semantics::symbol_table::SymbolTable;
-use crate::syntax::nodes::types::mangle_generic;
+use crate::syntax::nodes::types::{mangle_generic, strip_nullable};
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, StatementNode, Type};
 use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
@@ -723,20 +723,37 @@ impl<'a> Analyzer<'a> {
             .chain(else_if.iter().map(|i| (&i.0, i.0.position(), &i.1)));
 
         for (cond_expr, cond_pos, body) in branches {
-            // `is` fold: an operand with a concrete (non-`object`) static type resolves at compile
-            // time, so a branch is either taken unconditionally or is dead. An `object` operand needs
-            // a runtime tag check, so it falls through to the general (runtime-`IsType`) path below.
-            if let ExpressionNode::IsExpression(left, right_type) = cond_expr {
+            // An `is`-with-binding condition (`if (x is T name)`) declares a narrowed local `name: T`
+            // scoped to the taken branch only. Capture the binding parts so both the compile-time fold
+            // and the runtime path can introduce it into that branch's scope.
+            let is_binding: Option<(&SyntaxToken, &Type, &ExpressionNode<'a>)> = match cond_expr {
+                ExpressionNode::IsExpression(left, right_type, Some(name)) => {
+                    Some((name, right_type, left))
+                }
+                _ => None,
+            };
+
+            // `is` fold: an operand with a concrete (non-`object`, non-interface) static type resolves
+            // at compile time, so a branch is either taken unconditionally or is dead. An `object` or
+            // interface operand needs a runtime tag check, so it falls through to the general
+            // (runtime-`IsType`) path below.
+            if let ExpressionNode::IsExpression(left, right_type, _) = cond_expr {
                 let left_t = self
                     .analyze_expression(left, ctx.parent_function, ctx.symbol_table, diagnostics)
                     .unwrap_or(Type::Unknown);
-                if !left_t.is_object() && !left_t.is_unknown() {
+                let left_name = strip_nullable(&left_t.get_type()).to_string();
+                let runtime = left_t.is_object()
+                    || left_t.is_unknown()
+                    || self.is_interface_name(&left_name);
+                if !runtime {
                     if left_t.get_type() == right_type.get_type() {
+                        let branch_scope = self.branch_scope(ctx.symbol_table);
                         self.hir_open_block();
+                        self.declare_is_binding(&is_binding, &branch_scope, ctx, diagnostics)?;
                         self.analyze_body(
                             body,
                             ctx.parent_function,
-                            Some(ctx.symbol_table),
+                            Some(&branch_scope),
                             has_parent_while,
                             diagnostics,
                         )?;
@@ -760,11 +777,13 @@ impl<'a> Analyzer<'a> {
                     cond_pos,
                 );
             }
+            let branch_scope = self.branch_scope(ctx.symbol_table);
             self.hir_open_block();
+            self.declare_is_binding(&is_binding, &branch_scope, ctx, diagnostics)?;
             self.analyze_body(
                 body,
                 ctx.parent_function,
-                Some(ctx.symbol_table),
+                Some(&branch_scope),
                 has_parent_while,
                 diagnostics,
             )?;
@@ -800,6 +819,54 @@ impl<'a> Analyzer<'a> {
         }
         for stmt in chain {
             self.hir_push_stmt(stmt);
+        }
+        Ok(())
+    }
+
+    /// A fresh child symbol scope of `parent`, used for a single `if`/`else if` branch so an
+    /// `is`-with-binding local lives only inside that branch and never leaks to `else`/the enclosing
+    /// scope. Outer names stay visible through the parent link.
+    fn branch_scope(
+        &self,
+        parent: &Rc<RefCell<SymbolTable>>,
+    ) -> Rc<RefCell<SymbolTable>> {
+        let scope = Rc::new(RefCell::new(SymbolTable::new(Some(Rc::clone(parent)))));
+        (*parent).borrow_mut().add_child(scope.clone());
+        scope
+    }
+
+    /// Introduces an `is`-with-binding local into a branch: it declares `name: T` (added to
+    /// `branch_scope` for type-checking) initialized by an implicit `(T)operand` cast. Reusing the
+    /// cast path means reference/interface targets alias the same pointer (identity) while value-type
+    /// targets (`int`, `bool`, …) unbox the operand — exactly the narrowing `is` implies. A no-op when
+    /// the condition has no binding. Must be called inside the branch's open HIR block, before its body.
+    fn declare_is_binding(
+        &mut self,
+        binding: &Option<(&SyntaxToken, &Type, &ExpressionNode<'a>)>,
+        branch_scope: &Rc<RefCell<SymbolTable>>,
+        ctx: &super::AnalyzerContext<'a, '_>,
+        diagnostics: &mut DiagnosticBag,
+    ) -> Result<(), SemanticError> {
+        let Some((name, target_ty, operand)) = binding else {
+            return Ok(());
+        };
+        self.check_reserved_name(name, "variable", diagnostics);
+        // Model the narrowed initializer as `(target_ty)operand`, reusing all cast validation +
+        // codegen (reference identity vs. primitive unbox).
+        let _ = self.analyze_cast(
+            target_ty,
+            operand,
+            ctx.parent_function,
+            ctx.symbol_table,
+            diagnostics,
+        )?;
+        let init = self.hir_take();
+        self.hir_declare_local(&name.text, target_ty, init);
+        if let Err(e) = (*branch_scope)
+            .borrow_mut()
+            .add_symbol(name.text.clone(), (*target_ty).clone())
+        {
+            diagnostics.report_error(e.to_string(), Some(name.position));
         }
         Ok(())
     }

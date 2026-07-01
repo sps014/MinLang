@@ -1,0 +1,15 @@
+// A class that declares it implements an interface but omits one of its methods must be rejected.
+
+interface Animal {
+    fun Speak(): string;
+    fun Legs(): int;
+}
+
+class Cat : Animal {
+    public fun Speak(): string { return "meow"; }
+    // Missing `Legs(): int` — should be a compile error.
+}
+
+fun main(): void {
+    let c = Cat();
+}

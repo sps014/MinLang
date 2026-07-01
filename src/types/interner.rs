@@ -84,6 +84,10 @@ impl TypeInterner {
         self.intern(TyKind::Union(def, args))
     }
 
+    pub fn interface_ty(&mut self, def: DefId, args: Vec<TypeId>) -> TypeId {
+        self.intern(TyKind::Interface(def, args))
+    }
+
     pub fn enum_ty(&mut self, def: DefId) -> TypeId {
         self.intern(TyKind::Enum(def))
     }

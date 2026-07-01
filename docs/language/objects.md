@@ -37,7 +37,23 @@ fun describe(o: object): void {
 }
 ```
 
-On a non-`object` variable, `is` is resolved at compile time. If the types match, the branch is always taken; if they don't, the branch is always skipped (dead code eliminated).
+On a non-`object` variable, `is` is resolved at compile time. If the types match, the branch is always taken; if they don't, the branch is always skipped (dead code eliminated). `is` also works on [interface](interfaces.md)-typed values, checking the concrete class at runtime.
+
+## `is`-with-binding
+
+`is` can declare a narrowed local at the same time — `expr is Type name` binds `name: Type` inside the branch, so no separate cast is needed:
+
+```dream
+fun describe(o: object): void {
+    if (o is int n) {
+        println(n + 1);          // `n` is an int, unboxed from `o`
+    } else if (o is string s) {
+        println(s);              // `s` is a string
+    }
+}
+```
+
+The bound name is visible only inside the taken branch. It works for any target type — primitives (unboxed) and reference/interface types (aliased). See [Interfaces](interfaces.md#is-with-binding) for more.
 
 ## `to_string` and `hash_code`
 

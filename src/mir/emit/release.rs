@@ -19,7 +19,9 @@ pub(super) fn release_call(interner: &TypeInterner, layouts: &LayoutTable, ty: T
             }
         }
         TyKind::Array(e) if interner.is_reference(*e) => format!("$release_array_t{}", e.0),
-        TyKind::Object => "$release_object".to_string(),
+        // An interface-typed value is a concrete tagged object; release it through the
+        // tag-dispatching `$release_object` so the concrete type's deep release runs.
+        TyKind::Object | TyKind::Interface(..) => "$release_object".to_string(),
         _ => "$release_generic".to_string(),
     }
 }

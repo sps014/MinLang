@@ -311,6 +311,7 @@ impl<'a, 'b> Parser<'a, 'b> {
         let mut imports = vec![];
         let mut functions = vec![];
         let mut structs = vec![];
+        let mut interfaces = vec![];
         let mut enums = vec![];
         let mut extends = vec![];
         let mut globals = vec![];
@@ -336,6 +337,16 @@ impl<'a, 'b> Parser<'a, 'b> {
             {
                 match self.parse_struct_declaration() {
                     Ok(struct_decl) => structs.push(struct_decl),
+                    Err(_) => self.recover_to_next_declaration(),
+                }
+            } else if core == TokenKind::InterfaceToken
+                || (cur == TokenKind::AtToken
+                    && self.peek_token(1).kind == TokenKind::IdentifierToken
+                    && (self.peek_token(2).kind == TokenKind::InterfaceToken
+                        || self.peek_token(3).kind == TokenKind::InterfaceToken))
+            {
+                match self.parse_interface_declaration() {
+                    Ok(iface) => interfaces.push(iface),
                     Err(_) => self.recover_to_next_declaration(),
                 }
             } else if cur == TokenKind::EnumToken
@@ -387,7 +398,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             self.ensure_progress(loop_start);
         }
         Ok(ProgramNode::new(
-            imports, structs, functions, enums, extends, globals,
+            imports, structs, interfaces, functions, enums, extends, globals,
         ))
     }
 
@@ -399,6 +410,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             if matches!(
                 kind,
                 TokenKind::ClassToken
+                    | TokenKind::InterfaceToken
                     | TokenKind::EnumToken
                     | TokenKind::ExtendToken
                     | TokenKind::FunToken

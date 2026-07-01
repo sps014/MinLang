@@ -1,0 +1,1 @@
+class 'Cat' does not implement method 'Legs' required by interface 'Animal'

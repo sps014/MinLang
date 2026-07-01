@@ -1,0 +1,47 @@
+// Interfaces: multiple implementations, dynamic dispatch through an interface-typed value,
+// implicit class->interface upcasts at call sites, and `is`-with-binding for both a reference
+// (interface) value and a boxed primitive.
+
+interface Animal {
+    fun Speak(): string;
+    fun Legs(): int;
+}
+
+class Cat : Animal {
+    public fun Speak(): string { return "meow"; }
+    public fun Legs(): int { return 4; }
+}
+
+class Dog : Animal {
+    public fun Speak(): string { return "woof"; }
+    public fun Legs(): int { return 2; }
+}
+
+// Passing a concrete class where the interface is expected is an implicit upcast; the call
+// inside dispatches dynamically to the concrete method.
+fun describe(a: Animal): void {
+    System.println(a.Speak());
+    System.println(a.Legs());
+}
+
+fun main(): void {
+    let c = Cat();
+    let d = Dog();
+    describe(c);
+    describe(d);
+
+    let a: Animal = (Animal)c;
+    // `is`-with-binding on a reference/interface value: `cc` aliases the same object as `Cat`.
+    if (a is Cat cc) {
+        System.println(cc.Speak());
+    }
+    if (a is Dog dd) {
+        System.println("unexpected");
+    }
+
+    // `is`-with-binding on a boxed primitive: `n` unboxes the object to `int`.
+    let o: object = 42;
+    if (o is int n) {
+        System.println(n + 1);
+    }
+}

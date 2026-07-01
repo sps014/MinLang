@@ -111,6 +111,10 @@ fn read_stmt(stmt: &Statement, read: &mut HashSet<Local>) {
         }
         Statement::Retain(o) | Statement::Release(o) => read_operand(o, read),
         Statement::Call { args, .. } => args.iter().for_each(|a| read_operand(a, read)),
+        Statement::InterfaceCall { receiver, args, .. } => {
+            read_operand(receiver, read);
+            args.iter().for_each(|a| read_operand(a, read));
+        }
         Statement::Print { arg, .. } => read_operand(arg, read),
         Statement::Nop => {}
     }
@@ -153,6 +157,10 @@ fn read_rvalue(rvalue: &Rvalue, read: &mut HashSet<Local>) {
         | Rvalue::ArrayLit { elems: args, .. } => args.iter().for_each(|a| read_operand(a, read)),
         Rvalue::IndirectCall { target, args } => {
             read_operand(target, read);
+            args.iter().for_each(|a| read_operand(a, read));
+        }
+        Rvalue::InterfaceCall { receiver, args, .. } => {
+            read_operand(receiver, read);
             args.iter().for_each(|a| read_operand(a, read));
         }
         Rvalue::FuncRef(_) => {}

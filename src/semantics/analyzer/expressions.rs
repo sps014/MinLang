@@ -189,9 +189,11 @@ impl<'a> Analyzer<'a> {
                 )?;
                 Ok(t)
             }
-            ExpressionNode::IsExpression(left, right_type) => {
+            ExpressionNode::IsExpression(left, right_type, _binding) => {
                 // `is` always evaluates to a bool. A concrete static operand folds to a compile-time
-                // result; an `object` operand emits a runtime `$object_tag` comparison.
+                // result; an `object` or interface-typed operand emits a runtime `$object_tag`
+                // comparison. (The optional `_binding` is only meaningful inside an `if` condition,
+                // where `statements.rs` flow-types it into the then-branch; a bare `is` ignores it.)
                 let left_type =
                     self.analyze_expression(left, parent_function, symbol_table, diagnostics)?;
                 let left_hir = self.hir_take();
@@ -200,7 +202,7 @@ impl<'a> Analyzer<'a> {
                 let stripped = strip_nullable(&left_name);
                 if left_type.is_unknown() {
                     self.hir_none();
-                } else if stripped == "object" {
+                } else if stripped == "object" || self.is_interface_name(&stripped) {
                     self.hir_set_is_type(left_hir, right_type);
                 } else {
                     self.hir_set_bool(stripped == strip_nullable(&right_name));
@@ -489,7 +491,7 @@ impl<'a> Analyzer<'a> {
     /// conversion (identity, numeric<->numeric, `char`<->`int`/`byte`, boxing/unboxing via `object`,
     /// and `int`->pointer for null literals). Always yields the target type, reporting an error for
     /// disallowed conversions so analysis can continue.
-    fn analyze_cast(
+    pub(super) fn analyze_cast(
         &mut self,
         target_type: &Type,
         expr: &ExpressionNode<'a>,
@@ -539,6 +541,29 @@ impl<'a> Analyzer<'a> {
                 || target_type_str.ends_with("?"))
         {
             // Allow casting int to pointer types (for null pointers)
+            Ok(target_type.clone())
+        } else if self.is_interface_name(strip_nullable(&target_type_str)) {
+            // Cast to an interface (`(Animal)cat`). Allowed from another interface, or a class that
+            // implements the interface (an upcast). Both are identity at runtime (same tagged
+            // pointer); only the static type changes.
+            let src = strip_nullable(&expr_type_str);
+            if self.is_interface_name(src)
+                || self.class_implements(src, strip_nullable(&target_type_str))
+            {
+                Ok(target_type.clone())
+            } else {
+                diagnostics.report_error(
+                    format!(
+                        "Cannot cast from {} to interface {} ({} does not implement it)",
+                        expr_type_str, target_type_str, expr_type_str
+                    ),
+                    target_type.get_span().or_else(|| expr.position()),
+                );
+                Ok(target_type.clone())
+            }
+        } else if self.is_interface_name(strip_nullable(&expr_type_str)) {
+            // Downcast from an interface to a concrete class or another interface: permitted
+            // (identity at runtime; like unboxing `object`, a wrong downcast is the caller's risk).
             Ok(target_type.clone())
         } else {
             diagnostics.report_error(
@@ -658,6 +683,12 @@ impl<'a> Analyzer<'a> {
         if (left.get_type() == "void?" || right.get_type() == "void?")
             && crate::types::assignable(&self.type_ctx.interner, r, l)
         {
+            return Ok(());
+        }
+
+        // Implicit upcast to an interface: a value whose concrete class implements the interface
+        // `left` is assignable to it (`let a: Animal = cat;`).
+        if self.value_assignable_to_interface(left, right) {
             return Ok(());
         }
 

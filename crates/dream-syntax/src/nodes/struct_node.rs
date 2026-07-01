@@ -26,6 +26,10 @@ pub struct StructDeclarationNode<'a> {
     pub generic_parameters: Option<Vec<SyntaxToken>>,
     pub fields: Vec<StructFieldNode>,
     pub methods: Vec<crate::nodes::function::FunctionNode<'a>>,
+    /// The interfaces this class declares it implements (`class Cat : Animal, Named`). Each token
+    /// is an interface name; the class must provide a matching method for every method of each
+    /// listed interface (validated during semantic analysis). Empty when no `:` clause is present.
+    pub implements: Vec<SyntaxToken>,
     /// True when the class is marked `public`: visible to other modules and emitted as a
     /// WebAssembly export. Private (the default) classes are module-internal.
     pub is_public: bool,
@@ -49,6 +53,7 @@ impl<'a> StructDeclarationNode<'a> {
             generic_parameters,
             fields,
             methods,
+            implements: Vec::new(),
             is_public,
             file_path: None,
         }

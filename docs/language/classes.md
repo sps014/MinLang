@@ -273,6 +273,12 @@ For example, a `fun get(index: int): void` is a normal method (not an indexer), 
 compile error while `obj.get(i)` keeps working. `static` and `async` variants are likewise never
 treated as hooks.
 
+## Implementing interfaces
+
+A class can implement one or more [interfaces](interfaces.md) by listing them after a colon
+(`class Cat : Animal { ... }`), committing to provide every method the interface declares. A value
+can then be used through the interface type with runtime polymorphism.
+
 ## Object protocol overrides
 
 Classes can customize how they are printed and hashed by overriding `to_string` and `hash_code`. See [The object type](objects.md) for details.

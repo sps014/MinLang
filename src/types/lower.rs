@@ -143,6 +143,10 @@ impl TypeCtx {
                         let def = self.defs.intern(DefKind::Union, name, vec![]);
                         self.interner.union_ty(def, args)
                     }
+                    Some(DefKind::Interface) => {
+                        let def = self.defs.intern(DefKind::Interface, name, vec![]);
+                        self.interner.interface_ty(def, args)
+                    }
                     // Default unknown nominal names to structs (forward references during
                     // declaration registration land here before the def is seen).
                     _ => {
@@ -189,6 +193,10 @@ impl TypeCtx {
             Some(DefKind::Union) => {
                 let def = self.defs.intern(DefKind::Union, name, vec![]);
                 self.interner.union_ty(def, vec![])
+            }
+            Some(DefKind::Interface) => {
+                let def = self.defs.intern(DefKind::Interface, name, vec![]);
+                self.interner.interface_ty(def, vec![])
             }
             _ => {
                 let def = self.defs.intern(DefKind::Struct, name, vec![]);

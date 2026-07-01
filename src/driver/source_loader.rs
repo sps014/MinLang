@@ -13,7 +13,8 @@ use crate::diagnostics::DiagnosticBag;
 use crate::syntax::lexer::Lexer;
 use crate::syntax::nodes::struct_node::StructDeclarationNode;
 use crate::syntax::nodes::{
-    EnumDeclarationNode, ExtendNode, FunctionNode, GlobalVariableNode, ProgramNode,
+    EnumDeclarationNode, ExtendNode, FunctionNode, GlobalVariableNode, InterfaceDeclarationNode,
+    ProgramNode,
 };
 use crate::syntax::parser::Parser;
 
@@ -25,6 +26,7 @@ pub struct ProgramAccumulator<'a> {
     pub visited: HashSet<String>,
     pub all_functions: Vec<FunctionNode<'a>>,
     pub all_structs: Vec<StructDeclarationNode<'a>>,
+    pub all_interfaces: Vec<InterfaceDeclarationNode<'a>>,
     pub all_enums: Vec<EnumDeclarationNode>,
     pub all_extends: Vec<ExtendNode<'a>>,
     pub all_globals: Vec<GlobalVariableNode<'a>>,
@@ -49,6 +51,7 @@ pub fn collect_declarations<'a>(
     file_tag: &str,
     all_functions: &mut Vec<FunctionNode<'a>>,
     all_structs: &mut Vec<StructDeclarationNode<'a>>,
+    all_interfaces: &mut Vec<InterfaceDeclarationNode<'a>>,
     all_enums: &mut Vec<EnumDeclarationNode>,
     all_extends: &mut Vec<ExtendNode<'a>>,
     all_globals: &mut Vec<GlobalVariableNode<'a>>,
@@ -67,6 +70,14 @@ pub fn collect_declarations<'a>(
             method.file_path = Some(tag.clone());
         }
         all_structs.push(struct_decl);
+    }
+    for interface_decl in program.interfaces.iter().cloned() {
+        let mut interface_decl = interface_decl;
+        interface_decl.file_path = Some(tag.clone());
+        for method in interface_decl.methods.iter_mut() {
+            method.file_path = Some(tag.clone());
+        }
+        all_interfaces.push(interface_decl);
     }
     for enum_decl in program.enums.iter().cloned() {
         all_enums.push(enum_decl);
@@ -170,6 +181,7 @@ pub fn parse_file_recursive<'a>(
         &path_str,
         &mut acc.all_functions,
         &mut acc.all_structs,
+        &mut acc.all_interfaces,
         &mut acc.all_enums,
         &mut acc.all_extends,
         &mut acc.all_globals,

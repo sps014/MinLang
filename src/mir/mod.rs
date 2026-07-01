@@ -47,6 +47,9 @@ pub struct Mir {
     /// symbol table resolves intrinsic call targets (to the runtime helper `$<key>`, or the async
     /// scheduler for `sleep`) instead of the `$def{N}` fallback.
     pub intrinsics: Vec<(DefId, String)>,
+    /// Interface dispatch metadata: ordered interfaces (index = `iface_id`) + per-class concrete
+    /// method symbols. Drives the itable data + dispatch trampolines emitted by the backend.
+    pub interfaces: crate::hir::InterfaceTable,
 }
 
 /// A module-level variable slot (declared as one mutable WASM global `$g{id}`).
@@ -114,6 +117,15 @@ pub enum Statement {
     /// A call evaluated for its effect only (return value discarded).
     Call {
         callee: Callee,
+        args: Vec<Operand>,
+    },
+    /// An interface method call evaluated for effect only (result dropped if any). See
+    /// [`Rvalue::InterfaceCall`].
+    InterfaceCall {
+        receiver: Operand,
+        iface_id: usize,
+        method_slot: usize,
+        sig: TypeId,
         args: Vec<Operand>,
     },
     /// The `print`/`println` builtins, lowered to the host `print_*` imports. `ty` is the argument's
@@ -235,6 +247,18 @@ pub enum Rvalue {
     Call { callee: Callee, args: Vec<Operand> },
     /// An indirect call through a function-pointer operand.
     IndirectCall { target: Operand, args: Vec<Operand> },
+    /// A dynamically-dispatched interface method call. Lowered to a call to the generated dispatch
+    /// trampoline for `(iface_id, method_slot)`, which reads the receiver's tag, indexes the
+    /// interface's itable, and `call_indirect`s the concrete method. `receiver` is `this` (arg 0),
+    /// `sig` the `fun(this, params): ret` signature type, and `ret` the result type at this site.
+    InterfaceCall {
+        receiver: Operand,
+        iface_id: usize,
+        method_slot: usize,
+        sig: TypeId,
+        args: Vec<Operand>,
+        ret: TypeId,
+    },
     /// A first-class reference to a (possibly monomorphized) function, materialized as its index in
     /// the module's function table. Used when a function name is taken as a value (`let f = foo;`).
     FuncRef(Callee),
@@ -320,6 +344,9 @@ pub(crate) struct HirEdges {
     pub callees: Vec<FnKey>,
     pub types: Vec<TypeId>,
     pub strings: Vec<String>,
+    /// `(iface_id, method_slot)` of every interface call, so reachability can keep the concrete
+    /// implementations dispatched through it.
+    pub iface_calls: Vec<(usize, usize)>,
 }
 
 pub(crate) fn hir_body_edges(body: &[crate::hir::HStmt], out: &mut HirEdges) {
@@ -401,6 +428,13 @@ fn hir_expr_edges(e: &crate::hir::HExpr, out: &mut HirEdges) {
         }
         K::IndirectCall { target, args } => {
             hir_expr_edges(target, out);
+            for a in args {
+                hir_expr_edges(a, out);
+            }
+        }
+        K::InterfaceCall { receiver, iface_id, method_slot, args, .. } => {
+            out.iface_calls.push((*iface_id, *method_slot));
+            hir_expr_edges(receiver, out);
             for a in args {
                 hir_expr_edges(a, out);
             }
@@ -506,14 +540,21 @@ pub fn prune_unreachable(mir: &mut Mir) {
                 continue;
             }
             let mut callees = Vec::new();
+            let mut iface_uses: Vec<(usize, usize)> = Vec::new();
             for block in &mir.functions[idx].blocks {
                 for stmt in &block.stmts {
                     match stmt {
                         Statement::Call { callee, .. } => {
                             callees.push((callee.def, callee.args.clone()))
                         }
+                        Statement::InterfaceCall { iface_id, method_slot, .. } => {
+                            iface_uses.push((*iface_id, *method_slot))
+                        }
                         Statement::Assign(_, rv) => {
                             rvalue_callees(rv, &mut callees);
+                            if let Rvalue::InterfaceCall { iface_id, method_slot, .. } = rv {
+                                iface_uses.push((*iface_id, *method_slot));
+                            }
                             match rv {
                                 Rvalue::New { ty, .. } | Rvalue::UnionNew { ty, .. } => {
                                     type_worklist.push(*ty)
@@ -535,12 +576,31 @@ pub fn prune_unreachable(mir: &mut Mir) {
                     hir_body_edges(&hir_fn.body, &mut edges);
                     callees.extend(edges.callees);
                     type_worklist.extend(edges.types);
+                    iface_uses.extend(edges.iface_calls);
                 }
             }
             for key in callees {
                 if let Some(&target) = index.get(&key) {
                     if !reachable.contains(&target) {
                         worklist.push(target);
+                    }
+                }
+            }
+            // An interface call may dynamically reach the concrete method of *any* class that
+            // implements that interface. Keep each such `{Class}_{method}` implementation alive
+            // (by name, like the RC-runtime-only `_del`/`_to_string` helpers).
+            for (iface_id, slot) in iface_uses {
+                for imp in &mir.interfaces.impls {
+                    for (id, symbols) in &imp.entries {
+                        if *id == iface_id {
+                            if let Some(sym) = symbols.get(slot) {
+                                if let Some(&t) = by_name.get(sym.as_str()) {
+                                    if !reachable.contains(&t) {
+                                        worklist.push(t);
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

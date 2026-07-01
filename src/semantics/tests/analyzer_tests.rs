@@ -1719,3 +1719,98 @@ fn test_class_foreach_missing_iterator_errors() {
         .iter()
         .any(|d| d.message.contains("iterator()")));
 }
+
+#[test]
+fn test_interface_implemented_ok() {
+    // A class providing every interface method with a matching signature analyzes cleanly, and a
+    // concrete value flows into an interface-typed local via an implicit upcast, then dispatches.
+    let code = "
+        interface Animal {
+            fun Speak(): string;
+            fun Legs(): int;
+        }
+        class Cat : Animal {
+            public fun Speak(): string { return \"meow\"; }
+            public fun Legs(): int { return 4; }
+        }
+        fun run(): string {
+            let c = Cat();
+            let a: Animal = c;
+            return a.Speak();
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), false);
+}
+
+#[test]
+fn test_interface_missing_method_errors() {
+    // Declaring `: Animal` obliges the class to implement every method of the interface.
+    let code = "
+        interface Animal {
+            fun Speak(): string;
+            fun Legs(): int;
+        }
+        class Cat : Animal {
+            public fun Speak(): string { return \"meow\"; }
+        }
+        fun main(): void { let c = Cat(); }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("does not implement method")
+            && d.message.contains("Legs")));
+}
+
+#[test]
+fn test_interface_cannot_be_instantiated() {
+    let code = "
+        interface Animal { fun Speak(): string; }
+        fun main(): void { let a = Animal(); }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("instantiate interface")));
+}
+
+#[test]
+fn test_interface_call_emits_dynamic_dispatch() {
+    // A method call on an interface-typed receiver lowers to a `(call $__iface_dispatch_*)`
+    // trampoline rather than a static call to a concrete method.
+    let code = "
+        interface Animal { fun Speak(): string; }
+        class Cat : Animal { public fun Speak(): string { return \"meow\"; } }
+        fun describe(a: Animal): string { return a.Speak(); }
+        fun run(): string { return describe(Cat()); }
+    ";
+    let (wat, _) = emit_hir_to_wat(code);
+    assert!(
+        wat.contains("$__iface_dispatch_"),
+        "interface call should dispatch through a trampoline:\n{}",
+        wat
+    );
+}
+
+#[test]
+fn test_is_binding_not_visible_outside_branch() {
+    // The `is`-with-binding local is scoped to the taken branch; referencing it afterwards is an
+    // error.
+    let code = "
+        fun f(o: object): int {
+            if (o is int a) { return a; }
+            return a;
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("does not exist")));
+}

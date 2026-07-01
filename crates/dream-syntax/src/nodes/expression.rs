@@ -17,7 +17,10 @@ pub enum ExpressionNode<'a> {
     IndexAccess(&'a ExpressionNode<'a>, &'a ExpressionNode<'a>),
     Cast(Type, &'a ExpressionNode<'a>),
     MemberAccess(&'a ExpressionNode<'a>, SyntaxToken),
-    IsExpression(&'a ExpressionNode<'a>, Type),
+    /// `expr is Type` — a runtime type check. The optional trailing `SyntaxToken` is an
+    /// `is`-with-binding name (`expr is Type name`): when present, the analyzer introduces a new
+    /// local `name: Type` (narrowed from `expr`) scoped to the branch guarded by the check.
+    IsExpression(&'a ExpressionNode<'a>, Type, Option<SyntaxToken>),
     MethodCall(
         &'a ExpressionNode<'a>,
         SyntaxToken,
@@ -74,7 +77,7 @@ impl<'a> ExpressionNode<'a> {
             | ExpressionNode::Unary(token, _) => Some(token.position),
             ExpressionNode::Parenthesized(inner)
             | ExpressionNode::Await(inner)
-            | ExpressionNode::IsExpression(inner, _) => inner.position(),
+            | ExpressionNode::IsExpression(inner, _, _) => inner.position(),
             ExpressionNode::Switch(subject, _) => subject.position(),
             ExpressionNode::Ternary(cond, _, _) => cond.position(),
             ExpressionNode::IndexAccess(array_expr, _) => array_expr.position(),
@@ -100,7 +103,7 @@ impl<'a> ExpressionNode<'a> {
             ExpressionNode::IndexAccess(array_expr, _) => array_expr.start_position(),
             ExpressionNode::Parenthesized(inner)
             | ExpressionNode::Await(inner)
-            | ExpressionNode::IsExpression(inner, _) => inner.start_position(),
+            | ExpressionNode::IsExpression(inner, _, _) => inner.start_position(),
             ExpressionNode::Switch(subject, _) => subject.start_position(),
             ExpressionNode::Ternary(cond, _, _) => cond.start_position(),
             ExpressionNode::ArrayLiteral(elements) => {

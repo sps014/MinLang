@@ -65,6 +65,13 @@ fn subst_stmt_reads(stmt: &mut Statement, known: &HashMap<Local, Operand>) -> bo
         }
         Statement::Retain(o) | Statement::Release(o) => subst_operand(o, known),
         Statement::Call { args, .. } => args.iter_mut().fold(false, |c, a| c | subst_operand(a, known)),
+        Statement::InterfaceCall { receiver, args, .. } => {
+            let mut c = subst_operand(receiver, known);
+            for a in args {
+                c |= subst_operand(a, known);
+            }
+            c
+        }
         Statement::Print { arg, .. } => subst_operand(arg, known),
         Statement::Nop => false,
     }
@@ -93,6 +100,13 @@ fn subst_rvalue_reads(rvalue: &mut Rvalue, known: &HashMap<Local, Operand>) -> b
         }
         Rvalue::IndirectCall { target, args } => {
             let mut c = subst_operand(target, known);
+            for a in args {
+                c |= subst_operand(a, known);
+            }
+            c
+        }
+        Rvalue::InterfaceCall { receiver, args, .. } => {
+            let mut c = subst_operand(receiver, known);
             for a in args {
                 c |= subst_operand(a, known);
             }

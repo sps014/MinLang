@@ -12,6 +12,7 @@ pub enum DefKind {
     Union,
     Enum,
     Function,
+    Interface,
 }
 
 /// A single nominal declaration. `generic_params` records the declared type-parameter names (e.g.

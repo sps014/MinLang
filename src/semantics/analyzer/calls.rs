@@ -330,6 +330,16 @@ impl<'a> Analyzer<'a> {
             return Ok((*ret).clone());
         }
 
+        // Interfaces cannot be instantiated: `Animal()` is an error even though `Animal` names a
+        // type, because an interface has no fields/constructor and no concrete runtime layout.
+        if self.type_ctx.nominal_kind(&function_name) == Some(crate::types::DefKind::Interface) {
+            return Err(report(
+                diagnostics,
+                format!("cannot instantiate interface '{}'", function_name),
+                Some(name.position),
+            ));
+        }
+
         // Constructor call: `Struct(args)` / `Struct<T>(args)`. Only treated as a constructor
         // when no free function (concrete or generic) shadows the name, so prelude factory
         // functions such as `List<T>()` keep their behaviour.
@@ -486,6 +496,13 @@ impl<'a> Analyzer<'a> {
                 if self.enum_int_compatible(expected, given) {
                     continue;
                 }
+                // Implicit upcast: a class argument is accepted where an interface it implements is
+                // expected (e.g. passing a `Cat` to a `fun(a: Animal)` parameter).
+                if self.is_interface_name(strip_nullable(expected))
+                    && self.class_implements(strip_nullable(given), strip_nullable(expected))
+                {
+                    continue;
+                }
                 diagnostics.report_error(
                     format!(
                         "Function {} has param {} of type {:?} but param {} of type {:?} is given",
@@ -629,7 +646,16 @@ impl<'a> Analyzer<'a> {
         // nullable/`null` handling via the structured rules.
         let e = self.type_ctx.lower_str(expected);
         let g = self.type_ctx.lower_str(given);
-        crate::types::assignable(&self.type_ctx.interner, e, g)
+        if crate::types::assignable(&self.type_ctx.interner, e, g) {
+            return true;
+        }
+        // Implicit upcast to an interface parameter: the argument's concrete class implements it.
+        let iface = crate::syntax::nodes::types::strip_nullable(expected);
+        if self.is_interface_name(iface) {
+            let given_class = crate::syntax::nodes::types::strip_nullable(given);
+            return self.class_implements(given_class, iface);
+        }
+        false
     }
 
     /// Type-checks a constructor call `Struct(args)`. When the struct defines a custom `constructor`
@@ -1115,6 +1141,114 @@ impl<'a> Analyzer<'a> {
     /// (`obj_type`) is known and the builtins/static cases have been ruled out: monomorphizes the
     /// receiver, selects the (possibly overloaded) `{Type}_{method}`, enforces privacy and the
     /// argument arity/types, and returns the call's result type (a `Future<T>` for `async`).
+    /// If `obj_type` (ignoring any nullable wrapper) names an interface, returns that interface's
+    /// name; otherwise `None`.
+    fn interface_receiver_name(&self, obj_type: &Type) -> Option<String> {
+        let name = strip_nullable(&obj_type.get_type()).to_string();
+        if self.is_interface_name(&name) {
+            Some(name)
+        } else {
+            None
+        }
+    }
+
+    /// Dispatches a method call on an interface-typed receiver. Resolves `method` against the
+    /// interface's ordered signature list (yielding its local slot index and return type),
+    /// type-checks the arguments, and emits a dynamically-dispatched `InterfaceCall` HIR node.
+    fn analyze_interface_method(
+        &mut self,
+        iface_name: &str,
+        method: &SyntaxToken,
+        params: &Vec<ExpressionNode<'a>>,
+        ctx: &super::AnalyzerContext<'a, '_>,
+        receiver: Option<crate::hir::HExpr>,
+        diagnostics: &mut DiagnosticBag,
+    ) -> Result<Type, SemanticError> {
+        let mut arg_types = Vec::new();
+        let mut arg_hirs = Vec::new();
+        for param in params.iter() {
+            let t =
+                self.analyze_expression(param, ctx.parent_function, ctx.symbol_table, diagnostics)?;
+            arg_hirs.push(self.hir_take());
+            arg_types.push(t.get_type());
+        }
+
+        let methods = self
+            .interface_methods
+            .get(iface_name)
+            .cloned()
+            .unwrap_or_default();
+        let Some((slot, im)) = methods
+            .iter()
+            .enumerate()
+            .find(|(_, m)| m.name.text == method.text)
+        else {
+            return Err(report(
+                diagnostics,
+                format!("interface '{}' has no method '{}'", iface_name, method.text),
+                Some(method.position),
+            ));
+        };
+
+        let expected: Vec<String> = im.parameters.iter().map(|p| p.type_.get_type()).collect();
+        let ret_type = im.return_type.clone().unwrap_or(Type::Void);
+        if expected.len() != arg_types.len() {
+            diagnostics.report_error(
+                format!(
+                    "interface method '{}.{}' expects {} arguments, got {}",
+                    iface_name,
+                    method.text,
+                    expected.len(),
+                    arg_types.len()
+                ),
+                Some(method.position),
+            );
+            self.hir_none();
+            return Ok(ret_type);
+        }
+        for (i, given) in arg_types.iter().enumerate() {
+            if !self.type_str_assignable(&expected[i], given) {
+                diagnostics.report_error(
+                    format!(
+                        "interface method '{}.{}' expects parameter {} to be {}, got {}",
+                        iface_name,
+                        method.text,
+                        i + 1,
+                        expected[i],
+                        given
+                    ),
+                    Some(method.position),
+                );
+            }
+        }
+
+        let iface_id = self
+            .interface_methods
+            .get_index_of(iface_name)
+            .unwrap_or(0);
+        // The `call_indirect` signature is `fun(this, params...): ret`, with `this` typed as
+        // `object` (an `i32` pointer, matching every concrete implementation's receiver).
+        let sig = self.interface_dispatch_sig(im);
+        self.hir_set_interface_call(receiver, iface_id, slot, sig, arg_hirs, &ret_type);
+        Ok(ret_type)
+    }
+
+    /// Interns the `fun(this, params...): ret` function type used to `call_indirect` an interface
+    /// method: `this` is `object` (a tagged pointer), followed by the method's declared parameters
+    /// and its return type. The same signature is used to declare the WASM `call_indirect` type.
+    pub(super) fn interface_dispatch_sig(&mut self, method: &FunctionNode<'a>) -> crate::types::TypeId {
+        let mut params = vec![self.type_ctx.interner.object()];
+        for p in &method.parameters {
+            let id = self.type_ctx.lower(&p.type_);
+            params.push(id);
+        }
+        let ret = match &method.return_type {
+            Some(t) => self.type_ctx.lower(t),
+            None => self.type_ctx.interner.void(),
+        };
+        self.type_ctx.interner.func(params, ret)
+    }
+
     fn analyze_instance_method(
         &mut self,
         obj_type: &Type,
@@ -1124,6 +1258,19 @@ impl<'a> Analyzer<'a> {
         receiver: Option<crate::hir::HExpr>,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<Type, SemanticError> {
+        // Interface-typed receiver: the concrete implementation is unknown statically, so dispatch
+        // dynamically through the interface's method table rather than resolving a static method.
+        if let Some(iface_name) = self.interface_receiver_name(obj_type) {
+            return self.analyze_interface_method(
+                &iface_name,
+                method,
+                params,
+                ctx,
+                receiver,
+                diagnostics,
+            );
+        }
+
         // Struct receivers are monomorphized to their concrete type name; primitive/`object`
         // receivers (which can carry methods via `extend`) use their canonical type name directly.
         let struct_name = match Self::resolve_struct_parts(obj_type) {

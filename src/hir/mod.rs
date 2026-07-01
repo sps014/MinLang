@@ -48,6 +48,42 @@ pub struct Hir {
     /// or, for async intrinsics like `sleep`, are recognized by the backend and lowered to the
     /// scheduler. Recorded so the backend's symbol table can resolve the callee def.
     pub intrinsics: Vec<(DefId, String)>,
+    /// Interface dispatch metadata: the ordered interfaces (index = `iface_id`) and, per
+    /// implementing class, the concrete method symbol for each `(interface, slot)`. Drives the
+    /// itable data + dispatch trampolines emitted by the backend, and keeps concrete interface
+    /// method implementations reachable through dead-code elimination.
+    pub interfaces: InterfaceTable,
+}
+
+/// Interface dispatch metadata carried from analysis into codegen.
+#[derive(Debug, Clone, Default)]
+pub struct InterfaceTable {
+    /// The program's interfaces in registration order; the index into this vector is the stable
+    /// `iface_id` referenced by [`HExprKind::InterfaceCall`].
+    pub interfaces: Vec<InterfaceInfo>,
+    /// Every class that implements at least one interface, with the concrete method symbols it
+    /// supplies for each implemented interface.
+    pub impls: Vec<InterfaceImpl>,
+}
+
+/// One interface's dispatch shape: its method count and the interned `fun(this, params): ret`
+/// signature of each method slot (used to declare the `call_indirect` type + trampoline).
+#[derive(Debug, Clone)]
+pub struct InterfaceInfo {
+    pub name: String,
+    pub method_count: usize,
+    /// The `call_indirect` signature (a `Func` `TypeId`) for each method slot.
+    pub sigs: Vec<TypeId>,
+}
+
+/// One class's interface implementations: for each interface it implements, the concrete method
+/// symbol (`{Class}_{method}`) that fills each method slot, keyed by the interface's `iface_id`.
+#[derive(Debug, Clone)]
+pub struct InterfaceImpl {
+    /// The implementing class's interned struct type (its `struct_tags` key / runtime tag).
+    pub class_ty: TypeId,
+    /// `(iface_id, [concrete method symbol per slot])`.
+    pub entries: Vec<(usize, Vec<String>)>,
 }
 
 /// A host function the module imports: an `extern fun` (interop) or a compiler-provided host
@@ -272,6 +308,18 @@ pub enum HExprKind {
         target: Box<HExpr>,
         args: Vec<HExpr>,
     },
+    /// A dynamically-dispatched interface method call `receiver.method(args)` where `receiver`'s
+    /// static type is an interface. Dispatch happens at runtime through the receiver's concrete
+    /// tag (tag-indexed itable + `call_indirect`); `iface_id` is the interface's stable id,
+    /// `method_slot` the method's local index within that interface, and `sig` the interned
+    /// function type `fun(this, params...): ret` used for the indirect call.
+    InterfaceCall {
+        receiver: Box<HExpr>,
+        iface_id: usize,
+        method_slot: usize,
+        sig: TypeId,
+        args: Vec<HExpr>,
+    },
     /// Constructor `Type(args)`; `instance` records the monomorphization type-args when generic.
     /// When `ctor` is `Some`, `args` are the user `constructor(){}`'s arguments (the backend
     /// allocates, then calls that constructor with `this` + args); when `None`, `args` initialize the
@@ -414,6 +462,7 @@ mod tests {
             layouts: LayoutTable::default(),
             imports: vec![],
             intrinsics: vec![],
+            interfaces: InterfaceTable::default(),
         };
         assert_eq!(hir.functions.len(), 1);
         assert_eq!(hir.functions[0].params.len(), 2);

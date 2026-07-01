@@ -235,6 +235,19 @@ impl Emitter<'_> {
                     self.line("     (drop)");
                 }
             }
+            Statement::InterfaceCall { receiver, iface_id, method_slot, sig, args } => {
+                self.emit_interface_call(receiver, *iface_id, *method_slot, *sig, args);
+                let ret = match self.interner.kind(*sig) {
+                    TyKind::Func(_, r) => Some(*r),
+                    _ => None,
+                };
+                let drops = ret
+                    .map(|r| !matches!(self.interner.kind(r), TyKind::Void))
+                    .unwrap_or(false);
+                if drops {
+                    self.line("     (drop)");
+                }
+            }
             Statement::Print { arg, ty, newline } => {
                 // Push the value, then print it. `int`/`char`/`string` go straight to a host import;
                 // every other scalar is first rendered with its in-wasm `*_to_string` and printed as a
@@ -543,6 +556,9 @@ impl Emitter<'_> {
                     .unwrap_or_else(|| "$sig___v".to_string());
                 self.line(&format!("     (call_indirect $__ft (type {}))", sig));
             }
+            Rvalue::InterfaceCall { receiver, iface_id, method_slot, sig, args, .. } => {
+                self.emit_interface_call(receiver, *iface_id, *method_slot, *sig, args);
+            }
             Rvalue::FuncRef(callee) => {
                 // A function value is its slot index in the module function table.
                 let idx = self
@@ -817,6 +833,37 @@ impl Emitter<'_> {
                 self.emit_numeric_conv(self.operand_ty(a), *pty);
             }
         }
+    }
+
+    /// Emits a dynamic interface method call. The receiver is pushed as argument 0, then the real
+    /// arguments (widened to the interface method's declared parameter types), then control transfers
+    /// to the per-`(interface, method)` dispatch trampoline which looks the concrete implementation up
+    /// in the tag-indexed itable and forwards through `$__ft`. The trampoline leaves the result (if
+    /// any) on the stack.
+    fn emit_interface_call(
+        &mut self,
+        receiver: &Operand,
+        iface_id: usize,
+        method_slot: usize,
+        sig: TypeId,
+        args: &[Operand],
+    ) {
+        let param_tys: Vec<TypeId> = match self.interner.kind(sig) {
+            TyKind::Func(params, _) => params.clone(),
+            _ => Vec::new(),
+        };
+        self.emit_operand(receiver);
+        for (i, a) in args.iter().enumerate() {
+            self.emit_operand(a);
+            // param_tys[0] is the receiver (`this`); real args start at index 1.
+            if let Some(pty) = param_tys.get(i + 1) {
+                self.emit_numeric_conv(self.operand_ty(a), *pty);
+            }
+        }
+        self.line(&format!(
+            "     (call ${})",
+            iface_dispatch_symbol(iface_id, method_slot)
+        ));
     }
 
     /// Emits the WASM numeric conversion instruction to turn a value of type `from` (already on the

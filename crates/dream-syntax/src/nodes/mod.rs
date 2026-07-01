@@ -1,5 +1,6 @@
 pub mod expression;
 pub mod function;
+pub mod interface_node;
 pub mod pattern;
 pub mod program;
 pub mod statement;
@@ -8,6 +9,7 @@ pub mod types;
 
 pub use expression::{ExpressionNode, SwitchArm, SwitchArmBody};
 pub use function::{FunctionNode, ParameterNode};
+pub use interface_node::InterfaceDeclarationNode;
 pub use pattern::PatternNode;
 pub use program::{
     EnumDeclarationNode, EnumVariantNode, ExtendNode, GlobalVariableNode, ImportNode, ProgramNode,

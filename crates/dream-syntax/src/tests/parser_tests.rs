@@ -15,6 +15,7 @@ fn parse_code<'a>(code: &str, arena: &'a bumpalo::Bump) -> (ProgramNode<'a>, Dia
             vec![],
             vec![],
             vec![],
+            vec![],
         ))
     });
     (tree.get_root().clone(), diagnostics)
@@ -697,6 +698,77 @@ fn fuzz_unbalanced_delimiters_never_panic() {
             s.push_str(rng.pick(&pieces));
         }
         assert_parses_without_panic(&s);
+    }
+}
+
+#[test]
+fn test_parse_interface_declaration() {
+    let code = "interface Animal { fun Call(): string; fun Legs(): int; }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    assert_eq!(program.interfaces.len(), 1);
+    let iface = &program.interfaces[0];
+    assert_eq!(iface.name.text, "Animal");
+    assert_eq!(iface.methods.len(), 2);
+    assert_eq!(iface.methods[0].name.text, "Call");
+    assert_eq!(iface.methods[1].name.text, "Legs");
+    // Interface methods are body-less signatures.
+    assert!(iface.methods[0].body.is_empty());
+}
+
+#[test]
+fn test_parse_class_implements_clause() {
+    let code = "class Cat : Animal, Pet { fun Call(): string { return \"meow\"; } }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    assert_eq!(program.structs.len(), 1);
+    let cat = &program.structs[0];
+    assert_eq!(cat.name.text, "Cat");
+    let implemented: Vec<&str> = cat.implements.iter().map(|t| t.text.as_str()).collect();
+    assert_eq!(implemented, vec!["Animal", "Pet"]);
+}
+
+#[test]
+fn test_parse_is_with_binding() {
+    let code = "fun f(o: object): void { if (o is int a) { print(a); } }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    let func = &program.functions[0];
+    // The `if` condition should be an `is` expression carrying a binding token.
+    if let StatementNode::IfElse(cond, _, _, _) = &func.body[0] {
+        if let ExpressionNode::IsExpression(_, ty, binding) = cond {
+            assert!(matches!(ty, Type::Integer(_)));
+            assert_eq!(binding.as_ref().map(|t| t.text.as_str()), Some("a"));
+        } else {
+            panic!("expected an IsExpression condition");
+        }
+    } else {
+        panic!("expected an if statement");
+    }
+}
+
+#[test]
+fn test_parse_is_without_binding_still_works() {
+    let code = "fun f(o: object): void { if (o is int) { print(1); } }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    let func = &program.functions[0];
+    if let StatementNode::IfElse(cond, _, _, _) = &func.body[0] {
+        if let ExpressionNode::IsExpression(_, _, binding) = cond {
+            assert!(binding.is_none());
+        } else {
+            panic!("expected an IsExpression condition");
+        }
+    } else {
+        panic!("expected an if statement");
     }
 }
 

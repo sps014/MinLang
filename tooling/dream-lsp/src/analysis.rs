@@ -56,6 +56,7 @@ pub fn collect_diagnostics(file_path: Option<&str>, text: &str) -> Vec<Diagnosti
             MAIN_FILE,
             &mut acc.all_functions,
             &mut acc.all_structs,
+            &mut acc.all_interfaces,
             &mut acc.all_enums,
             &mut acc.all_extends,
             &mut acc.all_globals,
@@ -93,6 +94,7 @@ pub fn collect_diagnostics(file_path: Option<&str>, text: &str) -> Vec<Diagnosti
         &mut diagnostics,
         &mut acc.all_functions,
         &mut acc.all_structs,
+        &mut acc.all_interfaces,
         &mut acc.all_enums,
         &mut acc.all_extends,
     );
@@ -108,6 +110,7 @@ pub fn collect_diagnostics(file_path: Option<&str>, text: &str) -> Vec<Diagnosti
         let combined = ProgramNode::new(
             vec![],
             acc.all_structs,
+            acc.all_interfaces,
             acc.all_functions,
             acc.all_enums,
             acc.all_extends,
@@ -155,6 +158,7 @@ fn merge_prelude<'a>(
     diagnostics: &mut DiagnosticBag,
     all_functions: &mut Vec<FunctionNode<'a>>,
     all_structs: &mut Vec<StructDeclarationNode<'a>>,
+    all_interfaces: &mut Vec<dream::syntax::nodes::InterfaceDeclarationNode<'a>>,
     all_enums: &mut Vec<dream::syntax::nodes::EnumDeclarationNode>,
     all_extends: &mut Vec<ExtendNode<'a>>,
 ) {
@@ -184,6 +188,7 @@ fn merge_prelude<'a>(
                 name,
                 all_functions,
                 all_structs,
+                all_interfaces,
                 all_enums,
                 all_extends,
                 &mut globals,

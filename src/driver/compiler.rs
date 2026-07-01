@@ -57,6 +57,7 @@ impl Compiler {
             &arena,
             &mut acc.all_functions,
             &mut acc.all_structs,
+            &mut acc.all_interfaces,
             &mut acc.all_enums,
             &mut acc.all_extends,
             &mut diagnostics,
@@ -82,6 +83,7 @@ impl Compiler {
         let combined_program = ProgramNode::new(
             vec![],
             acc.all_structs,
+            acc.all_interfaces,
             acc.all_functions,
             acc.all_enums,
             acc.all_extends,
