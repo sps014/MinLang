@@ -54,7 +54,7 @@ cast. The static type becomes the interface, but the value still remembers its c
 
 ```dream
 fun describe(a: Animal): void {
-    println(a.speak());   // dispatches to Cat.Speak or Dog.Speak at runtime
+    println(a.speak());   // dispatches to Cat.speak or Dog.speak at runtime
     println(a.legs());
 }
 
@@ -124,6 +124,75 @@ after the `if`.
     `is`-with-binding is supported in `if (...)` conditions. Binding inside `&&` chains or `while`
     conditions is not yet supported.
 
+## Generic interfaces
+
+An interface can be generic, declaring type parameters that its methods use:
+
+```dream
+interface Container<T> {
+    fun get(): T;
+    fun size(): int;
+}
+```
+
+A class — generic or not — implements a concrete or generic instance of it. When a generic class
+implements a generic interface, its type parameter flows into the interface:
+
+```dream
+class Box<T> : Container<T> {
+    public value: T;
+    public fun get(): T { return this.value; }
+    public fun size(): int { return 1; }
+}
+```
+
+Each concrete use is **monomorphized**: `Box<int>` implements `Container<int>`, `Box<string>`
+implements `Container<string>`, and so on — each gets its own itable, exactly like generic classes.
+Dispatch then works through the monomorphized interface type:
+
+```dream
+fun describe(c: Container<int>): void {
+    println(c.get());
+    println(c.size());
+}
+
+fun main(): void {
+    let b = Box<int>(7);
+    describe(b);              // implicit upcast Box<int> -> Container<int>
+
+    let c: Container<int> = b;
+    println(c.get());        // dispatches to Box<int>.get
+}
+```
+
+## Async interface methods
+
+An interface method may be `async`. Calling it through an interface-typed receiver dispatches
+dynamically to the concrete async implementation, which returns a `Future<T>` you `await`:
+
+```dream
+interface Fetcher {
+    async fun fetch(): int;
+}
+
+class Remote : Fetcher {
+    public base: int;
+    public async fun fetch(): int {
+        await Time.sleep(10);
+        return this.base + 1;
+    }
+}
+
+async fun run(f: Fetcher): void {
+    let v = await f.fetch();   // dynamic dispatch; result is a Future<int> to await
+    println(v);
+}
+```
+
+An `async` interface method must be implemented by an `async` method (and a non-async method by a
+non-async one) — the two compile to different shapes (a `Future`-producing constructor vs. a plain
+call), so a mismatch is a compile error.
+
 ## How dispatch works
 
 Interface calls use **tag-indexed itables** — the same idea as the JVM's `invokeinterface`. Every
@@ -136,8 +205,9 @@ entirely at compile time.
 ## Limits (current version)
 
 - Interfaces declare method signatures only — no fields and no default method bodies.
-- Interfaces are non-generic.
-- Generic classes cannot implement interfaces.
+- A generic interface instance can be named in a type annotation (`let c: Container<int> = ...`) and
+  reached by implicit upcast, but an explicit cast to a *generic* interface (`(Container<int>)b`) is
+  not yet parsed — use an annotated binding instead.
 
 ## See also
 

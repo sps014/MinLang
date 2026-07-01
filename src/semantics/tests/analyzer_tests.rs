@@ -1726,17 +1726,17 @@ fn test_interface_implemented_ok() {
     // concrete value flows into an interface-typed local via an implicit upcast, then dispatches.
     let code = "
         interface Animal {
-            fun Speak(): string;
-            fun Legs(): int;
+            fun speak(): string;
+            fun legs(): int;
         }
         class Cat : Animal {
-            public fun Speak(): string { return \"meow\"; }
-            public fun Legs(): int { return 4; }
+            public fun speak(): string { return \"meow\"; }
+            public fun legs(): int { return 4; }
         }
         fun run(): string {
             let c = Cat();
             let a: Animal = c;
-            return a.Speak();
+            return a.speak();
         }
     ";
     let diagnostics = analyze_code(code);
@@ -1748,11 +1748,11 @@ fn test_interface_missing_method_errors() {
     // Declaring `: Animal` obliges the class to implement every method of the interface.
     let code = "
         interface Animal {
-            fun Speak(): string;
-            fun Legs(): int;
+            fun speak(): string;
+            fun legs(): int;
         }
         class Cat : Animal {
-            public fun Speak(): string { return \"meow\"; }
+            public fun speak(): string { return \"meow\"; }
         }
         fun main(): void { let c = Cat(); }
     ";
@@ -1762,13 +1762,13 @@ fn test_interface_missing_method_errors() {
         .diagnostics
         .iter()
         .any(|d| d.message.contains("does not implement method")
-            && d.message.contains("Legs")));
+            && d.message.contains("legs")));
 }
 
 #[test]
 fn test_interface_cannot_be_instantiated() {
     let code = "
-        interface Animal { fun Speak(): string; }
+        interface Animal { fun speak(): string; }
         fun main(): void { let a = Animal(); }
     ";
     let diagnostics = analyze_code(code);
@@ -1784,9 +1784,9 @@ fn test_interface_call_emits_dynamic_dispatch() {
     // A method call on an interface-typed receiver lowers to a `(call $__iface_dispatch_*)`
     // trampoline rather than a static call to a concrete method.
     let code = "
-        interface Animal { fun Speak(): string; }
-        class Cat : Animal { public fun Speak(): string { return \"meow\"; } }
-        fun describe(a: Animal): string { return a.Speak(); }
+        interface Animal { fun speak(): string; }
+        class Cat : Animal { public fun speak(): string { return \"meow\"; } }
+        fun describe(a: Animal): string { return a.speak(); }
         fun run(): string { return describe(Cat()); }
     ";
     let (wat, _) = emit_hir_to_wat(code);
@@ -1795,6 +1795,89 @@ fn test_interface_call_emits_dynamic_dispatch() {
         "interface call should dispatch through a trampoline:\n{}",
         wat
     );
+}
+
+#[test]
+fn test_generic_interface_monomorphized_ok() {
+    // A generic class implementing a generic interface analyzes cleanly, and a call on the
+    // monomorphized interface type dispatches dynamically.
+    let code = "
+        interface Container<T> {
+            fun get(): T;
+            fun size(): int;
+        }
+        class Box<T> : Container<T> {
+            public value: T;
+            public fun get(): T { return this.value; }
+            public fun size(): int { return 1; }
+        }
+        fun describe(c: Container<int>): int { return c.get(); }
+        fun run(): int {
+            let b = Box<int>(7);
+            return describe(b);
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), false);
+}
+
+#[test]
+fn test_generic_interface_signature_mismatch_errors() {
+    // The class's monomorphized method must match the interface's monomorphized signature.
+    let code = "
+        interface Container<T> {
+            fun get(): T;
+        }
+        class Box<T> : Container<T> {
+            public value: T;
+            public fun get(): int { return 0; }
+        }
+        fun run(): int {
+            let b = Box<string>(\"x\");
+            return b.size();
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("does not match the signature")
+            || d.message.contains("does not implement method")));
+}
+
+#[test]
+fn test_async_interface_method_ok() {
+    // An async interface method implemented by an async class method analyzes cleanly; calling it
+    // through an interface-typed receiver yields an awaitable `Future`.
+    let code = "
+        interface Fetcher { async fun fetch(): int; }
+        class Remote : Fetcher {
+            public async fun fetch(): int { return 1; }
+        }
+        async fun run(f: Fetcher): int { return await f.fetch(); }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), false);
+}
+
+#[test]
+fn test_async_interface_method_requires_async_impl() {
+    // A sync class method cannot satisfy an async interface method (they compile to different
+    // shapes), so the implements check must reject it.
+    let code = "
+        interface Fetcher { async fun fetch(): int; }
+        class Remote : Fetcher {
+            public fun fetch(): int { return 1; }
+        }
+        fun main(): void { let r = Remote(); }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("does not match the signature")));
 }
 
 #[test]

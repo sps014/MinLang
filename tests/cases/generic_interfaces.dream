@@ -1,0 +1,39 @@
+// Generic interfaces: a generic class implements a generic interface, and both are monomorphized
+// together. Dynamic dispatch works through the monomorphized interface type (`Container<int>`),
+// including an implicit upcast at a call site and an explicit interface cast.
+
+interface Container<T> {
+    fun get(): T;
+    fun size(): int;
+}
+
+class Box<T> : Container<T> {
+    public value: T;
+    public fun get(): T { return this.value; }
+    public fun size(): int { return 1; }
+}
+
+class Pair<T> : Container<T> {
+    public first: T;
+    public second: T;
+    public fun get(): T { return this.first; }
+    public fun size(): int { return 2; }
+}
+
+// Implicit upcast Box<int>/Pair<int> -> Container<int>; the call dispatches dynamically.
+fun describe(c: Container<int>): void {
+    System.println(c.get());
+    System.println(c.size());
+}
+
+fun main(): void {
+    let b = Box<int>(7);
+    describe(b);
+
+    let p = Pair<int>(10, 20);
+    describe(p);
+
+    // Implicit upcast to the monomorphized interface, then dynamic dispatch.
+    let c: Container<int> = b;
+    System.println(c.get());
+}

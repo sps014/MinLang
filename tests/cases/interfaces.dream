@@ -3,25 +3,25 @@
 // (interface) value and a boxed primitive.
 
 interface Animal {
-    fun Speak(): string;
-    fun Legs(): int;
+    fun speak(): string;
+    fun legs(): int;
 }
 
 class Cat : Animal {
-    public fun Speak(): string { return "meow"; }
-    public fun Legs(): int { return 4; }
+    public fun speak(): string { return "meow"; }
+    public fun legs(): int { return 4; }
 }
 
 class Dog : Animal {
-    public fun Speak(): string { return "woof"; }
-    public fun Legs(): int { return 2; }
+    public fun speak(): string { return "woof"; }
+    public fun legs(): int { return 2; }
 }
 
 // Passing a concrete class where the interface is expected is an implicit upcast; the call
 // inside dispatches dynamically to the concrete method.
 fun describe(a: Animal): void {
-    System.println(a.Speak());
-    System.println(a.Legs());
+    System.println(a.speak());
+    System.println(a.legs());
 }
 
 fun main(): void {
@@ -33,7 +33,7 @@ fun main(): void {
     let a: Animal = (Animal)c;
     // `is`-with-binding on a reference/interface value: `cc` aliases the same object as `Cat`.
     if (a is Cat cc) {
-        System.println(cc.Speak());
+        System.println(cc.speak());
     }
     if (a is Dog dd) {
         System.println("unexpected");

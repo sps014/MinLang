@@ -1,0 +1,36 @@
+// Async interface methods: calling an `async` method through an interface-typed receiver
+// dispatches dynamically to the concrete async implementation, which returns a `Future<T>` the
+// caller `await`s.
+
+interface Fetcher {
+    async fun fetch(): int;
+}
+
+class Remote : Fetcher {
+    public base: int;
+    public async fun fetch(): int {
+        await Time.sleep(10);
+        return this.base + 1;
+    }
+}
+
+class Cached : Fetcher {
+    public value: int;
+    public async fun fetch(): int {
+        return this.value;
+    }
+}
+
+// Interface-typed receiver: the concrete async implementation is chosen at runtime.
+async fun run(f: Fetcher): void {
+    let v = await f.fetch();
+    System.println(v);
+}
+
+async fun main(): void {
+    let r = Remote(41);
+    await run(r);
+
+    let c = Cached(99);
+    await run(c);
+}

@@ -59,6 +59,7 @@ impl TypeCtx {
         let def = self.defs.intern(kind, base, vec![]);
         let id = match kind {
             DefKind::Union => self.interner.union_ty(def, arg_ids),
+            DefKind::Interface => self.interner.interface_ty(def, arg_ids),
             _ => self.interner.struct_ty(def, arg_ids),
         };
         self.instances.insert(mangled, id);

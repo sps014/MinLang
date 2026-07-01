@@ -720,7 +720,7 @@ fn test_parse_interface_declaration() {
 
 #[test]
 fn test_parse_class_implements_clause() {
-    let code = "class Cat : Animal, Pet { fun Call(): string { return \"meow\"; } }";
+    let code = "class Cat : Animal, Pet { fun call(): string { return \"meow\"; } }";
     let arena = bumpalo::Bump::new();
     let (program, diagnostics) = parse_code(code, &arena);
 
@@ -728,8 +728,21 @@ fn test_parse_class_implements_clause() {
     assert_eq!(program.structs.len(), 1);
     let cat = &program.structs[0];
     assert_eq!(cat.name.text, "Cat");
-    let implemented: Vec<&str> = cat.implements.iter().map(|t| t.text.as_str()).collect();
-    assert_eq!(implemented, vec!["Animal", "Pet"]);
+    let implemented: Vec<String> = cat.implements.iter().map(|t| t.get_type()).collect();
+    assert_eq!(implemented, vec!["Animal".to_string(), "Pet".to_string()]);
+}
+
+#[test]
+fn test_parse_class_implements_generic_interface() {
+    let code = "class Box<T> : Container<int> { fun get(): int { return 0; } }";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    let boxc = &program.structs[0];
+    assert_eq!(boxc.name.text, "Box");
+    let implemented: Vec<String> = boxc.implements.iter().map(|t| t.display_name()).collect();
+    assert_eq!(implemented, vec!["Container<int>".to_string()]);
 }
 
 #[test]

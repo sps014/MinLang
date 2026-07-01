@@ -1191,7 +1191,15 @@ impl<'a> Analyzer<'a> {
         };
 
         let expected: Vec<String> = im.parameters.iter().map(|p| p.type_.get_type()).collect();
-        let ret_type = im.return_type.clone().unwrap_or(Type::Void);
+        // Calling an `async` interface method is eager and yields a `Future<T>` handle (just like an
+        // async instance method); the concrete implementation dispatches to a `Future`-producing
+        // constructor. The caller must `await` the result.
+        let base_ret = im.return_type.clone().unwrap_or(Type::Void);
+        let ret_type = if im.is_async {
+            Self::future_type(base_ret)
+        } else {
+            base_ret
+        };
         if expected.len() != arg_types.len() {
             diagnostics.report_error(
                 format!(
@@ -1242,9 +1250,16 @@ impl<'a> Analyzer<'a> {
             let id = self.type_ctx.lower(&p.type_);
             params.push(id);
         }
-        let ret = match &method.return_type {
-            Some(t) => self.type_ctx.lower(t),
-            None => self.type_ctx.interner.void(),
+        // An `async` interface method dispatches to a concrete async constructor whose WASM result
+        // is the `Future` frame pointer (an `i32`), so the `call_indirect` signature returns an
+        // `object`-shaped pointer regardless of the method's declared return type.
+        let ret = if method.is_async {
+            self.type_ctx.interner.object()
+        } else {
+            match &method.return_type {
+                Some(t) => self.type_ctx.lower(t),
+                None => self.type_ctx.interner.void(),
+            }
         };
         self.type_ctx.interner.func(params, ret)
     }
@@ -1258,6 +1273,14 @@ impl<'a> Analyzer<'a> {
         receiver: Option<crate::hir::HExpr>,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<Type, SemanticError> {
+        // A generic interface receiver (e.g. `Container<int>`) must be monomorphized before dispatch
+        // so its concrete method slots exist, even if no implementing class was instantiated earlier
+        // in analysis order.
+        if let Some((base, args)) = Self::resolve_struct_parts(obj_type) {
+            if !args.is_empty() && self.is_generic_interface(&base) {
+                self.ensure_interface_instantiated(&base, &args, &method.position, diagnostics);
+            }
+        }
         // Interface-typed receiver: the concrete implementation is unknown statically, so dispatch
         // dynamically through the interface's method table rather than resolving a static method.
         if let Some(iface_name) = self.interface_receiver_name(obj_type) {

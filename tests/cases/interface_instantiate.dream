@@ -1,7 +1,7 @@
 // Interfaces cannot be instantiated directly.
 
 interface Animal {
-    fun Speak(): string;
+    fun speak(): string;
 }
 
 fun main(): void {

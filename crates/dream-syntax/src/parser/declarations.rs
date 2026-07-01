@@ -176,15 +176,15 @@ impl<'a, 'b> Parser<'a, 'b> {
 
         let generic_parameters = self.parse_identifier_generic_params();
 
-        // Optional `: Iface1, Iface2, ...` implements clause. Each name is an interface the class
-        // declares it satisfies; the class must provide a matching method for every interface
-        // method (validated during semantic analysis).
+        // Optional `: Iface1, Container<int>, ...` implements clause. Each entry is a (possibly
+        // generic) interface type the class declares it satisfies; the class must provide a matching
+        // method for every interface method (validated during semantic analysis).
         let mut implements = Vec::new();
         if self.current_token().kind == TokenKind::ColonToken {
             self.match_token(TokenKind::ColonToken);
             loop {
                 let iter = self.current_token_index;
-                implements.push(self.match_token(TokenKind::IdentifierToken));
+                implements.push(self.parse_type()?);
                 if self.current_token().kind == TokenKind::CommaToken {
                     self.match_token(TokenKind::CommaToken);
                 } else {

@@ -60,7 +60,7 @@ impl MirPass for RcInsertion {
             for stmt in block.stmts.drain(..) {
                 let ref_dest = match &stmt {
                     Statement::Assign(Place::Local(dest), rvalue) if is_owned_ref(dest.0) => {
-                        Some((*dest, is_borrowed_copy(rvalue), rvalue_reads_local(rvalue, dest.0)))
+                        Some((*dest, is_borrowed_copy(rvalue, interner), rvalue_reads_local(rvalue, dest.0)))
                     }
                     _ => None,
                 };
@@ -199,15 +199,22 @@ fn rvalue_reads_local(rvalue: &Rvalue, local: u32) -> bool {
     hit
 }
 
-fn is_borrowed_copy(rvalue: &Rvalue) -> bool {
-    matches!(
-        rvalue,
+fn is_borrowed_copy(rvalue: &Rvalue, interner: &TypeInterner) -> bool {
+    match rvalue {
         Rvalue::Use(Operand::Copy(_))
-            | Rvalue::Use(Operand::Const(crate::mir::Const::Str(_)))
-            // A union payload field read is a borrow of the union's own reference (like a struct
-            // field read), so a reference binding must retain it to balance its scope-exit release.
-            | Rvalue::UnionField { .. }
-    )
+        | Rvalue::Use(Operand::Const(crate::mir::Const::Str(_)))
+        // A union payload field read is a borrow of the union's own reference (like a struct
+        // field read), so a reference binding must retain it to balance its scope-exit release.
+        | Rvalue::UnionField { .. } => true,
+        // A reference-to-reference cast (e.g. `(Animal)cat`, an interface up/downcast) is pointer
+        // identity: the destination local aliases the source's reference, so it is a borrow and must
+        // be retained to balance its scope-exit release — otherwise the shared pointer is
+        // double-freed. Reference→primitive unboxes and numeric casts produce fresh values.
+        Rvalue::Cast(Operand::Copy(_), from, to) => {
+            interner.is_reference(*from) && interner.is_reference(*to)
+        }
+        _ => false,
+    }
 }
 
 pub struct RcElision;

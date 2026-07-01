@@ -218,8 +218,12 @@ pub struct Analyzer<'a> {
     /// local method index, used for itable slot assignment). Each entry is a body-less
     /// [`FunctionNode`] (no implicit `this`).
     interface_methods: IndexMap<String, Vec<&'a FunctionNode<'a>>>,
+    /// Generic interface templates (`interface Container<T> { ... }`), instantiated on demand into
+    /// concrete `interface_methods` entries (e.g. `Container_int`) — mirrors `generic_structs`.
+    generic_interfaces: HashMap<String, &'a crate::syntax::nodes::InterfaceDeclarationNode<'a>>,
     /// Class name -> the interfaces it implements (in `class C : A, B` order), recorded after the
-    /// implements clause is validated. Drives interface-typed assignability and itable emission.
+    /// implements clause is validated. Names are mangled for generic instances (e.g. `Box_int` ->
+    /// `Container_int`). Drives interface-typed assignability and itable emission.
     implements: HashMap<String, Vec<String>>,
     /// An optional expected type for the expression currently being analyzed (from a `let`
     /// annotation or `return` type). Used to resolve the type arguments of a generic union's
@@ -267,6 +271,7 @@ impl<'a> Analyzer<'a> {
             generic_unions: HashMap::new(),
             generic_extends: HashMap::new(),
             interface_methods: IndexMap::new(),
+            generic_interfaces: HashMap::new(),
             implements: HashMap::new(),
             current_expected_type: None,
             current_generic_bindings: GenericBindings::new(),
