@@ -36,16 +36,10 @@ use wasmtime::*;
 ///
 /// Removing an entry (as coverage lands) is the unit of progress; when this list is empty the driver
 /// default flips to the MIR backend and the legacy `WasmGenerator` is deleted (Step D).
-const XFAIL: &[(&str, &str)] = &[
-    // main dropped: unsupported construct in main's body.
-    ("json_deep_nesting", "main dropped: json"),
-    ("json_derive", "main dropped: json"),
-    ("json_nullable", "main dropped: json"),
-    ("json_property_name", "main dropped: json"),
-    ("union_json", "main dropped: unions + json"),
-    // callee unresolved: reachable call/method/generic instance not emitted ($def{N}).
-    // codegen bug: compiles/runs but output wrong, or main fails WASM validation.
-];
+// Every case in `tests/cases` now compiles and runs through the MIR backend, so `XFAIL` is empty.
+// Keep it (rather than deleting the machinery) so a future regression re-adds an entry here with a
+// reason instead of silently flipping the ratchet.
+const XFAIL: &[(&str, &str)] = &[];
 
 #[derive(Clone)]
 struct TestEnv {

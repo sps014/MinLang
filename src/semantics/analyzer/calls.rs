@@ -805,6 +805,53 @@ impl<'a> Analyzer<'a> {
                 return Ok(Some(ret));
             }
 
+            // `JSON.serialize<T>(v)` / `JSON.deserialize<T>(text)`: the `@json` derive emits
+            // `<T>.to_json()` / `<T>.from_json()` (see `driver::json_derive`), and `JSON.stringify` /
+            // `JSON.parse` are ordinary static methods. Expand the intrinsic into that composition so
+            // the whole thing lowers through MIR (rather than staying on the legacy expansion).
+            let json_op = intrinsics::IntrinsicOp::from_attributes(&template.attributes);
+            if json_op == Some(intrinsics::IntrinsicOp::JsonSerialize) {
+                let named = |name: &str| -> Type {
+                    let mut t = method.clone();
+                    t.text = name.to_string();
+                    Type::from_token(t).unwrap_or(Type::Unknown)
+                };
+                let struct_name = params_types
+                    .first()
+                    .map(|s| s.trim_end_matches('?').to_string())
+                    .unwrap_or_default();
+                let value = arg_hirs.into_iter().next().flatten();
+                // `<T>.to_json(value)` (a `this`-taking method, called free with the receiver as arg0).
+                self.hir_set_call(&method_fn(&struct_name, "to_json"), vec![value], &named("JsonValue"));
+                let to_json = self.hir_take();
+                self.hir_set_call("JSON_stringify", vec![to_json], &named("string"));
+                return Ok(Some(named("string")));
+            }
+            if json_op == Some(intrinsics::IntrinsicOp::JsonDeserialize) {
+                let named = |name: &str| -> Type {
+                    let mut t = method.clone();
+                    t.text = name.to_string();
+                    Type::from_token(t).unwrap_or(Type::Unknown)
+                };
+                let t_type = match generic_args.as_ref().and_then(|g| g.first()) {
+                    Some(t) => Self::monomorphize_type(t, &self.current_generic_bindings),
+                    None => {
+                        diagnostics.report_error(
+                            "'JSON.deserialize' requires a type argument, e.g. JSON.deserialize<T>(text)"
+                                .to_string(),
+                            Some(method.position),
+                        );
+                        Type::Void
+                    }
+                };
+                let struct_name = t_type.get_type().trim_end_matches('?').to_string();
+                let text = arg_hirs.into_iter().next().flatten();
+                self.hir_set_call("JSON_parse", vec![text], &named("JsonValue"));
+                let parsed = self.hir_take();
+                self.hir_set_call(&method_fn(&struct_name, "from_json"), vec![parsed], &t_type);
+                return Ok(Some(t_type));
+            }
+
             if self.function_table.get_function(&mangled_name).is_err() {
                 let mut specialized = template.clone();
                 Self::substitute_generic_signature(&mut specialized, &bindings);

@@ -44,7 +44,7 @@ flowchart LR
 | MIR backend handles user-defined constructor bodies | ✅ done (Step C.2c) — `New` carries an optional `ctor` def; when present the backend allocates, zeroes the fields, then calls `$Type_constructor(this, args)` (whose body is emitted via `struct_methods`); otherwise it inlines positional field init |
 | `extend` blocks (generic + non-generic) | ✅ done — extension methods lower exactly like struct methods (`{Type}_{method}` + implicit `this`), so their bodies emit and calls resolve; generic `extend Box<T>` monomorphizes alongside the struct instance (`Box_int_peek`). Covered by `test_hir_emission_extend_{nongeneric,generic}_class` |
 | `del()` destructors | ◐ **body** emits under `{Type}_del` (like any method; `test_hir_emission_destructor_body`), but the release-time **invocation** (per-type deep release: pin refcount → call `$Type_del` → release ref fields → free) is part of the RC runtime, still deferred with the rest of the release layer (Step D) |
-| Driver uses the MIR backend | ◐ **opt-in wired** — `Compiler::with_mir(true)` / CLI `--mir` routes analysis → HIR → `mir::lower` → `prune_unreachable` → passes → `emit_module`. Default is still `WasmGenerator`; the flip waits on full coverage. Gated by `tests/mir_e2e.rs` (**79 / 84** golden e2e cases pass end-to-end through the real driver front-end + MIR backend) |
+| Driver uses the MIR backend | ◐ **opt-in wired** — `Compiler::with_mir(true)` / CLI `--mir` routes analysis → HIR → `mir::lower` → `prune_unreachable` → passes → `emit_module`. Default is still `WasmGenerator`; the flip is now unblocked (`XFAIL` empty). Gated by `tests/mir_e2e.rs` (**84 / 84** golden e2e cases pass end-to-end through the real driver front-end + MIR backend) |
 | `infer.rs` / `resolve.rs` deletable | ❌ still used by the live backend |
 
 The new architecture is **complete as modules** but **not on the critical path**. The legacy backend is
@@ -621,13 +621,25 @@ the coverage gap so the default can flip.
     loop wrapped in `$__segexit` (completions run `$dream_complete`; a void fall-through exits the loop
     to the segment's trailing suspend/complete code) (`file_io`).
 
-**Remaining coverage gap** — the last **5 / 84** `XFAIL` cases are all the `@json` derive cluster
-(`json_derive`, `json_nullable`, `json_property_name`, `json_deep_nesting`, `union_json`): `main`'s
-body (or a reachable helper) uses the compiler-generated `to_json`/`from_json` bodies, which must now
-lower through MIR too since `--mir` is a pure-MIR pipeline (no legacy hybrid). Every other category —
-`main` dropped, callee-unresolved (`$def{N}`), and constructor/layout — is now empty.
+- **`@json` derive end-to-end: `XFAIL` is now empty (84 / 84).** Coverage went **80 → 84**
+  (`json_derive`, `json_nullable`, `json_property_name`, `json_deep_nesting`, `union_json`). The
+  `@json` derive already emits `to_json`/`from_json` `extend` bodies (see `driver::json_derive`), and
+  those lower through MIR like any other method; the only gap was the *call site*. `JSON.serialize<T>`
+  and `JSON.deserialize<T>` are generic `@intrinsic` statics, so the generic-static path set
+  `hir_none()` for them and `main` fell out of coverage (only the legacy backend knew how to expand
+  them). The analyzer now expands both intrinsics into ordinary HIR call compositions
+  (`src/semantics/analyzer/calls.rs`): `JSON.serialize(v)` → `JSON.stringify(<T>.to_json(v))` and
+  `JSON.deserialize<T>(text)` → `<T>.from_json(JSON.parse(text))`, where `to_json`/`from_json` are the
+  derived methods and `JSON.stringify`/`JSON.parse` are the ordinary stdlib statics. With the call
+  site lowering through MIR, the whole cluster (nested `@json` classes, nullable fields, renamed keys,
+  deep nesting, and `@json` discriminated unions) runs, matching the legacy expansion in
+  `codegen/wasm/expression.rs`.
 
-**The switch (unchanged, once `XFAIL` is empty):**
+**Coverage gap — closed.** Every case in `tests/cases` compiles and runs through the MIR backend;
+`XFAIL` is empty. The categories that used to appear here (`main` dropped, callee-unresolved
+(`$def{N}`), constructor/layout, async, and `@json`) are all resolved.
+
+**The switch (now unblocked — `XFAIL` is empty):**
 1. Flip the `Compiler` default to the MIR backend (`src/driver/compiler.rs`).
 2. **Delete** `src/codegen/wasm/utils/infer.rs` and `resolve.rs`.
 3. **Delete** the AST-walking `WasmGenerator` and now-orphaned `codegen/wasm/*` modules superseded by
