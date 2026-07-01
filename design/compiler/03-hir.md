@@ -99,9 +99,10 @@ not a name), `Index { array, index }`.
 > The analyzer is responsible for inserting `Cast` nodes for implicit numeric widening, so MIR and the
 > backend never guess whether a coercion is needed — the `Cast` is simply present.
 
-## How the analyzer emits HIR (target wiring)
+## How the analyzer emits HIR
 
-This is the **Phase 2 wiring** that is not yet done. The intended shape:
+The analyzer builds the `Hir` as it type-checks (interleaved in `src/semantics/analyzer/hir_emit.rs`).
+The shape:
 
 ```mermaid
 sequenceDiagram
@@ -119,7 +120,7 @@ sequenceDiagram
 ```
 
 The analyzer already computes all of this transiently during `analyze_expression` and overload
-selection; HIR emission is about **recording** it on the node instead of throwing it away. Concretely:
+selection; HIR emission **records** it on the node instead of throwing it away. Concretely:
 
 - Where the analyzer currently returns a `Type` for an expression, also build the matching `HExpr`
   with `ty = ctx.lower(type)`.
@@ -128,8 +129,7 @@ selection; HIR emission is about **recording** it on the node instead of throwin
 - Where it picks an overload, emit a `Callee { def, instance, ret }`.
 - Where it instantiates a generic, push a `MonoInstance` (dedup by `(def, args)`).
 
-Once HIR exists, `codegen/wasm/utils/infer.rs` (re-inference) and `resolve.rs` (re-resolution) have no
-reason to exist and are deleted.
+Because HIR carries these facts, the backend never re-infers types or re-resolves names — the reason
 
 ## Invariants HIR guarantees to MIR
 

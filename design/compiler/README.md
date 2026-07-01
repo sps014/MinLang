@@ -18,7 +18,6 @@ Read the documents in order the first time. After that, use this page as an inde
 | 06 | [relooper-and-backend.md](./06-relooper-and-backend.md) | Recovering structured control flow and emitting WAT |
 | 07 | [adding-a-language-feature.md](./07-adding-a-language-feature.md) | A full worked example touching every stage |
 | 08 | [testing-and-determinism.md](./08-testing-and-determinism.md) | How to test, the determinism contract, conventions |
-| 09 | [migration-status.md](./09-migration-status.md) | What is wired, what is not, and the safe order to finish |
 
 ---
 
@@ -29,7 +28,7 @@ callee of a call, ownership) inside code generation. That works for a small lang
 structural problems:
 
 1. **Re-derivation is fragile and duplicated.** The analyzer already computed types and resolutions;
-   codegen recomputed approximations of them (`codegen/wasm/utils/infer.rs`, `resolve.rs`). Two
+   the old AST-walking backend recomputed approximations of them inside code generation. Two
    sources of truth drift apart.
 2. **No place to optimize.** Constant folding, dead-code elimination, inlining, and refcount elision
    need a representation with explicit control/data flow. The AST has neither.
@@ -73,9 +72,9 @@ Dream/
 │   ├── dream-diagnostics/          DiagnosticBag, Severity, rendering
 │   └── dream-syntax/               Lexer, parser, AST nodes (depends on text + diagnostics)
 ├── src/
-│   ├── types/                      Structured type system (Phase 1)
-│   ├── hir/                        Typed High-level IR (Phase 2)
-│   ├── mir/                        CFG Mid-level IR, passes, relooper, WAT backend + runtime/ + abi.rs (Phases 3–5)
+│   ├── types/                      Structured type system (interner, DefTable, compat)
+│   ├── hir/                        Typed High-level IR
+│   ├── mir/                        CFG Mid-level IR, passes, relooper, WAT backend + runtime/ + abi.rs
 │   ├── semantics/                  Semantic analyzer + the (currently string-based) tables
 │   ├── driver/                     Pipeline orchestration (compiler.rs), source loading, errors
 │   ├── stdlib/                     Prelude + host function registration
@@ -83,8 +82,8 @@ Dream/
 └── design/compiler/                ← you are here
 ```
 
-The `types → hir → mir` pipeline is the **only** backend. The legacy AST-walking `codegen/` backend
-has been deleted; see [09-migration-status.md](./09-migration-status.md) for the completed migration.
+The `types → hir → mir` pipeline is the **only** backend. (An earlier AST-walking `codegen/` backend
+was replaced by this pipeline and has been deleted.)
 
 ### Crate dependency graph
 
@@ -152,5 +151,3 @@ The front-end crates are layered so the dependency direction is enforced by `car
 
 - File references look like `src/mir/lower.rs` and, where useful, name the function.
 - Mermaid diagrams are used for graphs and flows; read them top-to-bottom / left-to-right.
-- "Today" describes the code as it currently is; "Target" describes the intended end state when the
-  migration in [09](./09-migration-status.md) completes.

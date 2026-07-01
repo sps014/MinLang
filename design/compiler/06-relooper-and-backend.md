@@ -106,9 +106,10 @@ backend task.
   `i32.lt_s` vs `i32.lt_u` based on signedness.
 - Operands lower trivially: `Const` → `i32.const`/`f64.const`/…; `Copy(Place::Local)` → `local.get`.
 
-### Runtime integration points (the `;; TODO` markers)
+### Runtime integration points
 
-Three families of operations need the existing runtime layers and are currently stubbed:
+Three families of operations lean on the embedded runtime layers and the layout tables carried down
+from HIR:
 
 ```mermaid
 flowchart LR
@@ -117,27 +118,27 @@ flowchart LR
       n["Rvalue::New / UnionNew / ArrayLit"]
       s["Const::Str"]
     end
-    subgraph "Existing runtime layer to reuse"
-      mem["codegen::wasm::memory\n(layout, field offsets)"]
-      obj["codegen::wasm::object\n(constructors, vtables)"]
-      str["string interning / data segments"]
+    subgraph "Backend support"
+      lay["Mir.layouts (hir::layout)\nfield offsets, element stride, header size"]
+      rt["src/mir/runtime/*.wat + src/mir/abi.rs\nallocator, object protocol, tag constants"]
+      str["string interning → data segments\n(emit_module string table)"]
     end
-    f -->|;; TODO layout| mem
-    n -->|;; TODO layout| obj
-    s -->|;; TODO strings| str
+    f --> lay
+    n --> rt
+    s --> str
 ```
 
-- **Field/index access** needs struct/array **layout** (field offsets, element stride, header size).
-  That lives in the memory/layout layer used by the legacy backend; the emitter must compute
-  `base + offset` loads/stores from it.
-- **Allocation/construction** (`New`, `UnionNew`, `ArrayLit`) needs the object/allocation layer
-  (allocate, set header/refcount, run the constructor).
-- **String constants** need the string-interning/data-segment layer so identical literals share one
-  pointer.
+- **Field/index access** uses the struct/array **layout** in `Mir.layouts` (built by `hir::layout` and
+  threaded through lowering) to compute `base + offset` loads/stores with width-aware ops.
+- **Allocation/construction** (`New`, `UnionNew`, `ArrayLit`) emits an inline `$malloc(size, tag)` —
+  tag from `mir::abi` — then sets the header/refcount, initializes fields/elements, and calls the
+  user constructor (`$Type_constructor`) when one exists.
+- **String constants** are interned by `emit_module` into `[len][utf8][\0]` data segments, so identical
+  literals share one pointer.
 
-Wiring these is **Phase 5 runtime integration** ([09-migration-status.md](./09-migration-status.md)).
-The contract is: reuse the *same* layout/alloc/string code the legacy backend uses, so the two
-backends agree byte-for-byte and the determinism test stays green during the switch.
+The allocator, string, object-protocol, float/double formatter, and async scheduler runtimes are the
+hand-written `.wat` files in `src/mir/runtime/`, embedded via `include_str!` and stitched into every
+module with their `{TAG_*}`/`{minus}` placeholders resolved from `mir::abi`.
 
 ## Determinism in the backend
 

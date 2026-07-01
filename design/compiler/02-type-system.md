@@ -115,7 +115,7 @@ Three structural relations replace the old string comparisons:
 
 - `numeric_widen(from, to)` — the implicit numeric widening lattice
   (`byte → int → long → float → double`, plus unsigned/float cross-edges). `from == to` is *false*
-  (identity is handled separately). This mirrors the legacy `numeric_widen` exactly.
+  (identity is handled separately).
 - `assignable(interner, target, value)` — may `value` be assigned to `target`? Encodes: `Error`
   poison is bidirectional; anything widens into `object`; enums interconvert with `int`; numerics
   widen per the lattice; a nullable target accepts the bare inner type or the `null` literal (`void?`).
@@ -148,8 +148,8 @@ identical syntactically), `TypeCtx` keeps a `nominal: name → DefKind` registry
 Worked example: adding a 128-bit integer `i128`.
 
 1. **Lexer/parser/AST** (`crates/dream-syntax`): add the keyword and a `Type::I128(SyntaxToken)`
-   variant; update `Type::get_type()` and `Type::from_token()`. (During the migration, `get_type`
-   still exists for the legacy backend.)
+   variant; update `Type::get_type()` and `Type::from_token()`. (`get_type()` is still used by the
+   analyzer's string-keyed tables.)
 2. **`PrimTy`** (`src/types/kind.rs`): add `PrimTy::I128`, plus its `name()`, `from_name()`,
    `is_numeric()`, `is_unsigned_integer()` arms.
 3. **Interner** (`src/types/interner.rs`): pre-intern it in `new()` (add to the `for prim in [...]`

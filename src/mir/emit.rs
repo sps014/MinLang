@@ -41,13 +41,13 @@ const STRING_BASE: u32 = 1024;
 /// Linear-memory size, in 64 KiB WASM pages.
 const MEMORY_PAGES: u32 = 16;
 
-/// The fixed allocator runtime (`$malloc`/`$free`/`$retain`/`$release_generic`/`$object_tag`),
-/// shared with the legacy backend as the single source of truth for the heap ABI. Its debug-counter
-/// placeholders are expanded to nothing (instrumentation off) here.
+/// The fixed allocator runtime (`$malloc`/`$free`/`$retain`/`$release_generic`/`$object_tag`), the
+/// single source of truth for the heap ABI. Its debug-counter placeholders are filled in by
+/// [`runtime_prelude`] (instrumentation on only under `--debug`).
 const RUNTIME_ALLOCATOR: &str = include_str!("runtime/allocator.wat");
 
-/// The fixed string runtime (`$strlen`/`$char_at`/`$string_eq`/`$concat_strings`/`$string_alloc`/…),
-/// shared with the legacy backend. Self-contained given the allocator + memory.
+/// The fixed string runtime (`$strlen`/`$char_at`/`$string_eq`/`$concat_strings`/`$string_alloc`/…).
+/// Self-contained given the allocator + memory.
 const RUNTIME_STRINGS: &str = include_str!("runtime/strings.wat");
 
 /// The object runtime: box/unbox/hash plus the integer-family `*_to_string` formatters
@@ -2679,7 +2679,8 @@ mod tests {
         let runtime = to_string_runtime(&strings);
         assert!(
             !runtime.contains('{') && !runtime.contains('}'),
-            "object/format runtime still contains an unsubstituted placeholder:\n{runtime}"
+            "object/format runtime still contains an unsubstituted placeholder:\n{}",
+            runtime
         );
     }
 

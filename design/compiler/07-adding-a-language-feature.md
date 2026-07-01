@@ -50,9 +50,8 @@ Add a statement variant:
 StatementNode::Repeat { count: ExpressionNode, body: Vec<StatementNode>, span: TextSpan }
 ```
 
-Update any exhaustive `match` over `StatementNode` (the compiler will list them). During the migration
-this includes the **legacy** analyzer and codegen — even if you only intend to support the new pipeline,
-the code must still compile.
+Update any exhaustive `match` over `StatementNode` (the compiler will list them) across the parser,
+analyzer, and HIR emission so the crate still compiles.
 
 ### 4. Analyzer — `src/semantics/analyzer/statements.rs`
 

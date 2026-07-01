@@ -182,9 +182,9 @@ pub struct SemanticInfo<'a> {
     /// allocate variant blocks, lower `match`, and emit discriminant-aware releases.
     pub unions: UnionTable,
     pub globals: Vec<GlobalSymbol>,
-    /// The typed, name-resolved HIR emitted alongside analysis. During the Step B migration this
-    /// covers the supported subset of the language (functions whose every construct is already
-    /// lowerable); it is the input the MIR backend will consume once it reaches full coverage.
+    /// The typed, name-resolved HIR emitted alongside analysis. It is the sole input the MIR backend
+    /// consumes; a function whose every construct is representable is emitted here (all others are
+    /// skipped and produce no backend output).
     pub hir: crate::hir::Hir,
 }
 
@@ -241,7 +241,7 @@ pub struct Analyzer<'a> {
     /// `DefId` here and AST type annotations lower to interned `TypeId`s, so type identity,
     /// compatibility, and monomorphization keys move off strings onto the structured type system.
     type_ctx: TypeCtx,
-    /// Interleaved HIR-emission state and the accumulated emitted functions (Step B migration).
+    /// Interleaved HIR-emission state and the accumulated emitted functions.
     hir: hir_emit::HirEmit,
 }
 impl<'a> Analyzer<'a> {

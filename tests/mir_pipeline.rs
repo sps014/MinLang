@@ -1,8 +1,7 @@
-//! End-to-end test of the *new* backend pipeline: a hand-built typed HIR program is lowered to MIR,
-//! run through the full optimization pass pipeline, and emitted to WAT. This is the exact chain the
-//! driver will switch onto in the Step C cutover (see `design/compiler/09-migration-status.md`), so
-//! it both proves the pipeline composes and pins its determinism contract (byte-identical output)
-//! before the legacy backend is removed.
+//! End-to-end test of the backend pipeline: a hand-built typed HIR program is lowered to MIR, run
+//! through the full optimization pass pipeline, and emitted to WAT. This is the exact chain the
+//! driver runs, so it both proves the pipeline composes and pins its determinism contract
+//! (byte-identical output).
 
 use dream::hir::{
     BinOp, Binding, HExpr, HExprKind, HFunction, HParam, HPlace, HStmt, Hir, LocalId,

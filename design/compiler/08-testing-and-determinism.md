@@ -33,9 +33,9 @@ shot: build typed HIR by hand → `lower_function` → `PassManager::default_pip
 change lowering, passes, or emission, this is the fastest signal that the stages still compose.
 
 ### End-to-end tests — `tests/`
-`tests/e2e_tests.rs` compiles real `.dream` programs and checks behavior. These are the source of
-truth for "does the compiler actually work". They currently exercise the **legacy** backend; the MIR
-backend must pass the same set before the driver switch (see [09](./09-migration-status.md)).
+`tests/e2e_tests.rs` and `tests/mir_e2e.rs` compile real `.dream` programs through the full driver and
+check behavior against each case's `.expected`. These are the source of truth for "does the compiler
+actually work"; every case in `tests/cases/` must pass end-to-end through the MIR backend.
 
 ### Determinism test — `codegen_is_deterministic` (`tests/e2e_tests.rs:208`)
 Compiles the same input twice and asserts byte-identical output. This guards the contract below.
@@ -85,21 +85,19 @@ headers in `src/mir/mod.rs` (what the IR guarantees) or the back-edge note in `r
 correctness reason).
 
 ### Errors
-The back end uses the typed `CodegenError` (`src/codegen/mod.rs`):
+The driver's only typed error is `CompileError` (`src/driver/error.rs`): `Syntax` / `Semantic` (both
+already rendered as diagnostics) and `Io`. The back end itself has **no user-facing error path**: it
+runs only on a fully validated program with resolved symbols and types.
 
-| Variant | Use when |
-|---------|----------|
-| `Unsupported` | a valid program uses a construct the backend can't emit yet (user-actionable) |
-| `Internal` | an invariant the analyzer should have guaranteed was violated (compiler bug / ICE) |
-| `UnknownSymbol`/`UnknownType`/`UnknownDef` | a resolution that must not fail post-analysis did |
-
-Never `panic!`/`unwrap` on program-dependent conditions — return a `CodegenError`. Panics are only for
-truly impossible states, and even those are better as `Internal`.
+- **User-facing problems** must be caught earlier as diagnostics (lex/parse/analyze). The backend
+  never emits a compile-time error.
+- **Backend invariant violations** are compiler bugs (ICE): `panic!` with a clear message. This is the
+  one place panics are acceptable — a state the analyzer promised but the backend found violated.
 
 ### No pre-release back-compat
 The compiler is unreleased. Do **not** add deprecation shims, re-export facades, or "keep the old path
-working" layers. When you replace something, delete the old thing (this is exactly what the migration
-in [09](./09-migration-status.md) does). Back-compat is debt we have not earned yet.
+working" layers. When you replace something, delete the old thing (this is exactly what happened when
+the MIR backend replaced the legacy AST-walking codegen). Back-compat is debt we have not earned yet.
 
 ### Determinism by default
 Reach for `IndexMap`/`BTreeMap`/`Vec` first. Only use `HashMap` for throwaway local computations whose

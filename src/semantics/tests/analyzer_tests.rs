@@ -20,7 +20,7 @@ fn analyze_code(code: &str) -> DiagnosticBag {
 
 /// Analyzes `code`, asserts it is error-free, and runs the *interleaved-emitted* HIR through the new
 /// MIR backend (`lower -> passes -> emit`), returning the WAT and how many functions were emitted.
-/// Exercises Step B end-to-end: source -> analyzer-emitted HIR -> WAT.
+/// Exercises HIR emission end-to-end: source -> analyzer-emitted HIR -> WAT.
 fn emit_hir_to_wat(code: &str) -> (String, usize) {
     let mut diagnostics = DiagnosticBag::new(None);
     let lexer = Lexer::new(code.to_string());

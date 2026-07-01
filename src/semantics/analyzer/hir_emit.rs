@@ -1,14 +1,12 @@
-//! Interleaved HIR emission (Step B of the architecture migration).
+//! Interleaved HIR emission.
 //!
 //! As the analyzer type-checks a function it *also* builds the typed, name-resolved
-//! [`crate::hir`] for it — the single-source-of-truth approach: there is no second type
-//! inference pass. During the migration this is wired in incrementally: each expression records its
-//! [`HExpr`] into [`HirEmit::last`] (a transition side-channel that avoids churning the ~50
-//! `analyze_expression` call sites at once) and each supported statement appends an [`HStmt`]. A
-//! function is emitted only if *every* construct in it is already supported; anything not yet
-//! handled flips [`HirEmit::ok`] to `false` and the function is skipped, so the analyzer's behavior
-//! and the legacy backend are unaffected. Coverage grows slice by slice until the analyzer emits HIR
-//! for the whole language, at which point the driver switches to the MIR backend.
+//! [`crate::hir`] for it — the single-source-of-truth approach: there is no second type inference
+//! pass. Each expression records its [`HExpr`] into [`HirEmit::last`] (a side-channel that avoids
+//! threading a return value through the ~50 `analyze_expression` call sites) and each statement
+//! appends an [`HStmt`]. A function is emitted only if *every* construct in it is representable;
+//! anything unrepresentable flips [`HirEmit::ok`] to `false` and the function is skipped (it then has
+//! no backend output). The HIR is the only input the backend consumes.
 
 use super::Analyzer;
 use crate::hir::{

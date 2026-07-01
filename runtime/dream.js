@@ -385,7 +385,7 @@ function wrapImport(getInstance, fn, signature) {
   };
 }
 
-// Future heap kinds/sizes (mirrors src/codegen/wasm/async_support.rs).
+// Future heap kinds/sizes (mirrors src/mir/async_emit.rs).
 const FUTURE_KIND_HOST = 1;
 const FUTURE_SLOTS_SIZE = 56; // F_SLOTS: a host future has no saved-locals region.
 

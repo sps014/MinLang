@@ -1,14 +1,12 @@
-//! Step-D coverage gate for the new MIR backend.
+//! End-to-end coverage gate for the MIR backend.
 //!
-//! Compiles every `tests/cases/*.dream` through the **real driver front-end** (prelude, json-derive,
-//! multi-file resolution, analysis) but with code generation routed to the HIR → MIR → WAT backend
-//! (`Compiler::with_mir(true)`), runs the result under `wasmtime`, and compares to the `.expected`
-//! output. Cases the MIR backend does not yet cover are listed in `XFAIL` with the reason.
+//! Compiles every `tests/cases/*.dream` through the **real driver** (prelude, json-derive, multi-file
+//! resolution, analysis, and the HIR → MIR → WAT backend), runs the result under `wasmtime`, and
+//! compares to the `.expected` output.
 //!
-//! The assertion is a ratchet: every case **not** in `XFAIL` must pass, so coverage can only grow —
-//! removing an entry from `XFAIL` (as the backend gains a feature) is the unit of progress, and any
-//! regression that breaks a previously-passing case fails the suite. When `XFAIL` is empty the driver
-//! default can flip to the MIR backend and the legacy `WasmGenerator` can be deleted (Step D).
+//! The assertion is a ratchet: every case **not** in `XFAIL` must pass, and `XFAIL` is currently
+//! empty (the backend covers the whole test corpus). Any regression that breaks a previously-passing
+//! case fails the suite.
 
 use dream::driver::compiler::{Compiler, Target};
 use dream::execution::host::{
@@ -21,21 +19,6 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use wasmtime::*;
 
-/// Cases the MIR backend cannot yet compile+run correctly, each with the missing capability. The
-/// categories map directly to remaining Step-5 (runtime-integration) and analyzer HIR-coverage work:
-///
-/// * `main dropped` — `main`'s body uses a construct the analyzer does not yet lower to HIR (so the
-///   whole function is skipped and the module has no `main` export): strings/interpolation, unions &
-///   the object protocol, `do/while`, labeled loops, overload resolution, top-level statements, etc.
-/// * `callee unresolved` — a reachable call/method/generic instance is not emitted, so it falls back
-///   to the `$def{N}` placeholder (monomorphized methods and non-`main` generic bodies).
-/// * `constructor/layout` — a `new` reaches the `$def{N}_constructor` fallback because the struct's
-///   layout is not registered for that (generic) instance.
-/// * `codegen bug` — compiles and runs but the output is wrong, or `main` fails WASM validation:
-///   real correctness gaps in already-covered paths, to be fixed next.
-///
-/// Removing an entry (as coverage lands) is the unit of progress; when this list is empty the driver
-/// default flips to the MIR backend and the legacy `WasmGenerator` is deleted (Step D).
 // Every case in `tests/cases` now compiles and runs through the MIR backend, so `XFAIL` is empty.
 // Keep it (rather than deleting the machinery) so a future regression re-adds an entry here with a
 // reason instead of silently flipping the ratchet.

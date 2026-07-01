@@ -1,8 +1,7 @@
 //! Reference-counting passes.
 //!
-//! [`RcInsertion`] (Phase 3 in spirit, run as a MIR pass) makes ownership explicit under a single
-//! invariant: **every non-parameter reference local owns exactly one reference count.** It is
-//! upheld by three rules:
+//! [`RcInsertion`] (run as a MIR pass) makes ownership explicit under a single invariant: **every
+//! non-parameter reference local owns exactly one reference count.** It is upheld by three rules:
 //!
 //! 1. *Local assignment* — when a borrowed reference is copied into a reference local it inserts a
 //!    `Retain` (the local becomes a new owner); before a reference local is overwritten it inserts a
@@ -21,7 +20,7 @@
 //! arguments are not retained — a self-consistent ABI: callee-owns-none-of-its-params,
 //! caller-owns-the-result.
 //!
-//! [`RcElision`] (Phase 4) cancels redundant adjacent `Retain`/`Release` pairs on the same operand,
+//! [`RcElision`] cancels redundant adjacent `Retain`/`Release` pairs on the same operand,
 //! the payoff once propagation/inlining bring a retain and its matching release together.
 
 use super::MirPass;

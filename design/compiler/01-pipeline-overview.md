@@ -27,8 +27,7 @@ flowchart TD
     wat --> abi["driver::abi::emit_wasm_and_abi\nwat→wasm + .abi.json"]
 ```
 
-The `hir → mir → emit` pipeline is the **only** backend. (The legacy AST-walking `WasmGenerator` has
-been deleted; see the migration document.)
+The `hir → mir → emit` pipeline is the **only** backend. 
 
 ## Stage-by-stage
 
@@ -62,8 +61,10 @@ been deleted; see the migration document.)
   - `EnumTable` — `name → (member → i32)` (`src/semantics/analyzer/mod.rs`)
   - `FunctionTable` / `FunctionTableInfo` — signatures + overloads (`src/semantics/function_table.rs`)
   - symbol tables — per-scope `name → Type` (`src/semantics/symbol_table.rs`)
-- **Today's smell:** these tables key and compare types as **strings** (`get_type()`), and the
-  instantiation map is keyed by mangled names. Phase 1 replaces that with `TypeId`/`DefId`.
+- **Remaining smell:** some of these tables still key and compare types as **strings** (`get_type()`),
+  and the instantiation map is keyed by mangled names. This is now a purely analyzer-internal cleanup
+  (nothing downstream re-derives types from strings anymore); the type system exposes `TypeId`/`DefId`
+  as the replacement.
 
 ### 4. Type system — `src/types/` (cross-cutting)
 
@@ -71,12 +72,12 @@ Not a pipeline "stage" so much as the shared vocabulary used by stages 3–7. Se
 [02-type-system.md](./02-type-system.md). The `TypeCtx` (interner + def table + lowering) is the
 object threaded through analysis and lowering.
 
-### 5. HIR emission — `src/hir/` (analyzer-side; TARGET)
+### 5. HIR emission — `src/hir/` (analyzer-side)
 
 - **In:** AST + the facts the analyzer computed.
 - **Out:** `Hir` — typed, name-resolved (see [03-hir.md](./03-hir.md)).
-- **Why:** persist what `analyze_expression`/overload selection currently *discard* so codegen never
-  re-derives. Once this exists, `codegen/wasm/utils/infer.rs` and `resolve.rs` are deleted.
+- **Why:** persist what `analyze_expression`/overload selection would otherwise *discard* so the
+  backend never re-derives types or resolutions.
 
 ### 6. MIR lowering & optimization — `src/mir/`
 
@@ -106,17 +107,15 @@ flowchart LR
     A[Lex/Parse] -->|lexical/syntactic| D[DiagnosticBag]
     B[Analyze] -->|semantic| D
     D --> CE1[CompileError::Syntax / Semantic]
-    C[Codegen / MIR backend] -->|CodegenError| CE2[CompileError::Codegen]
     IO[fs read/write] --> CE3[CompileError::Io]
 ```
 
 - User-facing problems are reported as **diagnostics** during lex/parse/analyze and surface as
-  `CompileError::Syntax` / `CompileError::Semantic`.
-- The backend returns a typed `CodegenError` (`src/codegen/mod.rs`):
-  - `Unsupported` — a valid construct the backend cannot yet emit (user-actionable).
-  - `Internal` — an invariant the analyzer should have guaranteed (a compiler bug / ICE).
-  - `UnknownSymbol` / `UnknownType` / `UnknownDef` — resolution failures that should not happen post-analysis.
-- Codegen never runs on a program that produced any diagnostic error, so `Error`-typed (poison)
+  `CompileError::Syntax` / `CompileError::Semantic` (`CompileError::Io` wraps source/artifact I/O).
+- The backend has **no user-facing error path**: it expects a fully validated program with resolved
+  symbols and types. An invariant it was promised but finds violated is a compiler bug (ICE) and
+  `panic!`s rather than returning a diagnostic.
+- The backend never runs on a program that produced any diagnostic error, so `Error`-typed (poison)
   values never reach lowering.
 
 ## Invariants the back end relies on
