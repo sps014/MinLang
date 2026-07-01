@@ -44,7 +44,7 @@ flowchart LR
 | MIR backend handles user-defined constructor bodies | ✅ done (Step C.2c) — `New` carries an optional `ctor` def; when present the backend allocates, zeroes the fields, then calls `$Type_constructor(this, args)` (whose body is emitted via `struct_methods`); otherwise it inlines positional field init |
 | `extend` blocks (generic + non-generic) | ✅ done — extension methods lower exactly like struct methods (`{Type}_{method}` + implicit `this`), so their bodies emit and calls resolve; generic `extend Box<T>` monomorphizes alongside the struct instance (`Box_int_peek`). Covered by `test_hir_emission_extend_{nongeneric,generic}_class` |
 | `del()` destructors | ◐ **body** emits under `{Type}_del` (like any method; `test_hir_emission_destructor_body`), but the release-time **invocation** (per-type deep release: pin refcount → call `$Type_del` → release ref fields → free) is part of the RC runtime, still deferred with the rest of the release layer (Step D) |
-| Driver uses the MIR backend | ◐ **opt-in wired** — `Compiler::with_mir(true)` / CLI `--mir` routes analysis → HIR → `mir::lower` → `prune_unreachable` → passes → `emit_module`. Default is still `WasmGenerator`; the flip waits on full coverage. Gated by `tests/mir_e2e.rs` (**44 / 84** golden e2e cases pass end-to-end through the real driver front-end + MIR backend) |
+| Driver uses the MIR backend | ◐ **opt-in wired** — `Compiler::with_mir(true)` / CLI `--mir` routes analysis → HIR → `mir::lower` → `prune_unreachable` → passes → `emit_module`. Default is still `WasmGenerator`; the flip waits on full coverage. Gated by `tests/mir_e2e.rs` (**54 / 84** golden e2e cases pass end-to-end through the real driver front-end + MIR backend) |
 | `infer.rs` / `resolve.rs` deletable | ❌ still used by the live backend |
 
 The new architecture is **complete as modules** but **not on the critical path**. The legacy backend is
@@ -532,6 +532,22 @@ the coverage gap so the default can flip.
     is now a first-class `CharAt` rvalue (mirroring `StrLen`) lowered to the `$char_at` runtime helper.
     This unblocked everything routing through `int.parse` / string scanning (`int_parse`,
     `static_methods`, `string_methods`).
+- **Generic-struct layout + collections + object protocol + `do/while`.** Coverage went **44 → 54**:
+  - *Idempotent generic-instance registration* — `register_instance` is now first-wins by mangled name.
+    A field access on a value typed `Box_string` lowers `("Box_string", [])` (a bogus nominal id) and was
+    *clobbering* the canonical `struct_ty(Box, [string])`, so `New` missed the layout and fell back to
+    `$def{N}_constructor`. Fixed the whole generic-struct constructor bucket (`generic_structs`,
+    `multi_generics`, `nested_generics`, `constructor_advanced`).
+  - *`Array.new<T>(len)`* — was a builtin that dropped HIR (so every `List`/`Map` method using it, e.g.
+    the constructor and `grow`, fell out of coverage). Now a first-class `ArrayNew { elem_ty, len }`
+    rvalue emitting a zero-initialized array block (`list_basics`, `collections_growth`).
+  - *Object protocol `hash_code`/`to_string`* — the no-override builtins dropped HIR; now first-class
+    `HashCode`/`ToString` rvalues that dispatch on the receiver's static type. The MIR backend also emits
+    per-struct/union `$<Type>_hash_code` defaults + the tag-dispatching `$object_hash_code` (skipping the
+    default when a user `@override` provides it), mirroring the existing `to_string` runtime. Unblocked
+    `map_basics` (via `key.hash_code()`), `union_to_string`, `union_hash_code`.
+  - *`do/while`* — now a first-class `DoWhile` HIR/MIR statement (body runs once before the condition is
+    tested), instead of being dropped as an unsupported statement (`do_while`).
 
 **Remaining coverage gap** (the `XFAIL` categories, in rough priority order):
 1. **`main` dropped** — `main`'s body uses an analyzer construct not yet lowered to HIR (strings/

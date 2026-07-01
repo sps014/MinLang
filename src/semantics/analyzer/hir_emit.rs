@@ -1291,6 +1291,18 @@ impl<'a> Analyzer<'a> {
         }
     }
 
+    /// Appends a `do { body } while (cond)`. Fails the function if the condition was not
+    /// representable.
+    pub(super) fn hir_do_while(&mut self, cond: Option<HExpr>, body: Vec<HStmt>) {
+        if !self.active() {
+            return;
+        }
+        match cond {
+            Some(cond) => self.push_stmt(HStmt::DoWhile { cond, body }),
+            None => self.hir.ok = false,
+        }
+    }
+
     /// Appends an `if`/`else if`/`else` chain, folding the `else if`s into nested `else` branches.
     /// `primary` is the leading condition+body; `elifs` the `else if`s in source order; `else_block`
     /// the trailing `else` (empty if absent). Fails the function if any condition was unrepresentable.

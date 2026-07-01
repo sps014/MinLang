@@ -259,6 +259,30 @@ impl<'a> Analyzer<'a> {
         self.hir_while(cond_hir, body_hir);
         Ok(())
     }
+    pub(super) fn analyze_do_while(
+        &mut self,
+        condition: &ExpressionNode<'a>,
+        body: &[StatementNode<'a>],
+        parent_function: &FunctionNode<'a>,
+        symbol_table: &Rc<RefCell<SymbolTable>>,
+        diagnostics: &mut DiagnosticBag,
+    ) -> Result<(), SemanticError> {
+        let cond_type = self
+            .analyze_expression(condition, parent_function, symbol_table, diagnostics)
+            .unwrap_or(Type::Unknown);
+        let cond_hir = self.hir_take();
+        if !cond_type.is_unknown() && cond_type.get_type() != "bool" {
+            diagnostics.report_error(
+                format!("do/while condition must be bool, got {}", cond_type.get_type()),
+                condition.position(),
+            );
+        }
+        self.hir_open_block();
+        self.analyze_body(body, parent_function, Some(symbol_table), true, diagnostics)?;
+        let body_hir = self.hir_close_block();
+        self.hir_do_while(cond_hir, body_hir);
+        Ok(())
+    }
     pub(super) fn analyze_for(
         &mut self,
         init: &Option<&'a StatementNode<'a>>,

@@ -195,12 +195,12 @@ fn test_hir_emission_locals_and_assignment() {
 
 #[test]
 fn test_hir_emission_skips_unsupported_functions() {
-    // A function whose body uses an as-yet-unsupported construct (the `to_string` object-protocol
-    // builtin, which needs a runtime def and is not lowered yet) is skipped, not emitted, so the
-    // legacy path remains the source of truth for it. The simple sibling still emits.
+    // A function whose body uses an as-yet-unsupported construct (string concatenation, not lowered
+    // yet) is skipped, not emitted, so the legacy path remains the source of truth for it. The
+    // simple sibling still emits.
     let code = "
         fun simple(a: int): int { return a; }
-        fun stringify(n: int): string { return n.to_string(); }
+        fun stringify(n: int): string { return \"v\" + n; }
     ";
     let (_, count) = emit_hir_to_wat(code);
     assert_eq!(count, 1, "only the fully-supported function should be emitted");

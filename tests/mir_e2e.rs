@@ -41,7 +41,6 @@ const XFAIL: &[(&str, &str)] = &[
     ("async_basic", "main dropped: async entry lowering"),
     ("async_combinators", "main dropped: async entry lowering"),
     ("concat", "main dropped: string concat"),
-    ("do_while", "main dropped: do/while"),
     ("empty_array", "main dropped: empty array literal"),
     ("enum_name", "main dropped: enum name()"),
     ("gc_complete", "main dropped: Debug probes"),

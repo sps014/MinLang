@@ -153,6 +153,11 @@ pub enum HStmt {
         cond: HExpr,
         body: Vec<HStmt>,
     },
+    /// A `do { body } while (cond)` loop: the body runs once before the condition is first tested.
+    DoWhile {
+        cond: HExpr,
+        body: Vec<HStmt>,
+    },
     /// A counted/`for` loop with an explicit init/cond/step (already desugared from surface syntax
     /// far enough to carry typed parts).
     For {

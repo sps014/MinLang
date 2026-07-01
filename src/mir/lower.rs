@@ -266,6 +266,7 @@ impl Lowerer<'_> {
                 else_branch,
             } => self.lower_if(cond, then_branch, else_branch),
             HStmt::While { cond, body } => self.lower_while(cond, body, None),
+            HStmt::DoWhile { cond, body } => self.lower_do_while(cond, body),
             HStmt::For {
                 init,
                 cond,
@@ -338,6 +339,37 @@ impl Lowerer<'_> {
             self.b.terminate(Terminator::Goto(cond_blk));
         }
         self.loops.pop();
+
+        self.b.switch_to(after_blk);
+    }
+
+    /// `do { body } while (cond)`: the body block runs unconditionally first, then the condition is
+    /// tested to loop back (`continue` jumps to the condition test, `break` exits).
+    fn lower_do_while(&mut self, cond: &HExpr, body: &[HStmt]) {
+        let body_blk = self.b.new_block();
+        let cond_blk = self.b.new_block();
+        let after_blk = self.b.new_block();
+        self.b.terminate(Terminator::Goto(body_blk));
+
+        self.loops.push(LoopCtx {
+            break_blk: after_blk,
+            continue_blk: cond_blk,
+            label: None,
+        });
+        self.b.switch_to(body_blk);
+        self.lower_block(body);
+        if !self.b.is_terminated() {
+            self.b.terminate(Terminator::Goto(cond_blk));
+        }
+        self.loops.pop();
+
+        self.b.switch_to(cond_blk);
+        let c = self.lower_operand(cond);
+        self.b.terminate(Terminator::If {
+            cond: c,
+            then_blk: body_blk,
+            else_blk: after_blk,
+        });
 
         self.b.switch_to(after_blk);
     }

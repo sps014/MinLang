@@ -110,6 +110,7 @@ impl<'a> Analyzer<'a> {
             | StatementNode::ExpressionStatement(..)
             | StatementNode::IfElse(..)
             | StatementNode::While(..)
+            | StatementNode::DoWhile(..)
             | StatementNode::For(..)
             | StatementNode::ForEach(..)
             | StatementNode::Break(..)
@@ -152,7 +153,7 @@ impl<'a> Analyzer<'a> {
                 self.analyze_while(condition, body, parent_function, symbol_table, diagnostics)?
             }
             StatementNode::DoWhile(body, condition) => {
-                self.analyze_while(condition, body, parent_function, symbol_table, diagnostics)?
+                self.analyze_do_while(condition, body, parent_function, symbol_table, diagnostics)?
             }
             StatementNode::For(init, condition, increment, body) => {
                 self.analyze_for(init, condition, increment, body, &ctx, diagnostics)?
