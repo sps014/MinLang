@@ -27,13 +27,16 @@ wat = "1.252.0"
 # Blocking so it fits the synchronous host-call model; `serde_json` parses the header object.
 reqwest = { version = "0.12", features = ["blocking", "json"], optional = true }
 serde_json = { version = "1", optional = true }
+# Cross-platform raw-mode terminal input backing `System.readKey` (src/execution/host/console.rs)
+# and Windows ANSI virtual-terminal setup for `System.setForeground`/`setBackground`.
+crossterm = { version = "0.28", optional = true }
 
 [features]
 default = ["native"]
 # `native` pulls in the wasmtime-backed WASM runtime used by the `dream` CLI to
 # execute compiled programs. It is excluded from the wasm32 analyzer build, whose
 # only need is the lexer/parser/analyzer front-end.
-native = ["wasmtime", "reqwest", "serde_json"]
+native = ["wasmtime", "reqwest", "serde_json", "crossterm"]
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"

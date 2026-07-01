@@ -543,7 +543,58 @@ function defaultDreamModule(getInstance) {
     fileSize: (path) => BigInt(fsBackend().size(path)),
     fileIsDir: (path) => fsBackend().isDir(path),
     dirList: (path) => fsBackend().list(path).join("\n"),
+    // Console helpers (see src/stdlib/system.dream). Synchronous, mirroring
+    // src/execution/host/console.rs. In Node, reads block on fd 0 via `fs.readSync`; there is no
+    // synchronous stdin in a browser, so `readLine`/`readKey` fall back to `prompt()` there (and
+    // return "" / 0 when unavailable, e.g. in a Worker).
+    consoleReadLine: () => consoleReadLineSync(),
+    consoleReadKey: () => consoleReadKeySync(),
+    consoleExit: (code) => {
+      if (isNode) process.exit(code);
+      throw new Error(`System.exit(${code}): no process to exit in the browser`);
+    },
   };
+}
+
+/** Blocks and returns one line from stdin (without the trailing newline), or "" if unavailable. */
+function consoleReadLineSync() {
+  if (isNode) {
+    let line = "";
+    const buf = Buffer.alloc(1);
+    while (true) {
+      let n;
+      try { n = _nodeFs.readSync(0, buf, 0, 1, null); } catch (_) { break; } // EOF/EAGAIN
+      if (n === 0) break;
+      const ch = buf.toString("utf8", 0, 1);
+      if (ch === "\n") break;
+      if (ch !== "\r") line += ch;
+    }
+    return line;
+  }
+  if (typeof prompt === "function") return prompt("") || "";
+  return "";
+}
+
+/**
+ * Blocks and returns one character code from stdin, or 0 for EOF/no character. Node has no
+ * synchronous raw (unbuffered) terminal mode, so this reads one byte from fd 0 - interactive
+ * terminals still wait for Enter, same as `readLine`, but piped input reads a single byte as-is.
+ */
+function consoleReadKeySync() {
+  if (isNode) {
+    const buf = Buffer.alloc(1);
+    try {
+      const n = _nodeFs.readSync(0, buf, 0, 1, null);
+      return n === 0 ? 0 : buf[0];
+    } catch (_) {
+      return 0;
+    }
+  }
+  if (typeof prompt === "function") {
+    const s = prompt("") || "";
+    return s.length > 0 ? s.charCodeAt(0) : 0;
+  }
+  return 0;
 }
 
 // Node's `fs`, preloaded by `load()` (it's async; the file host functions are synchronous, so the

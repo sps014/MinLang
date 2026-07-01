@@ -27,6 +27,81 @@ System.println(42);       // prints "42\n"
 System.println("hello");  // prints "hello\n"
 ```
 
+## System.readLine
+
+Blocks until a full line of text is available on stdin, and returns it without the trailing
+newline.
+
+```dream
+System.print("name? ");
+let name = System.readLine();
+System.println("hi " + name);
+```
+
+## System.readKey
+
+Blocks until a single keypress is available and returns its character code, without waiting for
+Enter and without echoing it back to the terminal. Keys with no character representation (e.g.
+arrow keys) yield `(char)0`. In the browser JS host and when stdin is not an interactive terminal
+(e.g. piped input), this falls back to reading a single byte instead of a true raw keypress.
+
+```dream
+System.print("press a key: ");
+let k = System.readKey();
+System.println("you pressed: " + k.to_string());
+```
+
+## System.readInt / System.readDouble
+
+Read a line from stdin and parse it as an `int`/`double`, returning a `Result` so a malformed line
+is `Err` instead of crashing.
+
+```dream
+System.print("age? ");
+switch (System.readInt()) {
+    Ok(v)  => System.println("age: " + v.to_string()),
+    Err(e) => System.println("invalid input: " + e),
+}
+```
+
+## System.exit
+
+Terminates the process immediately with the given exit code. Never returns.
+
+```dream
+System.exit(1);
+```
+
+## System.clear
+
+Clears the terminal screen and moves the cursor to the top-left, via ANSI escapes.
+
+```dream
+System.clear();
+```
+
+## ConsoleColor and colored output
+
+`ConsoleColor` is a plain enum with the 16 standard console colors (matching C#'s `ConsoleColor`
+ordering): `Black`, `DarkBlue`, `DarkGreen`, `DarkCyan`, `DarkRed`, `DarkMagenta`, `DarkYellow`,
+`Gray`, `DarkGray`, `Blue`, `Green`, `Cyan`, `Red`, `Magenta`, `Yellow`, `White`.
+
+`System.setForeground`/`System.setBackground` emit an ANSI escape that changes the color of all
+subsequent output until `System.resetColor()` is called. `System.printColored` prints one string in
+a color and resets immediately after (no trailing newline):
+
+```dream
+System.setForeground(ConsoleColor.Green);
+System.println("success");
+System.resetColor();
+
+System.printColored("warning", ConsoleColor.Yellow);
+```
+
+These rely on ANSI escape sequences, which every macOS/Linux terminal and Windows 10+ console
+support; on native builds, Windows virtual-terminal processing is enabled automatically at
+startup.
+
 ## to_string
 
 `to_string()` is a universal instance method available on every value, returning its string

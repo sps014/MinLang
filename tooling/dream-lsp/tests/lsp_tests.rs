@@ -779,6 +779,57 @@ fun main(): void {
 }
 
 #[test]
+fn function_value_binding_infers_function_type() {
+    use dream_lsp::index::{Index, InlayKind};
+    // A bare function name used as a value (`let a = fib;`) should infer the function's
+    // first-class type `fun(ParamTypes): ReturnType`, not be left unknown.
+    let src = "
+fun fib(n: int): int {
+    if (n <= 1) { return n; }
+    return fib(n - 1) + fib(n - 2);
+}
+fun main(): void {
+    let a = fib;
+}
+";
+    let index = Index::build(None, src);
+    let labels: Vec<&str> = index
+        .inlay_hints
+        .iter()
+        .filter(|h| h.kind == InlayKind::Type)
+        .map(|h| h.label.as_str())
+        .collect();
+    assert!(
+        labels.contains(&": fun(int): int"),
+        "`let a = fib` should infer `: fun(int): int`; got {:?}",
+        labels
+    );
+}
+
+#[test]
+fn hover_on_function_value_binding_shows_function_type() {
+    let src = "
+fun fib(n: int): int {
+    if (n <= 1) { return n; }
+    return fib(n - 1) + fib(n - 2);
+}
+fun main(): void {
+    let |a = fib;
+}
+";
+    let harness = TestHarness::new(src);
+    let hover = harness
+        .index()
+        .hover(harness.offset, &harness.src)
+        .expect("Expected hover info on `a`");
+    assert!(
+        hover.contents.contains("fun(int): int"),
+        "hover on `a` should show `fun(int): int`, got {:?}",
+        hover.contents
+    );
+}
+
+#[test]
 fn hover_shows_doc_comment_above_attribute() {
     let src = "
 class System {
@@ -798,6 +849,37 @@ fun main(): void {
     assert!(
         hover.contents.contains("Prints a value to standard output"),
         "doc comment above an attribute should still appear in hover; got {}",
+        hover.contents
+    );
+}
+
+#[test]
+fn hover_doc_comment_ignores_disconnected_block_above_blank_line() {
+    // A file-level header comment block, separated by a blank line from the doc comment that
+    // directly precedes a declaration, must not be glued onto that declaration's doc comment.
+    let src = "
+// File-level header describing this whole module.
+// Second line of the header.
+
+// The doc comment for Foo.
+enum Foo {
+    A,
+}
+fun main(): void {
+    let f = Foo.A;
+}
+";
+    let offset = src.find("enum Foo").unwrap() + 5; // inside `Foo`
+    let index = dream_lsp::index::Index::build(None, src);
+    let hover = index.hover(offset, src).expect("expected hover on Foo");
+    assert!(
+        hover.contents.contains("The doc comment for Foo"),
+        "hover should include the directly-attached doc comment; got {}",
+        hover.contents
+    );
+    assert!(
+        !hover.contents.contains("File-level header"),
+        "hover should NOT include the disconnected file-header comment; got {}",
         hover.contents
     );
 }

@@ -10,6 +10,9 @@ fun add3(a: int, b: int, c: int): int {
 }
 
 fun main(): void {
+
+    let a= fib;
+    a(5);
     System.println(fib(5));
     System.println(fib(7));
     System.println(add3(10, 20, 30));

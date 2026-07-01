@@ -85,6 +85,24 @@ pub(crate) fn param_names(func: &FunctionNode) -> Vec<String> {
         .collect()
 }
 
+/// Renders a function's *value* type, e.g. `fun(int, int): int` — used as the inferred type when
+/// a function name is used as a value (`let a = fib;`), matching the `fun(ParamTypes): ReturnType`
+/// syntax for first-class function types.
+pub(crate) fn fn_value_type(func: &FunctionNode) -> String {
+    let params = func
+        .parameters
+        .iter()
+        .map(|p| p.type_.display_name())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let ret = func
+        .return_type
+        .as_ref()
+        .map(|t| t.display_name())
+        .unwrap_or_else(|| "void".to_string());
+    format!("fun({}): {}", params, ret)
+}
+
 /// Renders a function declaration's signature, e.g. `fun add(a: int, b: int): int`.
 pub(crate) fn signature(func: &FunctionNode) -> String {
     let params = func

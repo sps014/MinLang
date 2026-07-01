@@ -115,6 +115,9 @@ impl<'a> FunctionControlGraph<'a> {
             StatementNode::IfElse(_, if_body, else_pair, else_body) => {
                 self.visit_if_else(if_body, else_pair, else_body, parent)?
             }
+            StatementNode::Switch(_, cases, default) => {
+                self.visit_switch(cases, default, parent)?
+            }
             _ => {}
         };
         Ok(())
@@ -170,6 +173,40 @@ impl<'a> FunctionControlGraph<'a> {
                     .push(if_body_node.clone());
             }
         };
+
+        Ok(())
+    }
+
+    // A `switch` statement returns on all paths only if every `case` body returns AND there is a
+    // `default` body that also returns (there is no implicit fallthrough between cases, so each
+    // body is an independent path, just like `if`/`else if`/`else` branches). A missing `default`
+    // is treated the same way as a missing `else`: an artificial empty (non-returning) branch,
+    // since this checker doesn't know whether the `case` labels exhaust the subject's values.
+    fn visit_switch(
+        &mut self,
+        cases: &Vec<(Vec<ExpressionNode<'a>>, &'a [StatementNode<'a>])>,
+        default: &Option<&'a [StatementNode<'a>]>,
+        parent: &Rc<RefCell<FlowNode>>,
+    ) -> Result<(), Error> {
+        for (_, body) in cases.iter() {
+            let case_node = Rc::new(RefCell::new(FlowNode::new()));
+            (*parent)
+                .as_ref()
+                .borrow_mut()
+                .child_nodes
+                .push(case_node.clone());
+            self.visit_block(body, &case_node)?;
+        }
+
+        let default_node = Rc::new(RefCell::new(FlowNode::new()));
+        (*parent)
+            .as_ref()
+            .borrow_mut()
+            .child_nodes
+            .push(default_node.clone());
+        if let Some(default_body) = default {
+            self.visit_block(default_body, &default_node)?;
+        }
 
         Ok(())
     }

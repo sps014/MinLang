@@ -11,7 +11,8 @@ use dream::syntax::nodes::{
 use dream::syntax::token::syntax_token::SyntaxToken;
 
 use super::{
-    base_struct, param_names, signature, Decl, Index, InlayHintOut, InlayKind, Ref, SymKind, GLOBAL,
+    base_struct, fn_value_type, param_names, signature, Decl, Index, InlayHintOut, InlayKind, Ref,
+    SymKind, GLOBAL,
 };
 
 pub(crate) struct Builder {
@@ -178,7 +179,8 @@ impl Builder {
     pub(crate) fn walk_program_for_imports(&mut self, program: &ProgramNode) {
         for func in &program.functions {
             let detail = signature(func);
-            self.push_decl(&func.name, SymKind::Function, detail, GLOBAL, None);
+            let fn_ty = fn_value_type(func);
+            self.push_decl(&func.name, SymKind::Function, detail, GLOBAL, Some(fn_ty));
             self.fn_params
                 .insert(func.name.text.clone(), param_names(func));
         }
@@ -657,27 +659,7 @@ impl Builder {
             return;
         }
 
-        let mut doc_comment = None;
-
-        // Append any leading doc comments to the hover detail
-        for trivia in &token.leading_trivia {
-            if trivia.kind == dream::syntax::token::token_kind::TokenKind::LineCommentToken
-                || trivia.kind == dream::syntax::token::token_kind::TokenKind::BlockCommentToken
-            {
-                let mut text = trivia.text.trim();
-                if text.starts_with("//") {
-                    text = text.trim_start_matches('/').trim_start();
-                } else if text.starts_with("/*") {
-                    text = text.trim_start_matches("/*").trim_end_matches("*/").trim();
-                }
-
-                let comment = doc_comment.get_or_insert_with(String::new);
-                if !comment.is_empty() {
-                    comment.push_str("\n\n");
-                }
-                comment.push_str(text);
-            }
-        }
+        let doc_comment = Self::doc_comment_from_trivia(token);
         self.decls.push(Decl {
             name: token.text.clone(),
             kind,
@@ -689,6 +671,58 @@ impl Builder {
             ty,
             is_main: self.is_main,
         });
+    }
+
+    /// Extracts the doc comment attached to `token`, i.e. the trailing run of leading comment
+    /// trivia that is *contiguous* — each comment immediately followed by the next, with no blank
+    /// line in between. All the comments in `leading_trivia` sit directly before the declaration
+    /// with no other real token between them (otherwise the lexer would have attached them
+    /// elsewhere), so a blank line is the only thing that can separate two trivia comments; when it
+    /// does, everything before that gap belongs to an earlier, disconnected block (e.g. a
+    /// file-level header) and must not be glued onto the declaration's doc comment.
+    fn doc_comment_from_trivia(token: &SyntaxToken) -> Option<String> {
+        use dream::syntax::token::token_kind::TokenKind;
+
+        let comments: Vec<_> = token
+            .leading_trivia
+            .iter()
+            .filter(|t| t.kind == TokenKind::LineCommentToken || t.kind == TokenKind::BlockCommentToken)
+            .collect();
+        if comments.is_empty() {
+            return None;
+        }
+
+        // Walk backwards from the comment closest to the declaration, stopping at the first blank
+        // line — i.e. where a comment's end line isn't immediately followed by the next one.
+        let mut start = comments.len() - 1;
+        while start > 0 {
+            let prev = comments[start - 1];
+            let cur = comments[start];
+            let prev_end_line = prev.position.line_no + prev.text.matches('\n').count();
+            if prev_end_line + 1 != cur.position.line_no {
+                break;
+            }
+            start -= 1;
+        }
+
+        let mut doc_comment = String::new();
+        for c in &comments[start..] {
+            let mut text = c.text.trim();
+            if text.starts_with("//") {
+                text = text.trim_start_matches('/').trim_start();
+            } else if text.starts_with("/*") {
+                text = text.trim_start_matches("/*").trim_end_matches("*/").trim();
+            }
+            if !doc_comment.is_empty() {
+                doc_comment.push_str("\n\n");
+            }
+            doc_comment.push_str(text);
+        }
+        if doc_comment.is_empty() {
+            None
+        } else {
+            Some(doc_comment)
+        }
     }
 
     fn add_ref(&mut self, token: &SyntaxToken, kind: SymKind, scope: usize) {
