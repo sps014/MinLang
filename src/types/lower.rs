@@ -45,8 +45,16 @@ impl TypeCtx {
     /// Records a generic instantiation so its mangled bare name canonicalizes to the structured
     /// `(base def, args)` id. `kind` is the base's kind (`Struct`/`Union`), `base` its source name,
     /// and `args` the concrete type arguments. Returns the canonical id. Idempotent.
+    ///
+    /// The mangled name is identity-defining, so the first registration wins: a later call whose
+    /// `base` is itself the already-mangled name with no args (e.g. a field access on a value typed
+    /// `Box_string`, which lowers `("Box_string", [])` rather than `("Box", [string])`) must not
+    /// clobber the canonical `(base def, args)` id with a bogus nominal `struct_ty(Box_string, [])`.
     pub fn register_instance(&mut self, kind: DefKind, base: &str, args: &[Type]) -> TypeId {
         let mangled = mangle_generic(base, args);
+        if let Some(&id) = self.instances.get(&mangled) {
+            return id;
+        }
         let arg_ids: Vec<TypeId> = args.iter().map(|a| self.lower(a)).collect();
         let def = self.defs.intern(kind, base, vec![]);
         let id = match kind {

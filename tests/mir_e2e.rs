@@ -72,13 +72,9 @@ const XFAIL: &[(&str, &str)] = &[
     ("json_roundtrip", "callee unresolved: json"),
     // constructor/layout: new reaches $def{N}_constructor fallback.
     ("collections_growth", "constructor/layout: generic collection"),
-    ("constructor_advanced", "constructor/layout"),
-    ("generic_structs", "constructor/layout: generic struct"),
     ("json_pretty", "constructor/layout: json"),
     ("list_basics", "constructor/layout: List<T>"),
     ("map_basics", "constructor/layout: Map<K,V>"),
-    ("multi_generics", "constructor/layout: generic struct"),
-    ("nested_generics", "constructor/layout: generic struct"),
     ("struct_methods", "constructor/layout"),
     // codegen bug: compiles/runs but output wrong, or main fails WASM validation.
 ];
