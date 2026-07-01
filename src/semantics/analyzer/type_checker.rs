@@ -116,10 +116,10 @@ impl<'a> Analyzer<'a> {
             | StatementNode::Break(..)
             | StatementNode::Continue(..)
             | StatementNode::Switch(..)
+            | StatementNode::Labeled(..)
             | StatementNode::FunctionInvocation(..)
             | StatementNode::MethodInvocation(..)
             | StatementNode::AwaitStmt(..) => {}
-            _ => self.hir_fail(),
         }
         match statement {
             StatementNode::Declaration(left, type_annotation, right, is_const) => self
@@ -169,6 +169,8 @@ impl<'a> Analyzer<'a> {
             )?,
             StatementNode::Labeled(label, inner) => {
                 self.loop_labels.push(label.clone());
+                // Hand the label to the wrapped loop's analyzer so it lands on the loop's HIR node.
+                self.pending_loop_label = Some(label.clone());
                 let result = self.analyze_statement(
                     inner,
                     parent_function,
@@ -176,6 +178,7 @@ impl<'a> Analyzer<'a> {
                     has_parent_while,
                     diagnostics,
                 );
+                self.pending_loop_label = None;
                 self.loop_labels.pop();
                 result?;
             }

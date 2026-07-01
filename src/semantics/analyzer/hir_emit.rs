@@ -109,11 +109,21 @@ impl<'a> Analyzer<'a> {
             .as_ref()
             .is_some_and(|p| !p.is_empty());
         // Methods are registered (and looked up here) under their mangled `{Type}_{method}` name;
-        // `this` is simply parameter 0. Static methods have no receiver. Both are emittable.
+        // `this` is simply parameter 0. Static methods have no receiver. Both are emittable. A free
+        // function is registered under its *emitted* name (signature-mangled when overloaded), so an
+        // overloaded declaration resolves to its own distinct `DefId` rather than a shared base def.
+        let param_types: Vec<String> = function
+            .parameters
+            .iter()
+            .map(|p| p.type_.get_type())
+            .collect();
+        let lookup_name = self
+            .function_table
+            .resolve_emitted_name(&function.name.text, &param_types);
         let def = self
             .type_ctx
             .defs
-            .lookup(DefKind::Function, &function.name.text);
+            .lookup(DefKind::Function, &lookup_name);
 
         // A generic template is emitted once per monomorphization: the initial (unbound) pass is
         // skipped, and each concrete instantiation is analyzed again under `current_generic_bindings`
@@ -149,7 +159,7 @@ impl<'a> Analyzer<'a> {
         self.hir.blocks.push(Vec::new());
         self.hir.def = def;
         self.hir.instance = instance;
-        self.hir.name = function.name.text.clone();
+        self.hir.name = lookup_name;
         self.hir.is_async = function.is_async;
         self.hir.ret = Some(
             function
@@ -225,6 +235,12 @@ impl<'a> Analyzer<'a> {
                 block.push(stmt);
             }
         }
+    }
+
+    /// Appends a fully-built statement to the current block (used by callers that assemble their own
+    /// `HStmt`, e.g. the `if`/`else if` chain folder). Gated on the active flag like [`Self::push_stmt`].
+    pub(super) fn hir_push_stmt(&mut self, stmt: HStmt) {
+        self.push_stmt(stmt);
     }
 
     /// Opens a nested statement block (e.g. a loop body). Paired with [`Self::hir_close_block`].
@@ -1038,6 +1054,73 @@ impl<'a> Analyzer<'a> {
         }
     }
 
+    /// Records a compile-time-known boolean (e.g. the result of a statically-resolved `is` test).
+    pub(super) fn hir_set_bool(&mut self, value: bool) {
+        if !self.active() {
+            self.hir.last = None;
+            return;
+        }
+        let ty = self.type_ctx.interner.bool();
+        self.hir.last = Some(HExpr::new(ty, HExprKind::BoolLit(value)));
+    }
+
+    /// Records string concatenation `a + b` (typed `string`): each non-string operand is first run
+    /// through the object-protocol `to_string`, then the two string pointers are joined by the
+    /// runtime `$concat_strings`. Drops out of coverage if either operand is not representable.
+    pub(super) fn hir_set_concat(
+        &mut self,
+        lhs: Option<HExpr>,
+        lhs_is_string: bool,
+        rhs: Option<HExpr>,
+        rhs_is_string: bool,
+    ) {
+        if !self.active() {
+            self.hir.last = None;
+            return;
+        }
+        let (Some(lhs), Some(rhs)) = (lhs, rhs) else {
+            self.hir.last = None;
+            return;
+        };
+        let string = self.type_ctx.interner.prim(PrimTy::String);
+        let to_str = |e: HExpr, is_string: bool| {
+            if is_string {
+                e
+            } else {
+                HExpr::new(string, HExprKind::ToString(Box::new(e)))
+            }
+        };
+        self.hir.last = Some(HExpr::new(
+            string,
+            HExprKind::Concat(
+                Box::new(to_str(lhs, lhs_is_string)),
+                Box::new(to_str(rhs, rhs_is_string)),
+            ),
+        ));
+    }
+
+    /// Records `EnumValue.name()` (typed `string`): the backend maps the receiver's discriminant to
+    /// its interned variant-name string via `arms` (`(discriminant, name)` for every member).
+    pub(super) fn hir_set_enum_name(&mut self, recv: Option<HExpr>, arms: Vec<(i64, String)>) {
+        if !self.active() {
+            self.hir.last = None;
+            return;
+        }
+        match recv {
+            Some(e) => {
+                let string = self.type_ctx.interner.prim(PrimTy::String);
+                self.hir.last = Some(HExpr::new(
+                    string,
+                    HExprKind::EnumName {
+                        value: Box::new(e),
+                        arms,
+                    },
+                ));
+            }
+            None => self.hir.last = None,
+        }
+    }
+
     /// Records the object-protocol `x.hash_code()` (typed `int`): the backend dispatches on the
     /// receiver's static type. Drops out of coverage if the receiver is not representable.
     pub(super) fn hir_set_hash_code(&mut self, recv: Option<HExpr>) {
@@ -1072,6 +1155,18 @@ impl<'a> Analyzer<'a> {
 
     /// Records `Array.new<T>(len)` (typed `T[]`): a zero-initialized array allocation. Drops out of
     /// coverage if the length is not representable.
+    /// Records an empty array literal `[]` of element type `elem_ty` as a zero-length allocation
+    /// (equivalent to `Array.new<T>(0)`).
+    pub(super) fn hir_set_empty_array(&mut self, elem_ty: &Type) {
+        if !self.active() {
+            self.hir.last = None;
+            return;
+        }
+        let int = self.type_ctx.interner.int();
+        let zero = HExpr::new(int, HExprKind::IntLit(0));
+        self.hir_set_array_new(elem_ty, Some(zero));
+    }
+
     pub(super) fn hir_set_array_new(&mut self, elem_ty: &Type, len: Option<HExpr>) {
         if !self.active() {
             self.hir.last = None;
@@ -1281,61 +1376,31 @@ impl<'a> Analyzer<'a> {
     }
 
     /// Appends a `while (cond) { body }`. Fails the function if the condition was not representable.
-    pub(super) fn hir_while(&mut self, cond: Option<HExpr>, body: Vec<HStmt>) {
+    pub(super) fn hir_while(&mut self, cond: Option<HExpr>, body: Vec<HStmt>, label: Option<String>) {
         if !self.active() {
             return;
         }
         match cond {
-            Some(cond) => self.push_stmt(HStmt::While { cond, body }),
+            Some(cond) => self.push_stmt(HStmt::While { cond, body, label }),
             None => self.hir.ok = false,
         }
     }
 
     /// Appends a `do { body } while (cond)`. Fails the function if the condition was not
     /// representable.
-    pub(super) fn hir_do_while(&mut self, cond: Option<HExpr>, body: Vec<HStmt>) {
-        if !self.active() {
-            return;
-        }
-        match cond {
-            Some(cond) => self.push_stmt(HStmt::DoWhile { cond, body }),
-            None => self.hir.ok = false,
-        }
-    }
-
-    /// Appends an `if`/`else if`/`else` chain, folding the `else if`s into nested `else` branches.
-    /// `primary` is the leading condition+body; `elifs` the `else if`s in source order; `else_block`
-    /// the trailing `else` (empty if absent). Fails the function if any condition was unrepresentable.
-    pub(super) fn hir_if_chain(
+    pub(super) fn hir_do_while(
         &mut self,
-        primary: (Option<HExpr>, Vec<HStmt>),
-        elifs: Vec<(Option<HExpr>, Vec<HStmt>)>,
-        else_block: Vec<HStmt>,
+        cond: Option<HExpr>,
+        body: Vec<HStmt>,
+        label: Option<String>,
     ) {
         if !self.active() {
             return;
         }
-        let mut else_branch = else_block;
-        for (cond, body) in elifs.into_iter().rev() {
-            let Some(cond) = cond else {
-                self.hir.ok = false;
-                return;
-            };
-            else_branch = vec![HStmt::If {
-                cond,
-                then_branch: body,
-                else_branch,
-            }];
+        match cond {
+            Some(cond) => self.push_stmt(HStmt::DoWhile { cond, body, label }),
+            None => self.hir.ok = false,
         }
-        let (Some(cond), then_branch) = (primary.0, primary.1) else {
-            self.hir.ok = false;
-            return;
-        };
-        self.push_stmt(HStmt::If {
-            cond,
-            then_branch,
-            else_branch,
-        });
     }
 
     /// Appends a desugared `for (init; cond; step) { body }`. `init`/`step` must each be exactly one
@@ -1346,6 +1411,7 @@ impl<'a> Analyzer<'a> {
         cond: Option<HExpr>,
         mut step: Vec<HStmt>,
         body: Vec<HStmt>,
+        label: Option<String>,
     ) {
         if !self.active() {
             return;
@@ -1356,6 +1422,7 @@ impl<'a> Analyzer<'a> {
                 cond,
                 step: Box::new(step.remove(0)),
                 body,
+                label,
             }),
             _ => self.hir.ok = false,
         }
@@ -1368,13 +1435,19 @@ impl<'a> Analyzer<'a> {
         elem: Option<LocalId>,
         iterable: Option<HExpr>,
         body: Vec<HStmt>,
+        label: Option<String>,
     ) {
         if !self.active() {
             return;
         }
         match (elem, iterable) {
             (Some(elem), Some(iterable)) => {
-                self.push_stmt(HStmt::Foreach { elem, iterable, body })
+                self.push_stmt(HStmt::Foreach {
+                    elem,
+                    iterable,
+                    body,
+                    label,
+                })
             }
             _ => self.hir.ok = false,
         }

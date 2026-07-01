@@ -44,7 +44,7 @@ flowchart LR
 | MIR backend handles user-defined constructor bodies | ✅ done (Step C.2c) — `New` carries an optional `ctor` def; when present the backend allocates, zeroes the fields, then calls `$Type_constructor(this, args)` (whose body is emitted via `struct_methods`); otherwise it inlines positional field init |
 | `extend` blocks (generic + non-generic) | ✅ done — extension methods lower exactly like struct methods (`{Type}_{method}` + implicit `this`), so their bodies emit and calls resolve; generic `extend Box<T>` monomorphizes alongside the struct instance (`Box_int_peek`). Covered by `test_hir_emission_extend_{nongeneric,generic}_class` |
 | `del()` destructors | ◐ **body** emits under `{Type}_del` (like any method; `test_hir_emission_destructor_body`), but the release-time **invocation** (per-type deep release: pin refcount → call `$Type_del` → release ref fields → free) is part of the RC runtime, still deferred with the rest of the release layer (Step D) |
-| Driver uses the MIR backend | ◐ **opt-in wired** — `Compiler::with_mir(true)` / CLI `--mir` routes analysis → HIR → `mir::lower` → `prune_unreachable` → passes → `emit_module`. Default is still `WasmGenerator`; the flip waits on full coverage. Gated by `tests/mir_e2e.rs` (**54 / 84** golden e2e cases pass end-to-end through the real driver front-end + MIR backend) |
+| Driver uses the MIR backend | ◐ **opt-in wired** — `Compiler::with_mir(true)` / CLI `--mir` routes analysis → HIR → `mir::lower` → `prune_unreachable` → passes → `emit_module`. Default is still `WasmGenerator`; the flip waits on full coverage. Gated by `tests/mir_e2e.rs` (**64 / 84** golden e2e cases pass end-to-end through the real driver front-end + MIR backend) |
 | `infer.rs` / `resolve.rs` deletable | ❌ still used by the live backend |
 
 The new architecture is **complete as modules** but **not on the critical path**. The legacy backend is
@@ -548,6 +548,27 @@ the coverage gap so the default can flip.
     `map_basics` (via `key.hash_code()`), `union_to_string`, `union_hash_code`.
   - *`do/while`* — now a first-class `DoWhile` HIR/MIR statement (body runs once before the condition is
     tested), instead of being dropped as an unsupported statement (`do_while`).
+- **String concat + object protocol + static `is` + enum/array/loop features + overloads.** Coverage went
+  **54 → 64**:
+  - *String concatenation* — `a + b` where either side is a `string` (previously dropped HIR) is now a
+    first-class `Concat` rvalue lowered to the runtime `$concat_strings`; non-string operands are wrapped
+    in `ToString` first, so `"count = " + n` works for any `n` (`concat`, `object_protocol`,
+    `string_interpolation`, `strings`).
+  - *Static `is` type-test* — `x is T` on a concrete (non-`object`) operand now folds to a `BoolLit`
+    instead of dropping HIR. The `if`/`else if` chain analyzer was reworked to build correct nested-`if`
+    HIR while still skipping statically-dead `is` branches (whose bodies are only valid under other
+    monomorphizations). Unblocked generic function bodies that dispatch on their type param (`generics`,
+    `struct_methods`). A runtime `is` on `object` is still deferred.
+  - *`EnumValue.name()`* — a builtin that dropped HIR; now a first-class `EnumName` rvalue that maps the
+    discriminant to its interned variant-name string via a nested-`if` chain (`enum_name`).
+  - *Empty array literal* — `let xs: int[] = []` now allocates a zero-length array from the annotation's
+    element type (published as the expected type) instead of dropping the function (`empty_array`).
+  - *Labeled loops* — a `label` now threads from a `Labeled` statement through the loop's HIR node into the
+    MIR `LoopCtx`, so `break`/`continue label` resolve to the enclosing loop (`labeled_loops`).
+  - *Overloaded free functions* — each overload now registers a distinct `DefId` under its signature-
+    mangled emitted name (deferred until the full overload set is known), and both the call site and the
+    emitted function symbol use that name, so overloads no longer collide on a shared base def
+    (`overload_functions`).
 
 **Remaining coverage gap** (the `XFAIL` categories, in rough priority order):
 1. **`main` dropped** — `main`'s body uses an analyzer construct not yet lowered to HIR (strings/

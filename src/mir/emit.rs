@@ -340,12 +340,17 @@ fn strings_in_rvalue(rv: &Rvalue, out: &mut Vec<String>) {
         | Rvalue::Cast(o, _)
         | Rvalue::Discriminant(o)
         | Rvalue::UnionField { base: o, .. } => strings_in_operand(o, out),
-        Rvalue::Binary(_, a, b) | Rvalue::CharAt(a, b) => {
+        Rvalue::Binary(_, a, b) | Rvalue::CharAt(a, b) | Rvalue::Concat(a, b) => {
             strings_in_operand(a, out);
             strings_in_operand(b, out);
         }
         Rvalue::ArrayNew { len, .. } => strings_in_operand(len, out),
         Rvalue::HashCode(o) | Rvalue::ToString(o) => strings_in_operand(o, out),
+        Rvalue::EnumName { value, arms } => {
+            strings_in_operand(value, out);
+            out.push(String::new());
+            arms.iter().for_each(|(_, name)| out.push(name.clone()));
+        }
         Rvalue::Call { args, .. }
         | Rvalue::New { args, .. }
         | Rvalue::UnionNew { args, .. }
@@ -1502,6 +1507,12 @@ impl Emitter<'_> {
         self.tags.get(&ty).copied().unwrap_or(fallback.0 as i32)
     }
 
+    /// The heap address of an interned string (0 if not interned — should not happen for strings
+    /// surfaced through `strings_in_*`).
+    fn string_addr(&self, s: &str) -> u32 {
+        self.strings.get(s).copied().unwrap_or(0)
+    }
+
     fn field_addr(&mut self, base: super::Local, offset: u32) {
         self.line(&format!("     (local.get ${})", base.0));
         if offset > 0 {
@@ -1822,11 +1833,35 @@ impl Emitter<'_> {
                 self.emit_operand(i);
                 self.line("     (call $char_at)");
             }
+            Rvalue::Concat(a, b) => {
+                self.emit_operand(a);
+                self.emit_operand(b);
+                self.line("     (call $concat_strings)");
+            }
             Rvalue::ToString(o) => {
                 self.emit_operand(o);
                 // A `string` is already its own `to_string`; every other type has a formatter.
                 if let Some(call) = value_to_string_call(self.interner, self.operand_ty(o)) {
                     self.line(&format!("     (call {})", call));
+                }
+            }
+            Rvalue::EnumName { value, arms } => {
+                let empty = self.string_addr("");
+                self.emit_operand(value);
+                self.line("     (local.set $__len)");
+                // Nested `value == disc ? strptr : (...)`, terminating in the empty string.
+                for (disc, name) in arms {
+                    let ptr = self.string_addr(name);
+                    self.line("     (local.get $__len)");
+                    self.line(&format!("     (i32.const {})", disc));
+                    self.line("     (i32.eq)");
+                    self.line("     (if (result i32)");
+                    self.line(&format!("      (then (i32.const {}))", ptr));
+                    self.line("      (else");
+                }
+                self.line(&format!("     (i32.const {})", empty));
+                for _ in arms {
+                    self.line("     ))");
                 }
             }
             Rvalue::HashCode(o) => {

@@ -86,6 +86,8 @@ fn rvalue(r: &Rvalue) -> String {
         }
         Rvalue::HashCode(o) => format!("hash_code({})", operand(o)),
         Rvalue::ToString(o) => format!("to_string({})", operand(o)),
+        Rvalue::Concat(a, b) => format!("concat({}, {})", operand(a), operand(b)),
+        Rvalue::EnumName { value, .. } => format!("enum_name({})", operand(value)),
         Rvalue::Cast(o, ty) => format!("{} as ty{}", operand(o), ty.0),
         Rvalue::Discriminant(o) => format!("discriminant({})", operand(o)),
         Rvalue::UnionField { base, variant, field, .. } => {

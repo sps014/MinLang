@@ -176,10 +176,11 @@ fn rvalue_reads_local(rvalue: &Rvalue, local: u32) -> bool {
         | Rvalue::HashCode(o)
         | Rvalue::ToString(o)
         | Rvalue::UnionField { base: o, .. } => check(o),
-        Rvalue::Binary(_, a, b) | Rvalue::CharAt(a, b) => {
+        Rvalue::Binary(_, a, b) | Rvalue::CharAt(a, b) | Rvalue::Concat(a, b) => {
             check(a);
             check(b);
         }
+        Rvalue::EnumName { value, .. } => check(value),
         Rvalue::ArrayNew { len, .. } => check(len),
         Rvalue::Call { args, .. }
         | Rvalue::New { args, .. }

@@ -421,8 +421,10 @@ impl<'a> Analyzer<'a> {
                 .map(|n| self.type_ctx.lower_str(n))
                 .collect();
             self.hir_set_generic_call(&base_name, instance, arg_hirs, &ret_type);
-        } else if !self.function_table.is_overloaded(&function_name) {
-            self.hir_set_call(&function_name, arg_hirs, &ret_type);
+        } else {
+            // Overloaded free functions resolve to the selected overload's emitted name (each is a
+            // distinct `DefId`); non-overloaded ones resolve directly by their base name.
+            self.hir_set_call(&store_sig.name, arg_hirs, &ret_type);
         }
         Ok(ret_type)
     }
@@ -849,13 +851,18 @@ impl<'a> Analyzer<'a> {
         // `EnumValue.name()`: built-in accessor returning the variant name as a string.
         if method.text == intrinsics::ENUM_NAME {
             let base = strip_nullable(&obj_type.get_type()).to_string();
-            if self.enum_table.contains_key(&base) {
+            if let Some(members) = self.enum_table.get(&base) {
                 if !params.is_empty() {
                     diagnostics.report_error(
                         format!("'name' takes no arguments, got {}", params.len()),
                         Some(method.position),
                     );
                 }
+                let arms: Vec<(i64, String)> = members
+                    .iter()
+                    .map(|(name, value)| (*value as i64, name.clone()))
+                    .collect();
+                self.hir_set_enum_name(receiver.take(), arms);
                 return Ok(Some(Type::String(synthetic_token(
                     TokenKind::DataTypeToken,
                     "string",

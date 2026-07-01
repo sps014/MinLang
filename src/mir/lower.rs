@@ -265,19 +265,21 @@ impl Lowerer<'_> {
                 then_branch,
                 else_branch,
             } => self.lower_if(cond, then_branch, else_branch),
-            HStmt::While { cond, body } => self.lower_while(cond, body, None),
-            HStmt::DoWhile { cond, body } => self.lower_do_while(cond, body),
+            HStmt::While { cond, body, label } => self.lower_while(cond, body, label.as_deref()),
+            HStmt::DoWhile { cond, body, label } => self.lower_do_while(cond, body, label.as_deref()),
             HStmt::For {
                 init,
                 cond,
                 step,
                 body,
-            } => self.lower_for(init, cond, step, body),
+                label,
+            } => self.lower_for(init, cond, step, body, label.as_deref()),
             HStmt::Foreach {
                 elem,
                 iterable,
                 body,
-            } => self.lower_foreach(*elem, iterable, body),
+                label,
+            } => self.lower_foreach(*elem, iterable, body, label.as_deref()),
             HStmt::Switch {
                 scrutinee,
                 arms,
@@ -345,7 +347,7 @@ impl Lowerer<'_> {
 
     /// `do { body } while (cond)`: the body block runs unconditionally first, then the condition is
     /// tested to loop back (`continue` jumps to the condition test, `break` exits).
-    fn lower_do_while(&mut self, cond: &HExpr, body: &[HStmt]) {
+    fn lower_do_while(&mut self, cond: &HExpr, body: &[HStmt], label: Option<&str>) {
         let body_blk = self.b.new_block();
         let cond_blk = self.b.new_block();
         let after_blk = self.b.new_block();
@@ -354,7 +356,7 @@ impl Lowerer<'_> {
         self.loops.push(LoopCtx {
             break_blk: after_blk,
             continue_blk: cond_blk,
-            label: None,
+            label: label.map(str::to_string),
         });
         self.b.switch_to(body_blk);
         self.lower_block(body);
@@ -374,7 +376,14 @@ impl Lowerer<'_> {
         self.b.switch_to(after_blk);
     }
 
-    fn lower_for(&mut self, init: &HStmt, cond: &HExpr, step: &HStmt, body: &[HStmt]) {
+    fn lower_for(
+        &mut self,
+        init: &HStmt,
+        cond: &HExpr,
+        step: &HStmt,
+        body: &[HStmt],
+        label: Option<&str>,
+    ) {
         self.lower_stmt(init);
         let cond_blk = self.b.new_block();
         let body_blk = self.b.new_block();
@@ -393,7 +402,7 @@ impl Lowerer<'_> {
         self.loops.push(LoopCtx {
             break_blk: after_blk,
             continue_blk: step_blk,
-            label: None,
+            label: label.map(str::to_string),
         });
         self.b.switch_to(body_blk);
         self.lower_block(body);
@@ -409,7 +418,13 @@ impl Lowerer<'_> {
         self.b.switch_to(after_blk);
     }
 
-    fn lower_foreach(&mut self, elem: crate::hir::LocalId, iterable: &HExpr, body: &[HStmt]) {
+    fn lower_foreach(
+        &mut self,
+        elem: crate::hir::LocalId,
+        iterable: &HExpr,
+        body: &[HStmt],
+        label: Option<&str>,
+    ) {
         let int = self.interner.int();
         let arr = self.lower_operand(iterable);
         let arr_local = self.b.new_temp(iterable.ty);
@@ -449,7 +464,7 @@ impl Lowerer<'_> {
         self.loops.push(LoopCtx {
             break_blk: after_blk,
             continue_blk: step_blk,
-            label: None,
+            label: label.map(str::to_string),
         });
         self.b.switch_to(body_blk);
         let elem_local = self.mir_local(elem);
@@ -762,6 +777,13 @@ impl Lowerer<'_> {
             },
             HExprKind::HashCode(e) => Rvalue::HashCode(self.lower_operand(e)),
             HExprKind::ToString(e) => Rvalue::ToString(self.lower_operand(e)),
+            HExprKind::Concat(a, b) => {
+                Rvalue::Concat(self.lower_operand(a), self.lower_operand(b))
+            }
+            HExprKind::EnumName { value, arms } => Rvalue::EnumName {
+                value: self.lower_operand(value),
+                arms: arms.clone(),
+            },
             HExprKind::ArrayLit { elem_ty, elems } => {
                 let lowered = elems.iter().map(|e| self.lower_operand(e)).collect();
                 Rvalue::ArrayLit {

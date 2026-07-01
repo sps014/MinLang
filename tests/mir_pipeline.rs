@@ -82,6 +82,7 @@ fn compile_sum_to() -> String {
                         ),
                     },
                 ],
+                label: None,
             },
             HStmt::Return(Some(var(acc))),
         ],

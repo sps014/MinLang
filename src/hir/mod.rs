@@ -152,11 +152,14 @@ pub enum HStmt {
     While {
         cond: HExpr,
         body: Vec<HStmt>,
+        /// Enclosing loop label (`outer: while ...`), targetable by `break`/`continue label`.
+        label: Option<String>,
     },
     /// A `do { body } while (cond)` loop: the body runs once before the condition is first tested.
     DoWhile {
         cond: HExpr,
         body: Vec<HStmt>,
+        label: Option<String>,
     },
     /// A counted/`for` loop with an explicit init/cond/step (already desugared from surface syntax
     /// far enough to carry typed parts).
@@ -165,12 +168,14 @@ pub enum HStmt {
         cond: HExpr,
         step: Box<HStmt>,
         body: Vec<HStmt>,
+        label: Option<String>,
     },
     /// `foreach (elem in iterable)`: the iterable yields an array of `elem`'s type.
     Foreach {
         elem: LocalId,
         iterable: HExpr,
         body: Vec<HStmt>,
+        label: Option<String>,
     },
     /// A `switch`/`match` over a scrutinee. Each arm is a typed pattern + body; `default` runs when
     /// no arm matches.
@@ -305,6 +310,15 @@ pub enum HExprKind {
     /// The object-protocol `x.to_string()` (typed `string`) with no user override: dispatches on the
     /// receiver's static type to the matching `$*_to_string` helper.
     ToString(Box<HExpr>),
+    /// String concatenation `a + b` (both operands already string-typed, non-string operands wrapped
+    /// in [`HExprKind::ToString`]): joins the two via the runtime `$concat_strings`.
+    Concat(Box<HExpr>, Box<HExpr>),
+    /// `EnumValue.name()` — maps the operand's discriminant to its interned variant-name string.
+    /// `arms` is `(discriminant, variant name)` for every member; an unmatched value yields `""`.
+    EnumName {
+        value: Box<HExpr>,
+        arms: Vec<(i64, String)>,
+    },
     /// `Array.new<T>(len)` — a zero-initialized `T[]` of a runtime length. `elem_ty` is the element
     /// type; `len` the element count.
     ArrayNew {

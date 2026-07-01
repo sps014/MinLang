@@ -387,12 +387,12 @@ impl<'a> Analyzer<'a> {
         for function in node.functions.iter() {
             diagnostics.file_path = file_path_string(&function.file_path);
             self.check_reserved_name(&function.name, "function", diagnostics);
-            self.type_ctx.register(
-                DefKind::Function,
-                &function.name.text,
-                generic_param_names(&function.generic_parameters),
-            );
             if function.generic_parameters.is_some() {
+                self.type_ctx.register(
+                    DefKind::Function,
+                    &function.name.text,
+                    generic_param_names(&function.generic_parameters),
+                );
                 self.generic_functions
                     .insert(function.name.text.clone(), function);
                 continue;
@@ -406,6 +406,23 @@ impl<'a> Analyzer<'a> {
             {
                 diagnostics.report_error(e.to_string(), Some(function.name.position));
             }
+        }
+        // Register a distinct `DefId` for every non-generic function under its *emitted* name (the
+        // bare base when unique, the signature-mangled key when overloaded). Deferred to here so the
+        // full overload set is known: overloaded declarations must not collide on a single base def.
+        for function in node.functions.iter() {
+            if function.generic_parameters.is_some() {
+                continue;
+            }
+            let param_types: Vec<String> = function
+                .parameters
+                .iter()
+                .map(|p| p.type_.get_type())
+                .collect();
+            let emitted = self
+                .function_table
+                .resolve_emitted_name(&function.name.text, &param_types);
+            self.type_ctx.register(DefKind::Function, &emitted, vec![]);
         }
         // The entry point is exported under the fixed name `main`. It may be declared as `main()`
         // or `main(args: string[])`, but not overloaded or given any other signature.

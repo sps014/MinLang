@@ -97,6 +97,8 @@ impl<'a> Analyzer<'a> {
             }
         };
 
+        // Claim any label wrapping this loop before its body (which may hold nested loops) is analyzed.
+        let label = self.pending_loop_label.take();
         // Register the synthetic loop locals plus the user's element binding in a dedicated scope.
         let foreach_scope = Rc::new(RefCell::new(SymbolTable::new(Some(
             ctx.symbol_table.clone(),
@@ -128,7 +130,7 @@ impl<'a> Analyzer<'a> {
             diagnostics,
         )?;
         let body_hir = self.hir_close_block();
-        self.hir_foreach(elem_slot, iter_hir, body_hir);
+        self.hir_foreach(elem_slot, iter_hir, body_hir, label);
         Ok(())
     }
     pub(super) fn analyze_switch(
@@ -243,6 +245,7 @@ impl<'a> Analyzer<'a> {
         symbol_table: &Rc<RefCell<SymbolTable>>,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<(), SemanticError> {
+        let label = self.pending_loop_label.take();
         let cond_type = self
             .analyze_expression(condition, parent_function, symbol_table, diagnostics)
             .unwrap_or(Type::Unknown);
@@ -256,7 +259,7 @@ impl<'a> Analyzer<'a> {
         self.hir_open_block();
         self.analyze_body(body, parent_function, Some(symbol_table), true, diagnostics)?;
         let body_hir = self.hir_close_block();
-        self.hir_while(cond_hir, body_hir);
+        self.hir_while(cond_hir, body_hir, label);
         Ok(())
     }
     pub(super) fn analyze_do_while(
@@ -267,6 +270,7 @@ impl<'a> Analyzer<'a> {
         symbol_table: &Rc<RefCell<SymbolTable>>,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<(), SemanticError> {
+        let label = self.pending_loop_label.take();
         let cond_type = self
             .analyze_expression(condition, parent_function, symbol_table, diagnostics)
             .unwrap_or(Type::Unknown);
@@ -280,7 +284,7 @@ impl<'a> Analyzer<'a> {
         self.hir_open_block();
         self.analyze_body(body, parent_function, Some(symbol_table), true, diagnostics)?;
         let body_hir = self.hir_close_block();
-        self.hir_do_while(cond_hir, body_hir);
+        self.hir_do_while(cond_hir, body_hir, label);
         Ok(())
     }
     pub(super) fn analyze_for(
@@ -292,6 +296,7 @@ impl<'a> Analyzer<'a> {
         ctx: &super::AnalyzerContext<'a, '_>,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<(), SemanticError> {
+        let label = self.pending_loop_label.take();
         let for_scope = Rc::new(RefCell::new(SymbolTable::new(Some(
             ctx.symbol_table.clone(),
         ))));
@@ -347,7 +352,7 @@ impl<'a> Analyzer<'a> {
         )?;
         let body_hir = self.hir_close_block();
 
-        self.hir_for(init_hir, cond_hir, step_hir, body_hir);
+        self.hir_for(init_hir, cond_hir, step_hir, body_hir, label);
         Ok(())
     }
     ///return type is returned currently int and float supported
@@ -393,35 +398,17 @@ impl<'a> Analyzer<'a> {
     ) -> Result<(), SemanticError> {
         self.check_reserved_name(left, "variable", diagnostics);
         // Empty array literals carry no element type, so the declaration must supply one via an
-        // array-typed annotation (e.g. `let xs: int[] = [];`).
+        // array-typed annotation (e.g. `let xs: int[] = [];`). With a valid annotation the literal is
+        // handled on the normal path below (the annotation is published as the expected type, which
+        // the array-literal analysis uses to allocate a zero-length array).
         if let ExpressionNode::ArrayLiteral(elements) = right {
-            if elements.is_empty() {
+            if elements.is_empty() && !type_annotation.as_ref().is_some_and(|t| t.is_array()) {
                 self.hir_fail();
-                match type_annotation {
-                    Some(t) if t.is_array() => {
-                        if let Err(e) = (*ctx.symbol_table)
-                            .as_ref()
-                            .borrow_mut()
-                            .add_symbol(left.text.clone(), t.clone())
-                        {
-                            diagnostics.report_error(e.to_string(), Some(left.position));
-                        }
-                        if is_const {
-                            (*ctx.symbol_table)
-                                .as_ref()
-                                .borrow_mut()
-                                .mark_const(left.text.clone());
-                        }
-                        return Ok(());
-                    }
-                    _ => {
-                        diagnostics.report_error(
-                            "Empty array literal requires an array type annotation, e.g. `let xs: int[] = [];`".to_string(),
-                            Some(left.position),
-                        );
-                        return Ok(());
-                    }
-                }
+                diagnostics.report_error(
+                    "Empty array literal requires an array type annotation, e.g. `let xs: int[] = [];`".to_string(),
+                    Some(left.position),
+                );
+                return Ok(());
             }
         }
         //return right type. A type annotation is published as the expected type so a generic
@@ -637,111 +624,57 @@ impl<'a> Analyzer<'a> {
         let StatementNode::IfElse(condition, if_body, else_if, else_body) = statement else {
             unreachable!()
         };
-        // Check for constant expression from `is`
-        let mut is_constant_true = false;
-        let mut is_constant_false = false;
+        // Live branches of the chain in source order, each `(condition HIR, body)`. An `is` condition
+        // on a concrete (non-`object`) operand folds to a compile-time constant: a `false` branch is
+        // dead (skipped entirely, so its body — valid only under other instantiations — is never
+        // type-checked), and a `true` branch is unconditionally taken, becoming the terminal `else`
+        // and ending the chain. Regular conditions are analyzed normally and keep their HIR.
+        let mut arms: Vec<(HExpr, Vec<HStmt>)> = Vec::new();
+        let mut terminal: Vec<HStmt> = Vec::new();
+        let mut terminated = false;
 
-        // HIR for the whole chain, folded at the end into a single `HStmt::If`. An `is` condition
-        // folds to a compile-time constant (below) which has no clean HIR form, so any `is` in the
-        // chain drops the function out of HIR coverage.
-        let mut hir_primary_cond: Option<HExpr> = None;
-        let mut hir_primary_body: Vec<HStmt> = Vec::new();
-        let mut hir_elifs: Vec<(Option<HExpr>, Vec<HStmt>)> = Vec::new();
-        let mut hir_else: Vec<HStmt> = Vec::new();
+        // Every branch of the chain (primary, then each `else if`) as `(condition, position, body)`.
+        let branches = std::iter::once((condition, condition.position(), if_body))
+            .chain(else_if.iter().map(|i| (&i.0, i.0.position(), &i.1)));
 
-        if let ExpressionNode::IsExpression(left, right_type) = condition {
-            self.hir_fail();
-            let left_t = self
-                .analyze_expression(left, ctx.parent_function, ctx.symbol_table, diagnostics)
-                .unwrap_or(Type::Unknown);
-            // `is` on an `object` is a runtime check; only non-object operands fold to a constant.
-            if left_t.get_type() != "object" {
-                if left_t.get_type() == right_type.get_type() {
-                    is_constant_true = true;
-                } else {
-                    is_constant_false = true;
-                }
-            }
-        }
-
-        if !is_constant_false {
-            //if condition
-            let cond_type = self
-                .analyze_expression(condition, ctx.parent_function, ctx.symbol_table, diagnostics)
-                .unwrap_or(Type::Unknown);
-            hir_primary_cond = self.hir_take();
-            if !cond_type.is_unknown() && cond_type.get_type() != "bool" {
-                diagnostics.report_error(
-                    format!("if condition must be bool, got {}", cond_type.get_type()),
-                    condition.position(),
-                );
-            }
-            //if body
-            self.hir_open_block();
-            self.analyze_body(
-                if_body,
-                ctx.parent_function,
-                Some(ctx.symbol_table),
-                has_parent_while,
-                diagnostics,
-            )?;
-            hir_primary_body = self.hir_close_block();
-        }
-
-        if is_constant_true {
-            return Ok(());
-        }
-
-        //else if block
-        for i in else_if.iter() {
-            let mut elif_constant_true = false;
-            let mut elif_constant_false = false;
-            if let ExpressionNode::IsExpression(left, right_type) = &i.0 {
-                self.hir_fail();
+        for (cond_expr, cond_pos, body) in branches {
+            // `is` fold: decide liveness (and type-check the operand) before touching the branch.
+            if let ExpressionNode::IsExpression(left, right_type) = cond_expr {
                 let left_t = self
                     .analyze_expression(left, ctx.parent_function, ctx.symbol_table, diagnostics)
                     .unwrap_or(Type::Unknown);
-                if left_t.get_type() != "object" {
-                    if left_t.get_type() == right_type.get_type() {
-                        elif_constant_true = true;
-                    } else {
-                        elif_constant_false = true;
-                    }
+                if left_t.get_type() == "object" || left_t.is_unknown() {
+                    // A runtime `object` check is not lowered yet: drop out of HIR coverage but keep
+                    // type-checking both branches (they are all reachable at runtime).
+                    self.hir_fail();
+                } else if left_t.get_type() == right_type.get_type() {
+                    self.hir_open_block();
+                    self.analyze_body(
+                        body,
+                        ctx.parent_function,
+                        Some(ctx.symbol_table),
+                        has_parent_while,
+                        diagnostics,
+                    )?;
+                    terminal = self.hir_close_block();
+                    terminated = true;
+                    break;
+                } else {
+                    // Dead branch: skip it entirely (do not analyze its body).
+                    continue;
                 }
             }
 
-            if !elif_constant_false {
-                let elif_cond_type = self
-                    .analyze_expression(&i.0, ctx.parent_function, ctx.symbol_table, diagnostics)
-                    .unwrap_or(Type::Unknown);
-                let elif_cond_hir = self.hir_take();
-                if !elif_cond_type.is_unknown() && elif_cond_type.get_type() != "bool" {
-                    diagnostics.report_error(
-                        format!(
-                            "else if condition must be bool, got {}",
-                            elif_cond_type.get_type()
-                        ),
-                        i.0.position(),
-                    );
-                }
-                self.hir_open_block();
-                self.analyze_body(
-                    i.1,
-                    ctx.parent_function,
-                    Some(ctx.symbol_table),
-                    has_parent_while,
-                    diagnostics,
-                )?;
-                let elif_body = self.hir_close_block();
-                hir_elifs.push((elif_cond_hir, elif_body));
+            let cond_type = self
+                .analyze_expression(cond_expr, ctx.parent_function, ctx.symbol_table, diagnostics)
+                .unwrap_or(Type::Unknown);
+            let cond_hir = self.hir_take();
+            if !cond_type.is_unknown() && cond_type.get_type() != "bool" {
+                diagnostics.report_error(
+                    format!("if condition must be bool, got {}", cond_type.get_type()),
+                    cond_pos,
+                );
             }
-
-            if elif_constant_true {
-                return Ok(());
-            }
-        }
-
-        if let Some(body) = else_body {
             self.hir_open_block();
             self.analyze_body(
                 body,
@@ -750,10 +683,39 @@ impl<'a> Analyzer<'a> {
                 has_parent_while,
                 diagnostics,
             )?;
-            hir_else = self.hir_close_block();
+            let body_hir = self.hir_close_block();
+            match cond_hir {
+                Some(cond_hir) => arms.push((cond_hir, body_hir)),
+                None => self.hir_fail(),
+            }
         }
 
-        self.hir_if_chain((hir_primary_cond, hir_primary_body), hir_elifs, hir_else);
+        if !terminated {
+            if let Some(body) = else_body {
+                self.hir_open_block();
+                self.analyze_body(
+                    body,
+                    ctx.parent_function,
+                    Some(ctx.symbol_table),
+                    has_parent_while,
+                    diagnostics,
+                )?;
+                terminal = self.hir_close_block();
+            }
+        }
+
+        // Fold the live arms (innermost last) into a single nested `if`/`else` and emit it.
+        let mut chain = terminal;
+        for (cond, body) in arms.into_iter().rev() {
+            chain = vec![crate::hir::HStmt::If {
+                cond,
+                then_branch: body,
+                else_branch: chain,
+            }];
+        }
+        for stmt in chain {
+            self.hir_push_stmt(stmt);
+        }
         Ok(())
     }
     pub(super) fn analyze_return(

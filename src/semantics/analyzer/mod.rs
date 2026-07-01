@@ -226,6 +226,9 @@ pub struct Analyzer<'a> {
     /// Stack of loop labels currently in scope, so `break label;`/`continue label;` can be
     /// validated against an enclosing labeled loop.
     loop_labels: Vec<String>,
+    /// Label attached to the immediately-following loop (`outer: for ...`), consumed by that loop's
+    /// analyzer so it can be threaded into the loop's HIR node. `None` for unlabeled loops.
+    pending_loop_label: Option<String>,
     /// True while analyzing the body of an `async fun`. Gates the use of `await`.
     current_function_is_async: bool,
     /// Resolved top-level variables, in declaration order. Surfaced to codegen via [`SemanticInfo`].
@@ -259,6 +262,7 @@ impl<'a> Analyzer<'a> {
             current_expected_type: None,
             current_generic_bindings: Vec::new(),
             loop_labels: Vec::new(),
+            pending_loop_label: None,
             current_function_is_async: false,
             globals: Vec::new(),
             global_symbol_table: Rc::new(RefCell::new(SymbolTable::new(None))),

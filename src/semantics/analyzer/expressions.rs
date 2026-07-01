@@ -28,6 +28,12 @@ impl<'a> Analyzer<'a> {
             }
             ExpressionNode::ArrayLiteral(elements) => {
                 if elements.is_empty() {
+                    // The element type comes from the surrounding annotation (`let xs: int[] = [];`),
+                    // published as the expected type. Without one, the literal is untyped: reject it.
+                    if let Some(Type::Array(elem)) = self.current_expected_type.clone() {
+                        self.hir_set_empty_array(&elem);
+                        return Ok(Type::Array(elem));
+                    }
                     self.hir_none();
                     diagnostics.report_error(
                         "Empty array literals are not supported yet".to_string(),
@@ -163,10 +169,20 @@ impl<'a> Analyzer<'a> {
                 )?;
                 Ok(t)
             }
-            ExpressionNode::IsExpression(left, _right_type) => {
-                // `is` always evaluates to a bool; the actual comparison is resolved at compile time.
-                self.analyze_expression(left, parent_function, symbol_table, diagnostics)?;
-                self.hir_none();
+            ExpressionNode::IsExpression(left, right_type) => {
+                // `is` always evaluates to a bool. When the operand has a concrete static type the
+                // result is known at compile time; an `object` operand needs a runtime tag check
+                // (not yet lowered — drop out of coverage).
+                let left_type =
+                    self.analyze_expression(left, parent_function, symbol_table, diagnostics)?;
+                let left_name = left_type.get_type();
+                let right_name = right_type.get_type();
+                let stripped = strip_nullable(&left_name);
+                if stripped == "object" || left_type.is_unknown() {
+                    self.hir_none();
+                } else {
+                    self.hir_set_bool(stripped == strip_nullable(&right_name));
+                }
                 Ok(Type::Boolean(synthetic_token(
                     TokenKind::BooleanToken,
                     "true",
@@ -489,7 +505,7 @@ impl<'a> Analyzer<'a> {
             let left_is_string = left_value.get_type() == "string";
             let right_is_string = right_value.get_type() == "string";
             if left_is_string || right_is_string {
-                self.hir_none();
+                self.hir_set_concat(left_hir, left_is_string, right_hir, right_is_string);
                 return Ok(if left_is_string {
                     left_value
                 } else {

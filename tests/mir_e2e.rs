@@ -40,22 +40,14 @@ const XFAIL: &[(&str, &str)] = &[
     // main dropped: unsupported construct in main's body.
     ("async_basic", "main dropped: async entry lowering"),
     ("async_combinators", "main dropped: async entry lowering"),
-    ("concat", "main dropped: string concat"),
-    ("empty_array", "main dropped: empty array literal"),
-    ("enum_name", "main dropped: enum name()"),
-    ("gc_complete", "main dropped: Debug probes"),
+    ("new_integer_types", "codegen bug: wide-integer WASM validation"),
+    ("gc_complete", "codegen bug: RC heap-reuse differs (heap_grew)"),
     ("json_deep_nesting", "main dropped: json"),
     ("json_derive", "main dropped: json"),
     ("json_nullable", "main dropped: json"),
     ("json_property_name", "main dropped: json"),
-    ("labeled_loops", "main dropped: labeled loops"),
-    ("new_integer_types", "main dropped: wide-integer literals"),
     ("object_basics", "main dropped: object protocol (is/boxing)"),
-    ("object_protocol", "main dropped: string concat in override"),
-    ("overload_functions", "main dropped: overload resolution"),
     ("overload_methods", "main dropped: overload resolution"),
-    ("string_interpolation", "main dropped: string interpolation"),
-    ("strings", "main dropped: string methods"),
     ("union_json", "main dropped: unions + json"),
     ("union_match", "main dropped: union match"),
     ("union_nested", "main dropped: nested unions"),
@@ -64,13 +56,10 @@ const XFAIL: &[(&str, &str)] = &[
     ("async_method", "callee unresolved: async method"),
     ("async_ref_params", "callee unresolved: async method"),
     ("file_io", "callee unresolved: File intrinsics"),
-    ("generics", "callee unresolved: generic instance body"),
-    ("json_parse", "callee unresolved: json"),
-    ("json_roundtrip", "callee unresolved: json"),
-    // constructor/layout: new reaches $def{N}_constructor fallback.
-    ("json_pretty", "constructor/layout: json"),
-    ("struct_methods", "constructor/layout"),
     // codegen bug: compiles/runs but output wrong, or main fails WASM validation.
+    ("json_parse", "codegen bug: double_parse WASM validation"),
+    ("json_roundtrip", "codegen bug: double_parse WASM validation"),
+    ("json_pretty", "codegen bug: double_parse WASM validation"),
 ];
 
 #[derive(Clone)]

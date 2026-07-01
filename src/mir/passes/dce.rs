@@ -80,6 +80,8 @@ fn is_pure(rvalue: &Rvalue) -> bool {
             | Rvalue::ArrayLen(_)
             | Rvalue::StrLen(_)
             | Rvalue::CharAt(..)
+            | Rvalue::Concat(..)
+            | Rvalue::EnumName { .. }
             | Rvalue::HashCode(_)
             | Rvalue::ToString(_)
             | Rvalue::Cast(..)
@@ -138,10 +140,11 @@ fn read_rvalue(rvalue: &Rvalue, read: &mut HashSet<Local>) {
         | Rvalue::HashCode(o)
         | Rvalue::ToString(o)
         | Rvalue::UnionField { base: o, .. } => read_operand(o, read),
-        Rvalue::Binary(_, a, b) | Rvalue::CharAt(a, b) => {
+        Rvalue::Binary(_, a, b) | Rvalue::CharAt(a, b) | Rvalue::Concat(a, b) => {
             read_operand(a, read);
             read_operand(b, read);
         }
+        Rvalue::EnumName { value, .. } => read_operand(value, read),
         Rvalue::ArrayNew { len, .. } => read_operand(len, read),
         Rvalue::Unary(_, a) => read_operand(a, read),
         Rvalue::Call { args, .. } | Rvalue::New { args, .. } | Rvalue::UnionNew { args, .. }
