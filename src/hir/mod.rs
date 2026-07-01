@@ -294,6 +294,18 @@ pub enum HExprKind {
     StrLen(Box<HExpr>),
     /// `string.char_at(i)` — a runtime `$char_at` read: `.0` is the string, `.1` the byte index.
     CharAt(Box<HExpr>, Box<HExpr>),
+    /// The object-protocol `x.hash_code()` (typed `int`) with no user override: dispatches on the
+    /// receiver's static type to the matching hash helper.
+    HashCode(Box<HExpr>),
+    /// The object-protocol `x.to_string()` (typed `string`) with no user override: dispatches on the
+    /// receiver's static type to the matching `$*_to_string` helper.
+    ToString(Box<HExpr>),
+    /// `Array.new<T>(len)` — a zero-initialized `T[]` of a runtime length. `elem_ty` is the element
+    /// type; `len` the element count.
+    ArrayNew {
+        elem_ty: TypeId,
+        len: Box<HExpr>,
+    },
     ArrayLit {
         elem_ty: TypeId,
         elems: Vec<HExpr>,

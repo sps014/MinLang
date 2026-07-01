@@ -51,17 +51,15 @@ const XFAIL: &[(&str, &str)] = &[
     ("json_property_name", "main dropped: json"),
     ("labeled_loops", "main dropped: labeled loops"),
     ("new_integer_types", "main dropped: wide-integer literals"),
-    ("object_basics", "main dropped: object protocol"),
-    ("object_protocol", "main dropped: object protocol"),
+    ("object_basics", "main dropped: object protocol (is/boxing)"),
+    ("object_protocol", "main dropped: string concat in override"),
     ("overload_functions", "main dropped: overload resolution"),
     ("overload_methods", "main dropped: overload resolution"),
     ("string_interpolation", "main dropped: string interpolation"),
     ("strings", "main dropped: string methods"),
-    ("union_hash_code", "main dropped: unions"),
     ("union_json", "main dropped: unions + json"),
     ("union_match", "main dropped: union match"),
     ("union_nested", "main dropped: nested unions"),
-    ("union_to_string", "main dropped: union to_string"),
     ("main_args", "main signature: main(args) not the () entry shape"),
     // callee unresolved: reachable call/method/generic instance not emitted ($def{N}).
     ("async_method", "callee unresolved: async method"),
@@ -71,10 +69,7 @@ const XFAIL: &[(&str, &str)] = &[
     ("json_parse", "callee unresolved: json"),
     ("json_roundtrip", "callee unresolved: json"),
     // constructor/layout: new reaches $def{N}_constructor fallback.
-    ("collections_growth", "constructor/layout: generic collection"),
     ("json_pretty", "constructor/layout: json"),
-    ("list_basics", "constructor/layout: List<T>"),
-    ("map_basics", "constructor/layout: Map<K,V>"),
     ("struct_methods", "constructor/layout"),
     // codegen bug: compiles/runs but output wrong, or main fails WASM validation.
 ];

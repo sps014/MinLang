@@ -767,6 +767,7 @@ impl<'a> Analyzer<'a> {
                         Some(method.position),
                     );
                 }
+                self.hir_set_array_new(&element, arg_hirs.into_iter().next().flatten());
                 return Ok(Some(Type::Array(Box::new(element))));
             }
 
@@ -918,11 +919,11 @@ impl<'a> Analyzer<'a> {
         // user-defined override (registered as `{Type}_to_string`) takes precedence and is resolved
         // by the normal method lookup below; otherwise fall back to the builtin protocol.
         if method.text == intrinsics::TO_STRING || method.text == intrinsics::HASH_CODE {
-            let receiver = match Self::resolve_struct_parts(obj_type) {
+            let receiver_name = match Self::resolve_struct_parts(obj_type) {
                 Some((base_name, generic_args)) => mangle_generic(&base_name, &generic_args),
                 None => strip_nullable(&obj_type.get_type()).to_string(),
             };
-            let user_method = method_fn(&receiver, &method.text);
+            let user_method = method_fn(&receiver_name, &method.text);
             let has_override = self.function_table.is_overloaded(&user_method)
                 || self.function_table.get_function(&user_method).is_ok();
             if !has_override {
@@ -933,11 +934,13 @@ impl<'a> Analyzer<'a> {
                     );
                 }
                 if method.text == intrinsics::TO_STRING {
+                    self.hir_set_to_string(receiver.take());
                     return Ok(Some(Type::String(synthetic_token(
                         TokenKind::DataTypeToken,
                         "string",
                     ))));
                 }
+                self.hir_set_hash_code(receiver.take());
                 return Ok(Some(Type::Integer(synthetic_token(
                     TokenKind::DataTypeToken,
                     "int",

@@ -216,6 +216,12 @@ pub enum Rvalue {
     StrLen(Operand),
     /// `string.char_at(i)` via the runtime `$char_at` helper: `.0` is the string, `.1` the index.
     CharAt(Operand, Operand),
+    /// `Array.new<T>(len)` — allocate a zero-initialized `T[]` block of a runtime length.
+    ArrayNew { elem_ty: TypeId, len: Operand },
+    /// The object-protocol `x.hash_code()` — dispatch on the operand's static type to a hash helper.
+    HashCode(Operand),
+    /// The object-protocol `x.to_string()` — dispatch on the operand's static type to a formatter.
+    ToString(Operand),
     /// A direct call returning a value.
     Call { callee: Callee, args: Vec<Operand> },
     /// An indirect call through a function-pointer operand.

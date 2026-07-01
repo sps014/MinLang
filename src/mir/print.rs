@@ -81,6 +81,11 @@ fn rvalue(r: &Rvalue) -> String {
         Rvalue::ArrayLen(o) => format!("len({})", operand(o)),
         Rvalue::StrLen(o) => format!("strlen({})", operand(o)),
         Rvalue::CharAt(s, i) => format!("char_at({}, {})", operand(s), operand(i)),
+        Rvalue::ArrayNew { elem_ty, len } => {
+            format!("array_new::<ty{}>({})", elem_ty.0, operand(len))
+        }
+        Rvalue::HashCode(o) => format!("hash_code({})", operand(o)),
+        Rvalue::ToString(o) => format!("to_string({})", operand(o)),
         Rvalue::Cast(o, ty) => format!("{} as ty{}", operand(o), ty.0),
         Rvalue::Discriminant(o) => format!("discriminant({})", operand(o)),
         Rvalue::UnionField { base, variant, field, .. } => {

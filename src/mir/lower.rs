@@ -724,6 +724,12 @@ impl Lowerer<'_> {
             HExprKind::CharAt(s, i) => {
                 Rvalue::CharAt(self.lower_operand(s), self.lower_operand(i))
             }
+            HExprKind::ArrayNew { elem_ty, len } => Rvalue::ArrayNew {
+                elem_ty: *elem_ty,
+                len: self.lower_operand(len),
+            },
+            HExprKind::HashCode(e) => Rvalue::HashCode(self.lower_operand(e)),
+            HExprKind::ToString(e) => Rvalue::ToString(self.lower_operand(e)),
             HExprKind::ArrayLit { elem_ty, elems } => {
                 let lowered = elems.iter().map(|e| self.lower_operand(e)).collect();
                 Rvalue::ArrayLit {

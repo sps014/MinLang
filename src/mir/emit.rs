@@ -344,6 +344,8 @@ fn strings_in_rvalue(rv: &Rvalue, out: &mut Vec<String>) {
             strings_in_operand(a, out);
             strings_in_operand(b, out);
         }
+        Rvalue::ArrayNew { len, .. } => strings_in_operand(len, out),
+        Rvalue::HashCode(o) | Rvalue::ToString(o) => strings_in_operand(o, out),
         Rvalue::Call { args, .. }
         | Rvalue::New { args, .. }
         | Rvalue::UnionNew { args, .. }
@@ -621,11 +623,20 @@ fn emit_object_protocol(
     strings: &IndexMap<String, u32>,
     tags: &HashMap<TypeId, i32>,
 ) {
+    // A user `@override to_string`/`hash_code` is emitted as `$<Type>_{method}`; skip the generated
+    // default for those so the symbols do not collide.
+    let user_syms: std::collections::HashSet<String> =
+        mir.functions.iter().map(func_symbol).collect();
+    let has_override = |name: &str, method: &str| user_syms.contains(&format!("{}_{}", name, method));
     for layout in mir.layouts.structs.values() {
-        emit_struct_to_string(out, layout, interner, strings);
+        if !has_override(&layout.name, "to_string") {
+            emit_struct_to_string(out, layout, interner, strings);
+        }
     }
     for layout in mir.layouts.unions.values() {
-        emit_union_to_string(out, layout, interner, strings);
+        if !has_override(&layout.name, "to_string") {
+            emit_union_to_string(out, layout, interner, strings);
+        }
     }
     for elem in array_elem_types(mir, interner) {
         emit_array_to_string(out, elem, interner, strings);
@@ -635,6 +646,122 @@ fn emit_object_protocol(
     out.push_str(
         "(func $print_object (param $ptr i32)\n  (local.get $ptr) (call $object_to_string) (call $print_string))\n",
     );
+    for layout in mir.layouts.structs.values() {
+        if !has_override(&layout.name, "hash_code") {
+            emit_struct_hash_code(out, layout, interner);
+        }
+    }
+    for layout in mir.layouts.unions.values() {
+        if !has_override(&layout.name, "hash_code") {
+            emit_union_hash_code(out, layout, interner);
+        }
+    }
+    emit_object_hash_code(out, mir, tags);
+}
+
+/// The instructions that turn a loaded value of `ty` (already on the stack) into its `i32` hash.
+/// Integer-family values (and enums) are their own hash; wider/reference types route through a
+/// helper or the tag-dispatching `$object_hash_code`. Mirrors [`value_to_string_call`].
+fn value_hash_code_instrs(interner: &TypeInterner, ty: TypeId) -> &'static str {
+    match interner.kind(interner.strip_nullable(ty)) {
+        TyKind::Prim(PrimTy::Int | PrimTy::UInt | PrimTy::Bool | PrimTy::Char | PrimTy::Byte)
+        | TyKind::Enum(_) => "",
+        TyKind::Prim(PrimTy::Long | PrimTy::ULong) => "(call $hash_long)",
+        TyKind::Prim(PrimTy::Float) => "(i32.reinterpret_f32)",
+        TyKind::Prim(PrimTy::Double) => "(call $hash_double)",
+        TyKind::Prim(PrimTy::String) => "(call $hash_string)",
+        _ => "(call $object_hash_code)",
+    }
+}
+
+/// Folds one loaded field/element value into the running hash accumulator `$h`
+/// (`h = h * 31 + hash(value)`): the value's load + hash instructions are supplied by the caller.
+fn fold_hash_field(out: &mut String, indent: &str, load: &str, hash: &str) {
+    let _ = writeln!(out, "{indent}(local.get $h) (i32.const 31) (i32.mul)");
+    let _ = writeln!(out, "{indent}{load} {hash}");
+    let _ = writeln!(out, "{indent}(i32.add) (local.set $h)");
+}
+
+/// Emits one struct's default `$<Type>_hash_code`: `h = 17`, folding each field in offset order.
+fn emit_struct_hash_code(out: &mut String, layout: &crate::hir::TypeLayout, interner: &TypeInterner) {
+    let _ = writeln!(out, "(func ${}_hash_code (param $this i32) (result i32)", layout.name);
+    out.push_str("  (local $h i32)\n  (i32.const 17) (local.set $h)\n");
+    for f in &layout.fields {
+        let load = field_load_expr(interner, f.offset, f.ty);
+        fold_hash_field(out, "  ", &load, value_hash_code_instrs(interner, f.ty));
+    }
+    out.push_str("  (local.get $h)\n)\n");
+}
+
+/// Emits one union's default `$<Union>_hash_code`: seeds the accumulator from the discriminant word
+/// (offset 0) and folds the matching variant's fields, so equal values hash equally and different
+/// variants/payloads (including field order) diverge.
+fn emit_union_hash_code(out: &mut String, layout: &crate::hir::UnionLayout, interner: &TypeInterner) {
+    let _ = writeln!(out, "(func ${}_hash_code (param $this i32) (result i32)", layout.name);
+    out.push_str("  (local $h i32)\n  (local $d i32)\n");
+    out.push_str("  (local.get $this) (i32.load) (local.set $d)\n");
+    // h = 17 * 31 + discriminant
+    out.push_str("  (i32.const 17) (i32.const 31) (i32.mul) (local.get $d) (i32.add) (local.set $h)\n");
+    for variant in &layout.variants {
+        let _ = writeln!(
+            out,
+            "  (local.get $d) (i32.const {}) (i32.eq) (if (then",
+            variant.discriminant
+        );
+        for f in &variant.fields {
+            let load = field_load_expr(interner, f.offset, f.ty);
+            fold_hash_field(out, "    ", &load, value_hash_code_instrs(interner, f.ty));
+        }
+        out.push_str("  ))\n");
+    }
+    out.push_str("  (local.get $h)\n)\n");
+}
+
+/// The `(local.get $this) [+offset] (load)` expression that reads a field/variant slot of type `ty`.
+fn field_load_expr(interner: &TypeInterner, offset: u32, ty: TypeId) -> String {
+    let add = if offset > 0 {
+        format!(" (i32.const {}) (i32.add)", offset)
+    } else {
+        String::new()
+    };
+    format!("(local.get $this){} ({})", add, load_instr_for(interner, ty))
+}
+
+/// Emits the tag-dispatching `$object_hash_code`: unbox+hash for boxed primitives, `$hash_string`
+/// for strings, and each struct/union's `$<Type>_hash_code` by type tag. Mirrors
+/// [`emit_object_to_string`]. A null pointer hashes to 0.
+fn emit_object_hash_code(out: &mut String, mir: &super::Mir, tags: &HashMap<TypeId, i32>) {
+    use crate::codegen::wasm::object as t;
+    out.push_str("(func $object_hash_code (param $ptr i32) (result i32)\n  (local $tag i32)\n");
+    out.push_str("  (local.get $ptr) (i32.eqz) (if (then (i32.const 0) (return)))\n");
+    out.push_str("  (local.get $ptr) (call $object_tag) (local.set $tag)\n");
+    let prim_arms: [(i32, &str, &str); 9] = [
+        (t::TAG_INT, "$unbox_int", ""),
+        (t::TAG_FLOAT, "$unbox_float", "(i32.reinterpret_f32)"),
+        (t::TAG_DOUBLE, "$unbox_double", "(call $hash_double)"),
+        (t::TAG_BOOL, "$unbox_bool", ""),
+        (t::TAG_CHAR, "$unbox_char", ""),
+        (t::TAG_LONG, "$unbox_long", "(call $hash_long)"),
+        (t::TAG_ULONG, "$unbox_ulong", "(call $hash_long)"),
+        (t::TAG_UINT, "$unbox_uint", ""),
+        (t::TAG_BYTE, "$unbox_byte", ""),
+    ];
+    for (tag, unbox, hash) in prim_arms {
+        write_tag_arm(out, tag, &format!("(local.get $ptr) (call {}) {}", unbox, hash));
+    }
+    write_tag_arm(out, t::TAG_STRING, "(local.get $ptr) (call $hash_string)");
+    for (ty, layout) in &mir.layouts.structs {
+        if let Some(&tag) = tags.get(ty) {
+            write_tag_arm(out, tag, &format!("(local.get $ptr) (call ${}_hash_code)", layout.name));
+        }
+    }
+    for (ty, layout) in &mir.layouts.unions {
+        if let Some(&tag) = tags.get(ty) {
+            write_tag_arm(out, tag, &format!("(local.get $ptr) (call ${}_hash_code)", layout.name));
+        }
+    }
+    // Unknown/opaque reference: hash by identity (the pointer itself).
+    out.push_str("  (local.get $ptr)\n)\n");
 }
 
 /// Emits one struct's default `$<Type>_to_string`, concatenating the interned label pieces with each
@@ -1203,6 +1330,9 @@ impl Emitter<'_> {
         // (`New`/`ArrayLit`). Safe as a single slot: lowering materializes all args into operands,
         // so allocations never nest within a single rvalue.
         self.line("  (local $__obj i32)");
+        // Scratch length for `Array.new<T>(len)`: the count is needed for both the allocation size
+        // and the zero-fill, so it is materialized once here.
+        self.line("  (local $__len i32)");
 
         self.emit_dispatch();
         self.line(")");
@@ -1654,6 +1784,35 @@ impl Emitter<'_> {
                 }
                 self.line("     (local.get $__obj)");
             }
+            Rvalue::ArrayNew { elem_ty, len } => {
+                // Block: `[len: i32][elem0..]`, zero-initialized (recycled freelist blocks are not
+                // zeroed, and reference-typed releases rely on null slots).
+                let (esize, _) = scalar_size(self.interner, *elem_ty);
+                self.emit_operand(len);
+                self.line("     (local.set $__len)");
+                // size = 4 + len * esize
+                self.line("     (i32.const 4)");
+                self.line("     (local.get $__len)");
+                self.line(&format!("     (i32.const {})", esize));
+                self.line("     (i32.mul)");
+                self.line("     (i32.add)");
+                self.line(&format!("     (i32.const {}) ;; array tag", ARRAY_TAG));
+                self.line("     (call $malloc)");
+                self.line("     (local.set $__obj)");
+                self.line("     (local.get $__obj)");
+                self.line("     (local.get $__len)");
+                self.line("     (i32.store) ;; length");
+                // memory.fill(dst = obj+4, 0, len*esize)
+                self.line("     (local.get $__obj)");
+                self.line("     (i32.const 4)");
+                self.line("     (i32.add)");
+                self.line("     (i32.const 0)");
+                self.line("     (local.get $__len)");
+                self.line(&format!("     (i32.const {})", esize));
+                self.line("     (i32.mul)");
+                self.line("     (memory.fill)");
+                self.line("     (local.get $__obj)");
+            }
             Rvalue::ArrayLen(o) => {
                 self.emit_operand(o);
                 self.line("     (i32.load) ;; array length is the first word");
@@ -1662,6 +1821,28 @@ impl Emitter<'_> {
                 self.emit_operand(s);
                 self.emit_operand(i);
                 self.line("     (call $char_at)");
+            }
+            Rvalue::ToString(o) => {
+                self.emit_operand(o);
+                // A `string` is already its own `to_string`; every other type has a formatter.
+                if let Some(call) = value_to_string_call(self.interner, self.operand_ty(o)) {
+                    self.line(&format!("     (call {})", call));
+                }
+            }
+            Rvalue::HashCode(o) => {
+                self.emit_operand(o);
+                match self.interner.kind(self.interner.strip_nullable(self.operand_ty(o))) {
+                    // Integer-family values (and enums) are their own hash.
+                    TyKind::Prim(
+                        PrimTy::Int | PrimTy::UInt | PrimTy::Bool | PrimTy::Char | PrimTy::Byte,
+                    )
+                    | TyKind::Enum(_) => {}
+                    TyKind::Prim(PrimTy::Long | PrimTy::ULong) => self.line("     (call $hash_long)"),
+                    TyKind::Prim(PrimTy::Float) => self.line("     (i32.reinterpret_f32)"),
+                    TyKind::Prim(PrimTy::Double) => self.line("     (call $hash_double)"),
+                    TyKind::Prim(PrimTy::String) => self.line("     (call $hash_string)"),
+                    _ => self.line("     (call $object_hash_code)"),
+                }
             }
             Rvalue::StrLen(o) => {
                 self.emit_operand(o);

@@ -1038,6 +1038,61 @@ impl<'a> Analyzer<'a> {
         }
     }
 
+    /// Records the object-protocol `x.hash_code()` (typed `int`): the backend dispatches on the
+    /// receiver's static type. Drops out of coverage if the receiver is not representable.
+    pub(super) fn hir_set_hash_code(&mut self, recv: Option<HExpr>) {
+        if !self.active() {
+            self.hir.last = None;
+            return;
+        }
+        match recv {
+            Some(e) => {
+                let int = self.type_ctx.interner.int();
+                self.hir.last = Some(HExpr::new(int, HExprKind::HashCode(Box::new(e))));
+            }
+            None => self.hir.last = None,
+        }
+    }
+
+    /// Records the object-protocol `x.to_string()` (typed `string`): the backend dispatches on the
+    /// receiver's static type. Drops out of coverage if the receiver is not representable.
+    pub(super) fn hir_set_to_string(&mut self, recv: Option<HExpr>) {
+        if !self.active() {
+            self.hir.last = None;
+            return;
+        }
+        match recv {
+            Some(e) => {
+                let string = self.type_ctx.interner.prim(PrimTy::String);
+                self.hir.last = Some(HExpr::new(string, HExprKind::ToString(Box::new(e))));
+            }
+            None => self.hir.last = None,
+        }
+    }
+
+    /// Records `Array.new<T>(len)` (typed `T[]`): a zero-initialized array allocation. Drops out of
+    /// coverage if the length is not representable.
+    pub(super) fn hir_set_array_new(&mut self, elem_ty: &Type, len: Option<HExpr>) {
+        if !self.active() {
+            self.hir.last = None;
+            return;
+        }
+        match len {
+            Some(len) => {
+                let elem = self.type_ctx.lower(elem_ty);
+                let arr = self.type_ctx.interner.array(elem);
+                self.hir.last = Some(HExpr::new(
+                    arr,
+                    HExprKind::ArrayNew {
+                        elem_ty: elem,
+                        len: Box::new(len),
+                    },
+                ));
+            }
+            None => self.hir.last = None,
+        }
+    }
+
     /// Records `recv.char_at(idx)` (typed `char`): a runtime `$char_at` read. Drops out of coverage
     /// if either the receiver or the index is not representable.
     pub(super) fn hir_set_char_at(&mut self, recv: Option<HExpr>, idx: Option<HExpr>) {
