@@ -60,32 +60,30 @@ fn synthetic_token(kind: TokenKind, text: &str) -> SyntaxToken {
 /// zipping declared generic parameters with the supplied concrete arguments. Extra
 /// parameters or arguments beyond the common length are ignored (arity is validated
 /// separately so a clear diagnostic is produced).
-fn generic_bindings(params: &[SyntaxToken], args: &[Type]) -> Vec<(String, String)> {
+fn generic_bindings(params: &[SyntaxToken], args: &[Type]) -> GenericBindings {
     params
         .iter()
         .zip(args.iter())
-        .map(|(param, arg)| (param.text.clone(), arg.get_type()))
+        .map(|(param, arg)| (param.text.clone(), arg.clone()))
         .collect()
 }
 
 /// Looks up the concrete type bound to a generic parameter name, if any.
-fn lookup_binding(bindings: &[(String, String)], name: &str) -> Option<String> {
-    bindings
-        .iter()
-        .find(|(param, _)| param == name)
-        .map(|(_, concrete)| concrete.clone())
+fn lookup_binding(bindings: &GenericBindings, name: &str) -> Option<Type> {
+    bindings.get(name).cloned()
 }
 
 /// Builds a mangled function name by appending each concrete type from the bindings in order,
-/// e.g. base `swap` with bindings `[(T,int),(V,string)]` becomes `swap_int_string`.
-fn mangle_bindings(base: &str, bindings: &[(String, String)]) -> String {
-    mangle_with_suffixes(base, bindings.iter().map(|(_, concrete)| concrete.as_str()))
+/// e.g. base `swap` with bindings `[(T,int),(V,string)]` becomes `swap_int_string`. The mangled
+/// spelling is a WASM-symbol concern, so the concrete `Type`s are stringified only here.
+fn mangle_bindings(base: &str, bindings: &GenericBindings) -> String {
+    mangle_with_suffixes(base, bindings.values().map(|concrete| concrete.get_type()))
 }
 
 /// Rewrites a field type token that refers to a generic parameter (e.g. `T`, `T[]`, `T?`)
 /// into its concrete form, preserving the array/nullable suffix. Tokens that do not name a
 /// generic parameter are returned unchanged.
-fn substitute_generic_token(token: &SyntaxToken, bindings: &[(String, String)]) -> SyntaxToken {
+fn substitute_generic_token(token: &SyntaxToken, bindings: &GenericBindings) -> SyntaxToken {
     let mut result = token.clone();
     let (base, suffix) = if let Some(base) = token.text.strip_suffix("[]") {
         (base, "[]")
@@ -95,7 +93,7 @@ fn substitute_generic_token(token: &SyntaxToken, bindings: &[(String, String)]) 
         (token.text.as_str(), "")
     };
     if let Some(concrete) = lookup_binding(bindings, base) {
-        result.text = format!("{}{}", concrete, suffix);
+        result.text = format!("{}{}", concrete.get_type(), suffix);
     }
     result
 }
@@ -104,7 +102,7 @@ fn substitute_generic_token(token: &SyntaxToken, bindings: &[(String, String)]) 
 /// its bound concrete type. Unlike `substitute_generic_token` (which only understands `T`, `T[]`,
 /// `T?` on a flat token), this recurses through arrays, nullables, generic arguments, and function
 /// types, so a field like `List<T>` becomes `List<JsonValue>` rather than being flattened.
-fn substitute_generic_type(ty: &Type, bindings: &[(String, String)]) -> Type {
+fn substitute_generic_type(ty: &Type, bindings: &GenericBindings) -> Type {
     match ty {
         Type::Array(inner) => Type::Array(Box::new(substitute_generic_type(inner, bindings))),
         Type::Nullable(inner) => Type::Nullable(Box::new(substitute_generic_type(inner, bindings))),
@@ -135,11 +133,10 @@ fn substitute_generic_type(ty: &Type, bindings: &[(String, String)]) -> Type {
     }
 }
 
-/// Resolves a generic parameter name to its bound concrete `Type` (parsing the stored type-name
-/// string back into a `Type`), or `None` if `name` is not a bound generic parameter.
-fn bind_concrete(name: &str, bindings: &[(String, String)]) -> Option<Type> {
-    let concrete = lookup_binding(bindings, name)?;
-    Type::from_token(synthetic_token(TokenKind::IdentifierToken, &concrete)).ok()
+/// Resolves a generic parameter name to its bound concrete `Type`, or `None` if `name` is not a
+/// bound generic parameter. Bindings now carry the concrete `Type` directly, so no reparse is needed.
+fn bind_concrete(name: &str, bindings: &GenericBindings) -> Option<Type> {
+    bindings.get(name).cloned()
 }
 
 /// Extracts the declared generic parameter names (`["T", "V"]`) from an optional parameter-token
@@ -151,8 +148,11 @@ fn generic_param_names(params: &Option<Vec<SyntaxToken>>) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Maps each generic parameter name to the concrete type bound to it for one monomorphization.
-pub type GenericBindings = Vec<(String, String)>;
+/// Maps each generic parameter name to the concrete `Type` bound to it for one monomorphization.
+/// Insertion-ordered so the mangled instance symbol (built from the values in order) is
+/// deterministic. Stores the structured AST `Type` (not a stringified name), so the monomorphizer
+/// substitutes and lowers it directly rather than round-tripping through `get_type()`/reparse.
+pub type GenericBindings = IndexMap<String, Type>;
 
 /// Enum name -> (member name -> integer value). Insertion-ordered at both levels so the enum
 /// variant-name interning that feeds emitted output happens in a deterministic (declaration) order.
@@ -260,7 +260,7 @@ impl<'a> Analyzer<'a> {
             generic_unions: HashMap::new(),
             generic_extends: HashMap::new(),
             current_expected_type: None,
-            current_generic_bindings: Vec::new(),
+            current_generic_bindings: GenericBindings::new(),
             loop_labels: Vec::new(),
             pending_loop_label: None,
             current_function_is_async: false,

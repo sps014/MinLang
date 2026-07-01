@@ -77,6 +77,14 @@ impl TypeCtx {
         self.lower_name(name, &IndexMap::new())
     }
 
+    /// Lowers a bare type-name string, substituting any in-scope generic parameter names (`T`) with
+    /// their bound concrete id. The string-form counterpart of [`Self::lower_with`], used where a
+    /// monomorphized body still carries a stringly-reconstructed type spelling that names a generic
+    /// parameter (`T`, `T[]`, `T?`).
+    pub fn lower_str_with(&mut self, name: &str, bindings: &IndexMap<String, TypeId>) -> TypeId {
+        self.lower_name(name, bindings)
+    }
+
     /// Lowers an AST type, substituting any in-scope generic parameter names (`T`) with the bound
     /// concrete id. Unbound generic names lower to the poison `Error` type.
     pub fn lower_with(&mut self, ty: &Type, bindings: &IndexMap<String, TypeId>) -> TypeId {

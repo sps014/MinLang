@@ -1,0 +1,160 @@
+use super::*;
+
+/// Emits a whole MIR program as a sequence of WAT function definitions (no module wrapper). Used by
+/// the pipeline tests; the driver target is [`emit_module`].
+pub fn emit_program(mir: &crate::mir::Mir, interner: &TypeInterner) -> String {
+    let symbols = symbol_table(mir);
+    let sigs = signature_table(mir);
+    let strings = string_table(mir);
+    let tags = struct_tags(mir);
+    let ftable = func_table(mir);
+    let mut out = String::new();
+    for f in &mir.functions {
+        out.push_str(&emit_function_with(
+            f, interner, &symbols, &sigs, &mir.layouts, &strings, &tags, &ftable,
+        ));
+        out.push('\n');
+    }
+    out
+}
+
+/// Emits a whole MIR program as a single `(module ...)`, exporting every (non-instance) function
+/// under its source name. This is the self-contained unit the driver will hand to the WASM
+/// assembler once the runtime layers are wired in.
+pub fn emit_module(mir: &crate::mir::Mir, interner: &TypeInterner, debug_alloc: bool) -> String {
+    let symbols = symbol_table(mir);
+    let sigs = signature_table(mir);
+    let strings = string_table(mir);
+    let tags = struct_tags(mir);
+    let ftable = func_table(mir);
+    let mut out = String::new();
+    out.push_str("(module\n");
+
+    // Imports come first (WASM requires imported funcs before defined ones).
+    emit_imports(&mut out, mir, interner);
+
+    // `call_indirect` signature types (declared before use), plus the function table + its export.
+    emit_func_signatures(&mut out, interner);
+    emit_func_table(&mut out, mir);
+
+    // Linear memory + allocator runtime state. The heap bump pointer starts above the string data.
+    let _ = writeln!(out, "(memory {})", MEMORY_PAGES);
+    let _ = writeln!(out, "(global $heap_ptr (mut i32) (i32.const {}))", heap_base(&strings));
+    out.push_str("(global $free_list_head (mut i32) (i32.const 0))\n");
+    out.push_str("(global $live_objects (mut i32) (i32.const 0))\n");
+    out.push_str("(global $total_allocations (mut i32) (i32.const 0))\n");
+
+    // Module-level user variables. They start zeroed; any initializer runs in `$__dream_init`
+    // (emitted as a normal function below and wired to `(start ...)`).
+    for g in &mir.globals {
+        let zero = zero_literal(wasm_ty_of(interner, g.ty));
+        let _ = writeln!(out, "(global $g{} (mut {}) {})", g.id.0, wasm_ty_of(interner, g.ty), zero);
+    }
+
+    out.push_str(&runtime_prelude(debug_alloc));
+    out.push('\n');
+    if crate::mir::async_emit::module_has_async(&mir.functions) {
+        out.push_str(&crate::mir::async_emit::async_runtime_wat());
+        out.push('\n');
+    }
+    out.push_str(&to_string_runtime(&strings));
+    out.push('\n');
+    emit_object_protocol(&mut out, mir, interner, &strings, &tags);
+    out.push('\n');
+    emit_release_funcs(&mut out, mir, interner, &tags);
+    out.push('\n');
+
+    for (s, addr) in &strings {
+        // The data segment is the full heap block, written at the block start (header before data).
+        let block = addr - HEAP_HEADER_SIZE;
+        let _ = writeln!(out, "(data (i32.const {}) \"{}\")", block, escape_data(s));
+    }
+
+    let polls = crate::mir::async_emit::poll_indices(&mir.functions);
+    let mut has_init = false;
+    for f in &mir.functions {
+        if f.is_async {
+            out.push_str(&crate::mir::async_emit::emit_async_function(
+                f, interner, &symbols, &mir.layouts, &strings, &tags, &ftable,
+                *polls.get(&(f.def, f.instance.clone())).unwrap_or(&0),
+            ));
+        } else {
+            out.push_str(&emit_function_with(
+                f, interner, &symbols, &sigs, &mir.layouts, &strings, &tags, &ftable,
+            ));
+        }
+        if f.name == crate::mir::lower::INIT_FN_NAME {
+            has_init = true;
+        } else if f.instance.is_empty() && f.name == "main" && f.is_async {
+            out.push_str(&crate::mir::async_emit::emit_async_main_wrapper(
+                &func_symbol(f),
+                !f.params.is_empty(),
+            ));
+        } else if f.instance.is_empty() && f.name == "main" && !f.params.is_empty() {
+            // `main(args: string[])`: the exported entry takes no args, so wrap the real `main` with a
+            // `()` shim that passes an empty `string[]` (a zero-length, TAG_ARRAY block).
+            let _ = writeln!(
+                out,
+                "(func (export \"main\")\n (local $args i32)\n i32.const 4\n i32.const {}\n call $malloc\n local.set $args\n local.get $args\n i32.const 0\n i32.store\n local.get $args\n call ${}\n)",
+                crate::mir::abi::TAG_ARRAY,
+                func_symbol(f),
+            );
+        } else if f.instance.is_empty() {
+            let _ = writeln!(out, "(export \"{}\" (func ${}))", f.name, func_symbol(f));
+        }
+        out.push('\n');
+    }
+
+    // Run global initializers before any entry point.
+    if has_init {
+        let _ = writeln!(out, "(start ${})", crate::mir::lower::INIT_FN_NAME);
+    }
+
+    // Host-facing exports: memory and the allocator (so a JS runtime can build heap values).
+    out.push_str("(export \"memory\" (memory 0))\n");
+    out.push_str("(export \"malloc\" (func $malloc))\n");
+    out.push_str("(export \"free\" (func $free))\n");
+    if crate::mir::async_emit::module_has_async(&mir.functions) {
+        out.push_str("(export \"__dream_run_loop\" (func $dream_run_loop))\n");
+        out.push_str("(export \"__dream_resolve\" (func $dream_resolve))\n");
+        out.push_str("(export \"__dream_new_future\" (func $dream_new_future))\n");
+    }
+    out.push_str(")\n");
+    out
+}
+
+/// Emits the module's `(import ...)` declarations: the fixed host `print_*` builtins (which
+/// `print`/`println` lower to) followed by user `extern fun` interop imports. Call sites reference
+/// each import's internal `$name`; the `module`/`field` pair names the host binding.
+pub(super) fn emit_imports(out: &mut String, mir: &crate::mir::Mir, interner: &TypeInterner) {
+    for (name, param) in [
+        ("print_string", "i32"),
+        ("print_int", "i32"),
+        ("print_float", "f32"),
+        ("print_double", "f64"),
+        ("print_char", "i32"),
+    ] {
+        let _ = writeln!(out, "(import \"env\" \"{name}\" (func ${name} (param {param})))");
+    }
+    for imp in &mir.imports {
+        let params: String = imp
+            .params
+            .iter()
+            .map(|t| format!(" {}", wasm_ty_of(interner, *t)))
+            .collect();
+        let params = if params.is_empty() {
+            String::new()
+        } else {
+            format!(" (param{params})")
+        };
+        let result = match imp.ret {
+            Some(t) => format!(" (result {})", wasm_ty_of(interner, t)),
+            None => String::new(),
+        };
+        let _ = writeln!(
+            out,
+            "(import \"{}\" \"{}\" (func ${}{}{}))",
+            imp.module, imp.field, imp.name, params, result
+        );
+    }
+}

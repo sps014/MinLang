@@ -89,7 +89,7 @@ impl<'a> Analyzer<'a> {
                     diagnostics,
                 )?;
                 let index_hir = self.hir_take();
-                if !index_type.is_unknown() && index_type.get_type() != "int" {
+                if !index_type.is_unknown() && !index_type.is_int() {
                     diagnostics.report_error(
                         format!(
                             "Array index must be of type int, got {}",
@@ -108,7 +108,7 @@ impl<'a> Analyzer<'a> {
                 let operand = self.hir_take();
                 match opr.kind {
                     TokenKind::BangToken => {
-                        if !right_type.is_unknown() && right_type.get_type() != "bool" {
+                        if !right_type.is_unknown() && !right_type.is_bool() {
                             diagnostics.report_error(
                                 format!("! operator requires bool, got {}", right_type.get_type()),
                                 Some(opr.position),
@@ -120,9 +120,10 @@ impl<'a> Analyzer<'a> {
                     }
                     TokenKind::PlusToken | TokenKind::MinusToken => {
                         if !right_type.is_unknown()
-                            && right_type.get_type() != "int"
-                            && right_type.get_type() != "float"
-                            && right_type.get_type() != "double"
+                            && !matches!(
+                                right_type,
+                                Type::Integer(_) | Type::Float(_) | Type::Double(_)
+                            )
                         {
                             diagnostics.report_error(
                                 format!(
@@ -197,7 +198,7 @@ impl<'a> Analyzer<'a> {
                 let cond_type =
                     self.analyze_expression(condition, parent_function, symbol_table, diagnostics)?;
                 let cond_hir = self.hir_take();
-                if cond_type.get_type() != "bool" {
+                if !cond_type.is_bool() {
                     diagnostics.report_error(
                         format!(
                             "Ternary condition must be of type bool, got {}",
@@ -504,8 +505,8 @@ impl<'a> Analyzer<'a> {
         // the non-string operand through the object protocol (`to_string`) in codegen. This means
         // `"count = " + n` works for any `n` with no explicit `.to_string()`.
         if opr.kind == TokenKind::PlusToken {
-            let left_is_string = left_value.get_type() == "string";
-            let right_is_string = right_value.get_type() == "string";
+            let left_is_string = left_value.is_string();
+            let right_is_string = right_value.is_string();
             if left_is_string || right_is_string {
                 self.hir_set_concat(left_hir, left_is_string, right_hir, right_is_string);
                 return Ok(if left_is_string {
@@ -583,8 +584,8 @@ impl<'a> Analyzer<'a> {
         diagnostics.report_error(
             format!(
                 "cannot convert from {} to {} at {}",
-                left.get_type(),
-                right.get_type(),
+                left.display_name(),
+                right.display_name(),
                 position.get_point_str()
             ),
             Some(*position),

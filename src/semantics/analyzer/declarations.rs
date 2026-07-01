@@ -77,7 +77,12 @@ impl<'a> Analyzer<'a> {
         // instantiate generic unions whose templates were collected in pass 1.
         for enum_decl in node.enums.iter() {
             if enum_decl.is_data_enum() && enum_decl.generic_parameters.is_none() {
-                self.register_union(&enum_decl.name.text, &enum_decl.variants, &[], diagnostics);
+                self.register_union(
+                    &enum_decl.name.text,
+                    &enum_decl.variants,
+                    &GenericBindings::new(),
+                    diagnostics,
+                );
             }
         }
     }
@@ -90,7 +95,7 @@ impl<'a> Analyzer<'a> {
         &mut self,
         union_name: &str,
         variants: &[EnumVariantNode],
-        bindings: &[(String, String)],
+        bindings: &GenericBindings,
         diagnostics: &mut DiagnosticBag,
     ) {
         let mut variant_infos = Vec::new();
@@ -277,7 +282,12 @@ impl<'a> Analyzer<'a> {
             if let Err(e) = self.struct_table.add_struct(struct_decl) {
                 diagnostics.report_error(e, Some(struct_decl.name.position));
             }
-            self.register_struct_methods(struct_decl, &struct_decl.name.text, &[], diagnostics);
+            self.register_struct_methods(
+                struct_decl,
+                &struct_decl.name.text,
+                &GenericBindings::new(),
+                diagnostics,
+            );
         }
     }
 
@@ -638,7 +648,7 @@ impl<'a> Analyzer<'a> {
         &mut self,
         struct_decl: &'a StructDeclarationNode<'a>,
         struct_type_str: &str,
-        bindings: &[(String, String)],
+        bindings: &GenericBindings,
         diagnostics: &mut DiagnosticBag,
     ) {
         self.register_methods_for(struct_type_str, &struct_decl.methods, bindings, diagnostics);
@@ -653,7 +663,7 @@ impl<'a> Analyzer<'a> {
         &mut self,
         target_type_str: &str,
         methods: &'a [FunctionNode<'a>],
-        bindings: &[(String, String)],
+        bindings: &GenericBindings,
         diagnostics: &mut DiagnosticBag,
     ) {
         // Collect the mangled name + full parameter list (with the implicit `this`) of each method so
@@ -693,7 +703,7 @@ impl<'a> Analyzer<'a> {
             let param_types: Vec<String> =
                 new_method.parameters.iter().map(|p| p.type_.get_type()).collect();
             let method_ref = self.arena.alloc(new_method);
-            self.struct_methods.push((method_ref, bindings.to_vec()));
+            self.struct_methods.push((method_ref, bindings.clone()));
 
             if let Err(e) = self
                 .function_table
@@ -776,7 +786,7 @@ impl<'a> Analyzer<'a> {
                 );
                 continue;
             }
-            self.register_methods_for(&target, &ext.methods, &[], diagnostics);
+            self.register_methods_for(&target, &ext.methods, &GenericBindings::new(), diagnostics);
         }
     }
 

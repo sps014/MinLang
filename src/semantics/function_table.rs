@@ -1,34 +1,7 @@
 use crate::semantics::errors::SymbolError;
 use crate::stdlib::StdlibFunction;
-use crate::syntax::nodes::types::{is_numeric_primitive, is_unknown_type_name, strip_nullable};
 use crate::syntax::nodes::{FunctionNode, Type};
 use std::collections::HashMap;
-
-/// Whether an argument of type `arg` may bind to a parameter of type `param` for the purpose of
-/// overload *viability* (exactness is scored separately by the caller). Mirrors the implicit
-/// conversions the type checker already permits: `object` widening, enum<->int, numeric widening
-/// among int/float/double, and matching base types across a nullable marker. `is_enum` reports
-/// whether a type name denotes a registered enum (supplied by each caller's own tables).
-pub fn overload_arg_compatible(param: &str, arg: &str, is_enum: impl Fn(&str) -> bool) -> bool {
-    // A poison-typed argument (from an earlier error) is considered viable against any parameter
-    // so overload resolution doesn't pile on additional "no matching overload" errors.
-    if is_unknown_type_name(param) || is_unknown_type_name(arg) {
-        return true;
-    }
-    if param == arg {
-        return true;
-    }
-    if param == "object" {
-        return true;
-    }
-    if (is_enum(param) && arg == "int") || (is_enum(arg) && param == "int") {
-        return true;
-    }
-    if is_numeric_primitive(param) && is_numeric_primitive(arg) {
-        return true;
-    }
-    strip_nullable(param) == strip_nullable(arg)
-}
 
 #[derive(Debug, Clone)]
 pub struct FunctionTable {
@@ -168,7 +141,7 @@ impl FunctionTable {
         &self,
         base: &str,
         args: &[String],
-        compat: impl Fn(&str, &str) -> bool,
+        mut compat: impl FnMut(&str, &str) -> bool,
     ) -> OverloadResolution {
         let keys = match self.overloads.get(base) {
             Some(keys) => keys,

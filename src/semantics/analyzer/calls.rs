@@ -5,9 +5,7 @@ use super::*;
 use crate::diagnostics::DiagnosticBag;
 use crate::intrinsics;
 use crate::semantics::errors::SemanticError;
-use crate::semantics::function_table::{
-    overload_arg_compatible, FunctionTableInfo, OverloadResolution,
-};
+use crate::semantics::function_table::{FunctionTableInfo, OverloadResolution};
 use crate::semantics::symbol_table::SymbolTable;
 use crate::syntax::nodes::types::{
     canonical_type_name, constructor_fn, is_numeric_primitive, is_unknown_type_name,
@@ -24,12 +22,18 @@ impl<'a> Analyzer<'a> {
     /// signature or a human-readable error (no match / ambiguous). Used by both free-function and
     /// method call analysis (methods prepend the receiver type as the implicit `this` argument).
     pub(super) fn select_function_overload(
-        &self,
+        &mut self,
         base: &str,
         arg_types: &[String],
     ) -> Result<FunctionTableInfo, String> {
+        // Overload viability is a structural relation over interned ids (object widening, enum/int,
+        // numeric, nullable): lower each spelling and defer to `types::overload_compatible` rather
+        // than re-deriving the rules from strings.
+        let type_ctx = &mut self.type_ctx;
         let compat = |param: &str, arg: &str| {
-            overload_arg_compatible(param, arg, |t| self.enum_table.contains_key(t))
+            let p = type_ctx.lower_str(param);
+            let a = type_ctx.lower_str(arg);
+            crate::types::overload_compatible(&type_ctx.interner, p, a)
         };
         match self.function_table.select_overload(base, arg_types, compat) {
             OverloadResolution::Unique(key) => Ok(self.function_table.get_function(&key).unwrap()),
@@ -281,7 +285,7 @@ impl<'a> Analyzer<'a> {
         // emission can resolve the call to the shared base `DefId` plus the monomorphization args.
         // The names are lowered with the same `lower_str` the instance body uses, so the symbols
         // agree.
-        let mut generic_instance: Option<(String, Vec<String>)> = None;
+        let mut generic_instance: Option<(String, Vec<Type>)> = None;
 
         // Monomorphization: bind every generic parameter to a concrete type, then register
         // (once) a specialized signature under the mangled name.
@@ -297,7 +301,7 @@ impl<'a> Analyzer<'a> {
             let mangled_name = mangle_bindings(&function_name, &bindings);
             generic_instance = Some((
                 function_name.clone(),
-                bindings.iter().map(|(_, t)| t.clone()).collect(),
+                bindings.values().cloned().collect(),
             ));
 
             if self.function_table.get_function(&mangled_name).is_err() {
@@ -415,10 +419,10 @@ impl<'a> Analyzer<'a> {
         // the monomorphization args (so it targets the emitted instance); a plain non-overloaded
         // free function resolves by name. Overloads would collide on the base name's single `DefId`,
         // so they stay on the legacy path for now.
-        if let Some((base_name, instance_names)) = generic_instance {
-            let instance = instance_names
+        if let Some((base_name, instance_types)) = generic_instance {
+            let instance = instance_types
                 .iter()
-                .map(|n| self.type_ctx.lower_str(n))
+                .map(|t| self.type_ctx.lower(t))
                 .collect();
             self.hir_set_generic_call(&base_name, instance, arg_hirs, &ret_type);
         } else {
@@ -451,7 +455,7 @@ impl<'a> Analyzer<'a> {
             }
             for p in params {
                 let pt = self.analyze_expression(p, parent_function, symbol_table, diagnostics)?;
-                if pt.get_type() != "int" {
+                if !pt.is_int() {
                     diagnostics.report_error(
                         format!("'sleep' expects an int argument, got {}", pt.get_type()),
                         p.position(),
@@ -962,7 +966,7 @@ impl<'a> Analyzer<'a> {
                     diagnostics,
                 )?;
                 idx_hir = self.hir_take();
-                if pt.get_type() != "int" && !is_unknown_type_name(&pt.get_type()) {
+                if !pt.is_int() && !pt.is_unknown() {
                     diagnostics.report_error(
                         format!("'char_at' index must be int, got {}", pt.get_type()),
                         param.position(),

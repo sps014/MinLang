@@ -10,7 +10,7 @@ impl<'a> Analyzer<'a> {
     /// with its concrete type, according to the monomorphization bindings.
     pub(super) fn substitute_generic_signature(
         method: &mut FunctionNode<'a>,
-        bindings: &[(String, String)],
+        bindings: &GenericBindings,
     ) {
         for param in &mut method.parameters {
             param.type_ = Self::monomorphize_type(&param.type_, bindings);
@@ -52,7 +52,7 @@ impl<'a> Analyzer<'a> {
         params_types: &[String],
         position: &TextSpan,
         diagnostics: &mut DiagnosticBag,
-    ) -> Vec<(String, String)> {
+    ) -> GenericBindings {
         let gen_params = template.generic_parameters.as_deref().unwrap_or(&[]);
 
         if let Some(generics) = generic_args {
@@ -66,7 +66,7 @@ impl<'a> Analyzer<'a> {
                 return gen_params
                     .iter()
                     .zip(generics.iter())
-                    .map(|(param, arg)| (param.text.clone(), arg.get_type()))
+                    .map(|(param, arg)| (param.text.clone(), arg.clone()))
                     .collect();
             }
         }
@@ -78,13 +78,13 @@ impl<'a> Analyzer<'a> {
                 })
             });
             match concrete {
-                Some(concrete) => (param.text.clone(), concrete),
+                Some(concrete) => (param.text.clone(), Self::concrete_type_from_str(&concrete)),
                 None => {
                     diagnostics.report_error(
                         format!("Cannot infer generic parameter '{}' of function '{}'; specify type arguments explicitly", param.text, template.name.text),
                         Some(*position),
                     );
-                    (param.text.clone(), "void".to_string())
+                    (param.text.clone(), Type::Void)
                 }
             }
         }).collect()
@@ -92,10 +92,10 @@ impl<'a> Analyzer<'a> {
 
     /// Returns `ty` with any generic parameter substituted for its concrete type per the
     /// monomorphization bindings, recursing through array and nullable wrappers (`T`, `T[]`, `T?`).
-    pub(super) fn monomorphize_type(ty: &Type, bindings: &[(String, String)]) -> Type {
+    pub(super) fn monomorphize_type(ty: &Type, bindings: &GenericBindings) -> Type {
         match ty {
             Type::Struct(token, None) => match lookup_binding(bindings, &token.text) {
-                Some(concrete) => Self::concrete_type_from_str(&concrete),
+                Some(concrete) => concrete,
                 None => ty.clone(),
             },
             // A generic struct applied to type arguments (e.g. `List<T>`): substitute inside the

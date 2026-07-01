@@ -61,10 +61,14 @@ The `hir → mir → emit` pipeline is the **only** backend.
   - `EnumTable` — `name → (member → i32)` (`src/semantics/analyzer/mod.rs`)
   - `FunctionTable` / `FunctionTableInfo` — signatures + overloads (`src/semantics/function_table.rs`)
   - symbol tables — per-scope `name → Type` (`src/semantics/symbol_table.rs`)
-- **Remaining smell:** some of these tables still key and compare types as **strings** (`get_type()`),
-  and the instantiation map is keyed by mangled names. This is now a purely analyzer-internal cleanup
-  (nothing downstream re-derives types from strings anymore); the type system exposes `TypeId`/`DefId`
-  as the replacement.
+- **Type identity:** type *decisions* now run on the interned type system — assignability and
+  overload viability go through `crate::types::{assignable, overload_compatible}` on `TypeId`s,
+  generic bindings carry structured `Type`s (not stringified names), and classification sites match
+  on AST variants / `TyKind` rather than comparing `get_type()` spellings. The instance-keyed tables
+  (`StructTable`/`UnionTable`, the instantiation map) are keyed by their **monomorphized instance
+  names**, which double as the deterministic backend emit identity — the same "mangled strings only
+  at the emit boundary" rule the WAT backend follows for `func_symbol`. User-facing diagnostics use
+  `Type::display_name()`/`types::display_name` (`Box<int>`), never the mangled `get_type()` spelling.
 
 ### 4. Type system — `src/types/` (cross-cutting)
 

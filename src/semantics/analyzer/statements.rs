@@ -250,7 +250,7 @@ impl<'a> Analyzer<'a> {
             .analyze_expression(condition, parent_function, symbol_table, diagnostics)
             .unwrap_or(Type::Unknown);
         let cond_hir = self.hir_take();
-        if !cond_type.is_unknown() && cond_type.get_type() != "bool" {
+        if !cond_type.is_unknown() && !cond_type.is_bool() {
             diagnostics.report_error(
                 format!("while condition must be bool, got {}", cond_type.get_type()),
                 condition.position(),
@@ -275,7 +275,7 @@ impl<'a> Analyzer<'a> {
             .analyze_expression(condition, parent_function, symbol_table, diagnostics)
             .unwrap_or(Type::Unknown);
         let cond_hir = self.hir_take();
-        if !cond_type.is_unknown() && cond_type.get_type() != "bool" {
+        if !cond_type.is_unknown() && !cond_type.is_bool() {
             diagnostics.report_error(
                 format!("do/while condition must be bool, got {}", cond_type.get_type()),
                 condition.position(),
@@ -322,7 +322,7 @@ impl<'a> Analyzer<'a> {
                 .analyze_expression(cond_expr, ctx.parent_function, &for_scope, diagnostics)
                 .unwrap_or(Type::Unknown);
             cond_hir = self.hir_take();
-            if !cond_type.is_unknown() && cond_type.get_type() != "bool" {
+            if !cond_type.is_unknown() && !cond_type.is_bool() {
                 diagnostics.report_error(
                     format!("for condition must be bool, got {}", cond_type.get_type()),
                     cond_expr.position(),
@@ -512,7 +512,7 @@ impl<'a> Analyzer<'a> {
             .analyze_expression(index, parent_function, symbol_table, diagnostics)
             .unwrap_or(Type::Unknown);
         let index_hir = self.hir_take();
-        if !index_type.is_unknown() && index_type.get_type() != "int" {
+        if !index_type.is_unknown() && !index_type.is_int() {
             diagnostics.report_error(
                 format!(
                     "Array index must be of type int, got {}",
@@ -645,7 +645,7 @@ impl<'a> Analyzer<'a> {
                 let left_t = self
                     .analyze_expression(left, ctx.parent_function, ctx.symbol_table, diagnostics)
                     .unwrap_or(Type::Unknown);
-                if left_t.get_type() != "object" && !left_t.is_unknown() {
+                if !left_t.is_object() && !left_t.is_unknown() {
                     if left_t.get_type() == right_type.get_type() {
                         self.hir_open_block();
                         self.analyze_body(
@@ -669,7 +669,7 @@ impl<'a> Analyzer<'a> {
                 .analyze_expression(cond_expr, ctx.parent_function, ctx.symbol_table, diagnostics)
                 .unwrap_or(Type::Unknown);
             let cond_hir = self.hir_take();
-            if !cond_type.is_unknown() && cond_type.get_type() != "bool" {
+            if !cond_type.is_unknown() && !cond_type.is_bool() {
                 diagnostics.report_error(
                     format!("if condition must be bool, got {}", cond_type.get_type()),
                     cond_pos,

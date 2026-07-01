@@ -561,7 +561,7 @@ impl<'a> Analyzer<'a> {
             if let Some(guard) = &arm.guard {
                 let gt = self.analyze_expression(guard, parent_function, &arm_scope, diagnostics)?;
                 let guard_hir = self.hir_take();
-                if !gt.is_unknown() && gt.get_type() != "bool" {
+                if !gt.is_unknown() && !gt.is_bool() {
                     diagnostics.report_error(
                         format!("match guard must be a bool, got {}", gt.get_type()),
                         guard.position(),
@@ -723,7 +723,7 @@ impl<'a> Analyzer<'a> {
                 hir_ok = false;
                 let gt =
                     self.analyze_expression(guard, parent_function, &arm_scope, diagnostics)?;
-                if !gt.is_unknown() && gt.get_type() != "bool" {
+                if !gt.is_unknown() && !gt.is_bool() {
                     diagnostics.report_error(
                         format!("match guard must be a bool, got {}", gt.get_type()),
                         guard.position(),

@@ -366,6 +366,29 @@ impl Type {
         matches!(self, Type::Nullable(_))
     }
 
+    /// True if this is the primitive `bool` type (a bare `bool`, not `bool?`/`bool[]`). Structural
+    /// replacement for `get_type() == "bool"`.
+    pub fn is_bool(&self) -> bool {
+        matches!(self, Type::Boolean(_))
+    }
+
+    /// True if this is the primitive `int` type (a bare `int`). Structural replacement for
+    /// `get_type() == "int"`.
+    pub fn is_int(&self) -> bool {
+        matches!(self, Type::Integer(_))
+    }
+
+    /// True if this is the primitive `string` type. Structural replacement for
+    /// `get_type() == "string"`.
+    pub fn is_string(&self) -> bool {
+        matches!(self, Type::String(_))
+    }
+
+    /// True if this is the `object` top type. Structural replacement for `get_type() == "object"`.
+    pub fn is_object(&self) -> bool {
+        matches!(self, Type::Object(_))
+    }
+
     /// Returns true if this type is an array (`T[]`) type.
     pub fn is_array(&self) -> bool {
         matches!(self, Type::Array(_))

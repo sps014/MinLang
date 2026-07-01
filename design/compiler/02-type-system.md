@@ -148,8 +148,9 @@ identical syntactically), `TypeCtx` keeps a `nominal: name → DefKind` registry
 Worked example: adding a 128-bit integer `i128`.
 
 1. **Lexer/parser/AST** (`crates/dream-syntax`): add the keyword and a `Type::I128(SyntaxToken)`
-   variant; update `Type::get_type()` and `Type::from_token()`. (`get_type()` is still used by the
-   analyzer's string-keyed tables.)
+   variant; update `Type::get_type()` and `Type::from_token()`. (`get_type()` now only produces the
+   *mangled instance name* used as the deterministic emit identity of monomorphized structs/unions
+   and function symbols — the type *decisions* run on `TypeId`; use `display_name()` for messages.)
 2. **`PrimTy`** (`src/types/kind.rs`): add `PrimTy::I128`, plus its `name()`, `from_name()`,
    `is_numeric()`, `is_unsigned_integer()` arms.
 3. **Interner** (`src/types/interner.rs`): pre-intern it in `new()` (add to the `for prim in [...]`
@@ -157,8 +158,9 @@ Worked example: adding a 128-bit integer `i128`.
 4. **Widening** (`src/types/compat.rs`): add the lattice edges in `numeric_widen`.
 5. **Lowering** (`src/types/lower.rs`): add the `Type::I128(_) => self.interner.prim(PrimTy::I128)`
    arm.
-6. **Backend** (`src/mir/emit.rs`): map it to a WASM type in `wasm_ty` and choose instructions in
-   `binop_instr` (likely an `i64` pair or a runtime helper).
+6. **Backend** (`src/mir/emit/`): map it to a WASM type in `wasm_ty_of` (`emit/types.rs`) and choose
+   instructions in the `Emitter` arithmetic lowering (`emit/emitter.rs`) — likely an `i64` pair or a
+   runtime helper.
 7. **Tests**: add a `types::tests` case and an e2e fixture.
 
 Notice that **type identity, equality, and display fall out for free** once the `PrimTy` arm exists —
