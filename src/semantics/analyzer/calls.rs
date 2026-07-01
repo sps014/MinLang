@@ -1093,13 +1093,10 @@ impl<'a> Analyzer<'a> {
         } else {
             store_sig.return_type.unwrap_or(Type::Void)
         };
-        // Overloaded methods share the mangled name across signatures, so a single `DefId` lookup is
-        // ambiguous; defer those. Everything else records a resolved `MethodCall`.
-        if self.function_table.is_overloaded(&mangled_name) {
-            self.hir_none();
-        } else {
-            self.hir_set_method_call(receiver, &mangled_name, arg_hirs, &ret_type);
-        }
+        // Overloaded methods each register a distinct `DefId` under their emitted (signature-mangled)
+        // name; resolve to the selected overload's name so the call targets the right instance.
+        // Non-overloaded methods keep their base-mangled name.
+        self.hir_set_method_call(receiver, &store_sig.name, arg_hirs, &ret_type);
         Ok(ret_type)
     }
 }

@@ -40,26 +40,16 @@ const XFAIL: &[(&str, &str)] = &[
     // main dropped: unsupported construct in main's body.
     ("async_basic", "main dropped: async entry lowering"),
     ("async_combinators", "main dropped: async entry lowering"),
-    ("new_integer_types", "codegen bug: wide-integer WASM validation"),
-    ("gc_complete", "codegen bug: RC heap-reuse differs (heap_grew)"),
     ("json_deep_nesting", "main dropped: json"),
     ("json_derive", "main dropped: json"),
     ("json_nullable", "main dropped: json"),
     ("json_property_name", "main dropped: json"),
-    ("object_basics", "main dropped: object protocol (is/boxing)"),
-    ("overload_methods", "main dropped: overload resolution"),
     ("union_json", "main dropped: unions + json"),
-    ("union_match", "main dropped: union match"),
-    ("union_nested", "main dropped: nested unions"),
-    ("main_args", "main signature: main(args) not the () entry shape"),
     // callee unresolved: reachable call/method/generic instance not emitted ($def{N}).
     ("async_method", "callee unresolved: async method"),
     ("async_ref_params", "callee unresolved: async method"),
     ("file_io", "callee unresolved: File intrinsics"),
     // codegen bug: compiles/runs but output wrong, or main fails WASM validation.
-    ("json_parse", "codegen bug: double_parse WASM validation"),
-    ("json_roundtrip", "codegen bug: double_parse WASM validation"),
-    ("json_pretty", "codegen bug: double_parse WASM validation"),
 ];
 
 #[derive(Clone)]
@@ -97,7 +87,7 @@ fn compile_and_run_mir(dream_file: &Path) -> Result<String, String> {
 
     let wasm = wat::parse_str(&wat).map_err(|e| format!("assemble: {e}"))?;
     let engine = Engine::default();
-    let module = Module::new(&engine, &wasm).map_err(|e| format!("module: {e}"))?;
+    let module = Module::new(&engine, &wasm).map_err(|e| format!("module: {e:#}"))?;
     let mut store = Store::new(&engine, ());
     let mut linker = Linker::new(&engine);
     let env = TestEnv::new();

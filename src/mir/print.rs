@@ -88,8 +88,9 @@ fn rvalue(r: &Rvalue) -> String {
         Rvalue::ToString(o) => format!("to_string({})", operand(o)),
         Rvalue::Concat(a, b) => format!("concat({}, {})", operand(a), operand(b)),
         Rvalue::EnumName { value, .. } => format!("enum_name({})", operand(value)),
-        Rvalue::Cast(o, ty) => format!("{} as ty{}", operand(o), ty.0),
+        Rvalue::Cast(o, from, ty) => format!("{} as ty{} (from ty{})", operand(o), ty.0, from.0),
         Rvalue::Discriminant(o) => format!("discriminant({})", operand(o)),
+        Rvalue::IsType(o, ty) => format!("{} is ty{}", operand(o), ty.0),
         Rvalue::UnionField { base, variant, field, .. } => {
             format!("{}#{}.{}", operand(base), variant, field)
         }

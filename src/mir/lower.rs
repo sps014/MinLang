@@ -225,15 +225,19 @@ impl Lowerer<'_> {
             HStmt::Expr(e) | HStmt::Await(e) => match &e.kind {
                 // A bare call keeps its `Call` statement form (return value discarded). This matters
                 // for void calls: materializing them into a temp (the fallback below) would emit a
-                // `local.set` with nothing on the stack.
-                HExprKind::Call { callee, args } => {
+                // `local.set` with nothing on the stack. A call whose discarded result is an owned
+                // *reference*, however, must be materialized into a temp so RC insertion releases it at
+                // scope exit — otherwise the returned object (and anything it owns) leaks.
+                HExprKind::Call { callee, args } if !self.interner.is_reference(e.ty) => {
                     let lowered: Vec<Operand> = args.iter().map(|a| self.lower_operand(a)).collect();
                     self.b.push(Statement::Call {
                         callee: self.lower_callee(callee),
                         args: lowered,
                     });
                 }
-                HExprKind::MethodCall { receiver, callee, args } => {
+                HExprKind::MethodCall { receiver, callee, args }
+                    if !self.interner.is_reference(e.ty) =>
+                {
                     let mut lowered = vec![self.lower_operand(receiver)];
                     lowered.extend(args.iter().map(|a| self.lower_operand(a)));
                     self.b.push(Statement::Call {
@@ -766,6 +770,16 @@ impl Lowerer<'_> {
                 let idx = self.lower_operand(index);
                 Rvalue::Use(Operand::Copy(Place::Index { base, index: Box::new(idx) }))
             }
+            HExprKind::Discriminant(v) => Rvalue::Discriminant(self.lower_operand(v)),
+            HExprKind::IsType { value, target } => {
+                Rvalue::IsType(self.lower_operand(value), *target)
+            }
+            HExprKind::UnionField { base, union_ty, variant, field } => Rvalue::UnionField {
+                base: self.lower_operand(base),
+                ty: *union_ty,
+                variant: *variant,
+                field: *field,
+            },
             HExprKind::ArrayLen(a) => Rvalue::ArrayLen(self.lower_operand(a)),
             HExprKind::StrLen(a) => Rvalue::StrLen(self.lower_operand(a)),
             HExprKind::CharAt(s, i) => {
@@ -791,7 +805,10 @@ impl Lowerer<'_> {
                     elems: lowered,
                 }
             }
-            HExprKind::Cast(inner) => Rvalue::Cast(self.lower_operand(inner), e.ty),
+            HExprKind::Cast(inner) => {
+                let from = inner.ty;
+                Rvalue::Cast(self.lower_operand(inner), from, e.ty)
+            }
             HExprKind::Await(inner) => {
                 // `await` lowers to a call into the runtime poll/await machinery; modeled here as
                 // using the inner future operand. The async coroutine transform refines this.

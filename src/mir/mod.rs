@@ -258,8 +258,11 @@ pub enum Rvalue {
     ArrayLit { elem_ty: TypeId, elems: Vec<Operand> },
     /// The stored length of an array.
     ArrayLen(Operand),
-    /// A numeric/object coercion to the target type.
-    Cast(Operand, TypeId),
+    /// A numeric/object coercion. Carries `(value, from_ty, to_ty)`; the source type is captured at
+    /// lowering time so later constant propagation (which can replace the value with a bare `Const`
+    /// that no longer distinguishes `int`/`uint`/`byte`) cannot lose the signedness needed to pick the
+    /// correct widening/narrowing instruction.
+    Cast(Operand, TypeId, TypeId),
     /// The active-variant discriminant of a union value (the `i32` at offset 0). Used to drive a
     /// `match` on union variants.
     Discriminant(Operand),
@@ -273,6 +276,9 @@ pub enum Rvalue {
         variant: usize,
         field: usize,
     },
+    /// A runtime type test `value is T`: compares the boxed value's `$object_tag` against the tag of
+    /// `TypeId`. Yields `bool`.
+    IsType(Operand, TypeId),
 }
 
 /// A resolved call target carried into MIR. The backend derives the emitted symbol from

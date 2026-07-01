@@ -35,7 +35,12 @@ pub(super) struct HirEmit {
     /// parent expression takes this immediately after analyzing each child.
     last: Option<HExpr>,
     /// Name -> (slot, type) for the current function's locals (parameters first, then `let`s).
+    /// Keyed by name, so a re-declaration (shadowing in a sibling/nested scope) overwrites the entry;
+    /// unique slot ids therefore come from `next_local`, not this map's length.
     locals: IndexMap<String, (LocalId, TypeId)>,
+    /// Monotonic allocator for local slot ids. Incremented for every parameter and `let`, so shadowed
+    /// names never collide on a slot (which would merge distinct-typed locals into one).
+    next_local: u32,
     local_decls: Vec<HLocal>,
     params: Vec<HParam>,
     /// Stack of statement lists being built. The bottom is the function body; control-flow handlers
@@ -153,6 +158,7 @@ impl<'a> Analyzer<'a> {
         self.hir.ok = true;
         self.hir.last = None;
         self.hir.locals.clear();
+        self.hir.next_local = 0;
         self.hir.local_decls.clear();
         self.hir.params.clear();
         self.hir.blocks.clear();
@@ -171,7 +177,8 @@ impl<'a> Analyzer<'a> {
 
         for param in function.parameters.iter() {
             let ty = self.type_ctx.lower(&param.type_);
-            let local = LocalId(self.hir.locals.len() as u32);
+            let local = LocalId(self.hir.next_local);
+            self.hir.next_local += 1;
             self.hir
                 .locals
                 .insert(param.name.text.clone(), (local, ty));
@@ -271,7 +278,8 @@ impl<'a> Analyzer<'a> {
             return None;
         }
         let ty = self.type_ctx.lower(ty);
-        let local = LocalId(self.hir.locals.len() as u32);
+        let local = LocalId(self.hir.next_local);
+        self.hir.next_local += 1;
         self.hir.locals.insert(name.to_string(), (local, ty));
         self.hir.local_decls.push(HLocal {
             id: local,
@@ -1064,6 +1072,23 @@ impl<'a> Analyzer<'a> {
         self.hir.last = Some(HExpr::new(ty, HExprKind::BoolLit(value)));
     }
 
+    /// Records a runtime type test `value is target` (typed `bool`) for an `object`-typed operand:
+    /// the backend compares the value's runtime tag against `target`'s. Fails if `value` was dropped.
+    pub(super) fn hir_set_is_type(&mut self, value: Option<HExpr>, target: &Type) {
+        if !self.active() {
+            self.hir.last = None;
+            return;
+        }
+        let bool_ty = self.type_ctx.interner.bool();
+        let target_ty = self.type_ctx.lower(target);
+        self.hir.last = value.map(|v| {
+            HExpr::new(
+                bool_ty,
+                HExprKind::IsType { value: Box::new(v), target: target_ty },
+            )
+        });
+    }
+
     /// Records string concatenation `a + b` (typed `string`): each non-string operand is first run
     /// through the object-protocol `to_string`, then the two string pointers are joined by the
     /// runtime `$concat_strings`. Drops out of coverage if either operand is not representable.
@@ -1313,7 +1338,9 @@ impl<'a> Analyzer<'a> {
             return;
         };
         let ty = self.type_ctx.lower(ty);
-        let local = LocalId(self.hir.locals.len() as u32);
+        let value = self.coerce_to(value, ty);
+        let local = LocalId(self.hir.next_local);
+        self.hir.next_local += 1;
         self.hir.locals.insert(name.to_string(), (local, ty));
         self.hir.local_decls.push(HLocal {
             id: local,
@@ -1321,6 +1348,42 @@ impl<'a> Analyzer<'a> {
             ty,
         });
         self.push_stmt(HStmt::Let { local, ty, value });
+    }
+
+    /// Inserts an implicit boxing cast when a primitive `value` is stored into an `object`-typed
+    /// slot (`let o: object = 42`), so the backend boxes it rather than storing a raw scalar. All
+    /// other conversions (reference→object, numeric widening) are left to the backend / call sites.
+    fn coerce_to(&self, value: HExpr, target: TypeId) -> HExpr {
+        use crate::types::{PrimTy, TyKind};
+        let interner = &self.type_ctx.interner;
+        let target_k = interner.kind(interner.strip_nullable(target));
+        let val_k = interner.kind(interner.strip_nullable(value.ty));
+        // Boxing a primitive into `object`.
+        if matches!(target_k, TyKind::Object) && matches!(val_k, TyKind::Prim(_)) {
+            return HExpr::new(target, HExprKind::Cast(Box::new(value)));
+        }
+        // Implicit numeric widening (e.g. `let w: long = 5;`, `let d: double = someLong;`). The two
+        // primitives have different WASM representations (i32/i64/f64), so an explicit conversion must
+        // be materialized; `emit_cast`/`numeric_conv` picks the right (un)signed extend/convert.
+        let is_num = |p: PrimTy| {
+            matches!(
+                p,
+                PrimTy::Int
+                    | PrimTy::UInt
+                    | PrimTy::Long
+                    | PrimTy::ULong
+                    | PrimTy::Byte
+                    | PrimTy::Float
+                    | PrimTy::Double
+            )
+        };
+        if let (TyKind::Prim(tp), TyKind::Prim(vp)) = (target_k, val_k) {
+            if tp != vp && is_num(*tp) && is_num(*vp) {
+                let target_prim = interner.strip_nullable(target);
+                return HExpr::new(target_prim, HExprKind::Cast(Box::new(value)));
+            }
+        }
+        value
     }
 
     /// Appends an assignment to a local or module-global. Fails the function for an unresolved name

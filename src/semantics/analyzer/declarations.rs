@@ -656,6 +656,10 @@ impl<'a> Analyzer<'a> {
         bindings: &[(String, String)],
         diagnostics: &mut DiagnosticBag,
     ) {
+        // Collect the mangled name + full parameter list (with the implicit `this`) of each method so
+        // overloaded methods can be registered under their signature-mangled *emitted* names in a
+        // second pass, once the whole overload set for this target is known.
+        let mut registered: Vec<(String, Vec<String>)> = Vec::new();
         for method in methods {
             // Validate object-protocol overrides once (on the non-monomorphized declaration).
             if bindings.is_empty() {
@@ -686,6 +690,8 @@ impl<'a> Analyzer<'a> {
                     .insert(0, Self::make_this_param(target_type_str));
             }
 
+            let param_types: Vec<String> =
+                new_method.parameters.iter().map(|p| p.type_.get_type()).collect();
             let method_ref = self.arena.alloc(new_method);
             self.struct_methods.push((method_ref, bindings.to_vec()));
 
@@ -694,6 +700,20 @@ impl<'a> Analyzer<'a> {
                 .add_overload(&mangled_name, FunctionTableInfo::from(method_ref))
             {
                 diagnostics.report_error(e.to_string(), Some(method.name.position));
+            }
+            if method.generic_parameters.is_none() {
+                registered.push((mangled_name, param_types));
+            }
+        }
+        // Register a distinct `DefId` for each overloaded method under its emitted (signature-mangled)
+        // name, so overloads don't collide on the single base-mangled def (mirrors free functions).
+        for (mangled_name, param_types) in registered {
+            let emitted = self
+                .function_table
+                .resolve_emitted_name(&mangled_name, &param_types);
+            if emitted != mangled_name {
+                self.type_ctx
+                    .register(DefKind::Function, &emitted, vec![]);
             }
         }
     }

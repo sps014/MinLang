@@ -638,30 +638,30 @@ impl<'a> Analyzer<'a> {
             .chain(else_if.iter().map(|i| (&i.0, i.0.position(), &i.1)));
 
         for (cond_expr, cond_pos, body) in branches {
-            // `is` fold: decide liveness (and type-check the operand) before touching the branch.
+            // `is` fold: an operand with a concrete (non-`object`) static type resolves at compile
+            // time, so a branch is either taken unconditionally or is dead. An `object` operand needs
+            // a runtime tag check, so it falls through to the general (runtime-`IsType`) path below.
             if let ExpressionNode::IsExpression(left, right_type) = cond_expr {
                 let left_t = self
                     .analyze_expression(left, ctx.parent_function, ctx.symbol_table, diagnostics)
                     .unwrap_or(Type::Unknown);
-                if left_t.get_type() == "object" || left_t.is_unknown() {
-                    // A runtime `object` check is not lowered yet: drop out of HIR coverage but keep
-                    // type-checking both branches (they are all reachable at runtime).
-                    self.hir_fail();
-                } else if left_t.get_type() == right_type.get_type() {
-                    self.hir_open_block();
-                    self.analyze_body(
-                        body,
-                        ctx.parent_function,
-                        Some(ctx.symbol_table),
-                        has_parent_while,
-                        diagnostics,
-                    )?;
-                    terminal = self.hir_close_block();
-                    terminated = true;
-                    break;
-                } else {
-                    // Dead branch: skip it entirely (do not analyze its body).
-                    continue;
+                if left_t.get_type() != "object" && !left_t.is_unknown() {
+                    if left_t.get_type() == right_type.get_type() {
+                        self.hir_open_block();
+                        self.analyze_body(
+                            body,
+                            ctx.parent_function,
+                            Some(ctx.symbol_table),
+                            has_parent_while,
+                            diagnostics,
+                        )?;
+                        terminal = self.hir_close_block();
+                        terminated = true;
+                        break;
+                    } else {
+                        // Dead branch: skip it entirely (do not analyze its body).
+                        continue;
+                    }
                 }
             }
 

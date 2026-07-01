@@ -347,6 +347,20 @@ pub enum HExprKind {
     Await(Box<HExpr>),
     /// An enum member reference resolved to its integer value.
     EnumValue(i64),
+    /// Reads a union value's discriminant (the `i32` variant tag). Emitted when a guarded/nested
+    /// `match` is lowered to an if-chain instead of a `Switch`.
+    Discriminant(Box<HExpr>),
+    /// Reads payload field `field` of `variant` from union value `base` (whose interned union type is
+    /// `union_ty`). Only valid once the discriminant is known to select `variant`.
+    UnionField {
+        base: Box<HExpr>,
+        union_ty: TypeId,
+        variant: usize,
+        field: usize,
+    },
+    /// A runtime type test `value is target` on an `object`-typed value (typed `bool`): a runtime tag
+    /// comparison. Concrete-typed operands are folded to a `BoolLit` in the analyzer instead.
+    IsType { value: Box<HExpr>, target: TypeId },
     /// The `print`/`println` builtins (`System.print`/`System.println`), lowered to the host
     /// `print_*` imports. Void-typed; only valid in statement position. `newline` appends a `\n`.
     Print { arg: Box<HExpr>, newline: bool },

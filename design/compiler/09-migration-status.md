@@ -44,7 +44,7 @@ flowchart LR
 | MIR backend handles user-defined constructor bodies | ✅ done (Step C.2c) — `New` carries an optional `ctor` def; when present the backend allocates, zeroes the fields, then calls `$Type_constructor(this, args)` (whose body is emitted via `struct_methods`); otherwise it inlines positional field init |
 | `extend` blocks (generic + non-generic) | ✅ done — extension methods lower exactly like struct methods (`{Type}_{method}` + implicit `this`), so their bodies emit and calls resolve; generic `extend Box<T>` monomorphizes alongside the struct instance (`Box_int_peek`). Covered by `test_hir_emission_extend_{nongeneric,generic}_class` |
 | `del()` destructors | ◐ **body** emits under `{Type}_del` (like any method; `test_hir_emission_destructor_body`), but the release-time **invocation** (per-type deep release: pin refcount → call `$Type_del` → release ref fields → free) is part of the RC runtime, still deferred with the rest of the release layer (Step D) |
-| Driver uses the MIR backend | ◐ **opt-in wired** — `Compiler::with_mir(true)` / CLI `--mir` routes analysis → HIR → `mir::lower` → `prune_unreachable` → passes → `emit_module`. Default is still `WasmGenerator`; the flip waits on full coverage. Gated by `tests/mir_e2e.rs` (**64 / 84** golden e2e cases pass end-to-end through the real driver front-end + MIR backend) |
+| Driver uses the MIR backend | ◐ **opt-in wired** — `Compiler::with_mir(true)` / CLI `--mir` routes analysis → HIR → `mir::lower` → `prune_unreachable` → passes → `emit_module`. Default is still `WasmGenerator`; the flip waits on full coverage. Gated by `tests/mir_e2e.rs` (**74 / 84** golden e2e cases pass end-to-end through the real driver front-end + MIR backend) |
 | `infer.rs` / `resolve.rs` deletable | ❌ still used by the live backend |
 
 The new architecture is **complete as modules** but **not on the critical path**. The legacy backend is
@@ -569,6 +569,31 @@ the coverage gap so the default can flip.
     mangled emitted name (deferred until the full overload set is known), and both the call site and the
     emitted function symbol use that name, so overloads no longer collide on a shared base def
     (`overload_functions`).
+- **Runtime `object`, overloaded methods, union match, `main(args)`, wide-int casts, and ARC parity.**
+  Coverage went **64 → 74**:
+  - *Runtime boxing + `is` on `object`* — a primitive assigned to an `object` local is implicitly boxed
+    (`coerce_to` inserts a `Cast`), `emit_cast` boxes/unboxes via the `$box_*`/`$unbox_*` runtime, and
+    `x is T` on an `object` lowers to an `IsType` rvalue (an `$object_tag` compare). `operand_ty` now
+    keeps `char`/`bool`/`string` constants at their own primitive type so boxing/`to_string` dispatch
+    correctly (`object_basics`).
+  - *Overloaded methods* — methods now register a distinct `DefId` per signature (two-pass, like free
+    functions); the call site uses the resolved emitted name instead of dropping HIR (`overload_methods`).
+  - *`match` guards + nested/literal patterns* — a new if-chain lowering path handles arms the `br_table`
+    `Switch` cannot (guards, nested variants, literal sub-patterns), via `Discriminant`/`UnionField`
+    reads (`union_match`, `union_nested`).
+  - *`main(args: string[])`* — the exported `main` entry now wraps the real `main` with a `()` shim that
+    passes an empty `string[]`, matching the runtime's zero-arg entry signature (`main_args`).
+  - *JSON string/char rendering + local-slot fix* — a monotonic `next_local` allocator stops shadowed
+    names from coalescing distinct-typed slots, and `char`/`bool` constants render correctly in concat
+    (`json_parse`, `json_roundtrip`, `json_pretty`).
+  - *Numeric widening + narrowing casts* — `coerce_to` now materializes implicit numeric widenings
+    (`let w: long = 5;`, `let d: double = someLong;`), `Rvalue::Cast` carries its source type so
+    const-prop cannot erase `uint`/`byte` signedness (fixing `i64.extend_i32_u` selection), and a
+    narrowing cast to `byte` masks to `[0,255]` (`new_integer_types`).
+  - *ARC parity (heap reuse)* — two leaks that grew the heap high-water mark are fixed: a discarded
+    reference-returning call is now materialized into a temp that scope-exit release reclaims (instead of
+    a bare `drop`), and a reference field/element **reassignment** now releases its previous occupant
+    (deferred through the `$__rel` scratch so self-referential stores stay sound) (`gc_complete`).
 
 **Remaining coverage gap** (the `XFAIL` categories, in rough priority order):
 1. **`main` dropped** — `main`'s body uses an analyzer construct not yet lowered to HIR (strings/

@@ -195,12 +195,12 @@ fn test_hir_emission_locals_and_assignment() {
 
 #[test]
 fn test_hir_emission_skips_unsupported_functions() {
-    // A function whose body uses an as-yet-unsupported construct (a runtime `is` type-test on an
-    // `object`, not lowered yet) is skipped, not emitted, so the legacy path remains the source of
-    // truth for it. The simple sibling still emits.
+    // An uninstantiated generic template (`gen<T>`) has no concrete body to lower until it is
+    // monomorphized at a call site, so the interleaved HIR emission skips it, leaving the legacy path
+    // to handle its instantiations. The concrete sibling still emits.
     let code = "
         fun simple(a: int): int { return a; }
-        fun is_int(o: object): bool { return o is int; }
+        fun gen<T>(x: T): T { return x; }
     ";
     let (_, count) = emit_hir_to_wat(code);
     assert_eq!(count, 1, "only the fully-supported function should be emitted");

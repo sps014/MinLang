@@ -337,7 +337,8 @@ fn strings_in_rvalue(rv: &Rvalue, out: &mut Vec<String>) {
         | Rvalue::Unary(_, o)
         | Rvalue::ArrayLen(o)
         | Rvalue::StrLen(o)
-        | Rvalue::Cast(o, _)
+        | Rvalue::Cast(o, _, _)
+        | Rvalue::IsType(o, _)
         | Rvalue::Discriminant(o)
         | Rvalue::UnionField { base: o, .. } => strings_in_operand(o, out),
         Rvalue::Binary(_, a, b) | Rvalue::CharAt(a, b) | Rvalue::Concat(a, b) => {
@@ -497,7 +498,16 @@ pub fn emit_module(mir: &super::Mir, interner: &TypeInterner) -> String {
                 &func_symbol(f),
                 !f.params.is_empty(),
             ));
-        } else if f.instance.is_empty() && !(f.name == "main" && f.is_async) {
+        } else if f.instance.is_empty() && f.name == "main" && !f.params.is_empty() {
+            // `main(args: string[])`: the exported entry takes no args, so wrap the real `main` with a
+            // `()` shim that passes an empty `string[]` (a zero-length, TAG_ARRAY block).
+            let _ = writeln!(
+                out,
+                "(func (export \"main\")\n (local $args i32)\n i32.const 4\n i32.const {}\n call $malloc\n local.set $args\n local.get $args\n i32.const 0\n i32.store\n local.get $args\n call ${}\n)",
+                crate::codegen::wasm::object::TAG_ARRAY,
+                func_symbol(f),
+            );
+        } else if f.instance.is_empty() {
             let _ = writeln!(out, "(export \"{}\" (func ${}))", f.name, func_symbol(f));
         }
         out.push('\n');
@@ -590,6 +600,69 @@ fn load_instr_for(interner: &TypeInterner, ty: TypeId) -> &'static str {
 
 /// The `$*_to_string` call that turns a loaded value of `ty` into a string pointer, or `None` when
 /// the value already *is* a string pointer (`string`, needing no conversion). Enums render as their
+/// The primitive kind of `ty` (stripping nullability), or `None` for reference/`object`/other types.
+fn prim_of(interner: &TypeInterner, ty: TypeId) -> Option<PrimTy> {
+    match interner.kind(interner.strip_nullable(ty)) {
+        TyKind::Prim(p) => Some(*p),
+        _ => None,
+    }
+}
+
+/// The `$box_*` runtime helper for boxing primitive `p` into an `object`; `None` for non-boxable
+/// (reference) primitives like `string` (already a pointer).
+fn box_fn_for(p: PrimTy) -> Option<&'static str> {
+    Some(match p {
+        PrimTy::Int => "$box_int",
+        PrimTy::Float => "$box_float",
+        PrimTy::Double => "$box_double",
+        PrimTy::Bool => "$box_bool",
+        PrimTy::Char => "$box_char",
+        PrimTy::Long => "$box_long",
+        PrimTy::ULong => "$box_ulong",
+        PrimTy::UInt => "$box_uint",
+        PrimTy::Byte => "$box_byte",
+        PrimTy::String => return None,
+    })
+}
+
+/// The `$unbox_*` runtime helper matching [`box_fn_for`].
+fn unbox_fn_for(p: PrimTy) -> Option<&'static str> {
+    Some(match p {
+        PrimTy::Int => "$unbox_int",
+        PrimTy::Float => "$unbox_float",
+        PrimTy::Double => "$unbox_double",
+        PrimTy::Bool => "$unbox_bool",
+        PrimTy::Char => "$unbox_char",
+        PrimTy::Long => "$unbox_long",
+        PrimTy::ULong => "$unbox_ulong",
+        PrimTy::UInt => "$unbox_uint",
+        PrimTy::Byte => "$unbox_byte",
+        PrimTy::String => return None,
+    })
+}
+
+/// The runtime tag a value of type `ty` carries when boxed as an `object`: a fixed constant for
+/// primitives/string, or the struct/union's assigned tag (from `tags`). Used to lower a runtime
+/// `x is T` test to an `$object_tag` comparison.
+fn runtime_tag_for(interner: &TypeInterner, tags: &HashMap<TypeId, i32>, ty: TypeId) -> Option<i32> {
+    use crate::codegen::wasm::object as t;
+    let stripped = interner.strip_nullable(ty);
+    match interner.kind(stripped) {
+        TyKind::Prim(PrimTy::Int) => Some(t::TAG_INT),
+        TyKind::Prim(PrimTy::Float) => Some(t::TAG_FLOAT),
+        TyKind::Prim(PrimTy::Double) => Some(t::TAG_DOUBLE),
+        TyKind::Prim(PrimTy::Bool) => Some(t::TAG_BOOL),
+        TyKind::Prim(PrimTy::String) => Some(t::TAG_STRING),
+        TyKind::Prim(PrimTy::Char) => Some(t::TAG_CHAR),
+        TyKind::Prim(PrimTy::Long) => Some(t::TAG_LONG),
+        TyKind::Prim(PrimTy::UInt) => Some(t::TAG_UINT),
+        TyKind::Prim(PrimTy::ULong) => Some(t::TAG_ULONG),
+        TyKind::Prim(PrimTy::Byte) => Some(t::TAG_BYTE),
+        TyKind::Array(_) => Some(t::TAG_ARRAY),
+        _ => tags.get(&stripped).copied(),
+    }
+}
+
 /// `int` value; arrays dispatch to their element-typed `$array_to_string_t<id>` (arrays are not
 /// self-describing at runtime, so the call is chosen statically); other reference types route through
 /// the tag-dispatching `$object_to_string`.
@@ -1338,6 +1411,10 @@ impl Emitter<'_> {
         // Scratch length for `Array.new<T>(len)`: the count is needed for both the allocation size
         // and the zero-fill, so it is materialized once here.
         self.line("  (local $__len i32)");
+        // Scratch holding the previous occupant of a reference field/element across a reassignment, so
+        // it can be released *after* the new value is stored (deferred release keeps a self-referential
+        // `obj.f = g(obj.f)` sound).
+        self.line("  (local $__rel i32)");
 
         self.emit_dispatch();
         self.line(")");
@@ -1477,10 +1554,13 @@ impl Emitter<'_> {
             }
             Place::Field { base, field } => {
                 if let Some((off, fty)) = self.field_layout(*base, *field) {
+                    let (b, off, fty) = (*base, off, fty);
+                    let stash = self.stash_old_ref(fty, |s| s.field_addr(b, off));
                     self.field_addr(*base, off);
                     self.emit_rvalue(rvalue);
                     self.line(&format!("     ({})", self.store_instr(fty)));
                     self.retain_stored_rvalue(fty, rvalue);
+                    self.release_stash(fty, stash);
                 } else {
                     self.emit_rvalue(rvalue);
                     self.line("     (drop) ;; TODO(layout): store to field");
@@ -1488,10 +1568,13 @@ impl Emitter<'_> {
             }
             Place::Index { base, index } => {
                 if let Some(ety) = self.array_elem_ty(*base) {
+                    let (b, idx) = (*base, index.clone());
+                    let stash = self.stash_old_ref(ety, |s| s.elem_addr(b, ety, &idx));
                     self.elem_addr(*base, ety, index);
                     self.emit_rvalue(rvalue);
                     self.line(&format!("     ({})", self.store_instr(ety)));
                     self.retain_stored_rvalue(ety, rvalue);
+                    self.release_stash(ety, stash);
                 } else {
                     self.emit_rvalue(rvalue);
                     self.line("     (drop) ;; TODO(layout): store to index");
@@ -1547,6 +1630,32 @@ impl Emitter<'_> {
             self.emit_operand(value);
             self.line("     (call $retain)");
         }
+    }
+
+    /// Before a reference field/element is overwritten, load and stash its previous occupant into the
+    /// `$__rel` scratch so it can be released *after* the new value is stored (a deferred release keeps
+    /// self-referential reassignments like `n.next = f(n.next)` sound). `emit_addr` pushes the slot's
+    /// address. Returns `true` when a value was stashed (the slot is a reference). A no-op for
+    /// non-reference slots, and releasing a null previous value (fresh field) is a runtime no-op.
+    fn stash_old_ref(&mut self, ty: TypeId, emit_addr: impl Fn(&mut Self)) -> bool {
+        if !self.interner.is_reference(ty) {
+            return false;
+        }
+        emit_addr(self);
+        self.line("     (i32.load)");
+        self.line("     (local.set $__rel)");
+        true
+    }
+
+    /// Releases the value stashed by [`Self::stash_old_ref`] (the overwritten field/element's previous
+    /// occupant), if any.
+    fn release_stash(&mut self, ty: TypeId, stashed: bool) {
+        if !stashed {
+            return;
+        }
+        let call = release_call(self.interner, self.layouts, ty);
+        self.line("     (local.get $__rel)");
+        self.line(&format!("     (call {})", call));
     }
 
     /// Like [`Self::retain_container_value`] but for a field/element written from an rvalue: a
@@ -1883,7 +1992,14 @@ impl Emitter<'_> {
                 self.emit_operand(o);
                 self.line("     (call $strlen) ;; strings are NUL-terminated");
             }
-            Rvalue::Cast(o, to) => self.emit_cast(o, *to),
+            Rvalue::Cast(o, from, to) => self.emit_cast(o, *from, *to),
+            Rvalue::IsType(o, target) => {
+                self.emit_operand(o);
+                self.line("     (call $object_tag)");
+                let tag = runtime_tag_for(self.interner, self.tags, *target).unwrap_or(0);
+                self.line(&format!("     (i32.const {})", tag));
+                self.line("     (i32.eq)");
+            }
             Rvalue::Discriminant(o) => {
                 // The discriminant is the `i32` at offset 0 of the union block.
                 self.emit_operand(o);
@@ -1911,10 +2027,41 @@ impl Emitter<'_> {
         }
     }
 
-    fn emit_cast(&mut self, o: &Operand, to: TypeId) {
-        let from = self.operand_ty(o);
+    fn emit_cast(&mut self, o: &Operand, from: TypeId, to: TypeId) {
+        let from_prim = prim_of(self.interner, from);
+        let to_prim = prim_of(self.interner, to);
+        let to_is_object = matches!(
+            self.interner.kind(self.interner.strip_nullable(to)),
+            TyKind::Object
+        );
+        let from_is_object = matches!(
+            self.interner.kind(self.interner.strip_nullable(from)),
+            TyKind::Object
+        );
+        // Boxing a primitive into `object` (reference types are already pointers → identity).
+        if to_is_object {
+            self.emit_operand(o);
+            if let Some(boxfn) = from_prim.and_then(box_fn_for) {
+                self.line(&format!("     (call {})", boxfn));
+            }
+            return;
+        }
+        // Unboxing `object` to a primitive (or leaving a reference pointer as-is).
+        if from_is_object {
+            self.emit_operand(o);
+            if let Some(unboxfn) = to_prim.and_then(unbox_fn_for) {
+                self.line(&format!("     (call {})", unboxfn));
+            }
+            return;
+        }
         self.emit_operand(o);
         self.emit_numeric_conv(from, to);
+        // Narrowing to `byte` (which shares the `i32` WASM type with `int`/`uint`, so `numeric_conv`
+        // is a no-op) must wrap into the [0, 255] range explicitly (C-style truncation).
+        if matches!(to_prim, Some(PrimTy::Byte)) {
+            self.line("     (i32.const 255)");
+            self.line("     (i32.and)");
+        }
     }
 
     /// Emits a call's arguments, applying implicit numeric widening to each so a narrower argument
@@ -2125,6 +2272,12 @@ impl Emitter<'_> {
             Operand::Const(Const::Long(_)) => self.interner.long(),
             Operand::Const(Const::Float(_)) => self.interner.double(),
             Operand::Const(Const::F32(_)) => self.interner.float(),
+            // A char/bool/string constant keeps its own primitive type so type-directed dispatch
+            // (e.g. `to_string`/`hash_code`, boxing into `object`) picks the right helper rather than
+            // defaulting to `int`.
+            Operand::Const(Const::Char(_)) => self.interner.char(),
+            Operand::Const(Const::Bool(_)) => self.interner.bool(),
+            Operand::Const(Const::Str(_)) => self.interner.string(),
             Operand::Const(_) => self.interner.int(),
         }
     }

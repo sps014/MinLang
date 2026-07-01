@@ -170,16 +170,18 @@ impl<'a> Analyzer<'a> {
                 Ok(t)
             }
             ExpressionNode::IsExpression(left, right_type) => {
-                // `is` always evaluates to a bool. When the operand has a concrete static type the
-                // result is known at compile time; an `object` operand needs a runtime tag check
-                // (not yet lowered — drop out of coverage).
+                // `is` always evaluates to a bool. A concrete static operand folds to a compile-time
+                // result; an `object` operand emits a runtime `$object_tag` comparison.
                 let left_type =
                     self.analyze_expression(left, parent_function, symbol_table, diagnostics)?;
+                let left_hir = self.hir_take();
                 let left_name = left_type.get_type();
                 let right_name = right_type.get_type();
                 let stripped = strip_nullable(&left_name);
-                if stripped == "object" || left_type.is_unknown() {
+                if left_type.is_unknown() {
                     self.hir_none();
+                } else if stripped == "object" {
+                    self.hir_set_is_type(left_hir, right_type);
                 } else {
                     self.hir_set_bool(stripped == strip_nullable(&right_name));
                 }
