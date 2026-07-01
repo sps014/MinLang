@@ -1,0 +1,27 @@
+// A user class opting into `obj[i]` / `obj[i] = v` via convention-named `get`/`set` methods.
+
+class Grid {
+    cells: int[];
+
+    constructor(size: int) {
+        this.cells = Array.new<int>(size);
+    }
+
+    public fun get(index: int): int {
+        return this.cells[index];
+    }
+
+    public fun set(index: int, value: int): void {
+        this.cells[index] = value;
+    }
+}
+
+fun main() {
+    let g = Grid(4);
+    g[0] = 5;
+    g[1] = 10;
+    g[2] = g[0] + g[1];   // read indexer on both sides
+    System.println(g[0]); // 5
+    System.println(g[1]); // 10
+    System.println(g[2]); // 15
+}

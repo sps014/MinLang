@@ -213,6 +213,10 @@ pub struct FunctionTableInfo {
     /// True when the declaration is `async fun`: calling it eagerly starts a task and yields
     /// `Future<T>` (where `T` is `return_type`). Awaiting a call to it produces `T`.
     pub is_async: bool,
+    /// True when the declaration is a `static fun` method (no implicit `this`, dispatched as
+    /// `Type.method(...)`). Used by the indexer/enumerator sugar sites to reject static methods as
+    /// `[]`/`for..in` hooks. Always `false` for free functions and synthesized/stdlib entries.
+    pub is_static: bool,
     pub intrinsic_name: Option<String>,
     /// True when the declaration is marked `public`. For methods this gates external calls
     /// (private methods may only be called from within their declaring type). Defaults to `true`
@@ -231,6 +235,7 @@ impl FunctionTableInfo {
             return_type,
             parameters,
             is_async: false,
+            is_static: false,
             intrinsic_name: None,
             is_public: true,
         }
@@ -246,6 +251,7 @@ impl FunctionTableInfo {
         let intrinsic_name = crate::intrinsics::intrinsic_key(&func.attributes);
         let mut info = FunctionTableInfo::new(name.text, return_type, parameters);
         info.is_async = func.is_async;
+        info.is_static = func.is_static;
         info.intrinsic_name = intrinsic_name;
         // `extern` functions/methods are interop entry points (WASM imports): they cannot be
         // host-exported and privacy is meaningless for them, so they are always call-visible.

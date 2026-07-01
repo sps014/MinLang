@@ -1,0 +1,50 @@
+// A user class opting into `for (let x in obj)` via the enumerator protocol: `iterator()`
+// returns an object whose `next(): Option<T>` yields elements until `None`. Exercises `break`
+// and `continue` inside the loop body.
+
+class RangeIter {
+    current: int;
+    end: int;
+
+    constructor(start: int, end: int) {
+        this.current = start;
+        this.end = end;
+    }
+
+    public fun next(): Option<int> {
+        if (this.current >= this.end) {
+            return Option.None;
+        }
+        let v = this.current;
+        this.current = this.current + 1;
+        return Option.Some(v);
+    }
+}
+
+class Range {
+    start: int;
+    end: int;
+
+    constructor(start: int, end: int) {
+        this.start = start;
+        this.end = end;
+    }
+
+    public fun iterator(): RangeIter {
+        return RangeIter(this.start, this.end);
+    }
+}
+
+fun main() {
+    let total = 0;
+    for (let x in Range(0, 6)) {
+        if (x == 2) { continue; }   // skip 2
+        if (x == 5) { break; }      // stop before 5
+        total = total + x;
+    }
+    System.println(total);          // 0 + 1 + 3 + 4 = 8
+
+    for (let y in Range(10, 13)) {
+        System.println(y);          // 10, 11, 12
+    }
+}

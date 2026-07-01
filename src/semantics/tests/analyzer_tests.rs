@@ -1532,3 +1532,190 @@ fn test_analyze_switch_expression_arm_type_mismatch() {
     let diagnostics = analyze_code(code);
     assert_eq!(diagnostics.has_errors(), true);
 }
+
+// -- Class indexer (`obj[i]` / `obj[i] = v`) and enumerator (`for (let x in obj)`) --
+
+#[test]
+fn test_class_indexer_get_set_ok() {
+    // A class with an instance `get(index): T` (non-void) and `set(index, value)` is indexable.
+    let code = "
+        class Cell {
+            v: int;
+            constructor() { this.v = 0; }
+            public fun get(index: int): int { return this.v + index; }
+            public fun set(index: int, value: int): void { this.v = value; }
+        }
+        fun main(): void {
+            let c = Cell();
+            c[1] = 5;
+            let x: int = c[2];
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), false);
+}
+
+#[test]
+fn test_class_indexer_void_get_is_not_an_indexer() {
+    // A `get` returning `void` is a normal method, not an indexer: `obj[i]` errors.
+    let code = "
+        class Box {
+            v: int;
+            constructor() { this.v = 0; }
+            public fun get(index: int): void { }
+        }
+        fun main(): void {
+            let b = Box();
+            let x = b[0];
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("must return a value")));
+}
+
+#[test]
+fn test_class_void_get_still_callable_as_method() {
+    // Defining a void `get` must NOT break calling it directly as an ordinary method.
+    let code = "
+        class Box {
+            v: int;
+            constructor() { this.v = 0; }
+            public fun get(index: int): void { }
+        }
+        fun main(): void {
+            let b = Box();
+            b.get(0);
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), false);
+}
+
+#[test]
+fn test_class_indexer_static_get_is_not_an_indexer() {
+    // A `static get` has no receiver, so it can't be an instance indexer: `obj[i]` errors.
+    let code = "
+        class Box {
+            v: int;
+            constructor() { this.v = 0; }
+            public static fun get(index: int): int { return index; }
+        }
+        fun main(): void {
+            let b = Box();
+            let x = b[0];
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("non-static")));
+}
+
+#[test]
+fn test_class_indexer_async_get_is_not_an_indexer() {
+    // An `async get` yields a `Future`, so it can't be a (synchronous) indexer: `obj[i]` errors.
+    let code = "
+        class Box {
+            v: int;
+            constructor() { this.v = 0; }
+            public async fun get(index: int): int { return index; }
+        }
+        fun main(): void {
+            let b = Box();
+            let x = b[0];
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("cannot be async")));
+}
+
+#[test]
+fn test_class_foreach_with_option_enumerator_ok() {
+    // The full enumerator protocol: `iterator()` returns an object whose `next(): Option<T>`
+    // yields elements. `break`/`continue` are valid in the body.
+    let code = "
+        enum Option<T> { Some(value: T), None }
+        class RangeIter {
+            cur: int;
+            end: int;
+            constructor(s: int, e: int) { this.cur = s; this.end = e; }
+            public fun next(): Option<int> {
+                if (this.cur >= this.end) { return Option.None; }
+                let v = this.cur;
+                this.cur = this.cur + 1;
+                return Option.Some(v);
+            }
+        }
+        class Range {
+            start: int;
+            end: int;
+            constructor(s: int, e: int) { this.start = s; this.end = e; }
+            public fun iterator(): RangeIter { return RangeIter(this.start, this.end); }
+        }
+        fun main(): void {
+            let total = 0;
+            for (let x in Range(0, 5)) {
+                if (x == 2) { continue; }
+                if (x == 4) { break; }
+                total = total + x;
+            }
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), false);
+}
+
+#[test]
+fn test_class_foreach_next_not_option_errors() {
+    // `next()` must return `Option<T>`; a `next()` returning a plain value is rejected.
+    let code = "
+        class NumIter {
+            n: int;
+            constructor() { this.n = 0; }
+            public fun next(): int { return 0; }
+        }
+        class Nums {
+            constructor() { }
+            public fun iterator(): NumIter { return NumIter(); }
+        }
+        fun main(): void {
+            for (let x in Nums()) { }
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("next()' to return Option")));
+}
+
+#[test]
+fn test_class_foreach_missing_iterator_errors() {
+    // A class without an `iterator()` method cannot be iterated with `for..in`.
+    let code = "
+        class Plain {
+            v: int;
+            constructor() { this.v = 0; }
+        }
+        fun main(): void {
+            for (let x in Plain()) { }
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("iterator()")));
+}

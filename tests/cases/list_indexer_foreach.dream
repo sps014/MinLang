@@ -1,0 +1,18 @@
+// The standard `List<T>` is indexable (`get`/`set`) and iterable (`iterator()`), so `list[i]`,
+// `list[i] = v`, and `for (let x in list)` all work out of the box.
+
+fun main() {
+    let xs = List<int>();
+    xs.push(1);
+    xs.push(2);
+    xs.push(3);
+
+    xs[2] = 30;                 // List.set(2, 30)
+
+    let sum = 0;
+    for (let x in xs) {         // x is the unwrapped element (int)
+        sum = sum + x;
+    }
+    System.println(sum);       // 1 + 2 + 30 = 33
+    System.println(xs.size()); // 3
+}

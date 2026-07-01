@@ -1,0 +1,14 @@
+// A class without an `iterator()` method cannot be used in `for (let x in obj)`. Compilation must
+// fail with a targeted diagnostic.
+
+class NoIter {
+    x: int;
+    constructor() { this.x = 0; }
+}
+
+fun main() {
+    let n = NoIter();
+    for (let v in n) {
+        System.println(v);
+    }
+}

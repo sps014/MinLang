@@ -83,12 +83,23 @@ impl<'a> Analyzer<'a> {
             .analyze_expression(iterable, ctx.parent_function, ctx.symbol_table, diagnostics)
             .unwrap_or(Type::Unknown);
         let iter_hir = self.hir_take();
+
+        // A class receiver iterates through the enumerator protocol (`iterator()` -> `next()`),
+        // lowered directly to a `while` loop (see `analyze_foreach_iter`). Arrays keep the built-in
+        // index loop below.
+        if !matches!(iterable_type, Type::Array(_)) && Self::resolve_struct_parts(&iterable_type).is_some()
+        {
+            return self.analyze_foreach_iter(element, &iterable_type, iter_hir, body, ctx, diagnostics);
+        }
+
         let element_type = match &iterable_type {
             Type::Array(inner) => (**inner).clone(),
+            // Don't cascade a fresh error if the base was already poisoned by an earlier one.
+            Type::Unknown => Type::Unknown,
             _ => {
                 diagnostics.report_error(
                     format!(
-                        "for-each can only iterate over arrays, got {}",
+                        "for-each can only iterate over arrays or types with an 'iterator()' method, got {}",
                         iterable_type.get_type()
                     ),
                     iterable.position(),
@@ -484,8 +495,8 @@ impl<'a> Analyzer<'a> {
 
     pub(super) fn analyze_index_assignment(
         &mut self,
-        arr: &ExpressionNode<'a>,
-        index: &ExpressionNode<'a>,
+        arr: &'a ExpressionNode<'a>,
+        index: &'a ExpressionNode<'a>,
         right: &ExpressionNode<'a>,
         parent_function: &FunctionNode<'a>,
         symbol_table: &Rc<RefCell<SymbolTable>>,
@@ -495,6 +506,24 @@ impl<'a> Analyzer<'a> {
             .analyze_expression(arr, parent_function, symbol_table, diagnostics)
             .unwrap_or(Type::Unknown);
         let array_hir = self.hir_take();
+
+        // Class index-assignment: `obj[i] = v` on a struct receiver desugars to `obj.set(i, v)`
+        // when an eligible `set` exists. Arrays keep the built-in path.
+        if !matches!(array_type, Type::Array(_) | Type::Unknown)
+            && Self::resolve_struct_parts(&array_type).is_some()
+        {
+            // The synthesized call re-evaluates the receiver, so drop the base HIR taken above.
+            let _ = array_hir;
+            return self.analyze_index_set(
+                arr,
+                index,
+                right,
+                &array_type,
+                parent_function,
+                symbol_table,
+                diagnostics,
+            );
+        }
 
         let inner_type = match array_type {
             Type::Array(inner) => *inner,
@@ -530,6 +559,62 @@ impl<'a> Analyzer<'a> {
 
         self.hir_assign_index(array_hir, index_hir, value_hir);
         Ok(())
+    }
+
+    /// Desugars a class index-assignment `obj[index] = value` to `obj.set(index, value)` when
+    /// `obj_type` exposes an eligible `set` (accessible instance, non-async method taking two
+    /// arguments; its return value is discarded). A same-named `set` that is static/async/wrong
+    /// arity is left as an ordinary method and this site reports why the value is not
+    /// index-assignable.
+    fn analyze_index_set(
+        &mut self,
+        arr: &'a ExpressionNode<'a>,
+        index: &'a ExpressionNode<'a>,
+        right: &ExpressionNode<'a>,
+        obj_type: &Type,
+        parent_function: &FunctionNode<'a>,
+        symbol_table: &Rc<RefCell<SymbolTable>>,
+        diagnostics: &mut DiagnosticBag,
+    ) -> Result<(), SemanticError> {
+        match self.resolve_hook_method(obj_type, "set", 2, diagnostics) {
+            super::calls::HookResolution::Eligible(_) => {
+                let set_tok = synthetic_token(TokenKind::IdentifierToken, "set");
+                let call = ExpressionNode::MethodCall(
+                    arr,
+                    set_tok,
+                    None,
+                    vec![(*index).clone(), right.clone()],
+                );
+                let _ =
+                    self.analyze_expression(&call, parent_function, symbol_table, diagnostics)?;
+                let call_hir = self.hir_take();
+                self.hir_expr_stmt(call_hir);
+                Ok(())
+            }
+            super::calls::HookResolution::Ineligible(reason) => {
+                self.hir_fail();
+                diagnostics.report_error(
+                    format!(
+                        "type '{}' is not index-assignable: {}",
+                        obj_type.get_type(),
+                        reason
+                    ),
+                    arr.position(),
+                );
+                Ok(())
+            }
+            super::calls::HookResolution::Absent => {
+                self.hir_fail();
+                diagnostics.report_error(
+                    format!(
+                        "type '{}' is not index-assignable (define 'public fun set(index, value)' to allow obj[index] = value)",
+                        obj_type.get_type()
+                    ),
+                    arr.position(),
+                );
+                Ok(())
+            }
+        }
     }
 
     pub(super) fn analyze_member_assignment(

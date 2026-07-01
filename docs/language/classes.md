@@ -187,6 +187,92 @@ public class Vec2 {
 }
 ```
 
+## Indexers and enumerators
+
+A class can opt into bracket-indexing (`obj[i]`) and `for..in` iteration by defining
+convention-named methods. These are ordinary methods — the special behaviour applies only at the
+sugar sites (`obj[i]`, `obj[i] = v`, `for (let x in obj)`); calling `obj.get(i)` directly is always
+just a normal method call.
+
+### Indexer: `get` / `set`
+
+- `obj[i]` desugars to `obj.get(i)`. The result type is whatever `get` returns.
+- `obj[i] = v` desugars to `obj.set(i, v)` (the return value is discarded).
+
+```dream
+class Grid {
+    cells: int[];
+
+    constructor(size: int) { this.cells = Array.new<int>(size); }
+
+    public fun get(index: int): int { return this.cells[index]; }
+    public fun set(index: int, value: int): void { this.cells[index] = value; }
+}
+
+fun main(): void {
+    let g = Grid(9);
+    g[4] = 42;              // -> g.set(4, 42)
+    println(g[4]);          // -> g.get(4)  => 42
+}
+```
+
+### Enumerator: `iterator` / `next`
+
+`for (let x in obj)` requires `obj.iterator()` to return an enumerator object whose
+`next(): Option<T>` yields the next element. `Some(v)` binds `x` to `v`; `None` ends the loop. A
+class may `return this;` from `iterator()` to be its own enumerator.
+
+```dream
+class RangeIter {
+    current: int;
+    end: int;
+
+    constructor(start: int, end: int) { this.current = start; this.end = end; }
+
+    public fun next(): Option<int> {
+        if (this.current >= this.end) { return Option.None; }
+        let v = this.current;
+        this.current = this.current + 1;
+        return Option.Some(v);
+    }
+}
+
+class Range {
+    start: int;
+    end: int;
+
+    constructor(start: int, end: int) { this.start = start; this.end = end; }
+    public fun iterator(): RangeIter { return RangeIter(this.start, this.end); }
+}
+
+fun main(): void {
+    for (let x in Range(0, 5)) { println(x); }   // 0 1 2 3 4
+}
+```
+
+`break` and `continue` work inside the loop body as usual; because `next()` is re-called at the top
+of every iteration, `continue` correctly advances the iterator.
+
+The standard [`List`](../stdlib/list.md) and [`Map`](../stdlib/map.md) already implement both
+protocols, so `list[i]`, `list[i] = v`, `map[k]`, `map[k] = v`, and `for..in` over them work out of
+the box. Iterating a `Map` yields `KeyValuePair<K, V>` values with public `key` and `value` fields.
+
+### Eligibility rules
+
+The sugar only binds to a method that fits the expected shape; otherwise the method stays an
+ordinary method and the sugar site reports a targeted error:
+
+| Hook | Requirements |
+| --- | --- |
+| read `get` | instance (non-`static`), non-`async`, exactly 1 parameter, non-`void` return |
+| write `set` | instance, non-`async`, exactly 2 parameters (return type unconstrained) |
+| `iterator` | instance, non-`async`, 0 parameters, returns an enumerator object |
+| `next` | instance, non-`async`, 0 parameters, returns `Option<T>` |
+
+For example, a `fun get(index: int): void` is a normal method (not an indexer), so `obj[i]` is a
+compile error while `obj.get(i)` keeps working. `static` and `async` variants are likewise never
+treated as hooks.
+
 ## Object protocol overrides
 
 Classes can customize how they are printed and hashed by overriding `to_string` and `hash_code`. See [The object type](objects.md) for details.

@@ -21,6 +21,15 @@ scores.put("bob", 80);
 scores.put("alice", 100);   // overwrites 95
 ```
 
+### set
+
+An alias for `put` that also powers index-assignment (`map[key] = value`).
+
+```dream
+scores.set("carol", 70);
+scores["dave"] = 60;         // -> scores.set("dave", 60)
+```
+
 ### get
 
 Returns the value for `key` as an `Option<V>`: `Some(value)` when present, or `None` when the key is absent.
@@ -94,6 +103,31 @@ Returns a freshly allocated array of every stored value, in unspecified order (k
 
 ```dream
 let vs = scores.values();   // int[]
+```
+
+### iterator
+
+Returns an enumerator so a map can be used directly in a `for..in` loop. Each iteration yields a
+`KeyValuePair<K, V>` (with public `key` and `value` fields), in unspecified order. You rarely call
+this method by hand — `for (let pair in map)` calls it for you.
+
+```dream
+for (let pair in scores) {
+    print(pair.key);
+    print(" = ");
+    println(pair.value);
+}
+```
+
+## Indexing and iteration
+
+`Map` supports the class [indexer and enumerator conventions](../language/classes.md#indexers-and-enumerators):
+
+```dream
+let m = Map<string, int>();
+m["a"] = 1;                        // -> m.set("a", 1)
+let hit = m["a"];                  // -> m.get("a")  => Option<int>
+for (let pair in m) { /* KeyValuePair<string, int> */ }
 ```
 
 ## Example

@@ -89,6 +89,29 @@ Removes the element at `index`, shifting everything after it left. Returns `true
 nums.remove_at(0);   // removes the first element; returns true
 ```
 
+### iterator
+
+Returns an enumerator so a list can be used directly in a `for..in` loop. You rarely call this
+method by hand — `for (let x in list)` calls it for you and binds `x` to each element in order.
+
+```dream
+for (let x in nums) {
+    println(x);
+}
+```
+
+## Indexing and iteration
+
+`List` supports the class [indexer and enumerator conventions](../language/classes.md#indexers-and-enumerators).
+Because `get` returns `Option<T>`, `list[i]` yields an `Option<T>`, while `for..in` binds the
+loop variable to the unwrapped element:
+
+```dream
+nums[1] = 99;                      // -> nums.set(1, 99)
+let first = nums[0];               // -> nums.get(0)  => Option<int>
+for (let x in nums) { /* x: int */ }
+```
+
 ## Example
 
 ```dream

@@ -69,6 +69,25 @@ impl<'a> Analyzer<'a> {
                     diagnostics,
                 )?;
                 let array_hir = self.hir_take();
+
+                // Class indexer: `obj[i]` on a struct receiver desugars to `obj.get(i)` when an
+                // eligible `get` exists. Arrays keep the built-in index path; `Unknown` is a poison
+                // carried from an earlier error and must not cascade.
+                if !matches!(array_type, Type::Array(_) | Type::Unknown)
+                    && Self::resolve_struct_parts(&array_type).is_some()
+                {
+                    // The synthesized call re-evaluates the receiver, so drop the base HIR taken above.
+                    let _ = array_hir;
+                    return self.analyze_index_get(
+                        *array_expr,
+                        *index_expr,
+                        &array_type,
+                        parent_function,
+                        symbol_table,
+                        diagnostics,
+                    );
+                }
+
                 let inner_type = match array_type {
                     Type::Array(inner) => *inner,
                     // Don't cascade if the base was already poisoned by an earlier error.
@@ -279,6 +298,67 @@ impl<'a> Analyzer<'a> {
                         ))
                     }
                 }
+            }
+        }
+    }
+
+    /// Desugars a class indexer read `obj[index]` to `obj.get(index)` when `obj_type` exposes an
+    /// eligible `get` (see [`Analyzer::resolve_hook_method`]): an accessible instance, non-async
+    /// method taking one argument and returning a (non-`void`) value. Any other same-named `get`
+    /// (static/async/void/wrong arity) is left as an ordinary method and this site reports why the
+    /// value cannot be indexed, rather than silently rewriting the call.
+    fn analyze_index_get(
+        &mut self,
+        array_expr: &'a ExpressionNode<'a>,
+        index_expr: &'a ExpressionNode<'a>,
+        obj_type: &Type,
+        parent_function: &FunctionNode<'a>,
+        symbol_table: &Rc<RefCell<SymbolTable>>,
+        diagnostics: &mut DiagnosticBag,
+    ) -> Result<Type, SemanticError> {
+        match self.resolve_hook_method(obj_type, "get", 1, diagnostics) {
+            super::calls::HookResolution::Eligible(info) => {
+                if matches!(info.return_type, None | Some(Type::Void)) {
+                    self.hir_fail();
+                    self.hir_none();
+                    diagnostics.report_error(
+                        format!(
+                            "type '{}' has no indexer: its 'get' must return a value",
+                            obj_type.get_type()
+                        ),
+                        array_expr.position(),
+                    );
+                    return Ok(Type::Unknown);
+                }
+                let get_tok = synthetic_token(TokenKind::IdentifierToken, "get");
+                let call = ExpressionNode::MethodCall(
+                    array_expr,
+                    get_tok,
+                    None,
+                    vec![(*index_expr).clone()],
+                );
+                self.analyze_expression(&call, parent_function, symbol_table, diagnostics)
+            }
+            super::calls::HookResolution::Ineligible(reason) => {
+                self.hir_fail();
+                self.hir_none();
+                diagnostics.report_error(
+                    format!("type '{}' cannot be indexed: {}", obj_type.get_type(), reason),
+                    array_expr.position(),
+                );
+                Ok(Type::Unknown)
+            }
+            super::calls::HookResolution::Absent => {
+                self.hir_fail();
+                self.hir_none();
+                diagnostics.report_error(
+                    format!(
+                        "type '{}' has no indexer (define 'public fun get(index): T' to allow obj[index])",
+                        obj_type.get_type()
+                    ),
+                    array_expr.position(),
+                );
+                Ok(Type::Unknown)
             }
         }
     }

@@ -64,6 +64,10 @@ for (let value in xs) {
 
 The loop variable is bound to each element in turn (its type is the array's element type).
 
+`for..in` also works over any class that implements the enumerator protocol (an `iterator()`
+method returning an object with `next(): Option<T>`), including the standard `List` and `Map`. See
+[Indexers and enumerators](classes.md#indexers-and-enumerators).
+
 ## switch
 
 `switch` has two forms. The **C-style** form (described here) matches a subject against one or more constant labels; the **pattern-matching** form destructures [discriminated unions](discriminated-unions.md) with `pattern => body` arms. The parser picks the form from the body: a leading `case`/`default` is the C-style form, anything else is the pattern form.

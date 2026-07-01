@@ -1,0 +1,1 @@
+for-each can only iterate over arrays or types with an 'iterator()' method

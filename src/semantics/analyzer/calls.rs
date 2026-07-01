@@ -17,7 +17,91 @@ use crate::syntax::token::token_kind::TokenKind;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+/// Outcome of looking up an indexer/enumerator "hook" method (`get`/`set`/`iterator`/`next`) on a
+/// struct receiver, for the desugaring of `obj[i]`, `obj[i] = v`, and `for (let x in obj)`.
+pub(super) enum HookResolution {
+    /// The receiver is not a struct, or it has no method with that name: the sugar is unavailable.
+    Absent,
+    /// A method with that name exists but cannot serve as a hook; carries a human-readable reason
+    /// (it is static, async, or has the wrong number of parameters).
+    Ineligible(String),
+    /// A usable hook: an accessible instance, non-async method with the requested declared arity.
+    Eligible(FunctionTableInfo),
+}
+
 impl<'a> Analyzer<'a> {
+    /// Resolves a hook method named `method_name` (with declared arity `declared_arity`, i.e.
+    /// excluding the implicit `this`) on struct receiver `obj_type`, ensuring the receiver's generic
+    /// instance is registered first. Return-type shape checks (non-void for `get`, `Option<T>` for
+    /// `next`, etc.) are left to the caller. An overloaded hook resolves to the first overload that
+    /// matches the requested arity. A same-named method that is `static`, `async`, or of the wrong
+    /// arity yields `Ineligible` (so `obj[i]`/`for..in` never silently hijack an ordinary method),
+    /// while a call like `obj.get(i)` keeps resolving through the normal method path.
+    pub(super) fn resolve_hook_method(
+        &mut self,
+        obj_type: &Type,
+        method_name: &str,
+        declared_arity: usize,
+        diagnostics: &mut DiagnosticBag,
+    ) -> HookResolution {
+        let (base_name, generic_args) = match Self::resolve_struct_parts(obj_type) {
+            Some(parts) => parts,
+            None => return HookResolution::Absent,
+        };
+        self.ensure_type_instantiated(&base_name, &generic_args, &empty_span(), diagnostics);
+        let mono_name = mangle_generic(&base_name, &generic_args);
+        let mangled = method_fn(&mono_name, method_name);
+
+        let candidates: Vec<FunctionTableInfo> = if self.function_table.is_overloaded(&mangled) {
+            self.function_table
+                .overloads
+                .get(&mangled)
+                .map(|keys| {
+                    keys.iter()
+                        .filter_map(|k| self.function_table.get_function(k).ok())
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            match self.function_table.get_function(&mangled) {
+                Ok(info) => vec![info],
+                Err(_) => return HookResolution::Absent,
+            }
+        };
+
+        // Prefer an eligible candidate; otherwise remember why the first candidate was unusable.
+        let mut ineligible_reason: Option<String> = None;
+        for info in candidates {
+            if info.is_static {
+                ineligible_reason.get_or_insert_with(|| {
+                    format!("'{}' must be a non-static instance method", method_name)
+                });
+                continue;
+            }
+            if info.is_async {
+                ineligible_reason
+                    .get_or_insert_with(|| format!("'{}' cannot be async", method_name));
+                continue;
+            }
+            // Instance methods carry an implicit `this` at parameter index 0.
+            let declared = info.parameters.len().saturating_sub(1);
+            if declared != declared_arity {
+                ineligible_reason.get_or_insert_with(|| {
+                    format!(
+                        "'{}' must take {} argument(s), but takes {}",
+                        method_name, declared_arity, declared
+                    )
+                });
+                continue;
+            }
+            return HookResolution::Eligible(info);
+        }
+        match ineligible_reason {
+            Some(reason) => HookResolution::Ineligible(reason),
+            None => HookResolution::Absent,
+        }
+    }
+
     /// Resolves an overloaded base name against the concrete `arg_types`, returning the selected
     /// signature or a human-readable error (no match / ambiguous). Used by both free-function and
     /// method call analysis (methods prepend the receiver type as the implicit `this` argument).
@@ -255,7 +339,17 @@ impl<'a> Analyzer<'a> {
             && (self.struct_table.get_struct(&function_name).is_some()
                 || self.generic_structs.contains_key(&function_name))
         {
-            let t = self.analyze_constructor_call(name, generic_args, &params_types, diagnostics)?;
+            // Substitute the enclosing monomorphization's bindings into the type arguments, so a
+            // generic construction using a type parameter (`ListIterator<T>(this)` inside a
+            // monomorphized `List<string>.iterator`) instantiates the concrete `ListIterator_string`
+            // rather than the unsubstituted `ListIterator_T`.
+            let concrete_generic_args: Option<Vec<Type>> = generic_args.as_ref().map(|g| {
+                g.iter()
+                    .map(|t| Self::monomorphize_type(t, &self.current_generic_bindings))
+                    .collect()
+            });
+            let t =
+                self.analyze_constructor_call(name, &concrete_generic_args, &params_types, diagnostics)?;
             // The concrete struct whose layout the backend uses: a plain struct is its own name, a
             // generic instance (`Box<int>`) its mangled name (`Box_int`), which
             // `ensure_struct_instantiated` has already added to the struct table. A generic base with
@@ -264,7 +358,7 @@ impl<'a> Analyzer<'a> {
             // (its args are the constructor's); otherwise `args` initialize fields positionally.
             // `hir_set_new` is given the source (base) name — the registered `DefId` for both plain
             // and generic structs — while the result type `t` supplies the per-instance layout key.
-            let concrete_name = match generic_args {
+            let concrete_name = match &concrete_generic_args {
                 Some(g) if !g.is_empty() => Some(mangle_generic(&name.text, g)),
                 _ if !self.generic_structs.contains_key(&name.text) => Some(name.text.clone()),
                 _ => None,
@@ -327,6 +421,7 @@ impl<'a> Analyzer<'a> {
                         .as_ref()
                         .map(|ret| Self::monomorphize_type(ret, &bindings)),
                     is_async: template.is_async,
+                    is_static: template.is_static,
                     is_public: template.is_public,
                     intrinsic_name: intrinsics::intrinsic_key(&template.attributes),
                 };
