@@ -372,6 +372,9 @@ impl<'a> Analyzer<'a> {
                 is_public: global.is_public,
                 is_static: global.is_static,
             });
+            // Register the HIR slot now (in declaration order) so a subsequent global's initializer
+            // can resolve this one as a `Binding::Global`.
+            self.hir_register_global(&global.name.text, &resolved.get_type(), global.is_const);
         }
     }
 

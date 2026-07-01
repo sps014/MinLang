@@ -542,6 +542,20 @@ const SYSTEM_STUB: &str = "
     }
 ";
 
+/// `System` + `Time.sleep` for async tests (mirrors `stdlib/core.dream` + `system.dream`).
+const ASYNC_STUB: &str = "
+    class System {
+        @intrinsic(\"print\")
+        static extern fun print<T>(value: T): void;
+        @intrinsic(\"println\")
+        static extern fun println<T>(value: T): void;
+    }
+    class Time {
+        @intrinsic(\"sleep\")
+        static extern async fun sleep(ms: int): void;
+    }
+";
+
 #[test]
 fn test_hir_emission_print_int_and_println() {
     // `System.print(int)` lowers to `$print_int`; `println` adds a trailing newline (`\n` = 10) via
@@ -1192,6 +1206,38 @@ fn test_hir_emission_async_await() {
     let (wat, count) = emit_hir_to_wat(code);
     assert_eq!(count, 2, "both async functions should be emitted:\n{}", wat);
     assert!(wat.contains("(func $work"), "missing async function:\n{}", wat);
+}
+
+#[test]
+fn test_async_emits_scheduler_runtime_and_poll() {
+    let code = format!(
+        "{ASYNC_STUB}
+        async fun delay(): void {{ await Time.sleep(0); }}
+        async fun main(): void {{ await delay(); }}"
+    );
+    let wat = emit_hir_to_module(&code);
+    assert!(wat.contains("(func $dream_run_loop"), "scheduler missing:\n{}", wat);
+    assert!(wat.contains("(func $poll_delay"), "poll fn missing:\n{}", wat);
+    assert!(wat.contains("call $dream_new_future"), "constructor missing:\n{}", wat);
+    assert!(wat.contains("call $dream_await"), "suspend missing:\n{}", wat);
+    assert!(wat.contains("(export \"main\")"), "async main wrapper missing:\n{}", wat);
+}
+
+#[cfg(feature = "native")]
+#[test]
+fn exec_async_sleep_and_await() {
+    let code = format!(
+        "{ASYNC_STUB}
+        async fun get(): int {{
+            await Time.sleep(0);
+            return 42;
+        }}
+        async fun main(): void {{
+            let v = await get();
+            System.print(v);
+        }}"
+    );
+    assert_eq!(run_and_capture(&code, "main"), "42");
 }
 
 #[test]

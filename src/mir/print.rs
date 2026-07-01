@@ -56,6 +56,10 @@ fn terminator(t: &Terminator) -> String {
         }
         Terminator::Return(Some(o)) => format!("return {}", operand(o)),
         Terminator::Return(None) => "return".to_string(),
+        Terminator::AsyncComplete(v) => format!(
+            "async_complete{}",
+            v.as_ref().map(operand).unwrap_or_default()
+        ),
         Terminator::Unreachable => "unreachable".to_string(),
     }
 }

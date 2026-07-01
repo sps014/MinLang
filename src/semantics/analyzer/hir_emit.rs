@@ -96,6 +96,14 @@ impl<'a> Analyzer<'a> {
     /// plain non-generic, non-static free functions (no `this` receiver) that are registered as a
     /// `DefId`; everything else is skipped (collection stays off).
     pub(super) fn hir_begin_function(&mut self, function: &FunctionNode<'a>) {
+        // `extern` functions are declarations with no body: host-interop imports are emitted as
+        // `(import ...)` (see `hir_build_imports`) and `@intrinsic` ones lower straight to their
+        // runtime helper (e.g. `String.alloc` → `$string_alloc`). Emitting an (empty) HIR body for
+        // them would define a second `$string_alloc`, colliding with the runtime function.
+        if function.is_extern {
+            self.hir.collecting = false;
+            return;
+        }
         let is_generic = function
             .generic_parameters
             .as_ref()
@@ -269,7 +277,14 @@ impl<'a> Analyzer<'a> {
             }
             Type::Float(t) | Type::Double(t) => t.text.parse::<f64>().ok().map(HExprKind::FloatLit),
             Type::Boolean(t) => Some(HExprKind::BoolLit(t.text == "true")),
-            Type::Char(t) => char_lit_value(&t.text).map(HExprKind::CharLit),
+            // The parser normalizes a char literal's token text to its decimal code point (e.g.
+            // `'A'` → "65"), so recover the `char` from that integer rather than the raw glyph.
+            Type::Char(t) => t
+                .text
+                .parse::<u32>()
+                .ok()
+                .and_then(char::from_u32)
+                .map(HExprKind::CharLit),
             Type::String(t) => Some(HExprKind::StringLit(string_lit_value(&t.text))),
             // The parser models the bare `null` literal as `Nullable(Void)` until its type is known.
             Type::Nullable(inner) if matches!(**inner, Type::Void) => Some(HExprKind::Null),
@@ -795,27 +810,22 @@ impl<'a> Analyzer<'a> {
         self.hir.last = None;
     }
 
-    /// Populates the module-global slot table (and the surfaced [`HGlobal`] list) from the analyzed
-    /// top-level variables. Called once after globals are registered, before any function body.
-    pub(super) fn hir_register_globals(&mut self) {
-        let entries: Vec<(String, String, bool)> = self
-            .globals
-            .iter()
-            .map(|g| (g.name.clone(), g.type_str.clone(), g.is_const))
-            .collect();
-        for (i, (name, type_str, is_const)) in entries.into_iter().enumerate() {
-            let ty = self.type_ctx.lower_str(&type_str);
-            let id = GlobalId(i as u32);
-            self.hir.globals.insert(name.clone(), (id, ty));
-            let init = self.hir.pending_global_inits.shift_remove(&name);
-            self.hir.global_decls.push(HGlobal {
-                id,
-                name,
-                ty,
-                is_const,
-                init,
-            });
-        }
+    /// Registers one top-level variable's HIR slot as it is analyzed (in declaration order), so a
+    /// *later* global's initializer can resolve an *earlier* global to a [`Binding::Global`]. The
+    /// slot `id` must equal the variable's index in [`Analyzer::globals`]. The initializer captured
+    /// by [`Self::hir_global_init_finish`] (if representable) is attached to the surfaced [`HGlobal`].
+    pub(super) fn hir_register_global(&mut self, name: &str, type_str: &str, is_const: bool) {
+        let ty = self.type_ctx.lower_str(type_str);
+        let id = GlobalId(self.hir.globals.len() as u32);
+        self.hir.globals.insert(name.to_string(), (id, ty));
+        let init = self.hir.pending_global_inits.shift_remove(name);
+        self.hir.global_decls.push(HGlobal {
+            id,
+            name: name.to_string(),
+            ty,
+            is_const,
+            init,
+        });
     }
 
     /// Builds the [`crate::hir::LayoutTable`] from the analyzed struct and union tables: each struct's
@@ -926,6 +936,47 @@ impl<'a> Analyzer<'a> {
             imports.push(HImport { def, name: func.name.text.clone(), module, field, params, ret });
         }
         imports
+    }
+
+    /// Collects every `@intrinsic("key")` extern as `(callee DefId, key)`. Unlike host imports these
+    /// have no `(import ...)` and no emitted body: their call sites resolve directly to the runtime
+    /// helper `$<key>` (`string_alloc`, `char_at`, …) or, for `sleep`, are recognized as an async
+    /// intrinsic. Methods are looked up under their mangled `{Type}_{method}` def name (the name the
+    /// call site resolves to), matching how they were registered.
+    pub(super) fn hir_build_intrinsics(
+        &mut self,
+        node: &crate::syntax::nodes::ProgramNode,
+    ) -> Vec<(crate::types::DefId, String)> {
+        use crate::syntax::nodes::types::method_fn;
+        let mut out: Vec<(crate::types::DefId, String)> = Vec::new();
+        for func in node.functions.iter() {
+            if let Some(key) = crate::intrinsics::intrinsic_key(&func.attributes) {
+                if let Some(def) = self.type_ctx.defs.lookup(DefKind::Function, &func.name.text) {
+                    out.push((def, key));
+                }
+            }
+        }
+        for s in node.structs.iter() {
+            for m in s.methods.iter() {
+                if let Some(key) = crate::intrinsics::intrinsic_key(&m.attributes) {
+                    let mangled = method_fn(&s.name.text, &m.name.text);
+                    if let Some(def) = self.type_ctx.defs.lookup(DefKind::Function, &mangled) {
+                        out.push((def, key));
+                    }
+                }
+            }
+        }
+        for e in node.extends.iter() {
+            for m in e.methods.iter() {
+                if let Some(key) = crate::intrinsics::intrinsic_key(&m.attributes) {
+                    let mangled = method_fn(&e.target.text, &m.name.text);
+                    if let Some(def) = self.type_ctx.defs.lookup(DefKind::Function, &mangled) {
+                        out.push((def, key));
+                    }
+                }
+            }
+        }
+        out
     }
 
     /// Records a `print`/`println` builtin call as [`HExprKind::Print`] (void). Every scalar
@@ -1352,9 +1403,3 @@ fn string_lit_value(text: &str) -> String {
     unescape_lit_body(body)
 }
 
-/// The `char` a char literal denotes: strip the surrounding single quotes from the raw token text,
-/// expand escapes, and take the first scalar. Idempotent on already-unquoted input.
-fn char_lit_value(text: &str) -> Option<char> {
-    let body = text.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')).unwrap_or(text);
-    unescape_lit_body(body).chars().next()
-}

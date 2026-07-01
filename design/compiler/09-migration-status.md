@@ -44,7 +44,7 @@ flowchart LR
 | MIR backend handles user-defined constructor bodies | ✅ done (Step C.2c) — `New` carries an optional `ctor` def; when present the backend allocates, zeroes the fields, then calls `$Type_constructor(this, args)` (whose body is emitted via `struct_methods`); otherwise it inlines positional field init |
 | `extend` blocks (generic + non-generic) | ✅ done — extension methods lower exactly like struct methods (`{Type}_{method}` + implicit `this`), so their bodies emit and calls resolve; generic `extend Box<T>` monomorphizes alongside the struct instance (`Box_int_peek`). Covered by `test_hir_emission_extend_{nongeneric,generic}_class` |
 | `del()` destructors | ◐ **body** emits under `{Type}_del` (like any method; `test_hir_emission_destructor_body`), but the release-time **invocation** (per-type deep release: pin refcount → call `$Type_del` → release ref fields → free) is part of the RC runtime, still deferred with the rest of the release layer (Step D) |
-| Driver uses the MIR backend | ❌ still `WasmGenerator` (Step D) |
+| Driver uses the MIR backend | ◐ **opt-in wired** — `Compiler::with_mir(true)` / CLI `--mir` routes analysis → HIR → `mir::lower` → `prune_unreachable` → passes → `emit_module`. Default is still `WasmGenerator`; the flip waits on full coverage. Gated by `tests/mir_e2e.rs` (**29 / 84** golden e2e cases pass end-to-end through the real driver front-end + MIR backend) |
 | `infer.rs` / `resolve.rs` deletable | ❌ still used by the live backend |
 
 The new architecture is **complete as modules** but **not on the critical path**. The legacy backend is
@@ -293,7 +293,7 @@ Teach `emit.rs` the heap.
 
      Still deferred until their runtime lands: `print`/`to_string` of **objects/structs/arrays** (needs
      the object-protocol vtables + per-type `to_string`), the function table + `$__indirect` type for
-     `IndirectCall`, and the async scheduler runtime.
+     `IndirectCall`, and the async scheduler runtime — **now done (D.5)**.
 
    - **C.9 — the backend now actually *runs* (done).** Everything above only asserted the emitted `.wat`
      *assembles*. The MIR backend is now validated by **execution**: `analyzer_tests.rs` gained a
@@ -409,6 +409,21 @@ Teach `emit.rs` the heap.
      tests. *Note:* the model is sound but conservative — it releases along every path rather than by
      liveness, and re-assigning a parameter leaks (a rare edge). Liveness/flow-sensitive placement is a
      later optimization, not a correctness gap.
+   - **D.5 — async scheduler runtime + coroutine transform (done).** Async functions no longer lower
+     to a broken passthrough `await`: `lower_async_stub` preserves the full [`HFunction`] snapshot on
+     [`MirFunction::hir_fn`], and `mir::async_emit` splits the body at top-level `await` points into
+     poll segments (matching the legacy shape restrictions). Each async function emits a **constructor**
+     (`$name` → `$dream_new_future` + param frame store + `$dream_enqueue`) and a **poll** function
+     (`$poll_$name` → `br_table` state machine). Segment bodies lower to MIR and emit via a
+     straight-line path; `Return` becomes [`Terminator::AsyncComplete`] → `$dream_complete`.
+     Suspend points evaluate the child future, save locals into the frame, and call `$dream_await`.
+     The shared `async.wat` scheduler (`$dream_run_loop`, timer queue, combinators) is included when
+     any function is `is_async`; poll indices are appended to `$__ft` after the constructor slots.
+     `Time.sleep` / `Promise.all|any|race` lower through `async_intrinsic_kind` to the host-timer and
+     combinator runtime (`$dream_set_timer`, `$dream_all`, `$dream_any`). Async `main` exports a
+     zero-arg wrapper that spawns the task and pumps `$dream_run_loop`. Verified by
+     `test_async_emits_scheduler_runtime_and_poll` (assembly) and `exec_async_sleep_and_await`
+     (`await Time.sleep(0); return 42` → prints `42` under `wasmtime`).
 5. **C.5 — generics (done).** HIR `Callee`/`New` carry `instance: Vec<TypeId>` (the monomorphization
    type-args, empty when non-generic). `hir_begin_function` no longer skips a body analyzed under
    `current_generic_bindings`; instead it lowers those bindings (in binding order) to the instance
@@ -452,13 +467,64 @@ Teach `emit.rs` the heap.
 `codegen_is_deterministic`.
 
 ### Step D — The switch + deletions
-Only once Step C passes the full e2e + determinism suite:
 
-1. Point `driver::compiler` at the MIR backend instead of `WasmGenerator`
-   (`src/driver/compiler.rs`, the `CodeGenerator` selection around line 111).
+**In progress.** The cutover *mechanism* and its *gate* are built and green; what remains is closing
+the coverage gap so the default can flip.
+
+**Landed:**
+- **Opt-in MIR driver path.** `Compiler::with_mir(true)` (CLI `--mir`) runs
+  analysis → `mir::lower::lower_program` → `mir::prune_unreachable` → `RcInsertion` + the default pass
+  pipeline → `emit_module`. The default remains `WasmGenerator`, so nothing on the live path changes.
+- **Module-level dead-function elimination** (`mir::prune_unreachable`). The analyzer emits an
+  `HFunction` for *every* fully-lowerable function, including unused standard-prelude helpers (`List`,
+  `Map`, `JsonValue`, …) merged into every program. Reachability from `main` + the global initializer
+  (following direct calls, `FuncRef`s, and constructors) drops the dead ones before emission, so the
+  module no longer has to resolve prelude code the backend cannot yet lower. This alone took the MIR
+  backend from **0 → 28** passing e2e cases.
+- **Intrinsic-extern resolution.** `@intrinsic("key")` externs are no longer emitted as (empty) HIR
+  bodies — that used to double-define runtime helpers like `$string_alloc`. Instead the analyzer
+  records `(callee DefId → key)` (`hir_build_intrinsics`), threaded HIR → MIR → `symbol_table`, so a
+  call resolves straight to the runtime helper `$<key>` (or is recognized as the async `sleep`
+  intrinsic) rather than the `$def{N}` fallback.
+- **Coverage ratchet** (`tests/mir_e2e.rs`). Compiles every `tests/cases/*.dream` through the real
+  driver front-end with `--mir`, runs it under `wasmtime`, and diffs against `.expected`. Every case
+  not in the annotated `XFAIL` list must pass, so coverage can only grow; removing an `XFAIL` entry is
+  the unit of progress. **Currently 37 pass / 47 xfail.**
+- **Codegen-bug cluster cleared.** The eight cases that compiled but ran wrong (or failed WASM
+  validation) are now fixed, all in already-covered paths:
+  - *Numeric casts* — `emit_cast` gained the missing float→int (saturating `trunc_sat`) and
+    i64↔float conversions, with `_s`/`_u` chosen from the integer side's signedness (`casting`,
+    `double_cast`).
+  - *Implicit argument widening* — call sites now coerce each argument to the callee's parameter
+    type (`signature_table` → `emit_call_args`), so an `int`/`float` passed to a `double` parameter
+    matches the WASM signature (`numeric_widening`).
+  - *Void method-call statements* — a bare `recv.m()` lowers to `Statement::Call`, not a temp-binding
+    assign that emitted a `local.set` with an empty stack (`method_strings`).
+  - *Char literals* — the parser normalizes them to a decimal code point, so HIR emission parses that
+    integer rather than grabbing the first glyph (`char_literals`).
+  - *Global-init ordering* — HIR global slots are registered incrementally in declaration order, so a
+    later top-level initializer can reference earlier globals (`top_level_vars`).
+  - *Destructors survive DFE* — `prune_unreachable` keeps `<Type>_del`/`<Type>_to_string` for every
+    live (constructed/printed) type and its fields, since they are invoked only by the generated RC
+    runtime (`arc_factory`, `constructor_basic`).
+
+**Remaining coverage gap** (the `XFAIL` categories, in rough priority order):
+1. **`main` dropped** — `main`'s body uses an analyzer construct not yet lowered to HIR (strings/
+   interpolation, unions + object protocol, `do/while`, labeled loops, overload resolution, top-level
+   statements, json). The whole function is skipped, so the module has no `main` export.
+2. **callee unresolved (`$def{N}`)** — a reachable method/generic-instance body is not emitted
+   (monomorphized methods with their own type params; some static methods).
+3. **constructor/layout (`$def{N}_constructor`)** — a `new` of a (generic) instance whose layout is
+   not registered for that type id.
+4. **match on union variant patterns** — `lower_switch` only handles const/enum arms; variant
+   patterns (`Full(t) => …`) need discriminant dispatch + payload binding + an expression result
+   (`union_rc`, and part of `union_match`/`switch_basic`/`union_result`).
+
+**The switch (unchanged, once `XFAIL` is empty):**
+1. Flip the `Compiler` default to the MIR backend (`src/driver/compiler.rs`).
 2. **Delete** `src/codegen/wasm/utils/infer.rs` and `resolve.rs`.
-3. **Delete** the AST-walking `WasmGenerator` and any now-orphaned `codegen/wasm/*` modules whose logic
-   moved into `emit.rs` + the reused runtime layers.
+3. **Delete** the AST-walking `WasmGenerator` and now-orphaned `codegen/wasm/*` modules superseded by
+   `emit.rs` + the reused runtime layers.
 4. Remove the legacy string `get_type()` bridges left from Step A.
 5. Re-run the full gate; update `GEMINI.md` and this file.
 

@@ -27,6 +27,12 @@ pub struct Compiler {
     /// `Debug.total_allocations()` probes report real values. Off by default (release builds pay
     /// no per-allocation cost); enabled via the CLI `--debug` flag or [`Compiler::with_debug_alloc`].
     debug_alloc: bool,
+    /// When `true`, code generation goes through the new HIR → MIR → WAT backend instead of the
+    /// legacy AST-walking [`WasmGenerator`]. This is the Step-D cutover switch: off by default while
+    /// the MIR backend's language coverage is still growing (see `design/compiler/09-migration-status.md`);
+    /// opt in via [`Compiler::with_mir`] (used by `tests/mir_e2e.rs` to gate coverage) until it is
+    /// ready to become the default.
+    use_mir: bool,
 }
 
 impl Compiler {
@@ -34,12 +40,19 @@ impl Compiler {
         Self {
             target,
             debug_alloc: false,
+            use_mir: false,
         }
     }
 
     /// Builder: enable allocator instrumentation for this compilation.
     pub fn with_debug_alloc(mut self, on: bool) -> Self {
         self.debug_alloc = on;
+        self
+    }
+
+    /// Builder: route code generation through the new MIR backend (Step-D opt-in).
+    pub fn with_mir(mut self, on: bool) -> Self {
+        self.use_mir = on;
         self
     }
 
@@ -108,13 +121,33 @@ impl Compiler {
         info!("finished semantic analysis");
         info!("starting code generation");
 
-        let mut generator: Box<dyn CodeGenerator> = match self.target {
-            Target::Wasm => {
-                Box::new(WasmGenerator::new(&ast, &symbol_info).with_debug_alloc(self.debug_alloc))
+        let text = if self.use_mir {
+            // New backend: lower the analyzer-emitted HIR to MIR, optimize, and emit a self-contained
+            // module. Destructuring moves the owned `hir` out and drops `symbol_info`'s borrowing
+            // references, releasing the `&mut analyzer` borrow so the shared interner can be read (the
+            // HIR references its `TypeId`s, so both must come from this same analyzer instance).
+            let crate::semantics::analyzer::SemanticInfo { hir, .. } = symbol_info;
+            let interner = analyzer.interner();
+            let mut mir = crate::mir::lower::lower_program(&hir, interner);
+            // Drop unused prelude helpers before optimizing/emitting so the module only carries code
+            // reachable from `main` (see `mir::prune_unreachable`).
+            crate::mir::prune_unreachable(&mut mir);
+            let rc = crate::mir::passes::RcInsertion;
+            let pipeline = crate::mir::passes::PassManager::default_pipeline();
+            for f in &mut mir.functions {
+                use crate::mir::passes::MirPass;
+                rc.run(f, interner);
+                pipeline.run(f, interner);
             }
+            crate::mir::emit::emit_module(&mir, interner)
+        } else {
+            let mut generator: Box<dyn CodeGenerator> = match self.target {
+                Target::Wasm => Box::new(
+                    WasmGenerator::new(&ast, &symbol_info).with_debug_alloc(self.debug_alloc),
+                ),
+            };
+            generator.generate()?
         };
-
-        let text = generator.generate()?;
 
         info!("finished code generation");
         fs::write(out_path, &text)?;

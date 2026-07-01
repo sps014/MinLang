@@ -148,6 +148,7 @@ fn read_terminator(t: &Terminator, read: &mut HashSet<Local>) {
         Terminator::If { cond, .. } => read_operand(cond, read),
         Terminator::Switch { value, .. } => read_operand(value, read),
         Terminator::Return(Some(o)) => read_operand(o, read),
+        Terminator::AsyncComplete(Some(o)) => read_operand(o, read),
         _ => {}
     }
 }

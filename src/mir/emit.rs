@@ -114,7 +114,7 @@ fn heap_base(strings: &IndexMap<String, u32>) -> u32 {
 
 /// The emitted symbol for a function (or generic instance): the source name, suffixed with the
 /// instance's interned type-arg ids so each monomorphization stays distinct.
-fn func_symbol(func: &MirFunction) -> String {
+pub(crate) fn func_symbol(func: &MirFunction) -> String {
     if func.instance.is_empty() {
         func.name.clone()
     } else {
@@ -137,7 +137,26 @@ fn symbol_table(mir: &super::Mir) -> HashMap<(DefId, Vec<TypeId>), String> {
     for imp in &mir.imports {
         table.insert((imp.def, vec![]), imp.name.clone());
     }
+    // Intrinsic externs have no body/import: map their def to the intrinsic key so a call resolves to
+    // the runtime helper `$<key>` (e.g. `$string_alloc`) or is recognized as an async intrinsic
+    // (`sleep`) rather than falling back to `$def{N}`.
+    for (def, key) in &mir.intrinsics {
+        table.entry((*def, vec![])).or_insert_with(|| key.clone());
+    }
     table
+}
+
+/// Maps each function's `(DefId, instance args)` to its declared parameter types, so call sites can
+/// apply implicit numeric widening (e.g. an `int`/`float` argument passed to a `double` parameter)
+/// to match the callee's WASM signature. Keyed like [`symbol_table`].
+fn signature_table(mir: &super::Mir) -> HashMap<(DefId, Vec<TypeId>), Vec<TypeId>> {
+    mir.functions
+        .iter()
+        .map(|f| {
+            let params = f.params.iter().map(|p| f.local_ty(*p)).collect();
+            ((f.def, f.instance.clone()), params)
+        })
+        .collect()
 }
 
 /// Maps each function's `(DefId, instance args)` to its slot in the module's function table, in
@@ -188,15 +207,31 @@ fn emit_func_signatures(out: &mut String, interner: &TypeInterner) {
     }
 }
 
-/// Emits the function table and its element section (one slot per function, in `mir.functions`
-/// order), plus the `__indirect_function_table` export used by the JS host to build callbacks.
+pub(crate) fn poll_symbol(func: &MirFunction) -> String {
+    format!("poll_{}", func_symbol(func))
+}
+
+pub(crate) fn release_call_for_ty(
+    interner: &TypeInterner,
+    layouts: &LayoutTable,
+    ty: TypeId,
+) -> String {
+    release_call(interner, layouts, ty)
+}
+
+/// Emits the function table and its element section (constructors/sync functions first, then async
+/// poll functions), plus the `__indirect_function_table` export.
 fn emit_func_table(out: &mut String, mir: &super::Mir) {
-    let n = mir.functions.len();
+    let poll_count = mir.functions.iter().filter(|f| f.is_async).count();
+    let n = mir.functions.len() + poll_count;
     if n == 0 {
         return;
     }
     let _ = writeln!(out, "(table $__ft {} funcref)", n);
-    let syms: Vec<String> = mir.functions.iter().map(|f| format!("${}", func_symbol(f))).collect();
+    let mut syms: Vec<String> = mir.functions.iter().map(|f| format!("${}", func_symbol(f))).collect();
+    for f in mir.functions.iter().filter(|f| f.is_async) {
+        syms.push(format!("${}", poll_symbol(f)));
+    }
     let _ = writeln!(out, "(elem (i32.const 0) {})", syms.join(" "));
     out.push_str("(export \"__indirect_function_table\" (table $__ft))\n");
 }
@@ -341,6 +376,7 @@ fn strings_in_terminator(t: &Terminator, out: &mut Vec<String>) {
         Terminator::If { cond, .. } => strings_in_operand(cond, out),
         Terminator::Switch { value, .. } => strings_in_operand(value, out),
         Terminator::Return(Some(o)) => strings_in_operand(o, out),
+        Terminator::AsyncComplete(Some(o)) => strings_in_operand(o, out),
         _ => {}
     }
 }
@@ -366,13 +402,14 @@ fn escape_data(s: &str) -> String {
 /// the pipeline tests; the driver target is [`emit_module`].
 pub fn emit_program(mir: &super::Mir, interner: &TypeInterner) -> String {
     let symbols = symbol_table(mir);
+    let sigs = signature_table(mir);
     let strings = string_table(mir);
     let tags = struct_tags(mir);
     let ftable = func_table(mir);
     let mut out = String::new();
     for f in &mir.functions {
         out.push_str(&emit_function_with(
-            f, interner, &symbols, &mir.layouts, &strings, &tags, &ftable,
+            f, interner, &symbols, &sigs, &mir.layouts, &strings, &tags, &ftable,
         ));
         out.push('\n');
     }
@@ -384,6 +421,7 @@ pub fn emit_program(mir: &super::Mir, interner: &TypeInterner) -> String {
 /// assembler once the runtime layers are wired in.
 pub fn emit_module(mir: &super::Mir, interner: &TypeInterner) -> String {
     let symbols = symbol_table(mir);
+    let sigs = signature_table(mir);
     let strings = string_table(mir);
     let tags = struct_tags(mir);
     let ftable = func_table(mir);
@@ -413,6 +451,10 @@ pub fn emit_module(mir: &super::Mir, interner: &TypeInterner) -> String {
 
     out.push_str(&runtime_prelude());
     out.push('\n');
+    if super::async_emit::module_has_async(&mir.functions) {
+        out.push_str(&super::async_emit::async_runtime_wat());
+        out.push('\n');
+    }
     out.push_str(&to_string_runtime(&strings));
     out.push('\n');
     emit_object_protocol(&mut out, mir, interner, &strings, &tags);
@@ -426,15 +468,27 @@ pub fn emit_module(mir: &super::Mir, interner: &TypeInterner) -> String {
         let _ = writeln!(out, "(data (i32.const {}) \"{}\")", block, escape_data(s));
     }
 
+    let polls = super::async_emit::poll_indices(&mir.functions);
     let mut has_init = false;
     for f in &mir.functions {
-        out.push_str(&emit_function_with(
-            f, interner, &symbols, &mir.layouts, &strings, &tags, &ftable,
-        ));
-        // The module-init function is internal (run via `(start ...)`), not an exported entry point.
+        if f.is_async {
+            out.push_str(&super::async_emit::emit_async_function(
+                f, interner, &symbols, &mir.layouts, &strings, &tags, &ftable,
+                *polls.get(&(f.def, f.instance.clone())).unwrap_or(&0),
+            ));
+        } else {
+            out.push_str(&emit_function_with(
+                f, interner, &symbols, &sigs, &mir.layouts, &strings, &tags, &ftable,
+            ));
+        }
         if f.name == super::lower::INIT_FN_NAME {
             has_init = true;
-        } else if f.instance.is_empty() {
+        } else if f.instance.is_empty() && f.name == "main" && f.is_async {
+            out.push_str(&super::async_emit::emit_async_main_wrapper(
+                &func_symbol(f),
+                !f.params.is_empty(),
+            ));
+        } else if f.instance.is_empty() && !(f.name == "main" && f.is_async) {
             let _ = writeln!(out, "(export \"{}\" (func ${}))", f.name, func_symbol(f));
         }
         out.push('\n');
@@ -449,6 +503,11 @@ pub fn emit_module(mir: &super::Mir, interner: &TypeInterner) -> String {
     out.push_str("(export \"memory\" (memory 0))\n");
     out.push_str("(export \"malloc\" (func $malloc))\n");
     out.push_str("(export \"free\" (func $free))\n");
+    if super::async_emit::module_has_async(&mir.functions) {
+        out.push_str("(export \"__dream_run_loop\" (func $dream_run_loop))\n");
+        out.push_str("(export \"__dream_resolve\" (func $dream_resolve))\n");
+        out.push_str("(export \"__dream_new_future\" (func $dream_new_future))\n");
+    }
     out.push_str(")\n");
     out
 }
@@ -490,7 +549,7 @@ fn emit_imports(out: &mut String, mir: &super::Mir, interner: &TypeInterner) {
 }
 
 /// The WASM value type for a Dream type (`i32`/`i64`/`f32`/`f64`), used for global declarations.
-fn wasm_ty_of(interner: &TypeInterner, ty: TypeId) -> &'static str {
+pub(crate) fn wasm_ty_of(interner: &TypeInterner, ty: TypeId) -> &'static str {
     match interner.kind(interner.strip_nullable(ty)) {
         TyKind::Prim(PrimTy::Double) => "f64",
         TyKind::Prim(PrimTy::Long | PrimTy::ULong) => "i64",
@@ -805,6 +864,20 @@ fn write_tag_arm(out: &mut String, tag: i32, body: &str) {
     );
 }
 
+/// Maps a callee symbol to an async-intrinsic kind (`sleep`, `__promise_all`, …), if any.
+fn async_intrinsic_kind(sym: &str) -> Option<&'static str> {
+    use crate::intrinsics;
+    if sym.ends_with("_sleep") || sym == intrinsics::SLEEP {
+        Some(intrinsics::SLEEP)
+    } else if sym == intrinsics::PROMISE_ALL {
+        Some(intrinsics::PROMISE_ALL)
+    } else if sym == intrinsics::PROMISE_ANY || sym == intrinsics::PROMISE_RACE {
+        Some(intrinsics::PROMISE_ANY)
+    } else {
+        None
+    }
+}
+
 /// The `$release_*` symbol that deep-releases a reference value of `ty` (chosen *statically* from the
 /// declared type): structs/unions call their generated per-type release, reference-element arrays
 /// their element-typed array release, and everything else (strings, scalar arrays, boxed primitives)
@@ -981,6 +1054,7 @@ pub fn emit_function(func: &MirFunction, interner: &TypeInterner) -> String {
         func,
         interner,
         &HashMap::new(),
+        &HashMap::new(),
         &LayoutTable::default(),
         &IndexMap::new(),
         &HashMap::new(),
@@ -993,6 +1067,7 @@ fn emit_function_with(
     func: &MirFunction,
     interner: &TypeInterner,
     symbols: &HashMap<(DefId, Vec<TypeId>), String>,
+    sigs: &HashMap<(DefId, Vec<TypeId>), Vec<TypeId>>,
     layouts: &LayoutTable,
     strings: &IndexMap<String, u32>,
     tags: &HashMap<TypeId, i32>,
@@ -1002,25 +1077,88 @@ fn emit_function_with(
         func,
         interner,
         symbols,
+        sigs,
         layouts,
         strings,
         tags,
         func_table,
         out: String::new(),
+        async_parent: None,
     };
     e.emit();
     e.out
+}
+
+/// Emits one basic block's straight-line body (no CFG dispatch loop). Used by async poll segments.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn emit_straight_line_segment(
+    func: &MirFunction,
+    interner: &TypeInterner,
+    symbols: &HashMap<(DefId, Vec<TypeId>), String>,
+    layouts: &LayoutTable,
+    strings: &IndexMap<String, u32>,
+    tags: &HashMap<TypeId, i32>,
+    ftable: &HashMap<(DefId, Vec<TypeId>), usize>,
+    async_parent: &MirFunction,
+) -> String {
+    // Async poll segments do not apply call-argument widening yet (async cases are still gated); an
+    // empty signature map disables it without extra plumbing through the coroutine transform.
+    let sigs: HashMap<(DefId, Vec<TypeId>), Vec<TypeId>> = HashMap::new();
+    let mut e = Emitter {
+        func,
+        interner,
+        symbols,
+        sigs: &sigs,
+        layouts,
+        strings,
+        tags,
+        func_table: ftable,
+        out: String::new(),
+        async_parent: Some(async_parent),
+    };
+    let block = func.block(func.entry);
+    for stmt in &block.stmts {
+        e.emit_stmt(stmt);
+    }
+    e.emit_poll_terminator(&block.terminator);
+    e.out
+}
+
+/// Evaluates a HIR expression and stores the result in `$__scratch` (async poll suspend).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn emit_expr_to_scratch(
+    hir: &crate::hir::HFunction,
+    expr: &crate::hir::HExpr,
+    interner: &TypeInterner,
+    symbols: &HashMap<(DefId, Vec<TypeId>), String>,
+    layouts: &LayoutTable,
+    strings: &IndexMap<String, u32>,
+    tags: &HashMap<TypeId, i32>,
+    ftable: &HashMap<(DefId, Vec<TypeId>), usize>,
+    parent: &MirFunction,
+) -> String {
+    let (mir, temp) = super::lower::lower_expr_value(hir, expr, interner);
+    let mut out = emit_straight_line_segment(
+        &mir, interner, symbols, layouts, strings, tags, ftable, parent,
+    );
+    let _ = writeln!(out, "     (local.get ${})", temp.0);
+    out.push_str("     (local.set $__scratch)\n");
+    out
 }
 
 struct Emitter<'a> {
     func: &'a MirFunction,
     interner: &'a TypeInterner,
     symbols: &'a HashMap<(DefId, Vec<TypeId>), String>,
+    /// Callee `(def, instance)` → parameter types, for implicit widening of call arguments.
+    sigs: &'a HashMap<(DefId, Vec<TypeId>), Vec<TypeId>>,
     layouts: &'a LayoutTable,
     strings: &'a IndexMap<String, u32>,
     tags: &'a HashMap<TypeId, i32>,
     func_table: &'a HashMap<(DefId, Vec<TypeId>), usize>,
     out: String,
+    /// When emitting inside an async poll segment, the enclosing task (for scope-exit release).
+    async_parent: Option<&'a MirFunction>,
 }
 
 impl Emitter<'_> {
@@ -1135,9 +1273,7 @@ impl Emitter<'_> {
                 self.line(&format!("     (call {})", call));
             }
             Statement::Call { callee, args } => {
-                for a in args {
-                    self.emit_operand(a);
-                }
+                self.emit_call_args(callee, args);
                 self.line(&format!("     (call ${})", self.callee_symbol(callee)));
                 if !matches!(self.interner.kind(callee.ret), TyKind::Void) {
                     self.line("     (drop)");
@@ -1380,10 +1516,13 @@ impl Emitter<'_> {
                 }
             }
             Rvalue::Call { callee, args } => {
-                for a in args {
-                    self.emit_operand(a);
+                let sym = self.callee_symbol(callee);
+                if let Some(kind) = async_intrinsic_kind(&sym) {
+                    self.emit_async_intrinsic(kind, args);
+                } else {
+                    self.emit_call_args(callee, args);
+                    self.line(&format!("     (call ${sym})"));
                 }
-                self.line(&format!("     (call ${})", self.callee_symbol(callee)));
             }
             Rvalue::IndirectCall { target, args } => {
                 for a in args {
@@ -1515,16 +1654,51 @@ impl Emitter<'_> {
     fn emit_cast(&mut self, o: &Operand, to: TypeId) {
         let from = self.operand_ty(o);
         self.emit_operand(o);
+        self.emit_numeric_conv(from, to);
+    }
+
+    /// Emits a call's arguments, applying implicit numeric widening to each so a narrower argument
+    /// (e.g. an `int`/`float` passed to a `double` parameter) matches the callee's WASM signature.
+    /// Falls back to a plain push when the callee's parameter types are unknown (imports/intrinsics).
+    fn emit_call_args(&mut self, callee: &super::Callee, args: &[Operand]) {
+        let params = self.sigs.get(&(callee.def, callee.args.clone())).cloned();
+        for (i, a) in args.iter().enumerate() {
+            self.emit_operand(a);
+            if let Some(pty) = params.as_ref().and_then(|p| p.get(i)) {
+                self.emit_numeric_conv(self.operand_ty(a), *pty);
+            }
+        }
+    }
+
+    /// Emits the WASM numeric conversion instruction to turn a value of type `from` (already on the
+    /// stack) into type `to`, if their WASM value types differ (a no-op otherwise). Shared by explicit
+    /// `Cast` and the implicit widening applied to call arguments.
+    fn emit_numeric_conv(&mut self, from: TypeId, to: TypeId) {
         let (fw, tw) = (self.wasm_ty(from), self.wasm_ty(to));
         if fw != tw {
-            // A minimal numeric conversion table; the full set lives in the runtime helpers.
-            let instr = match (fw.as_str(), tw.as_str()) {
-                ("i32", "i64") => "i64.extend_i32_s",
+            // Numeric conversions between the four WASM value types. Integer/float conversions carry
+            // the signedness of the *integer* side (the target for float→int, the source otherwise);
+            // saturating float→int truncation matches C-style cast semantics (no trap on overflow/NaN).
+            let (fw, tw) = (fw.as_str(), tw.as_str());
+            let int_signed = |ty: TypeId| {
+                !matches!(
+                    self.interner.kind(self.interner.strip_nullable(ty)),
+                    TyKind::Prim(PrimTy::UInt | PrimTy::ULong | PrimTy::Byte)
+                )
+            };
+            let instr = match (fw, tw) {
+                ("i32", "i64") => if int_signed(from) { "i64.extend_i32_s" } else { "i64.extend_i32_u" },
                 ("i64", "i32") => "i32.wrap_i64",
-                ("i32", "f32") => "f32.convert_i32_s",
-                ("i32", "f64") => "f64.convert_i32_s",
+                ("i32", "f32") => if int_signed(from) { "f32.convert_i32_s" } else { "f32.convert_i32_u" },
+                ("i32", "f64") => if int_signed(from) { "f64.convert_i32_s" } else { "f64.convert_i32_u" },
+                ("i64", "f32") => if int_signed(from) { "f32.convert_i64_s" } else { "f32.convert_i64_u" },
+                ("i64", "f64") => if int_signed(from) { "f64.convert_i64_s" } else { "f64.convert_i64_u" },
                 ("f32", "f64") => "f64.promote_f32",
                 ("f64", "f32") => "f32.demote_f64",
+                ("f32", "i32") => if int_signed(to) { "i32.trunc_sat_f32_s" } else { "i32.trunc_sat_f32_u" },
+                ("f64", "i32") => if int_signed(to) { "i32.trunc_sat_f64_s" } else { "i32.trunc_sat_f64_u" },
+                ("f32", "i64") => if int_signed(to) { "i64.trunc_sat_f32_s" } else { "i64.trunc_sat_f32_u" },
+                ("f64", "i64") => if int_signed(to) { "i64.trunc_sat_f64_s" } else { "i64.trunc_sat_f64_u" },
                 _ => "nop",
             };
             self.line(&format!("     ({})", instr));
@@ -1560,6 +1734,67 @@ impl Emitter<'_> {
             }
             Terminator::Return(None) => self.line("     (return)"),
             Terminator::Unreachable => self.line("     (unreachable)"),
+            Terminator::AsyncComplete(_) => self.line("     (unreachable) ;; async in sync fn"),
+        }
+    }
+
+    /// Terminator emission for async poll segments (completes the task instead of returning).
+    fn emit_poll_terminator(&mut self, t: &Terminator) {
+        match t {
+            Terminator::AsyncComplete(v) => {
+                if let Some(parent) = self.async_parent {
+                    for (i, decl) in parent.locals.iter().enumerate() {
+                        if self.interner.is_reference(decl.ty) {
+                            let call = release_call(self.interner, self.layouts, decl.ty);
+                            self.line(&format!("     (local.get ${i})"));
+                            self.line(&format!("     (call {call})"));
+                        }
+                    }
+                }
+                self.line("     (local.get $self)");
+                if let Some(v) = v {
+                    self.emit_operand(v);
+                } else {
+                    self.line("     (i32.const 0)");
+                }
+                self.line("     (call $dream_complete)");
+                self.line("     (i32.const 0)");
+                self.line("     (return)");
+            }
+            Terminator::Return(Some(o)) => {
+                self.emit_operand(o);
+                self.line("     (return)");
+            }
+            Terminator::Return(None) => self.line("     (return)"),
+            _ => {}
+        }
+    }
+
+    /// Emits `sleep` / `Promise.all|any|race`, leaving a `Future` pointer on the stack.
+    fn emit_async_intrinsic(&mut self, kind: &str, args: &[Operand]) {
+        use crate::intrinsics;
+        match kind {
+            intrinsics::SLEEP => {
+                self.emit_operand(&args[0]);
+                self.line("     (local.set $__scratch)");
+                self.line("     (i32.const 56) ;; F_SLOTS");
+                self.line("     (i32.const -1)");
+                self.line("     (i32.const 1) ;; KIND_HOST");
+                self.line("     (call $dream_new_future)");
+                self.line("     (local.tee $__obj)");
+                self.line("     (local.get $__scratch)");
+                self.line("     (call $dream_set_timer)");
+                self.line("     (local.get $__obj)");
+            }
+            intrinsics::PROMISE_ALL => {
+                self.emit_operand(&args[0]);
+                self.line("     (call $dream_all)");
+            }
+            intrinsics::PROMISE_ANY | intrinsics::PROMISE_RACE => {
+                self.emit_operand(&args[0]);
+                self.line("     (call $dream_any)");
+            }
+            _ => {}
         }
     }
 

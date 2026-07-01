@@ -267,6 +267,12 @@ impl<'a> Analyzer<'a> {
         }
     }
 
+    /// The type interner backing analysis. Its `TypeId`s are the ones referenced by the emitted HIR
+    /// (`SemanticInfo::hir`), so the MIR backend must be handed *this* interner to lower that HIR.
+    pub(crate) fn interner(&self) -> &crate::types::TypeInterner {
+        &self.type_ctx.interner
+    }
+
     /// Builds the `Future<T>` type carrying inner type `inner`. Async-call results are this type,
     /// and `await` unwraps it back to `inner`.
     pub(super) fn future_type(inner: Type) -> Type {
@@ -371,9 +377,9 @@ impl<'a> Analyzer<'a> {
         self.register_functions(node, diagnostics);
         // Globals are analyzed after functions/types are known (so initializers can call them) but
         // before function bodies, so those bodies can resolve global identifiers.
+        // HIR global slots are assigned incrementally inside `register_globals` (in declaration
+        // order) so both later initializers and function bodies can resolve global identifiers.
         self.register_globals(node, diagnostics);
-        // Assign HIR global slots now so function bodies can resolve global identifiers/assignments.
-        self.hir_register_globals();
         self.analyze_function_bodies(node, &mut symbol_table_map, diagnostics)?;
         self.analyze_pending_instantiations(&mut symbol_table_map, diagnostics)?;
 
@@ -389,6 +395,7 @@ impl<'a> Analyzer<'a> {
         // needs `&mut self.type_ctx`.
         let layouts = self.hir_build_layouts();
         let imports = self.hir_build_imports(node);
+        let intrinsics = self.hir_build_intrinsics(node);
         let hir_functions = std::mem::take(&mut self.hir.functions);
         let hir_globals = std::mem::take(&mut self.hir.global_decls);
 
@@ -407,6 +414,7 @@ impl<'a> Analyzer<'a> {
                 instances: vec![],
                 layouts,
                 imports,
+                intrinsics,
             },
         })
     }

@@ -54,11 +54,43 @@ pub fn lower_program(hir: &Hir, interner: &TypeInterner) -> Mir {
         .iter()
         .map(|g| super::MirGlobal { id: super::Global(g.id.0), ty: g.ty })
         .collect();
-    Mir { functions, globals, layouts: hir.layouts.clone(), imports: hir.imports.clone() }
+    Mir {
+        functions,
+        globals,
+        layouts: hir.layouts.clone(),
+        imports: hir.imports.clone(),
+        intrinsics: hir.intrinsics.clone(),
+    }
 }
 
 /// Lowers a single function.
 pub fn lower_function(func: &HFunction, interner: &TypeInterner) -> MirFunction {
+    if func.is_async {
+        return lower_async_stub(func, interner);
+    }
+    lower_sync_function(func, interner)
+}
+
+/// Preserves the HIR body for the async coroutine transform; the poll/constructor are emitted
+/// separately (see [`crate::mir::async_emit`]).
+fn lower_async_stub(func: &HFunction, interner: &TypeInterner) -> MirFunction {
+    let mut b = FunctionBuilder::new(func.name.clone(), interner.int());
+    b.set_async(true);
+    b.set_def(func.def, func.instance.clone());
+    for p in &func.params {
+        b.new_param(p.ty, Some(p.name.clone()));
+    }
+    for decl in &func.locals {
+        b.new_local(decl.ty, Some(decl.name.clone()));
+    }
+    b.terminate(Terminator::Return(None));
+    let mut f = b.finish();
+    f.ret = func.ret;
+    f.hir_fn = Some(func.clone());
+    f
+}
+
+fn lower_sync_function(func: &HFunction, interner: &TypeInterner) -> MirFunction {
     let mut b = FunctionBuilder::new(func.name.clone(), func.ret);
     b.set_async(func.is_async);
     b.set_def(func.def, func.instance.clone());
@@ -78,6 +110,7 @@ pub fn lower_function(func: &HFunction, interner: &TypeInterner) -> MirFunction 
         interner,
         locals,
         loops: Vec::new(),
+        async_segment: false,
     };
     lo.lower_block(&func.body);
 
@@ -86,6 +119,66 @@ pub fn lower_function(func: &HFunction, interner: &TypeInterner) -> MirFunction 
         lo.b.terminate(Terminator::Return(None));
     }
     lo.b.finish()
+}
+
+/// Lowers a straight-line slice of an async function body (one poll segment). `Return` becomes
+/// [`Terminator::AsyncComplete`] so the async emitter can finish the task with `$dream_complete`.
+pub fn lower_async_segment(func: &HFunction, stmts: &[HStmt], interner: &TypeInterner) -> MirFunction {
+    let mut b = FunctionBuilder::new(format!("{}__seg", func.name), func.ret);
+    b.set_def(func.def, func.instance.clone());
+    let mut locals: HashMap<u32, Local> = HashMap::new();
+    for p in &func.params {
+        let l = b.new_param(p.ty, Some(p.name.clone()));
+        locals.insert(p.local.0, l);
+    }
+    for decl in &func.locals {
+        let l = b.new_local(decl.ty, Some(decl.name.clone()));
+        locals.insert(decl.id.0, l);
+    }
+    let mut lo = Lowerer {
+        b,
+        interner,
+        locals,
+        loops: Vec::new(),
+        async_segment: true,
+    };
+    lo.lower_block(stmts);
+    if !lo.b.is_terminated() {
+        lo.b.terminate(Terminator::AsyncComplete(None));
+    }
+    lo.b.finish()
+}
+
+/// Lowers a single expression into a temporary local; used when an async poll segment needs a future
+/// value in `$__scratch`.
+pub fn lower_expr_value(
+    func: &HFunction,
+    expr: &crate::hir::HExpr,
+    interner: &TypeInterner,
+) -> (MirFunction, Local) {
+    let mut b = FunctionBuilder::new(format!("{}__expr", func.name), expr.ty);
+    b.set_def(func.def, func.instance.clone());
+    let mut locals: HashMap<u32, Local> = HashMap::new();
+    for p in &func.params {
+        let l = b.new_param(p.ty, Some(p.name.clone()));
+        locals.insert(p.local.0, l);
+    }
+    for decl in &func.locals {
+        let l = b.new_local(decl.ty, Some(decl.name.clone()));
+        locals.insert(decl.id.0, l);
+    }
+    let mut lo = Lowerer {
+        b,
+        interner,
+        locals,
+        loops: Vec::new(),
+        async_segment: false,
+    };
+    let t = lo.b.new_temp(expr.ty);
+    let rv = lo.lower_rvalue(expr);
+    lo.b.assign(Place::Local(t), rv);
+    lo.b.terminate(Terminator::Unreachable);
+    (lo.b.finish(), t)
 }
 
 struct LoopCtx {
@@ -99,6 +192,8 @@ struct Lowerer<'a> {
     interner: &'a TypeInterner,
     locals: HashMap<u32, Local>,
     loops: Vec<LoopCtx>,
+    /// When set, `return` completes the async task instead of returning from a WASM function.
+    async_segment: bool,
 }
 
 impl Lowerer<'_> {
@@ -128,9 +223,19 @@ impl Lowerer<'_> {
                 self.b.assign(p, rv);
             }
             HStmt::Expr(e) | HStmt::Await(e) => match &e.kind {
-                // A bare call keeps its `Call` statement form (return value discarded).
+                // A bare call keeps its `Call` statement form (return value discarded). This matters
+                // for void calls: materializing them into a temp (the fallback below) would emit a
+                // `local.set` with nothing on the stack.
                 HExprKind::Call { callee, args } => {
                     let lowered: Vec<Operand> = args.iter().map(|a| self.lower_operand(a)).collect();
+                    self.b.push(Statement::Call {
+                        callee: self.lower_callee(callee),
+                        args: lowered,
+                    });
+                }
+                HExprKind::MethodCall { receiver, callee, args } => {
+                    let mut lowered = vec![self.lower_operand(receiver)];
+                    lowered.extend(args.iter().map(|a| self.lower_operand(a)));
                     self.b.push(Statement::Call {
                         callee: self.lower_callee(callee),
                         args: lowered,
@@ -149,7 +254,11 @@ impl Lowerer<'_> {
             },
             HStmt::Return(e) => {
                 let op = e.as_ref().map(|e| self.lower_operand(e));
-                self.b.terminate(Terminator::Return(op));
+                if self.async_segment {
+                    self.b.terminate(Terminator::AsyncComplete(op));
+                } else {
+                    self.b.terminate(Terminator::Return(op));
+                }
             }
             HStmt::If {
                 cond,

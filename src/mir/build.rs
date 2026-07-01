@@ -118,6 +118,7 @@ impl FunctionBuilder {
             locals: self.locals,
             blocks: self.blocks,
             entry: BlockId(0),
+            hir_fn: None,
         }
     }
 }

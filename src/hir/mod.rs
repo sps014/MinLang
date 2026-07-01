@@ -43,6 +43,11 @@ pub struct Hir {
     /// Host/extern functions the module imports. The backend emits one `(import ...)` per entry;
     /// call sites resolve to `$name` (which the import declares).
     pub imports: Vec<HImport>,
+    /// `@intrinsic("key")` externs: each maps a callee `DefId` to its intrinsic key. These have no
+    /// emitted body — call sites resolve directly to the runtime helper `$<key>` (e.g. `string_alloc`)
+    /// or, for async intrinsics like `sleep`, are recognized by the backend and lowered to the
+    /// scheduler. Recorded so the backend's symbol table can resolve the callee def.
+    pub intrinsics: Vec<(DefId, String)>,
 }
 
 /// A host function the module imports: an `extern fun` (interop) or a compiler-provided host
@@ -76,7 +81,7 @@ pub struct HGlobal {
     pub init: Option<HExpr>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HFunction {
     pub def: DefId,
     /// The base (un-mangled) source name; the backend derives the emitted symbol from
@@ -91,7 +96,7 @@ pub struct HFunction {
     pub is_async: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HParam {
     pub local: LocalId,
     pub name: String,
@@ -100,7 +105,7 @@ pub struct HParam {
 
 /// Declaration metadata for a function local (used by the backend to allocate slots and by RC
 /// insertion to know which locals are references).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HLocal {
     pub id: LocalId,
     pub name: String,
@@ -361,6 +366,7 @@ mod tests {
             instances: vec![],
             layouts: LayoutTable::default(),
             imports: vec![],
+            intrinsics: vec![],
         };
         assert_eq!(hir.functions.len(), 1);
         assert_eq!(hir.functions[0].params.len(), 2);

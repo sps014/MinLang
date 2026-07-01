@@ -7,6 +7,7 @@
 //! passes reason about them with ordinary dataflow. The backend  reconstructs
 //! structured WASM control flow from this CFG via a relooper.
 
+pub mod async_emit;
 pub mod build;
 pub mod emit;
 pub mod lower;
@@ -41,6 +42,10 @@ pub struct Mir {
     pub layouts: crate::hir::LayoutTable,
     /// Host/extern imports, carried verbatim from HIR for the backend to emit `(import ...)`.
     pub imports: Vec<crate::hir::HImport>,
+    /// `@intrinsic` externs: `(callee DefId, intrinsic key)`. Carried from HIR so the backend's
+    /// symbol table resolves intrinsic call targets (to the runtime helper `$<key>`, or the async
+    /// scheduler for `sleep`) instead of the `$def{N}` fallback.
+    pub intrinsics: Vec<(DefId, String)>,
 }
 
 /// A module-level variable slot (declared as one mutable WASM global `$g{id}`).
@@ -65,6 +70,8 @@ pub struct MirFunction {
     pub blocks: Vec<BasicBlock>,
     pub entry: BlockId,
     pub is_async: bool,
+    /// When `is_async`, the full typed HIR function preserved for the coroutine transform.
+    pub hir_fn: Option<crate::hir::HFunction>,
 }
 
 impl MirFunction {
@@ -137,6 +144,9 @@ pub enum Terminator {
         default: BlockId,
     },
     Return(Option<Operand>),
+    /// Completes the enclosing async task (`$dream_complete`) in a poll function. Used only by the
+    /// async coroutine transform; synchronous functions use [`Terminator::Return`].
+    AsyncComplete(Option<Operand>),
     /// Statically unreachable (e.g. after a diverging call); the placeholder default.
     #[default]
     Unreachable,
@@ -153,7 +163,7 @@ impl Terminator {
                 s.push(*default);
                 s
             }
-            Terminator::Return(_) | Terminator::Unreachable => vec![],
+            Terminator::Return(_) | Terminator::AsyncComplete(_) | Terminator::Unreachable => vec![],
         }
     }
 }
@@ -243,6 +253,140 @@ pub struct Callee {
     pub def: DefId,
     pub args: Vec<TypeId>,
     pub ret: TypeId,
+}
+
+/// Identity of a function/instance for the call graph: its def plus the concrete type-args of the
+/// monomorphized instance (empty for non-generic functions), matching `MirFunction::{def, instance}`
+/// and `Callee::{def, args}`.
+type FnKey = (DefId, Vec<TypeId>);
+
+/// Records every callable this rvalue statically references (direct calls, first-class function
+/// refs, and user constructors) into `out`.
+fn rvalue_callees(rv: &Rvalue, out: &mut Vec<FnKey>) {
+    match rv {
+        Rvalue::Call { callee, .. } | Rvalue::FuncRef(callee) => {
+            out.push((callee.def, callee.args.clone()))
+        }
+        Rvalue::New { ctor: Some(ctor), .. } => out.push((*ctor, vec![])),
+        _ => {}
+    }
+}
+
+/// Removes functions unreachable from the module's entry points. The analyzer emits an [`HFunction`]
+/// for *every* fully-lowerable function, including unused standard-prelude helpers (`List`, `Map`,
+/// `JsonValue`, …) that are merged into every program; carrying them into the module would force the
+/// assembler to resolve dead code that may reference runtime pieces the MIR backend has not wired yet.
+///
+/// Reachability starts from `main` and the synthesized global initializer and follows direct calls,
+/// `FuncRef`s, and constructors. An `IndirectCall` has no static target, but its only possible
+/// targets are functions whose address was taken by a `FuncRef` in reachable code — which the
+/// `FuncRef` edges already keep — so the result stays sound.
+pub fn prune_unreachable(mir: &mut Mir) {
+    use std::collections::{HashMap, HashSet};
+
+    let index: HashMap<FnKey, usize> = mir
+        .functions
+        .iter()
+        .enumerate()
+        .map(|(i, f)| ((f.def, f.instance.clone()), i))
+        .collect();
+
+    // `<Type>_del`/`<Type>_to_string` are invoked only by the generated RC runtime (the release
+    // helpers and `$print_object`), never by a normal call edge, so reachability tracks them by name
+    // for every type that is *live* — constructed (`New`/`UnionNew`) or printed — plus, transitively,
+    // the types of its (reference) fields, whose release/print the runtime chains into.
+    let by_name: HashMap<&str, usize> =
+        mir.functions.iter().enumerate().map(|(i, f)| (f.name.as_str(), i)).collect();
+
+    let mut reachable: HashSet<usize> = HashSet::new();
+    let mut live_types: HashSet<TypeId> = HashSet::new();
+    let mut type_worklist: Vec<TypeId> = Vec::new();
+    let mut worklist: Vec<usize> = mir
+        .functions
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| f.name == "main" || f.name == lower::INIT_FN_NAME)
+        .map(|(i, _)| i)
+        .collect();
+
+    loop {
+        while let Some(idx) = worklist.pop() {
+            if !reachable.insert(idx) {
+                continue;
+            }
+            let mut callees = Vec::new();
+            for block in &mir.functions[idx].blocks {
+                for stmt in &block.stmts {
+                    match stmt {
+                        Statement::Call { callee, .. } => {
+                            callees.push((callee.def, callee.args.clone()))
+                        }
+                        Statement::Assign(_, rv) => {
+                            rvalue_callees(rv, &mut callees);
+                            match rv {
+                                Rvalue::New { ty, .. } | Rvalue::UnionNew { ty, .. } => {
+                                    type_worklist.push(*ty)
+                                }
+                                _ => {}
+                            }
+                        }
+                        Statement::Print { ty, .. } => type_worklist.push(*ty),
+                        _ => {}
+                    }
+                }
+            }
+            for key in callees {
+                if let Some(&target) = index.get(&key) {
+                    if !reachable.contains(&target) {
+                        worklist.push(target);
+                    }
+                }
+            }
+        }
+
+        // Expand the live-type frontier: keep each type's destructor/`to_string` and recurse into its
+        // fields. Any newly-kept function is pushed back so its own body is walked; the outer loop
+        // reaches a fixpoint once the function worklist drains and no new type is discovered.
+        while let Some(ty) = type_worklist.pop() {
+            if !live_types.insert(ty) {
+                continue;
+            }
+            let mut field_tys = Vec::new();
+            let mut names = Vec::new();
+            if let Some(l) = mir.layouts.structs.get(&ty) {
+                names.push(l.name.clone());
+                field_tys.extend(l.fields.iter().map(|f| f.ty));
+            }
+            if let Some(l) = mir.layouts.unions.get(&ty) {
+                names.push(l.name.clone());
+                field_tys.extend(l.variants.iter().flat_map(|v| v.fields.iter().map(|f| f.ty)));
+            }
+            for name in names {
+                for sym in [format!("{}_del", name), format!("{}_to_string", name)] {
+                    if let Some(&idx) = by_name.get(sym.as_str()) {
+                        if !reachable.contains(&idx) {
+                            worklist.push(idx);
+                        }
+                    }
+                }
+            }
+            type_worklist.extend(field_tys);
+        }
+        if worklist.is_empty() {
+            break;
+        }
+    }
+    drop(by_name);
+
+    let mut keep = reachable.into_iter().collect::<Vec<_>>();
+    keep.sort_unstable();
+    let mut kept = Vec::with_capacity(keep.len());
+    for (i, f) in std::mem::take(&mut mir.functions).into_iter().enumerate() {
+        if keep.binary_search(&i).is_ok() {
+            kept.push(f);
+        }
+    }
+    mir.functions = kept;
 }
 
 #[cfg(test)]

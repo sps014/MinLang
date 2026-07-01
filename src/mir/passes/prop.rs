@@ -97,6 +97,7 @@ fn subst_terminator_reads(t: &mut Terminator, known: &HashMap<Local, Operand>) -
         Terminator::If { cond, .. } => subst_operand(cond, known),
         Terminator::Switch { value, .. } => subst_operand(value, known),
         Terminator::Return(Some(o)) => subst_operand(o, known),
+        Terminator::AsyncComplete(Some(o)) => subst_operand(o, known),
         _ => false,
     }
 }
