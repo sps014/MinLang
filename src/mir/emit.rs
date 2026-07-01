@@ -303,6 +303,16 @@ fn string_table(mir: &super::Mir) -> IndexMap<String, u32> {
             }
             strings_in_terminator(&b.terminator, &mut found);
         }
+        // An async function's MIR body is a stub; its literals live in the preserved HIR snapshot
+        // (emitted later by the coroutine transform), so harvest them here too — otherwise those
+        // string constants get no data segment and lower to a null pointer.
+        if f.is_async {
+            if let Some(hir_fn) = &f.hir_fn {
+                let mut edges = super::HirEdges::default();
+                super::hir_body_edges(&hir_fn.body, &mut edges);
+                found.extend(edges.strings);
+            }
+        }
     }
     let mut map: IndexMap<String, u32> = IndexMap::new();
     let mut block = STRING_BASE;
@@ -1074,11 +1084,17 @@ fn write_tag_arm(out: &mut String, tag: i32, body: &str) {
 /// Maps a callee symbol to an async-intrinsic kind (`sleep`, `__promise_all`, …), if any.
 fn async_intrinsic_kind(sym: &str) -> Option<&'static str> {
     use crate::intrinsics;
+    // Intrinsics are keyed by their `@intrinsic("…")` attribute string in the symbol table (e.g.
+    // `promise_all`), so match those here as well as the internal `__promise_*` names.
     if sym.ends_with("_sleep") || sym == intrinsics::SLEEP {
         Some(intrinsics::SLEEP)
-    } else if sym == intrinsics::PROMISE_ALL {
+    } else if sym == intrinsics::PROMISE_ALL || sym == intrinsics::ATTR_PROMISE_ALL {
         Some(intrinsics::PROMISE_ALL)
-    } else if sym == intrinsics::PROMISE_ANY || sym == intrinsics::PROMISE_RACE {
+    } else if sym == intrinsics::PROMISE_ANY
+        || sym == intrinsics::PROMISE_RACE
+        || sym == intrinsics::ATTR_PROMISE_ANY
+        || sym == intrinsics::ATTR_PROMISE_RACE
+    {
         Some(intrinsics::PROMISE_ANY)
     } else {
         None
@@ -1323,11 +1339,7 @@ pub(crate) fn emit_straight_line_segment(
         out: String::new(),
         async_parent: Some(async_parent),
     };
-    let block = func.block(func.entry);
-    for stmt in &block.stmts {
-        e.emit_stmt(stmt);
-    }
-    e.emit_poll_terminator(&block.terminator);
+    e.emit_poll_segment_body();
     e.out
 }
 
@@ -2145,35 +2157,106 @@ impl Emitter<'_> {
         }
     }
 
-    /// Terminator emission for async poll segments (completes the task instead of returning).
+    /// Terminator emission for async poll segments (completes the task instead of returning). Only
+    /// value-carrying/`AsyncComplete` terminators reach here; a void fall-through is elided by the
+    /// caller so control continues to the segment's suspend/complete handling.
     fn emit_poll_terminator(&mut self, t: &Terminator) {
         match t {
             Terminator::AsyncComplete(v) => {
-                if let Some(parent) = self.async_parent {
-                    for (i, decl) in parent.locals.iter().enumerate() {
-                        if self.interner.is_reference(decl.ty) {
-                            let call = release_call(self.interner, self.layouts, decl.ty);
-                            self.line(&format!("     (local.get ${i})"));
-                            self.line(&format!("     (call {call})"));
-                        }
-                    }
-                }
-                self.line("     (local.get $self)");
-                if let Some(v) = v {
-                    self.emit_operand(v);
-                } else {
-                    self.line("     (i32.const 0)");
-                }
-                self.line("     (call $dream_complete)");
-                self.line("     (i32.const 0)");
-                self.line("     (return)");
+                let v = v.clone();
+                self.emit_poll_complete(v.as_ref());
             }
+            // A value `return x;` inside an async body lowers to `AsyncComplete`, but handle the plain
+            // form too (complete the coroutine with the value rather than returning it from `poll`).
             Terminator::Return(Some(o)) => {
-                self.emit_operand(o);
-                self.line("     (return)");
+                let o = o.clone();
+                self.emit_poll_complete(Some(&o));
             }
-            Terminator::Return(None) => self.line("     (return)"),
+            Terminator::Return(None) => self.emit_poll_complete(None),
             _ => {}
+        }
+    }
+
+    /// Completes the current coroutine: releases the parent's reference locals, then
+    /// `$dream_complete($self, value)` and returns `0` (the poll result).
+    fn emit_poll_complete(&mut self, value: Option<&Operand>) {
+        if let Some(parent) = self.async_parent {
+            for (i, decl) in parent.locals.iter().enumerate() {
+                if self.interner.is_reference(decl.ty) {
+                    let call = release_call(self.interner, self.layouts, decl.ty);
+                    self.line(&format!("     (local.get ${i})"));
+                    self.line(&format!("     (call {call})"));
+                }
+            }
+        }
+        self.line("     (local.get $self)");
+        match value {
+            Some(v) => self.emit_operand(v),
+            None => self.line("     (i32.const 0)"),
+        }
+        self.line("     (call $dream_complete)");
+        self.line("     (i32.const 0)");
+        self.line("     (return)");
+    }
+
+    /// Emits a plain async poll segment's body. A single-block segment is emitted inline; its void
+    /// fall-through terminator is elided so control continues to the segment's own suspend/complete
+    /// handling in `emit_async_function`. A multi-block segment (the plain code contained an
+    /// `if`/loop/`match`, or a suspend expression with control flow) is emitted through a `$__pc`
+    /// dispatch loop wrapped in `$__segexit`: CFG edges re-dispatch, completions run
+    /// `$dream_complete`, and a void fall-through/`unreachable` tail `br`s to `$__segexit` so the
+    /// code the caller appends after the segment runs next.
+    fn emit_poll_segment_body(&mut self) {
+        let n = self.func.blocks.len();
+        if n <= 1 {
+            let block = self.func.block(self.func.entry);
+            for stmt in &block.stmts {
+                self.emit_stmt(stmt);
+            }
+            match &block.terminator {
+                Terminator::AsyncComplete(None)
+                | Terminator::Return(None)
+                | Terminator::Unreachable => {}
+                other => self.emit_poll_terminator(other),
+            }
+            return;
+        }
+        self.line("     (block $__segexit");
+        self.line(&format!("      (i32.const {})", self.func.entry.0));
+        self.line("      (local.set $__pc)");
+        self.line("      (loop $__loop");
+        for i in (0..n).rev() {
+            self.line(&format!("       (block $bb{}", i));
+        }
+        let labels: String = (0..n).map(|i| format!("$bb{} ", i)).collect();
+        let default = format!("$bb{}", n.saturating_sub(1));
+        self.line(&format!("        (br_table {}{} (local.get $__pc))", labels, default));
+        for i in 0..n {
+            self.line(&format!("       ) ;; bb{} body", i));
+            let block = self.func.block(super::BlockId(i as u32));
+            for stmt in &block.stmts {
+                self.emit_stmt(stmt);
+            }
+            self.emit_poll_cfg_terminator(&block.terminator);
+        }
+        self.line("      )"); // loop
+        self.line("     )"); // $__segexit
+    }
+
+    /// Terminator emission inside a multi-block poll segment: CFG edges dispatch through `$__pc`
+    /// (via [`Self::emit_terminator`]'s `goto`), completions run `$dream_complete`, and a void
+    /// fall-through/`unreachable` tail exits the dispatch loop so the segment's trailing code runs.
+    fn emit_poll_cfg_terminator(&mut self, t: &Terminator) {
+        match t {
+            Terminator::Goto(_) | Terminator::If { .. } | Terminator::Switch { .. } => {
+                self.emit_terminator(t)
+            }
+            Terminator::AsyncComplete(_) | Terminator::Return(Some(_)) => {
+                self.emit_poll_terminator(t)
+            }
+            Terminator::Return(None) | Terminator::Unreachable => {
+                self.line("     (br $__segexit)")
+            }
         }
     }
 

@@ -789,13 +789,20 @@ impl<'a> Analyzer<'a> {
             {
                 let mut s_tok = method.clone();
                 s_tok.text = combinator.to_string();
-                return Ok(Some(self.analyze_async_intrinsic(
+                let ret = self.analyze_async_intrinsic(
                     &s_tok,
                     params,
                     ctx.parent_function,
                     ctx.symbol_table,
                     diagnostics,
-                )?));
+                )?;
+                // `analyze_async_intrinsic` only types the combinator; its argument analysis leaves
+                // the future-array HIR in `last`. Reuse it as the single arg of a direct call to the
+                // combinator intrinsic so the MIR backend lowers it to `$dream_all/$dream_any`
+                // (rather than emitting only the array, which would await the raw array pointer).
+                let arg_hir = self.hir_take();
+                self.hir_set_call(&base, vec![arg_hir], &ret);
+                return Ok(Some(ret));
             }
 
             if self.function_table.get_function(&mangled_name).is_err() {

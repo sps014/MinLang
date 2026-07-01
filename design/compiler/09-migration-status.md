@@ -44,7 +44,7 @@ flowchart LR
 | MIR backend handles user-defined constructor bodies | ✅ done (Step C.2c) — `New` carries an optional `ctor` def; when present the backend allocates, zeroes the fields, then calls `$Type_constructor(this, args)` (whose body is emitted via `struct_methods`); otherwise it inlines positional field init |
 | `extend` blocks (generic + non-generic) | ✅ done — extension methods lower exactly like struct methods (`{Type}_{method}` + implicit `this`), so their bodies emit and calls resolve; generic `extend Box<T>` monomorphizes alongside the struct instance (`Box_int_peek`). Covered by `test_hir_emission_extend_{nongeneric,generic}_class` |
 | `del()` destructors | ◐ **body** emits under `{Type}_del` (like any method; `test_hir_emission_destructor_body`), but the release-time **invocation** (per-type deep release: pin refcount → call `$Type_del` → release ref fields → free) is part of the RC runtime, still deferred with the rest of the release layer (Step D) |
-| Driver uses the MIR backend | ◐ **opt-in wired** — `Compiler::with_mir(true)` / CLI `--mir` routes analysis → HIR → `mir::lower` → `prune_unreachable` → passes → `emit_module`. Default is still `WasmGenerator`; the flip waits on full coverage. Gated by `tests/mir_e2e.rs` (**74 / 84** golden e2e cases pass end-to-end through the real driver front-end + MIR backend) |
+| Driver uses the MIR backend | ◐ **opt-in wired** — `Compiler::with_mir(true)` / CLI `--mir` routes analysis → HIR → `mir::lower` → `prune_unreachable` → passes → `emit_module`. Default is still `WasmGenerator`; the flip waits on full coverage. Gated by `tests/mir_e2e.rs` (**79 / 84** golden e2e cases pass end-to-end through the real driver front-end + MIR backend) |
 | `infer.rs` / `resolve.rs` deletable | ❌ still used by the live backend |
 
 The new architecture is **complete as modules** but **not on the critical path**. The legacy backend is
@@ -595,14 +595,37 @@ the coverage gap so the default can flip.
     a bare `drop`), and a reference field/element **reassignment** now releases its previous occupant
     (deferred through the `$__rel` scratch so self-referential stores stay sound) (`gc_complete`).
 
-**Remaining coverage gap** (the `XFAIL` categories, in rough priority order):
-1. **`main` dropped** — `main`'s body uses an analyzer construct not yet lowered to HIR (strings/
-   interpolation, unions + object protocol, `do/while`, labeled loops, overload resolution, top-level
-   statements, json). The whole function is skipped, so the module has no `main` export.
-2. **callee unresolved (`$def{N}`)** — a reachable method/generic-instance body is not emitted
-   (async methods; monomorphized methods with their own type params; file/json intrinsics).
-3. **constructor/layout (`$def{N}_constructor`)** — a `new` of a (generic) instance whose layout is
-   not registered for that type id.
+- **Async end-to-end: the whole async/await cluster now runs.** Coverage went **74 → 79**
+  (`async_basic`, `async_method`, `async_ref_params`, `async_combinators`, `file_io`). The coroutine
+  transform was already in place; the gaps were that everything *reachable only through an async body*
+  fell through the MIR-only pipeline, because an async function's MIR body is a stub (its real
+  control flow is rebuilt from the `hir_fn` snapshot at emit time).
+  - *Reachability + string interning through async bodies* — `prune_unreachable` and `string_table`
+    now also walk each async function's preserved HIR (`mir::hir_body_edges`), so an awaited helper is
+    no longer pruned to a `$def{N}` and its string literals no longer lower to a null pointer
+    (`async_basic`, `async_method`, `async_ref_params`).
+  - *Plain-segment fall-through* — a plain segment that precedes an `await` used to emit its implicit
+    end-of-segment `AsyncComplete(None)`, completing the coroutine right after the first statement.
+    That void fall-through terminator is now elided so control reaches the suspend.
+  - *Promise combinators actually lower* — `Promise.all/any/race` (generic intrinsics) only *typed*
+    before; they now emit a real call node (so the MIR lowers `$dream_all`/`$dream_any` instead of
+    awaiting the raw array), and `async_intrinsic_kind` matches the registered `@intrinsic` attr
+    key as well as the internal `__promise_*` name (`async_combinators`).
+  - *Class static extern imports* — `hir_build_imports` looked up class/`extend` static externs by
+    their bare method name, but they are registered mangled `{Type}_{method}`; the lookup (and the
+    emitted `$name`) now use the mangled name, so `File.__file_write` etc. resolve to their host
+    `(import ...)` instead of `$def{N}`.
+  - *Full CFG in poll segments* — a poll segment's straight-line emitter only emitted the entry block,
+    silently dropping any `if`/loop/`match` inside async plain code (e.g. `File.read`'s
+    `if (!exists) return Err`). Poll segments now emit their complete CFG through a `$__pc` dispatch
+    loop wrapped in `$__segexit` (completions run `$dream_complete`; a void fall-through exits the loop
+    to the segment's trailing suspend/complete code) (`file_io`).
+
+**Remaining coverage gap** — the last **5 / 84** `XFAIL` cases are all the `@json` derive cluster
+(`json_derive`, `json_nullable`, `json_property_name`, `json_deep_nesting`, `union_json`): `main`'s
+body (or a reachable helper) uses the compiler-generated `to_json`/`from_json` bodies, which must now
+lower through MIR too since `--mir` is a pure-MIR pipeline (no legacy hybrid). Every other category —
+`main` dropped, callee-unresolved (`$def{N}`), and constructor/layout — is now empty.
 
 **The switch (unchanged, once `XFAIL` is empty):**
 1. Flip the `Compiler` default to the MIR backend (`src/driver/compiler.rs`).

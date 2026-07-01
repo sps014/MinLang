@@ -279,7 +279,10 @@ pub fn emit_async_function(
             .unwrap_or_else(|| interner.int());
         let _ = writeln!(out, " (local ${i} {})", wasm_ty_of(interner, ty));
     }
+    // `$__obj`/`$__len`/`$__rel` back the same array/reassignment scratch the normal emitter uses;
+    // `$__pc` drives the per-segment CFG dispatch loop (segments whose plain code has control flow).
     out.push_str(" (local $__obj i32)\n (local $__scratch i32)\n");
+    out.push_str(" (local $__len i32)\n (local $__rel i32)\n (local $__pc i32)\n");
 
     for (local_idx, _, wt) in &slots.entries {
         let off = slots.offsets[local_idx];

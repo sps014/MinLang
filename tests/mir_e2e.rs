@@ -38,17 +38,12 @@ use wasmtime::*;
 /// default flips to the MIR backend and the legacy `WasmGenerator` is deleted (Step D).
 const XFAIL: &[(&str, &str)] = &[
     // main dropped: unsupported construct in main's body.
-    ("async_basic", "main dropped: async entry lowering"),
-    ("async_combinators", "main dropped: async entry lowering"),
     ("json_deep_nesting", "main dropped: json"),
     ("json_derive", "main dropped: json"),
     ("json_nullable", "main dropped: json"),
     ("json_property_name", "main dropped: json"),
     ("union_json", "main dropped: unions + json"),
     // callee unresolved: reachable call/method/generic instance not emitted ($def{N}).
-    ("async_method", "callee unresolved: async method"),
-    ("async_ref_params", "callee unresolved: async method"),
-    ("file_io", "callee unresolved: File intrinsics"),
     // codegen bug: compiles/runs but output wrong, or main fails WASM validation.
 ];
 

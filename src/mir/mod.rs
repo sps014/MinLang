@@ -307,6 +307,161 @@ fn rvalue_callees(rv: &Rvalue, out: &mut Vec<FnKey>) {
     }
 }
 
+/// Collects call edges and constructed/printed types from an async function's preserved HIR body.
+/// Async functions are lowered to a MIR stub (their real control flow is rebuilt from `hir_fn` during
+/// the coroutine transform in `async_emit`), so the block-based reachability walk in
+/// [`prune_unreachable`] cannot see calls made from an `async` body. Without this, a callee reachable
+/// *only* through an async body (e.g. an awaited helper) would be pruned and its call site would fall
+/// back to an undefined `$def{N}`.
+/// The edges (call targets, live types) and string literals discovered in an HIR body.
+#[derive(Default)]
+pub(crate) struct HirEdges {
+    pub callees: Vec<FnKey>,
+    pub types: Vec<TypeId>,
+    pub strings: Vec<String>,
+}
+
+pub(crate) fn hir_body_edges(body: &[crate::hir::HStmt], out: &mut HirEdges) {
+    for stmt in body {
+        hir_stmt_edges(stmt, out);
+    }
+}
+
+fn hir_stmt_edges(stmt: &crate::hir::HStmt, out: &mut HirEdges) {
+    use crate::hir::{HPlace, HStmt};
+    match stmt {
+        HStmt::Let { value, .. } | HStmt::Expr(value) | HStmt::Await(value) => {
+            hir_expr_edges(value, out)
+        }
+        HStmt::Assign { place, value } => {
+            match place {
+                HPlace::Field { obj, .. } => hir_expr_edges(obj, out),
+                HPlace::Index { array, index } => {
+                    hir_expr_edges(array, out);
+                    hir_expr_edges(index, out);
+                }
+                HPlace::Local(_) | HPlace::Global(_) => {}
+            }
+            hir_expr_edges(value, out);
+        }
+        HStmt::Return(e) => {
+            if let Some(e) = e {
+                hir_expr_edges(e, out);
+            }
+        }
+        HStmt::If { cond, then_branch, else_branch } => {
+            hir_expr_edges(cond, out);
+            hir_body_edges(then_branch, out);
+            hir_body_edges(else_branch, out);
+        }
+        HStmt::While { cond, body, .. } | HStmt::DoWhile { cond, body, .. } => {
+            hir_expr_edges(cond, out);
+            hir_body_edges(body, out);
+        }
+        HStmt::For { init, cond, step, body, .. } => {
+            hir_stmt_edges(init, out);
+            hir_expr_edges(cond, out);
+            hir_stmt_edges(step, out);
+            hir_body_edges(body, out);
+        }
+        HStmt::Foreach { iterable, body, .. } => {
+            hir_expr_edges(iterable, out);
+            hir_body_edges(body, out);
+        }
+        HStmt::Switch { scrutinee, arms, default } => {
+            hir_expr_edges(scrutinee, out);
+            for arm in arms {
+                if let crate::hir::HPattern::Const(e) = &arm.pattern {
+                    hir_expr_edges(e, out);
+                }
+                hir_body_edges(&arm.body, out);
+            }
+            hir_body_edges(default, out);
+        }
+        HStmt::Break(_) | HStmt::Continue(_) => {}
+    }
+}
+
+fn hir_expr_edges(e: &crate::hir::HExpr, out: &mut HirEdges) {
+    use crate::hir::HExprKind as K;
+    match &e.kind {
+        K::Call { callee, args } => {
+            out.callees.push((callee.def, callee.instance.clone()));
+            for a in args {
+                hir_expr_edges(a, out);
+            }
+        }
+        K::MethodCall { receiver, callee, args } => {
+            out.callees.push((callee.def, callee.instance.clone()));
+            hir_expr_edges(receiver, out);
+            for a in args {
+                hir_expr_edges(a, out);
+            }
+        }
+        K::IndirectCall { target, args } => {
+            hir_expr_edges(target, out);
+            for a in args {
+                hir_expr_edges(a, out);
+            }
+        }
+        K::New { ctor, args, .. } => {
+            if let Some(c) = ctor {
+                out.callees.push((*c, vec![]));
+            }
+            out.types.push(e.ty);
+            for a in args {
+                hir_expr_edges(a, out);
+            }
+        }
+        K::UnionNew { args, .. } => {
+            out.types.push(e.ty);
+            for a in args {
+                hir_expr_edges(a, out);
+            }
+        }
+        K::Binary { lhs, rhs, .. } | K::Concat(lhs, rhs) | K::Coalesce { lhs, rhs } => {
+            hir_expr_edges(lhs, out);
+            hir_expr_edges(rhs, out);
+        }
+        K::CharAt(a, b) | K::Index { array: a, index: b } => {
+            hir_expr_edges(a, out);
+            hir_expr_edges(b, out);
+        }
+        K::Unary { operand: x, .. }
+        | K::Field { obj: x, .. }
+        | K::ArrayLen(x)
+        | K::StrLen(x)
+        | K::HashCode(x)
+        | K::ToString(x)
+        | K::EnumName { value: x, .. }
+        | K::ArrayNew { len: x, .. }
+        | K::Cast(x)
+        | K::Await(x)
+        | K::Discriminant(x)
+        | K::UnionField { base: x, .. }
+        | K::IsType { value: x, .. }
+        | K::Print { arg: x, .. } => hir_expr_edges(x, out),
+        K::ArrayLit { elems, .. } => {
+            for el in elems {
+                hir_expr_edges(el, out);
+            }
+        }
+        K::Ternary { cond, then_expr, else_expr } => {
+            hir_expr_edges(cond, out);
+            hir_expr_edges(then_expr, out);
+            hir_expr_edges(else_expr, out);
+        }
+        K::StringLit(s) => out.strings.push(s.clone()),
+        K::IntLit(_)
+        | K::FloatLit(_)
+        | K::BoolLit(_)
+        | K::CharLit(_)
+        | K::Null
+        | K::Var(_)
+        | K::EnumValue(_) => {}
+    }
+}
+
 /// Removes functions unreachable from the module's entry points. The analyzer emits an [`HFunction`]
 /// for *every* fully-lowerable function, including unused standard-prelude helpers (`List`, `Map`,
 /// `JsonValue`, …) that are merged into every program; carrying them into the module would force the
@@ -368,6 +523,17 @@ pub fn prune_unreachable(mir: &mut Mir) {
                         Statement::Print { ty, .. } => type_worklist.push(*ty),
                         _ => {}
                     }
+                }
+            }
+            // An async function's MIR body is a stub; its real call/type edges live in the preserved
+            // HIR snapshot, so walk that too (otherwise awaited helpers would be pruned).
+            let f = &mir.functions[idx];
+            if f.is_async {
+                if let Some(hir_fn) = &f.hir_fn {
+                    let mut edges = HirEdges::default();
+                    hir_body_edges(&hir_fn.body, &mut edges);
+                    callees.extend(edges.callees);
+                    type_worklist.extend(edges.types);
                 }
             }
             for key in callees {

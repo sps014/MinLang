@@ -932,19 +932,31 @@ impl<'a> Analyzer<'a> {
         &mut self,
         node: &crate::syntax::nodes::ProgramNode,
     ) -> Vec<HImport> {
+        use crate::syntax::nodes::types::method_fn;
         let mut imports: Vec<HImport> = Vec::new();
-        let class_methods = node.structs.iter().flat_map(|s| s.methods.iter());
-        let extend_methods = node.extends.iter().flat_map(|e| e.methods.iter());
-        for func in node.functions.iter().chain(class_methods).chain(extend_methods) {
+        // Each candidate is paired with the name it was *registered* under: top-level externs keep
+        // their bare name, while class/`extend` static externs are mangled `{Type}_{method}` (the
+        // name the call site resolves to). Using the bare method name for a class extern would fail
+        // the def lookup and silently drop the import (its call site then falls back to `$def{N}`).
+        let top = node.functions.iter().map(|f| (f, f.name.text.clone()));
+        let class_methods = node
+            .structs
+            .iter()
+            .flat_map(|s| s.methods.iter().map(move |m| (m, method_fn(&s.name.text, &m.name.text))));
+        let extend_methods = node
+            .extends
+            .iter()
+            .flat_map(|e| e.methods.iter().map(move |m| (m, method_fn(&e.target.text, &m.name.text))));
+        for (func, sym_name) in top.chain(class_methods).chain(extend_methods) {
             if !func.is_extern || crate::intrinsics::has_intrinsic_attr(&func.attributes) {
                 continue;
             }
-            if imports.iter().any(|i| i.name == func.name.text) {
+            if imports.iter().any(|i| i.name == sym_name) {
                 continue;
             }
             // Match the def the call site resolves to, so the emitter's symbol table maps the call
             // onto this import's `$name`. Unregistered externs (should not happen) are skipped.
-            let Some(def) = self.type_ctx.defs.lookup(DefKind::Function, &func.name.text) else {
+            let Some(def) = self.type_ctx.defs.lookup(DefKind::Function, &sym_name) else {
                 continue;
             };
             let (module, field) = extern_import_target(func);
@@ -957,7 +969,7 @@ impl<'a> Analyzer<'a> {
                 Some(t) if *t != Type::Void => Some(self.type_ctx.lower(t)),
                 _ => None,
             };
-            imports.push(HImport { def, name: func.name.text.clone(), module, field, params, ret });
+            imports.push(HImport { def, name: sym_name, module, field, params, ret });
         }
         imports
     }
