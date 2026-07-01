@@ -2,7 +2,8 @@
 //! `if`/`else`, `return`, and the `break`/`continue` placement checks.
 
 use super::*;
-use crate::driver::diagnostics::DiagnosticBag;
+use crate::diagnostics::DiagnosticBag;
+use crate::hir::{HExpr, HStmt};
 use crate::intrinsics;
 use crate::semantics::errors::SemanticError;
 use crate::semantics::symbol_table::SymbolTable;
@@ -38,6 +39,7 @@ impl<'a> Analyzer<'a> {
                 );
             }
         }
+        self.hir_break(label.clone());
         Ok(())
     }
     pub(super) fn analyze_continue(
@@ -64,6 +66,7 @@ impl<'a> Analyzer<'a> {
                 );
             }
         }
+        self.hir_continue(label.clone());
         Ok(())
     }
     pub(super) fn analyze_foreach(
@@ -79,6 +82,7 @@ impl<'a> Analyzer<'a> {
         let iterable_type = self
             .analyze_expression(iterable, ctx.parent_function, ctx.symbol_table, diagnostics)
             .unwrap_or(Type::Unknown);
+        let iter_hir = self.hir_take();
         let element_type = match &iterable_type {
             Type::Array(inner) => (**inner).clone(),
             _ => {
@@ -107,10 +111,15 @@ impl<'a> Analyzer<'a> {
                 index_name.to_string(),
                 Type::Integer(synthetic_token(TokenKind::DataTypeToken, "int")),
             );
-            if let Err(e) = scope.add_symbol(element.text.clone(), element_type) {
+            if let Err(e) = scope.add_symbol(element.text.clone(), element_type.clone()) {
                 diagnostics.report_error(e.to_string(), Some(element.position));
             }
         }
+        // Allocate the element slot before the body so body references resolve to it. The synthetic
+        // index/array locals are internal to the MIR `Foreach` lowering and get no HIR slot, so a
+        // body that reads the index variable will (correctly) fall out of HIR coverage.
+        let elem_slot = self.hir_alloc_local(&element.text, &element_type);
+        self.hir_open_block();
         self.analyze_body(
             body,
             ctx.parent_function,
@@ -118,6 +127,8 @@ impl<'a> Analyzer<'a> {
             true,
             diagnostics,
         )?;
+        let body_hir = self.hir_close_block();
+        self.hir_foreach(elem_slot, iter_hir, body_hir);
         Ok(())
     }
     pub(super) fn analyze_switch(
@@ -132,6 +143,11 @@ impl<'a> Analyzer<'a> {
         let subject_type = self
             .analyze_expression(subject, ctx.parent_function, ctx.symbol_table, diagnostics)
             .unwrap_or(Type::Unknown);
+        let subject_hir = self.hir_take();
+        let mut hir_arms: Vec<crate::hir::HArm> = Vec::new();
+        // Only single-label cases map to one `HArm`; a multi-label case (`case 1, 2:`) would need
+        // the body duplicated, so it drops the function out of coverage.
+        let mut hir_ok = true;
         let subject_name = subject_type.get_type();
         let subject_is_enum = self.enum_table.contains_key(&subject_name);
         if !matches!(subject_name.as_str(), "int" | "string" | "bool") && !subject_is_enum {
@@ -146,6 +162,7 @@ impl<'a> Analyzer<'a> {
 
         let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         for (labels, body) in cases.iter() {
+            let mut label_hir: Option<HExpr> = None;
             for label in labels.iter() {
                 // Labels must be compile-time constants: a literal, or (for enum switches) an
                 // enum member access like `Color.Red`.
@@ -159,6 +176,7 @@ impl<'a> Analyzer<'a> {
                 let label_type = self
                     .analyze_expression(label, ctx.parent_function, ctx.symbol_table, diagnostics)
                     .unwrap_or(Type::Unknown);
+                label_hir = self.hir_take();
                 self.compare_data_type(&subject_type, &label_type, &empty_span(), diagnostics)?;
 
                 let key = match label {
@@ -182,6 +200,7 @@ impl<'a> Analyzer<'a> {
                     }
                 }
             }
+            self.hir_open_block();
             self.analyze_body(
                 body,
                 ctx.parent_function,
@@ -189,9 +208,15 @@ impl<'a> Analyzer<'a> {
                 has_parent_while,
                 diagnostics,
             )?;
+            let body_hir = self.hir_close_block();
+            match (labels.len() == 1).then_some(()).and(self.hir_const_arm(label_hir, body_hir)) {
+                Some(arm) => hir_arms.push(arm),
+                None => hir_ok = false,
+            }
         }
 
-        if let Some(db) = default_body {
+        let default_hir = if let Some(db) = default_body {
+            self.hir_open_block();
             self.analyze_body(
                 db,
                 ctx.parent_function,
@@ -199,7 +224,12 @@ impl<'a> Analyzer<'a> {
                 has_parent_while,
                 diagnostics,
             )?;
-        }
+            self.hir_close_block()
+        } else {
+            Vec::new()
+        };
+
+        self.hir_switch(subject_hir, hir_arms, default_hir, hir_ok);
         Ok(())
     }
     pub(super) fn analyze_while(
@@ -213,13 +243,17 @@ impl<'a> Analyzer<'a> {
         let cond_type = self
             .analyze_expression(condition, parent_function, symbol_table, diagnostics)
             .unwrap_or(Type::Unknown);
+        let cond_hir = self.hir_take();
         if !cond_type.is_unknown() && cond_type.get_type() != "bool" {
             diagnostics.report_error(
                 format!("while condition must be bool, got {}", cond_type.get_type()),
                 condition.position(),
             );
         }
+        self.hir_open_block();
         self.analyze_body(body, parent_function, Some(symbol_table), true, diagnostics)?;
+        let body_hir = self.hir_close_block();
+        self.hir_while(cond_hir, body_hir);
         Ok(())
     }
     pub(super) fn analyze_for(
@@ -238,6 +272,7 @@ impl<'a> Analyzer<'a> {
             .borrow_mut()
             .add_child(for_scope.clone());
 
+        self.hir_open_block();
         if let Some(init_stmt) = init {
             self.analyze_statement(
                 init_stmt,
@@ -247,10 +282,14 @@ impl<'a> Analyzer<'a> {
                 diagnostics,
             )?;
         }
+        let init_hir = self.hir_close_block();
+
+        let mut cond_hir = None;
         if let Some(cond_expr) = condition {
             let cond_type = self
                 .analyze_expression(cond_expr, ctx.parent_function, &for_scope, diagnostics)
                 .unwrap_or(Type::Unknown);
+            cond_hir = self.hir_take();
             if !cond_type.is_unknown() && cond_type.get_type() != "bool" {
                 diagnostics.report_error(
                     format!("for condition must be bool, got {}", cond_type.get_type()),
@@ -258,6 +297,8 @@ impl<'a> Analyzer<'a> {
                 );
             }
         }
+
+        self.hir_open_block();
         if let Some(inc_stmt) = increment {
             self.analyze_statement(
                 inc_stmt,
@@ -267,6 +308,9 @@ impl<'a> Analyzer<'a> {
                 diagnostics,
             )?;
         }
+        let step_hir = self.hir_close_block();
+
+        self.hir_open_block();
         self.analyze_body(
             body,
             ctx.parent_function,
@@ -274,6 +318,9 @@ impl<'a> Analyzer<'a> {
             true,
             diagnostics,
         )?;
+        let body_hir = self.hir_close_block();
+
+        self.hir_for(init_hir, cond_hir, step_hir, body_hir);
         Ok(())
     }
     ///return type is returned currently int and float supported
@@ -322,6 +369,7 @@ impl<'a> Analyzer<'a> {
         // array-typed annotation (e.g. `let xs: int[] = [];`).
         if let ExpressionNode::ArrayLiteral(elements) = right {
             if elements.is_empty() {
+                self.hir_fail();
                 match type_annotation {
                     Some(t) if t.is_array() => {
                         if let Err(e) = (*ctx.symbol_table)
@@ -359,6 +407,7 @@ impl<'a> Analyzer<'a> {
         let right_type = self
             .analyze_expression(right, ctx.parent_function, ctx.symbol_table, diagnostics)
             .unwrap_or(Type::Unknown);
+        let value = self.hir_take();
         self.current_expected_type = saved_expected;
 
         let var_type = if let Some(t) = type_annotation {
@@ -367,6 +416,8 @@ impl<'a> Analyzer<'a> {
         } else {
             right_type.clone()
         };
+
+        self.hir_declare_local(&left.text, &var_type, value);
 
         if let Err(e) = (*ctx.symbol_table)
             .as_ref()
@@ -403,14 +454,17 @@ impl<'a> Analyzer<'a> {
         let r = self
             .analyze_expression(right, parent_function, symbol_table, diagnostics)
             .unwrap_or(Type::Unknown);
+        let value = self.hir_take();
         let l = match (*symbol_table).as_ref().borrow().get_symbol(left) {
             Ok(sym) => sym,
             Err(e) => {
                 diagnostics.report_error(e.to_string(), Some(left.position));
+                self.hir_fail();
                 return Ok(());
             }
         };
         self.compare_data_type(&l, &r, &left.position, diagnostics)?;
+        self.hir_assign_local(&left.text, value);
         Ok(())
     }
 
@@ -426,10 +480,12 @@ impl<'a> Analyzer<'a> {
         let array_type = self
             .analyze_expression(arr, parent_function, symbol_table, diagnostics)
             .unwrap_or(Type::Unknown);
+        let array_hir = self.hir_take();
 
         let inner_type = match array_type {
             Type::Array(inner) => *inner,
             _ => {
+                self.hir_fail();
                 diagnostics.report_error(
                     format!("Cannot index into non-array type {}", array_type.get_type()),
                     arr.position(),
@@ -441,6 +497,7 @@ impl<'a> Analyzer<'a> {
         let index_type = self
             .analyze_expression(index, parent_function, symbol_table, diagnostics)
             .unwrap_or(Type::Unknown);
+        let index_hir = self.hir_take();
         if !index_type.is_unknown() && index_type.get_type() != "int" {
             diagnostics.report_error(
                 format!(
@@ -454,8 +511,10 @@ impl<'a> Analyzer<'a> {
         let right_type = self
             .analyze_expression(right, parent_function, symbol_table, diagnostics)
             .unwrap_or(Type::Unknown);
+        let value_hir = self.hir_take();
         self.compare_data_type(&inner_type, &right_type, &empty_span(), diagnostics)?;
 
+        self.hir_assign_index(array_hir, index_hir, value_hir);
         Ok(())
     }
 
@@ -471,10 +530,12 @@ impl<'a> Analyzer<'a> {
         let obj_type = self
             .analyze_expression(obj, parent_function, symbol_table, diagnostics)
             .unwrap_or(Type::Unknown);
+        let obj_hir = self.hir_take();
 
         let (base_name, generic_args) = match Self::resolve_struct_parts(&obj_type) {
             Some(parts) => parts,
             None => {
+                self.hir_fail();
                 diagnostics.report_error(
                     format!(
                         "Cannot access member of non-class type {}",
@@ -493,6 +554,7 @@ impl<'a> Analyzer<'a> {
             let struct_info = match self.struct_table.get_struct(&struct_name) {
                 Some(info) => info,
                 None => {
+                    self.hir_fail();
                     diagnostics.report_error(
                         format!("Struct '{}' not found", struct_name),
                         Some(member.position),
@@ -504,6 +566,7 @@ impl<'a> Analyzer<'a> {
             match struct_info.fields.get(&member.text) {
                 Some(info) => (info.type_.clone(), info.is_public),
                 None => {
+                    self.hir_fail();
                     diagnostics.report_error(
                         format!(
                             "Field '{}' not found in class '{}'",
@@ -528,8 +591,13 @@ impl<'a> Analyzer<'a> {
         let right_type = self
             .analyze_expression(right, parent_function, symbol_table, diagnostics)
             .unwrap_or(Type::Unknown);
+        let value_hir = self.hir_take();
         self.compare_data_type(&field_type, &right_type, &member.position, diagnostics)?;
 
+        match self.struct_field_index(&struct_name, &member.text) {
+            Some(index) => self.hir_assign_field(obj_hir, index, value_hir),
+            None => self.hir_fail(),
+        }
         Ok(())
     }
     pub(super) fn analyze_if_else(
@@ -546,7 +614,16 @@ impl<'a> Analyzer<'a> {
         let mut is_constant_true = false;
         let mut is_constant_false = false;
 
+        // HIR for the whole chain, folded at the end into a single `HStmt::If`. An `is` condition
+        // folds to a compile-time constant (below) which has no clean HIR form, so any `is` in the
+        // chain drops the function out of HIR coverage.
+        let mut hir_primary_cond: Option<HExpr> = None;
+        let mut hir_primary_body: Vec<HStmt> = Vec::new();
+        let mut hir_elifs: Vec<(Option<HExpr>, Vec<HStmt>)> = Vec::new();
+        let mut hir_else: Vec<HStmt> = Vec::new();
+
         if let ExpressionNode::IsExpression(left, right_type) = condition {
+            self.hir_fail();
             let left_t = self
                 .analyze_expression(left, ctx.parent_function, ctx.symbol_table, diagnostics)
                 .unwrap_or(Type::Unknown);
@@ -565,6 +642,7 @@ impl<'a> Analyzer<'a> {
             let cond_type = self
                 .analyze_expression(condition, ctx.parent_function, ctx.symbol_table, diagnostics)
                 .unwrap_or(Type::Unknown);
+            hir_primary_cond = self.hir_take();
             if !cond_type.is_unknown() && cond_type.get_type() != "bool" {
                 diagnostics.report_error(
                     format!("if condition must be bool, got {}", cond_type.get_type()),
@@ -572,6 +650,7 @@ impl<'a> Analyzer<'a> {
                 );
             }
             //if body
+            self.hir_open_block();
             self.analyze_body(
                 if_body,
                 ctx.parent_function,
@@ -579,6 +658,7 @@ impl<'a> Analyzer<'a> {
                 has_parent_while,
                 diagnostics,
             )?;
+            hir_primary_body = self.hir_close_block();
         }
 
         if is_constant_true {
@@ -590,6 +670,7 @@ impl<'a> Analyzer<'a> {
             let mut elif_constant_true = false;
             let mut elif_constant_false = false;
             if let ExpressionNode::IsExpression(left, right_type) = &i.0 {
+                self.hir_fail();
                 let left_t = self
                     .analyze_expression(left, ctx.parent_function, ctx.symbol_table, diagnostics)
                     .unwrap_or(Type::Unknown);
@@ -606,6 +687,7 @@ impl<'a> Analyzer<'a> {
                 let elif_cond_type = self
                     .analyze_expression(&i.0, ctx.parent_function, ctx.symbol_table, diagnostics)
                     .unwrap_or(Type::Unknown);
+                let elif_cond_hir = self.hir_take();
                 if !elif_cond_type.is_unknown() && elif_cond_type.get_type() != "bool" {
                     diagnostics.report_error(
                         format!(
@@ -615,6 +697,7 @@ impl<'a> Analyzer<'a> {
                         i.0.position(),
                     );
                 }
+                self.hir_open_block();
                 self.analyze_body(
                     i.1,
                     ctx.parent_function,
@@ -622,6 +705,8 @@ impl<'a> Analyzer<'a> {
                     has_parent_while,
                     diagnostics,
                 )?;
+                let elif_body = self.hir_close_block();
+                hir_elifs.push((elif_cond_hir, elif_body));
             }
 
             if elif_constant_true {
@@ -630,14 +715,18 @@ impl<'a> Analyzer<'a> {
         }
 
         if let Some(body) = else_body {
+            self.hir_open_block();
             self.analyze_body(
                 body,
                 ctx.parent_function,
                 Some(ctx.symbol_table),
                 has_parent_while,
                 diagnostics,
-            )?
+            )?;
+            hir_else = self.hir_close_block();
         }
+
+        self.hir_if_chain((hir_primary_cond, hir_primary_body), hir_elifs, hir_else);
         Ok(())
     }
     pub(super) fn analyze_return(
@@ -654,6 +743,7 @@ impl<'a> Analyzer<'a> {
                 let r = self
                     .analyze_expression(expression, parent_function, symbol_table, diagnostics)
                     .unwrap_or(Type::Unknown);
+                let value = self.hir_take();
                 self.current_expected_type = saved_expected;
                 self.compare_data_type(
                     return_type,
@@ -661,8 +751,10 @@ impl<'a> Analyzer<'a> {
                     &parent_function.name.position,
                     diagnostics,
                 )?;
+                self.hir_return_value(value);
             }
             (None, &Some(_)) => {
+                self.hir_fail();
                 diagnostics.report_error(
                     format!(
                         "return type mismatch at  {}",
@@ -672,6 +764,7 @@ impl<'a> Analyzer<'a> {
                 );
             }
             (Some(_), &None) => {
+                self.hir_fail();
                 diagnostics.report_error(
                     format!(
                         "return type mismatch at {}",
@@ -680,7 +773,7 @@ impl<'a> Analyzer<'a> {
                     Some(parent_function.name.position),
                 );
             }
-            (None, &None) => (),
+            (None, &None) => self.hir_return_void(),
         };
         Ok(())
     }

@@ -2,7 +2,7 @@
 //! the symbol [`crate::index::Index`] (so a name colours as the function/struct/field/etc. it
 //! actually refers to), then delta-encoding the result as the protocol requires.
 
-use dream::driver::diagnostics::DiagnosticBag;
+use dream::diagnostics::DiagnosticBag;
 use dream::syntax::lexer::Lexer;
 use dream::syntax::token::token_kind::TokenKind;
 use tower_lsp::lsp_types::{SemanticToken, SemanticTokenType};

@@ -2,7 +2,7 @@
 //! and comments, so those are handled by the editor's Monarch grammar; this provides the
 //! richer keyword/type/identifier/literal classification used for semantic tokens.
 
-use dream::driver::diagnostics::DiagnosticBag;
+use dream::diagnostics::DiagnosticBag;
 use dream::syntax::lexer::Lexer;
 use dream::syntax::token::token_kind::TokenKind;
 

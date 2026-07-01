@@ -3,8 +3,8 @@ use crate::semantics::struct_table::StructInfo;
 use crate::syntax::nodes::types::{
     is_boxable_primitive, method_fn, strip_nullable, PRIMITIVE_TYPE_NAMES,
 };
-use crate::syntax::text::indented_text_writer::IndentedTextWriter;
-use std::io::Error;
+use crate::text::indented_text_writer::IndentedTextWriter;
+use crate::codegen::CodegenError as Error;
 
 /// Runtime type tags stored in each heap block's header. Reference types carry their tag in
 /// the block they already own; primitives are boxed into a small tagged block.

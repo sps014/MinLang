@@ -6,10 +6,10 @@ use crate::syntax::nodes::types::{
     numeric_widen, strip_nullable,
 };
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, Type};
-use crate::syntax::text::indented_text_writer::IndentedTextWriter;
+use crate::text::indented_text_writer::IndentedTextWriter;
 use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
-use std::io::Error;
+use crate::codegen::CodegenError as Error;
 
 /// A `obj.method[<generic_args>](params)` call site, bundled so the method-dispatch helpers take a
 /// single descriptor instead of a long positional argument list. `left_side` is the expected type
@@ -131,7 +131,7 @@ impl<'a> WasmGenerator<'a> {
             ExpressionNode::Ternary(cond, then_e, else_e) => self.build_ternary(cond, then_e, else_e, left_side, function, writer)?,
             // `await` only ever appears at allowed statement positions in v1, which the async
             // statement splitter lowers directly (it never calls `build_expression` on an `Await`).
-            ExpressionNode::Await(_) => return Err(Error::other("`await` is only supported at statement position (let x = await e; / await e; / return await e;)")),
+            ExpressionNode::Await(_) => return Err(Error::Unsupported("`await` is only supported at statement position (let x = await e; / await e; / return await e;)".to_string())),
         }
         Ok(())
     }
@@ -166,7 +166,6 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
-    /// Builds a type cast expression
     pub fn build_cast(
         &mut self,
         target_type: &Type,
@@ -327,7 +326,7 @@ impl<'a> WasmGenerator<'a> {
         let struct_info = self
             .struct_table
             .get_struct(struct_name)
-            .ok_or_else(|| Error::other(format!("unknown class '{}' in constructor", struct_name)))?
+            .ok_or_else(|| Error::UnknownDef(format!("unknown class '{}' in constructor", struct_name)))?
             .clone();
         let init_name = constructor_fn(struct_name);
         let has_init = self.function_table.get_function(&init_name).is_ok();
@@ -419,7 +418,6 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
-    /// Builds a member access
     pub fn build_member_access(
         &mut self,
         obj: &ExpressionNode<'a>,
@@ -452,7 +450,7 @@ impl<'a> WasmGenerator<'a> {
         if let ExpressionNode::Identifier(id) = obj {
             if let Some(members) = self.enums.get(&id.text) {
                 let value = members.get(&member.text).copied().ok_or_else(|| {
-                    Error::other(format!(
+                    Error::UnknownDef(format!(
                         "enum '{}' has no member '{}'",
                         id.text, member.text
                     ))
@@ -467,14 +465,14 @@ impl<'a> WasmGenerator<'a> {
             .struct_table
             .get_struct(&base_obj_type_str)
             .ok_or_else(|| {
-                Error::other(format!(
+                Error::UnknownDef(format!(
                     "unknown class '{}' in member access",
                     base_obj_type_str
                 ))
             })?
             .clone();
         let field_info = struct_info.fields.get(&member.text).ok_or_else(|| {
-            Error::other(format!(
+            Error::UnknownDef(format!(
                 "unknown field '{}' on class '{}'",
                 member.text, base_obj_type_str
             ))
@@ -493,7 +491,6 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
-    /// Builds a literal value
     pub fn build_literal(
         &mut self,
         literal: &Type,
@@ -513,18 +510,17 @@ impl<'a> WasmGenerator<'a> {
             Type::Byte(b) => format!("i32.const {}", b.text),
             Type::String(s) => {
                 let offset = self.ctx.strings.get(&s.text).ok_or_else(|| {
-                    Error::other(format!("string literal not interned: {}", s.text))
+                    Error::Internal(format!("string literal not interned: {}", s.text))
                 })?;
                 format!("i32.const {}", offset)
             }
             Type::Nullable(_) => "i32.const 0".to_string(),
-            _ => return Err(Error::other(format!("unknown literal {:?}", literal))),
+            _ => return Err(Error::Internal(format!("unknown literal {:?}", literal))),
         };
         writer.write_line(&type_);
         Ok(())
     }
 
-    /// Builds a binary expression
     /// Builds one operand of a string concatenation, leaving a string pointer on the stack. A
     /// string operand is built directly; any other type is converted via the object protocol
     /// (`to_string`) so `"x = " + n` works for any `n`.
@@ -780,7 +776,7 @@ impl<'a> WasmGenerator<'a> {
                     writer.write_line(&format!("{}.rem", symbol))
                 }
                 TokenKind::ModulusToken => {
-                    return Err(Error::other("modulus not supported for double"))
+                    return Err(Error::Unsupported("modulus not supported for double".to_string()))
                 }
                 TokenKind::GreaterThanToken => writer.write_line(&format!("{}.gt", symbol)),
                 TokenKind::SmallerThanToken => writer.write_line(&format!("{}.lt", symbol)),
@@ -791,7 +787,7 @@ impl<'a> WasmGenerator<'a> {
                 | TokenKind::StarToken
                 | TokenKind::EqualEqualToken
                 | TokenKind::NotEqualToken => {}
-                _ => return Err(Error::other(format!("unknown operator {}", opr.text))),
+                _ => return Err(Error::UnknownSymbol(format!("unknown operator {}", opr.text))),
             };
         } else if symbol == "i32" || symbol == "i64" {
             match opr.kind {
@@ -819,16 +815,15 @@ impl<'a> WasmGenerator<'a> {
                 | TokenKind::StarToken
                 | TokenKind::EqualEqualToken
                 | TokenKind::NotEqualToken => {}
-                _ => return Err(Error::other(format!("unknown operator {}", opr.text))),
+                _ => return Err(Error::UnknownSymbol(format!("unknown operator {}", opr.text))),
             };
         } else {
-            return Err(Error::other(format!("unknown symbol {}", symbol)));
+            return Err(Error::UnknownSymbol(format!("unknown symbol {}", symbol)));
         }
 
         Ok(())
     }
 
-    /// Builds a unary expression
     pub fn build_unary(
         &mut self,
         opr: &SyntaxToken,
@@ -850,7 +845,7 @@ impl<'a> WasmGenerator<'a> {
             }
             TokenKind::PlusToken => {}
             _ => {
-                return Err(Error::other(format!(
+                return Err(Error::Unsupported(format!(
                     "wasm does not support unary operator {}",
                     opr.text
                 )))
@@ -859,7 +854,6 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
-    /// Builds an identifier reference
     pub fn build_identifier(
         &mut self,
         identifier: &SyntaxToken,
@@ -970,7 +964,6 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
-    /// Builds a function invocation
     pub fn build_function_invocation(
         &mut self,
         name: &String,
@@ -1244,7 +1237,6 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
-    /// Builds an array literal
     pub fn build_array_literal(
         &mut self,
         elements: &Vec<ExpressionNode<'a>>,
@@ -1303,7 +1295,6 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
-    /// Builds an array index access
     pub fn build_index_access(
         &mut self,
         array_expr: &ExpressionNode<'a>,

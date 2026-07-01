@@ -4,7 +4,7 @@
 //! the async lowering only ever has to handle the supported shapes.
 
 use super::Analyzer;
-use crate::driver::diagnostics::DiagnosticBag;
+use crate::diagnostics::DiagnosticBag;
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, StatementNode};
 
 impl<'a> Analyzer<'a> {

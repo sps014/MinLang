@@ -1,5 +1,5 @@
 use super::*;
-use crate::driver::diagnostics::DiagnosticBag;
+use crate::diagnostics::DiagnosticBag;
 use crate::semantics::errors::SemanticError;
 use crate::semantics::function_control_flow::FunctionControlGraph;
 use crate::semantics::symbol_table::SymbolTable;
@@ -16,6 +16,7 @@ impl<'a> Analyzer<'a> {
         let param_table = Rc::new(RefCell::new(
             self.add_function_param_table(function, diagnostics)?,
         ));
+        self.hir_begin_function(function);
         self.with_async_flag(function.is_async, |s| {
             s.analyze_body(
                 function.body,
@@ -29,6 +30,7 @@ impl<'a> Analyzer<'a> {
             s.check_await_positions(function, diagnostics);
             Ok(())
         })?;
+        self.hir_finish_function();
         // check return
         let mut graph = FunctionControlGraph::new(function);
         if let Err(e) = graph.build() {
@@ -97,6 +99,27 @@ impl<'a> Analyzer<'a> {
             parent_function,
             symbol_table,
         };
+        // Disable HIR collection for statement kinds the interleaved emitter does not yet handle,
+        // *before* recursing into any nested body, so a function containing one is skipped cleanly.
+        match statement {
+            StatementNode::Declaration(..)
+            | StatementNode::Assignment(..)
+            | StatementNode::IndexAssignment(..)
+            | StatementNode::MemberAssignment(..)
+            | StatementNode::Return(..)
+            | StatementNode::ExpressionStatement(..)
+            | StatementNode::IfElse(..)
+            | StatementNode::While(..)
+            | StatementNode::For(..)
+            | StatementNode::ForEach(..)
+            | StatementNode::Break(..)
+            | StatementNode::Continue(..)
+            | StatementNode::Switch(..)
+            | StatementNode::FunctionInvocation(..)
+            | StatementNode::MethodInvocation(..)
+            | StatementNode::AwaitStmt(..) => {}
+            _ => self.hir_fail(),
+        }
         match statement {
             StatementNode::Declaration(left, type_annotation, right, is_const) => self
                 .analyze_declaration(left, type_annotation, right, *is_const, &ctx, diagnostics)?,
@@ -170,10 +193,14 @@ impl<'a> Analyzer<'a> {
                     symbol_table,
                     diagnostics,
                 );
+                let value = self.hir_take();
+                self.hir_expr_stmt(value);
             }
             StatementNode::ExpressionStatement(expr) => {
                 // A statement-position `match` allows block arms and yields no value.
                 if let crate::syntax::nodes::ExpressionNode::Match(subject, arms) = expr {
+                    // `analyze_match` emits the `Switch` itself (or fails the function) in statement
+                    // position; no separate expression-statement is needed.
                     let _ = self.analyze_match(
                         subject,
                         arms,
@@ -185,21 +212,29 @@ impl<'a> Analyzer<'a> {
                 } else {
                     let _ =
                         self.analyze_expression(expr, parent_function, symbol_table, diagnostics);
+                    let value = self.hir_take();
+                    self.hir_expr_stmt(value);
                 }
             }
             StatementNode::MethodInvocation(obj, method, generic_args, params) => {
                 let _ =
                     self.analyze_method_call(obj, method, generic_args, params, &ctx, diagnostics);
+                let value = self.hir_take();
+                self.hir_expr_stmt(value);
             }
             StatementNode::AwaitStmt(future_expr) => {
                 let fut = self
                     .analyze_expression(future_expr, parent_function, symbol_table, diagnostics)
                     .unwrap_or(Type::Unknown);
+                let value = self.hir_take();
                 if Self::future_inner_type(&fut).is_none() {
                     diagnostics.report_error(
                         format!("'await' expects a Future value, got {}", fut.get_type()),
                         future_expr.position(),
                     );
+                    self.hir_fail();
+                } else {
+                    self.hir_await_stmt(value);
                 }
             }
         };

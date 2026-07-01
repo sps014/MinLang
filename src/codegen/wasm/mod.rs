@@ -1,7 +1,7 @@
 use indexmap::IndexMap;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::io::Error;
+use crate::codegen::CodegenError as Error;
 use std::rc::Rc;
 
 use crate::codegen::CodeGenerator;

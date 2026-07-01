@@ -1,8 +1,8 @@
 use super::*;
-use crate::driver::diagnostics::DiagnosticBag;
+use crate::diagnostics::DiagnosticBag;
 use crate::syntax::nodes::function::ParameterNode;
 use crate::syntax::nodes::{FunctionNode, Type};
-use crate::syntax::text::text_span::TextSpan;
+use crate::text::text_span::TextSpan;
 use crate::syntax::token::token_kind::TokenKind;
 
 impl<'a> Analyzer<'a> {

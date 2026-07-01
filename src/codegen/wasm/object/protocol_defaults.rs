@@ -11,8 +11,8 @@ use super::{
 use crate::codegen::wasm::WasmGenerator;
 use crate::semantics::struct_table::StructInfo;
 use crate::syntax::nodes::types::strip_nullable;
-use crate::syntax::text::indented_text_writer::IndentedTextWriter;
-use std::io::Error;
+use crate::text::indented_text_writer::IndentedTextWriter;
+use crate::codegen::CodegenError as Error;
 
 impl<'a> WasmGenerator<'a> {
     /// Emits a conversion turning a value of `type_name` already on the stack into a string

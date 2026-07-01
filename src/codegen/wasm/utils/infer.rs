@@ -6,7 +6,7 @@ use super::super::WasmGenerator;
 use crate::intrinsics;
 use crate::syntax::nodes::types::strip_nullable;
 use crate::syntax::nodes::FunctionNode;
-use std::io::Error;
+use crate::codegen::CodegenError as Error;
 
 impl<'a> WasmGenerator<'a> {
     /// Infers the type of an expression (simplified version of semantic analyzer)
@@ -18,7 +18,7 @@ impl<'a> WasmGenerator<'a> {
         use crate::syntax::nodes::ExpressionNode;
         match expression {
             ExpressionNode::Literal(t) => Ok(self.resolve_type(&t.get_type())),
-            ExpressionNode::Identifier(id) => Ok(self.table_read_type(&id.text, function)),
+            ExpressionNode::Identifier(id) => self.table_read_type(&id.text, function),
             ExpressionNode::ArrayLiteral(elements) => {
                 if elements.is_empty() {
                     Ok("void[]".to_string())

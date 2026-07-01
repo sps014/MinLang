@@ -2,7 +2,7 @@
 //! namespaced calls (`Math.*` / `JSON.*` / async intrinsics / `derive` helpers), and constructors.
 
 use super::*;
-use crate::driver::diagnostics::DiagnosticBag;
+use crate::diagnostics::DiagnosticBag;
 use crate::intrinsics;
 use crate::semantics::errors::SemanticError;
 use crate::semantics::function_table::{
@@ -11,7 +11,7 @@ use crate::semantics::function_table::{
 use crate::semantics::symbol_table::SymbolTable;
 use crate::syntax::nodes::types::{
     canonical_type_name, constructor_fn, is_numeric_primitive, is_unknown_type_name,
-    mangle_generic, method_fn, numeric_widen, strip_nullable,
+    mangle_generic, method_fn, strip_nullable,
 };
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, Type};
 use crate::syntax::token::syntax_token::SyntaxToken;
@@ -62,11 +62,11 @@ impl<'a> Analyzer<'a> {
         let base = method_fn(type_name, &method.text);
 
         let mut arg_types = Vec::new();
+        let mut arg_hirs = Vec::new();
         for param in params.iter() {
-            arg_types.push(
-                self.analyze_expression(param, parent_function, symbol_table, diagnostics)?
-                    .get_type(),
-            );
+            let t = self.analyze_expression(param, parent_function, symbol_table, diagnostics)?;
+            arg_hirs.push(self.hir_take());
+            arg_types.push(t.get_type());
         }
 
         let store_sig = if self.function_table.is_overloaded(&base) {
@@ -110,6 +110,7 @@ impl<'a> Analyzer<'a> {
                 ),
                 Some(method.position),
             );
+            self.hir_none();
             return Ok(store_sig.return_type.unwrap_or(Type::Void));
         }
         for (i, given_type) in arg_types.iter().enumerate() {
@@ -136,13 +137,21 @@ impl<'a> Analyzer<'a> {
 
         // An async static method (e.g. `File.read`) eagerly starts a task; the call yields a
         // `Future<T>` that must be `await`ed, just like an async instance method or free function.
-        if store_sig.is_async {
-            return Ok(Self::future_type(
-                store_sig.return_type.unwrap_or(Type::Void),
-            ));
+        // An `async` static method yields a `Future<T>` handle (carried by the `Call`); `await`
+        // unwraps it.
+        let ret_type = if store_sig.is_async {
+            Self::future_type(store_sig.return_type.unwrap_or(Type::Void))
+        } else {
+            store_sig.return_type.unwrap_or(Type::Void)
+        };
+        // A static method is a free function under its mangled `{Type}_{method}` name (no receiver);
+        // overloaded names are ambiguous for a single `DefId` lookup, so defer those.
+        if self.function_table.is_overloaded(&base) {
+            self.hir_none();
+        } else {
+            self.hir_set_call(&base, arg_hirs, &ret_type);
         }
-
-        Ok(store_sig.return_type.unwrap_or(Type::Void))
+        Ok(ret_type)
     }
 
     /// True when `parent_function` is a method whose implicit `this` receiver has base type
@@ -187,12 +196,15 @@ impl<'a> Analyzer<'a> {
     ) -> Result<Type, SemanticError> {
         let mut function_name = name.text.clone();
         let mut params_types = vec![];
+        let mut arg_hirs = vec![];
         for param in params.iter() {
-            params_types.push(
-                self.analyze_expression(param, parent_function, symbol_table, diagnostics)?
-                    .get_type(),
-            );
+            let t = self.analyze_expression(param, parent_function, symbol_table, diagnostics)?;
+            arg_hirs.push(self.hir_take());
+            params_types.push(t.get_type());
         }
+        // Default: no call HIR. Only the plain free-function tail below opts back in; every other
+        // path (indirect, constructor, generic, async, overload/arity errors) leaves `last` cleared.
+        self.hir_none();
 
         // Indirect call: if the called name is a local variable of function type, validate the
         // arguments against the function-type signature and return its result type.
@@ -226,6 +238,7 @@ impl<'a> Analyzer<'a> {
                     );
                 }
             }
+            self.hir_set_indirect_call(&name.text, arg_hirs, ret.as_ref());
             return Ok((*ret).clone());
         }
 
@@ -238,8 +251,37 @@ impl<'a> Analyzer<'a> {
             && (self.struct_table.get_struct(&function_name).is_some()
                 || self.generic_structs.contains_key(&function_name))
         {
-            return self.analyze_constructor_call(name, generic_args, &params_types, diagnostics);
+            let t = self.analyze_constructor_call(name, generic_args, &params_types, diagnostics)?;
+            // The concrete struct whose layout the backend uses: a plain struct is its own name, a
+            // generic instance (`Box<int>`) its mangled name (`Box_int`), which
+            // `ensure_struct_instantiated` has already added to the struct table. A generic base with
+            // no type args is an error, not a constructor. When the instance is registered, emit
+            // `New`: if it declares a user `constructor(){}`, resolve that def so the backend calls it
+            // (its args are the constructor's); otherwise `args` initialize fields positionally.
+            // `hir_set_new` is given the source (base) name — the registered `DefId` for both plain
+            // and generic structs — while the result type `t` supplies the per-instance layout key.
+            let concrete_name = match generic_args {
+                Some(g) if !g.is_empty() => Some(mangle_generic(&name.text, g)),
+                _ if !self.generic_structs.contains_key(&name.text) => Some(name.text.clone()),
+                _ => None,
+            };
+            if let Some(concrete_name) = concrete_name {
+                if self.struct_table.get_struct(&concrete_name).is_some() {
+                    let ctor = self
+                        .type_ctx
+                        .defs
+                        .lookup(crate::types::DefKind::Function, &constructor_fn(&concrete_name));
+                    self.hir_set_new(&name.text, ctor, arg_hirs, &t);
+                }
+            }
+            return Ok(t);
         }
+
+        // The base (template) name + instance type-arg names for a generic call, captured so HIR
+        // emission can resolve the call to the shared base `DefId` plus the monomorphization args.
+        // The names are lowered with the same `lower_str` the instance body uses, so the symbols
+        // agree.
+        let mut generic_instance: Option<(String, Vec<String>)> = None;
 
         // Monomorphization: bind every generic parameter to a concrete type, then register
         // (once) a specialized signature under the mangled name.
@@ -253,6 +295,10 @@ impl<'a> Analyzer<'a> {
                 diagnostics,
             );
             let mangled_name = mangle_bindings(&function_name, &bindings);
+            generic_instance = Some((
+                function_name.clone(),
+                bindings.iter().map(|(_, t)| t.clone()).collect(),
+            ));
 
             if self.function_table.get_function(&mangled_name).is_err() {
                 // Store a clone with its signature monomorphized (params + return type made
@@ -358,12 +404,27 @@ impl<'a> Analyzer<'a> {
         //let r_type=&store_sig.return_type;
         // Calling an `async fun` is eager and yields a `Future<T>` handle (where `T` is the
         // declared return type). It is NOT auto-awaited; `await` retrieves the `T`.
-        if store_sig.is_async {
-            return Ok(Self::future_type(
-                store_sig.return_type.unwrap_or(Type::Void),
-            ));
+        // Calling an `async fun` is eager and yields a `Future<T>` handle; the `Call` carries that
+        // future type and an enclosing `await` unwraps it.
+        let ret_type = if store_sig.is_async {
+            Self::future_type(store_sig.return_type.unwrap_or(Type::Void))
+        } else {
+            store_sig.return_type.unwrap_or(Type::Void)
+        };
+        // Emit a resolved direct call. A generic call resolves to the template's base `DefId` plus
+        // the monomorphization args (so it targets the emitted instance); a plain non-overloaded
+        // free function resolves by name. Overloads would collide on the base name's single `DefId`,
+        // so they stay on the legacy path for now.
+        if let Some((base_name, instance_names)) = generic_instance {
+            let instance = instance_names
+                .iter()
+                .map(|n| self.type_ctx.lower_str(n))
+                .collect();
+            self.hir_set_generic_call(&base_name, instance, arg_hirs, &ret_type);
+        } else if !self.function_table.is_overloaded(&function_name) {
+            self.hir_set_call(&function_name, arg_hirs, &ret_type);
         }
-        Ok(store_sig.return_type.unwrap_or(Type::Void))
+        Ok(ret_type)
     }
 
     /// Types the async intrinsics: `sleep(ms: int): Future<void>`, `all(xs: Future<T>[]):
@@ -453,36 +514,21 @@ impl<'a> Analyzer<'a> {
     /// when they are identical, the target is `object`, they are enum/int compatible, or the target
     /// is nullable (`T?`) and the argument is `T`, `T?`, or the `null` literal (`void?`). Used by
     /// constructor-call checking, which only has the type names (not structured `Type`s) available.
-    pub(super) fn type_str_assignable(&self, expected: &str, given: &str) -> bool {
+    pub(super) fn type_str_assignable(&mut self, expected: &str, given: &str) -> bool {
         // The poison type unifies with everything so an earlier error never cascades into a
-        // spurious assignment/argument mismatch here.
+        // spurious assignment/argument mismatch here. (Kept as an explicit name check because the
+        // unknown spelling has no dedicated interned id.)
         if crate::syntax::nodes::types::is_unknown_type_name(expected)
             || crate::syntax::nodes::types::is_unknown_type_name(given)
         {
             return true;
         }
-        if expected == given || expected == "object" {
-            return true;
-        }
-        if self.enum_int_compatible(expected, given) {
-            return true;
-        }
-        // Implicit numeric widening: a narrower numeric argument may satisfy a wider numeric
-        // parameter/field without a cast (narrowing still requires one).
-        if numeric_widen(strip_nullable(given), strip_nullable(expected)) {
-            return true;
-        }
-        if let Some(inner) = expected.strip_suffix('?') {
-            if given == "void?" {
-                return true;
-            }
-            let given_inner = given.strip_suffix('?').unwrap_or(given);
-            if inner == given_inner {
-                return true;
-            }
-        }
-        // Any reference (or nullable) target accepts the `null` literal.
-        (expected.ends_with('?') || self.is_reference_type(expected)) && given == "void?"
+        // Directional assignability over interned types: `given` (value) must be assignable to
+        // `expected` (target). Covers identity, `object` widening, enum/int, numeric widening, and
+        // nullable/`null` handling via the structured rules.
+        let e = self.type_ctx.lower_str(expected);
+        let g = self.type_ctx.lower_str(given);
+        crate::types::assignable(&self.type_ctx.interner, e, g)
     }
 
     /// Type-checks a constructor call `Struct(args)`. When the struct defines a custom `constructor`
@@ -582,6 +628,7 @@ impl<'a> Analyzer<'a> {
 
         let obj_type =
             self.analyze_expression(obj, ctx.parent_function, ctx.symbol_table, diagnostics)?;
+        let obj_hir = self.hir_take();
 
         // The receiver was already poisoned by an earlier error; still type-check the arguments
         // (to surface their own mistakes) but stay quiet about the method itself and stay poison.
@@ -594,14 +641,21 @@ impl<'a> Analyzer<'a> {
                     diagnostics,
                 );
             }
+            self.hir_none();
             return Ok(Type::Unknown);
         }
 
-        if let Some(t) = self.analyze_builtin_method(&obj_type, method, params, ctx, diagnostics)? {
+        // Builtin methods: `len()` lowers to `ArrayLen`; the rest (`to_string`/`char_at`/`hash_code`)
+        // need runtime defs and stay on the legacy path (they clear HIR inside the helper). The
+        // receiver is threaded in so `len` can wrap it; it is left intact when no builtin matches.
+        let mut recv = obj_hir;
+        if let Some(t) =
+            self.analyze_builtin_method(&obj_type, method, params, ctx, &mut recv, diagnostics)?
+        {
             return Ok(t);
         }
 
-        self.analyze_instance_method(&obj_type, method, params, ctx, diagnostics)
+        self.analyze_instance_method(&obj_type, method, params, ctx, recv, diagnostics)
     }
 
     /// Handles `Type.method(args)` static dispatch when the receiver `id` names a type rather than
@@ -646,17 +700,41 @@ impl<'a> Analyzer<'a> {
         if self.generic_functions.contains_key(&base) {
             let template = *self.generic_functions.get(&base).unwrap();
             let mut params_types = vec![];
+            let mut arg_hirs = vec![];
             for param in params.iter() {
-                params_types.push(
-                    self.analyze_expression(
-                        param,
-                        ctx.parent_function,
-                        ctx.symbol_table,
-                        diagnostics,
-                    )?
-                    .get_type(),
-                );
+                let t = self.analyze_expression(
+                    param,
+                    ctx.parent_function,
+                    ctx.symbol_table,
+                    diagnostics,
+                )?;
+                arg_hirs.push(self.hir_take());
+                params_types.push(t.get_type());
             }
+            // `System.print`/`println` are generic builtins (not real monomorphizations): they lower
+            // to the host `print_*` imports, so handle them before the generic-instance machinery.
+            if let Some(op @ (intrinsics::IntrinsicOp::Print | intrinsics::IntrinsicOp::Println)) =
+                intrinsics::IntrinsicOp::from_attributes(&template.attributes)
+            {
+                if params.len() != 1 {
+                    diagnostics.report_error(
+                        format!(
+                            "'{}' expects exactly 1 argument, got {}",
+                            method.text,
+                            params.len()
+                        ),
+                        Some(method.position),
+                    );
+                    self.hir_none();
+                } else {
+                    let newline = op == intrinsics::IntrinsicOp::Println;
+                    self.hir_set_print(arg_hirs.into_iter().next().flatten(), newline);
+                }
+                return Ok(Some(Type::Void));
+            }
+            // Generic static calls / intrinsics need an `InstanceId` (a later slice); stay out of
+            // HIR coverage regardless of which sub-branch handles the call.
+            self.hir_none();
             // `Array.new<T>(len)`: a generic intrinsic that allocates a zero-initialized
             // `T[]`. The element type comes from the explicit type argument (resolved
             // through the active monomorphization bindings so `Array.new<T>` inside a
@@ -762,8 +840,11 @@ impl<'a> Analyzer<'a> {
         method: &SyntaxToken,
         params: &Vec<ExpressionNode<'a>>,
         ctx: &super::AnalyzerContext<'a, '_>,
+        receiver: &mut Option<crate::hir::HExpr>,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<Option<Type>, SemanticError> {
+        // Default: no builtin HIR. `len` opts back in below; the others stay on the legacy path.
+        self.hir_none();
         // `EnumValue.name()`: built-in accessor returning the variant name as a string.
         if method.text == intrinsics::ENUM_NAME {
             let base = strip_nullable(&obj_type.get_type()).to_string();
@@ -791,6 +872,7 @@ impl<'a> Analyzer<'a> {
                         Some(method.position),
                     );
                 }
+                self.hir_set_array_len(receiver.take());
                 return Ok(Some(Type::Integer(synthetic_token(
                     TokenKind::DataTypeToken,
                     "int",
@@ -873,6 +955,7 @@ impl<'a> Analyzer<'a> {
         method: &SyntaxToken,
         params: &Vec<ExpressionNode<'a>>,
         ctx: &super::AnalyzerContext<'a, '_>,
+        receiver: Option<crate::hir::HExpr>,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<Type, SemanticError> {
         // Struct receivers are monomorphized to their concrete type name; primitive/`object`
@@ -897,11 +980,12 @@ impl<'a> Analyzer<'a> {
         // Analyze the explicit arguments once, then resolve the method (overloaded methods select
         // by argument types, with the receiver supplied as the implicit `this` argument).
         let mut arg_types = Vec::new();
+        let mut arg_hirs = Vec::new();
         for param in params.iter() {
-            arg_types.push(
-                self.analyze_expression(param, ctx.parent_function, ctx.symbol_table, diagnostics)?
-                    .get_type(),
-            );
+            let t =
+                self.analyze_expression(param, ctx.parent_function, ctx.symbol_table, diagnostics)?;
+            arg_hirs.push(self.hir_take());
+            arg_types.push(t.get_type());
         }
 
         let store_sig = if self.function_table.is_overloaded(&mangled_name) {
@@ -958,6 +1042,7 @@ impl<'a> Analyzer<'a> {
                 ),
                 Some(method.position),
             );
+            self.hir_none();
             return Ok(store_sig.return_type.unwrap_or(Type::Void));
         }
 
@@ -988,11 +1073,20 @@ impl<'a> Analyzer<'a> {
 
         // Calling an `async` method is eager and yields a `Future<T>` handle (like free async
         // functions); `await` retrieves the `T`.
-        if store_sig.is_async {
-            return Ok(Self::future_type(
-                store_sig.return_type.unwrap_or(Type::Void),
-            ));
+        // An `async` method yields a `Future<T>` handle (carried by the `MethodCall`); `await`
+        // unwraps it.
+        let ret_type = if store_sig.is_async {
+            Self::future_type(store_sig.return_type.unwrap_or(Type::Void))
+        } else {
+            store_sig.return_type.unwrap_or(Type::Void)
+        };
+        // Overloaded methods share the mangled name across signatures, so a single `DefId` lookup is
+        // ambiguous; defer those. Everything else records a resolved `MethodCall`.
+        if self.function_table.is_overloaded(&mangled_name) {
+            self.hir_none();
+        } else {
+            self.hir_set_method_call(receiver, &mangled_name, arg_hirs, &ret_type);
         }
-        Ok(store_sig.return_type.unwrap_or(Type::Void))
+        Ok(ret_type)
     }
 }

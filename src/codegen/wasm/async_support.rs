@@ -16,9 +16,9 @@ use super::WasmGenerator;
 use crate::intrinsics;
 use crate::syntax::nodes::types::strip_nullable;
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, StatementNode};
-use crate::syntax::text::indented_text_writer::IndentedTextWriter;
+use crate::text::indented_text_writer::IndentedTextWriter;
 use std::collections::HashMap;
-use std::io::Error;
+use crate::codegen::CodegenError as Error;
 
 // `Future` heap-block field offsets (relative to the data pointer). The block is allocated via
 // `$dream_new_future` and zeroed; task frames append a saved-locals region after `F_SLOTS`.
@@ -157,13 +157,11 @@ impl<'a> WasmGenerator<'a> {
         let offsets = async_slots.offsets;
         let dream_types = async_slots.dream_types;
         let frame_size = F_SLOTS + (slots.len() as i32) * SLOT_SIZE;
-        let poll_idx = *self
-            .ctx
-            .poll_indices
-            .get(&func_name)
-            .unwrap_or_else(|| panic!("no poll index for async function {}", func_name));
+        let poll_idx = *self.ctx.poll_indices.get(&func_name).ok_or_else(|| {
+            Error::Internal(format!("no poll index for async function {}", func_name))
+        })?;
 
-        // ---- Constructor: allocate frame, store params, spawn, return future pointer ----
+        // Constructor: allocate frame, store params, spawn, return future pointer.
         writer.write(&format!("(func ${}", func_name));
         for p in function.parameters.iter() {
             self.build_parameter(p, writer)?;
@@ -198,7 +196,7 @@ impl<'a> WasmGenerator<'a> {
         writer.unindent();
         writer.write_line(")");
 
-        // ---- Poll: the resumable state machine ----
+        // Poll: the resumable state machine.
         writer.write(&format!(
             "(func $poll_{} (param $self i32) (result i32)",
             func_name

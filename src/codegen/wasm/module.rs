@@ -1,7 +1,7 @@
 use super::WasmGenerator;
 use crate::syntax::nodes::{FunctionNode, ParameterNode, ProgramNode, StatementNode};
-use crate::syntax::text::indented_text_writer::IndentedTextWriter;
-use std::io::Error;
+use crate::text::indented_text_writer::IndentedTextWriter;
+use crate::codegen::CodegenError as Error;
 
 /// The reference count stamped into a heap block's header when it is created. Statically
 /// allocated blocks (e.g. string literals) start "live" with a single owning reference.
@@ -18,7 +18,6 @@ fn le_i32_bytes(value: i32) -> String {
 }
 
 impl<'a> WasmGenerator<'a> {
-    /// Builds the entire WebAssembly module
     pub fn build(&mut self) -> Result<IndentedTextWriter, Error> {
         self.collect_strings_from_program(self.syntax_tree.get_root());
         self.register_object_runtime_strings();
@@ -27,7 +26,6 @@ impl<'a> WasmGenerator<'a> {
         Ok(indented)
     }
 
-    /// Builds the `(module ...)` block and its imports/exports
     pub fn build_module(
         &mut self,
         program: &ProgramNode<'a>,
@@ -389,9 +387,9 @@ impl<'a> WasmGenerator<'a> {
             Vec::new(),
             crate::syntax::token::syntax_token::SyntaxToken::new(
                 crate::syntax::token::token_kind::TokenKind::IdentifierToken,
-                crate::syntax::text::text_span::TextSpan::new(
+                crate::text::text_span::TextSpan::new(
                     (0, 0),
-                    &crate::syntax::text::line_text::LineText::new(String::new()),
+                    &crate::text::line_text::LineText::new(String::new()),
                 ),
                 "__dream_init".to_string(),
             ),
@@ -452,7 +450,6 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
-    /// Builds a single WebAssembly function
     pub fn build_function(
         &mut self,
         function: &FunctionNode<'a>,
@@ -515,7 +512,6 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
-    /// Builds the export declarations for the module
     pub fn build_export(
         &self,
         program: &ProgramNode,
@@ -648,7 +644,6 @@ impl<'a> WasmGenerator<'a> {
         ));
     }
 
-    /// Builds a single function parameter
     pub fn build_parameter(
         &self,
         parameter: &ParameterNode,
@@ -665,7 +660,6 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
-    /// Builds the return type of a function
     pub fn build_return_type(
         &self,
         function: &FunctionNode<'a>,

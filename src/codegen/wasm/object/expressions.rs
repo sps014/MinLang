@@ -5,12 +5,10 @@
 use crate::codegen::wasm::WasmGenerator;
 use crate::syntax::nodes::types::strip_nullable;
 use crate::syntax::nodes::{ExpressionNode, FunctionNode};
-use crate::syntax::text::indented_text_writer::IndentedTextWriter;
-use std::io::Error;
+use crate::text::indented_text_writer::IndentedTextWriter;
+use crate::codegen::CodegenError as Error;
 
 impl<'a> WasmGenerator<'a> {
-    // ----- Expression-level wiring for the builtins -----
-
     /// Builds `to_string(arg)` leaving a string pointer on the stack.
     pub fn build_to_string(
         &mut self,

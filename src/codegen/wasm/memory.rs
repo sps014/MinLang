@@ -1,7 +1,7 @@
 use super::WasmGenerator;
 use crate::syntax::nodes::types::{method_fn, release_func_suffix, PRIMITIVE_TYPE_NAMES};
-use crate::syntax::text::indented_text_writer::IndentedTextWriter;
-use std::io::Error;
+use crate::text::indented_text_writer::IndentedTextWriter;
+use crate::codegen::CodegenError as Error;
 
 /// The minimum heap base address. The heap starts above all string/runtime data, but never below
 /// this historical floor, so small programs stay byte-for-byte unchanged.

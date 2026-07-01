@@ -7,7 +7,7 @@
 //! [`builder`] walks the AST to populate them, and [`queries`] answers editor requests.
 
 use bumpalo::Bump;
-use dream::driver::diagnostics::DiagnosticBag;
+use dream::diagnostics::DiagnosticBag;
 use dream::syntax::lexer::Lexer;
 use dream::syntax::parser::Parser;
 use std::collections::HashMap;
@@ -53,11 +53,11 @@ impl Index {
             // Pass 1: Declare all file-level symbols for the main program
             builder.walk_program_for_imports(program);
 
-            let mut acc = dream::driver::source_manager::ProgramAccumulator::default();
+            let mut acc = dream::driver::source_loader::ProgramAccumulator::default();
 
             // Inject standard library (prelude) symbols
             let mut file_contents = std::collections::HashMap::new();
-            let _ = dream::driver::source_manager::merge_prelude(
+            let _ = dream::driver::prelude::merge_prelude(
                 &arena,
                 &mut acc.all_functions,
                 &mut acc.all_structs,
@@ -77,11 +77,11 @@ impl Index {
                 for import in &program.imports {
                     let module_name = import.module_name.text.trim_matches('"');
                     let import_path =
-                        dream::driver::source_manager::resolve_import_path(parent_dir, module_name);
+                        dream::driver::source_loader::resolve_import_path(parent_dir, module_name);
 
                     if let Some(import_path_str) = import_path.to_str() {
                         if import_path.exists() {
-                            let _ = dream::driver::source_manager::parse_file_recursive(
+                            let _ = dream::driver::source_loader::parse_file_recursive(
                                 &import_path_str.to_string(),
                                 &mut acc,
                                 &arena,

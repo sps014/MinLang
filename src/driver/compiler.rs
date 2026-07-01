@@ -18,7 +18,7 @@ pub enum Target {
     Wasm,
 }
 
-/// Orchestrates the compilation pipeline: source loading (delegated to `source_manager`),
+/// Orchestrates the compilation pipeline: source loading (delegated to `source_loader`/`prelude`),
 /// semantic analysis, code generation, and artifact emission (delegated to `abi`). Diagnostic
 /// rendering is delegated to the `diagnostics` module.
 pub struct Compiler {

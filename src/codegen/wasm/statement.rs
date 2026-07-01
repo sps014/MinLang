@@ -3,9 +3,9 @@ use super::WasmGenerator;
 use crate::intrinsics;
 use crate::syntax::nodes::types::strip_nullable;
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, StatementNode, Type};
-use crate::syntax::text::indented_text_writer::IndentedTextWriter;
+use crate::text::indented_text_writer::IndentedTextWriter;
 use crate::syntax::token::syntax_token::SyntaxToken;
-use std::io::Error;
+use crate::codegen::CodegenError as Error;
 
 /// The pieces of a `for (element in iterable)` loop, bundled so [`WasmGenerator::build_foreach`]
 /// takes a single descriptor instead of a long positional argument list. `'a` is the AST arena
@@ -19,7 +19,6 @@ pub struct ForeachLoop<'a, 'b> {
 }
 
 impl<'a> WasmGenerator<'a> {
-    /// Builds the body of a function
     pub fn build_body(
         &mut self,
         statements: &[StatementNode<'a>],
@@ -32,7 +31,6 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
-    /// Builds a single statement
     pub fn build_statement(
         &mut self,
         statement: &StatementNode<'a>,
@@ -171,7 +169,6 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
-    /// Builds a variable declaration
     pub fn build_declaration(
         &mut self,
         left: &SyntaxToken,
@@ -179,7 +176,7 @@ impl<'a> WasmGenerator<'a> {
         expression: &ExpressionNode<'a>,
         writer: &mut IndentedTextWriter,
     ) -> Result<(), Error> {
-        let type_str = self.table_read_type(&left.text, function);
+        let type_str = self.table_read_type(&left.text, function)?;
         // An owned reference (constructor/literal/call result, or a boxed primitive) already
         // carries the single reference this binding takes over, so it must not be retained again
         // (otherwise its refcount never reaches 0 and `drop` never runs). A borrowed value must
@@ -205,7 +202,6 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
-    /// Builds a variable assignment
     pub fn build_assignment(
         &mut self,
         left: &SyntaxToken,
@@ -213,7 +209,7 @@ impl<'a> WasmGenerator<'a> {
         function: &FunctionNode<'a>,
         writer: &mut IndentedTextWriter,
     ) -> Result<(), Error> {
-        let type_str = self.table_read_type(&left.text, function);
+        let type_str = self.table_read_type(&left.text, function)?;
 
         // A top-level variable lives in a WASM global, so it is read/written with `global.*`.
         let is_global = self.ctx.globals.contains_key(&left.text);
@@ -243,7 +239,6 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
-    /// Builds an array index assignment
     pub fn build_index_assignment(
         &mut self,
         arr: &ExpressionNode<'a>,
@@ -273,7 +268,6 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
-    /// Builds a member assignment
     pub fn build_member_assignment(
         &mut self,
         obj: &ExpressionNode<'a>,
@@ -292,14 +286,14 @@ impl<'a> WasmGenerator<'a> {
             .struct_table
             .get_struct(&base_obj_type_str)
             .ok_or_else(|| {
-                Error::other(format!(
+                Error::UnknownDef(format!(
                     "unknown class '{}' in member assignment",
                     base_obj_type_str
                 ))
             })?
             .clone();
         let field_info = struct_info.fields.get(&member.text).ok_or_else(|| {
-            Error::other(format!(
+            Error::UnknownDef(format!(
                 "unknown field '{}' on class '{}'",
                 member.text, base_obj_type_str
             ))
@@ -355,7 +349,6 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
-    /// Builds a return statement
     pub fn build_return(
         &mut self,
         expression: &Option<ExpressionNode<'a>>,
@@ -402,7 +395,7 @@ impl<'a> WasmGenerator<'a> {
         }
         if let Some(expr) = expression {
             let return_type = function.return_type.as_ref().ok_or_else(|| {
-                Error::other(format!(
+                Error::Internal(format!(
                     "function '{}' returns a value but has no declared return type",
                     function.name.text
                 ))
@@ -443,7 +436,7 @@ impl<'a> WasmGenerator<'a> {
 
         if expression.is_some() {
             let return_type = function.return_type.as_ref().ok_or_else(|| {
-                Error::other(format!(
+                Error::Internal(format!(
                     "function '{}' returns a value but has no declared return type",
                     function.name.text
                 ))
@@ -465,7 +458,6 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
-    /// Builds a while loop
     pub fn build_while(
         &mut self,
         condition: &ExpressionNode<'a>,
@@ -542,7 +534,6 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
-    /// Builds a for loop
     pub fn build_for(
         &mut self,
         init: &Option<&'a StatementNode<'a>>,
@@ -711,7 +702,6 @@ impl<'a> WasmGenerator<'a> {
         }
     }
 
-    /// Builds a break statement, optionally targeting a labeled loop.
     pub fn build_break(
         &mut self,
         label: &Option<String>,
@@ -725,7 +715,6 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
-    /// Builds a continue statement, optionally targeting a labeled loop.
     pub fn build_continue(
         &mut self,
         label: &Option<String>,
@@ -814,7 +803,6 @@ impl<'a> WasmGenerator<'a> {
         Ok(())
     }
 
-    /// Builds an if-else statement
     pub fn build_if_else(
         &mut self,
         condition: &ExpressionNode<'a>,

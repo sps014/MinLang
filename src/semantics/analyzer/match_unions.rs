@@ -3,7 +3,7 @@
 //! unification, exhaustiveness, and unreachable-arm detection.
 
 use super::*;
-use crate::driver::diagnostics::DiagnosticBag;
+use crate::diagnostics::DiagnosticBag;
 use crate::semantics::errors::SemanticError;
 use crate::semantics::symbol_table::SymbolTable;
 use crate::semantics::union_table::UnionInfo;
@@ -16,6 +16,22 @@ use crate::syntax::token::token_kind::TokenKind;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
+
+/// The HIR shape a match pattern lowers to (for statement-position `match` → [`HStmt::Switch`]).
+enum HirArmShape {
+    /// A `Const` arm (literal pattern).
+    Const(crate::hir::HExpr),
+    /// A `Variant` arm; `bindings` are the payload local slots in field order.
+    Variant {
+        def: crate::types::DefId,
+        variant: usize,
+        bindings: Vec<crate::hir::LocalId>,
+    },
+    /// A catch-all (`_` or a bare binding that names no variant) → the switch `default` block.
+    Default,
+    /// Not representable in HIR's `Switch` (nested sub-pattern, bind-whole-value, bad literal).
+    Unsupported,
+}
 
 /// What checking a single pattern told us, used to drive exhaustiveness and unreachable-arm
 /// analysis.
@@ -78,13 +94,11 @@ impl<'a> Analyzer<'a> {
         };
 
         let mut arg_types = Vec::new();
+        let mut arg_hirs = Vec::new();
         for arg in args {
-            arg_types.push(self.analyze_expression(
-                arg,
-                parent_function,
-                symbol_table,
-                diagnostics,
-            )?);
+            let t = self.analyze_expression(arg, parent_function, symbol_table, diagnostics)?;
+            arg_hirs.push(self.hir_take());
+            arg_types.push(t);
         }
 
         if args.len() != field_types.len() {
@@ -118,10 +132,22 @@ impl<'a> Analyzer<'a> {
                     }
                 }
             }
-            return Ok(Some(Type::Struct(
-                synthetic_token(TokenKind::IdentifierToken, enum_name),
-                None,
-            )));
+            let result_ty =
+                Type::Struct(synthetic_token(TokenKind::IdentifierToken, enum_name), None);
+            // Construct the union value: resolve its `DefId` and the variant's discriminant.
+            let def = self.type_ctx.defs.lookup(crate::types::DefKind::Union, enum_name);
+            let disc = self
+                .union_table
+                .get(enum_name)
+                .and_then(|i| i.variant(&variant.text))
+                .map(|v| v.discriminant as usize);
+            match (def, disc) {
+                (Some(def), Some(disc)) => {
+                    self.hir_set_union_new(def, disc, arg_hirs, &result_ty)
+                }
+                _ => self.hir_none(),
+            }
+            return Ok(Some(result_ty));
         }
 
         // Generic union: resolve the concrete type arguments, preferring an explicit expected type
@@ -194,6 +220,8 @@ impl<'a> Analyzer<'a> {
         }
 
         self.ensure_union_instantiated(enum_name, &concrete_args, &variant.position, diagnostics);
+        // Generic union construction needs an `InstanceId` (a later slice); drop out of coverage.
+        self.hir_none();
         Ok(Some(Type::Struct(
             synthetic_token(TokenKind::IdentifierToken, enum_name),
             Some(concrete_args),
@@ -201,6 +229,79 @@ impl<'a> Analyzer<'a> {
     }
 
     /// Analyzes a `match`. `is_expression` is true when the match is used in value position (all
+    /// Classifies a match pattern for HIR statement-`match` lowering, allocating HIR locals for any
+    /// variant-payload bindings *before* the arm body is lowered so the body can resolve them.
+    fn hir_match_pattern(
+        &mut self,
+        pattern: &PatternNode,
+        union_info: &Option<UnionInfo>,
+        union_def: Option<crate::types::DefId>,
+    ) -> HirArmShape {
+        match pattern {
+            PatternNode::Wildcard(_) => HirArmShape::Default,
+            PatternNode::Binding(name) => {
+                // A bare identifier naming a unit variant is a unit-variant pattern; otherwise it
+                // binds the whole subject, which HIR's `Switch` cannot express.
+                if let (Some(info), Some(def)) = (union_info, union_def) {
+                    if let Some(v) = info.variant(&name.text) {
+                        if v.fields.is_empty() {
+                            return HirArmShape::Variant {
+                                def,
+                                variant: v.discriminant as usize,
+                                bindings: vec![],
+                            };
+                        }
+                    }
+                }
+                HirArmShape::Unsupported
+            }
+            PatternNode::Literal(lit) => {
+                self.hir_set_literal(lit);
+                match self.hir_take() {
+                    Some(e) => HirArmShape::Const(e),
+                    None => HirArmShape::Unsupported,
+                }
+            }
+            PatternNode::Variant(_, name, subs) => {
+                let (Some(info), Some(def)) = (union_info, union_def) else {
+                    return HirArmShape::Unsupported;
+                };
+                let Some(v) = info.variant(&name.text) else {
+                    return HirArmShape::Unsupported;
+                };
+                if subs.len() != v.fields.len() {
+                    return HirArmShape::Unsupported;
+                }
+                let fields: Vec<(String, Type)> = v
+                    .fields
+                    .iter()
+                    .map(|f| (f.name.clone(), f.type_.clone()))
+                    .collect();
+                let variant = v.discriminant as usize;
+                let mut bindings = Vec::with_capacity(subs.len());
+                for (i, sub) in subs.iter().enumerate() {
+                    // Only flat `Binding`/`_` sub-patterns are representable; each field gets a slot.
+                    let (slot_name, fty) = match sub {
+                        PatternNode::Binding(bn) => (bn.text.clone(), fields[i].1.clone()),
+                        PatternNode::Wildcard(_) => {
+                            (format!("__match_{}_{}", variant, i), fields[i].1.clone())
+                        }
+                        _ => return HirArmShape::Unsupported,
+                    };
+                    match self.hir_alloc_local(&slot_name, &fty) {
+                        Some(id) => bindings.push(id),
+                        None => return HirArmShape::Unsupported,
+                    }
+                }
+                HirArmShape::Variant {
+                    def,
+                    variant,
+                    bindings,
+                }
+            }
+        }
+    }
+
     /// arms must be `=> expr` and share one type); false in statement position (block arms are
     /// allowed and the result is `void`). Returns the unified arm type (or `void`).
     pub(super) fn analyze_match(
@@ -214,6 +315,7 @@ impl<'a> Analyzer<'a> {
     ) -> Result<Type, SemanticError> {
         let subject_type =
             self.analyze_expression(subject, parent_function, symbol_table, diagnostics)?;
+        let subject_hir = self.hir_take();
         // The subject's union may be a generic instantiation that has not been constructed yet
         // (e.g. matching on a `param: Option<int>`); ensure its layout is registered first.
         if let Type::Struct(base, Some(args)) = &subject_type {
@@ -223,11 +325,24 @@ impl<'a> Analyzer<'a> {
         }
         let subject_base = strip_nullable(&subject_type.get_type()).to_string();
         let union_info: Option<UnionInfo> = self.union_table.get(&subject_base).cloned();
+        let union_def = self
+            .type_ctx
+            .defs
+            .lookup(crate::types::DefKind::Union, &subject_base);
 
         let mut arm_value_type: Option<Type> = None;
         let mut covered: HashSet<String> = HashSet::new();
         let mut has_catch_all = false;
         let mut catch_all_index: Option<usize> = None;
+
+        // HIR: build `Switch` arms + a default block. A statement-position match lowers directly; a
+        // value-position match desugars to `<result temp> = arm; … ; <result temp read>`, with each
+        // arm body assigning the shared result temporary.
+        let mut hir_arms: Vec<crate::hir::HArm> = Vec::new();
+        let mut hir_default: Vec<crate::hir::HStmt> = Vec::new();
+        let mut hir_ok = subject_hir.is_some();
+        let mut result_temp: Option<crate::hir::LocalId> = None;
+        let mut result_ty_id: Option<crate::types::TypeId> = None;
 
         for (i, arm) in arms.iter().enumerate() {
             if catch_all_index.is_some() {
@@ -244,6 +359,8 @@ impl<'a> Analyzer<'a> {
             let info = self.check_pattern(&arm.pattern, &subject_type, &arm_scope, diagnostics)?;
 
             if let Some(guard) = &arm.guard {
+                // HIR `Switch` arms have no guard, so a guarded arm drops the function out of coverage.
+                hir_ok = false;
                 let gt =
                     self.analyze_expression(guard, parent_function, &arm_scope, diagnostics)?;
                 if !gt.is_unknown() && gt.get_type() != "bool" {
@@ -254,17 +371,34 @@ impl<'a> Analyzer<'a> {
                 }
             }
 
+            // Classify the pattern (allocating payload binding slots) before the body is lowered.
+            let shape = self.hir_match_pattern(&arm.pattern, &union_info, union_def);
+
+            self.hir_open_block();
             match &arm.body {
                 MatchArmBody::Expr(expr) => {
                     let t =
                         self.analyze_expression(expr, parent_function, &arm_scope, diagnostics)?;
+                    let arm_hir = self.hir_take();
                     if is_expression {
                         match &arm_value_type {
-                            None => arm_value_type = Some(t),
+                            None => arm_value_type = Some(t.clone()),
                             Some(prev) => {
                                 self.compare_data_type(prev, &t, &empty_span(), diagnostics)?
                             }
                         }
+                        // Desugar: assign the arm value to the shared result temp (allocated from the
+                        // first arm's type), so the whole match reads back as one value.
+                        if result_temp.is_none() {
+                            result_temp = self.hir_alloc_local("__match_result", &t);
+                            result_ty_id = Some(self.type_ctx.lower(&t));
+                        }
+                        match result_temp {
+                            Some(tmp) => self.hir_assign_local_id(tmp, arm_hir),
+                            None => hir_ok = false,
+                        }
+                    } else {
+                        self.hir_expr_stmt(arm_hir);
                     }
                 }
                 MatchArmBody::Block(stmts) => {
@@ -283,6 +417,21 @@ impl<'a> Analyzer<'a> {
                     )?;
                 }
             }
+            let body_hir = self.hir_close_block();
+
+            match shape {
+                HirArmShape::Default => hir_default = body_hir,
+                HirArmShape::Const(label) => match self.hir_const_arm(Some(label), body_hir) {
+                    Some(arm) => hir_arms.push(arm),
+                    None => hir_ok = false,
+                },
+                HirArmShape::Variant {
+                    def,
+                    variant,
+                    bindings,
+                } => hir_arms.push(self.hir_variant_arm(def, variant, bindings, body_hir)),
+                HirArmShape::Unsupported => hir_ok = false,
+            }
 
             // An arm only contributes to exhaustiveness when it has no guard (a guard may fail).
             if arm.guard.is_none() {
@@ -293,6 +442,22 @@ impl<'a> Analyzer<'a> {
                     covered.insert(v);
                 }
             }
+        }
+
+        if is_expression {
+            // Emit the desugared switch, then leave the result temp read as the match's value.
+            match (result_temp, result_ty_id) {
+                (Some(tmp), Some(ty)) if hir_ok => {
+                    self.hir_switch(subject_hir, hir_arms, hir_default, true);
+                    self.hir_set_local_read(tmp, ty);
+                }
+                _ => {
+                    self.hir_fail();
+                    self.hir_none();
+                }
+            }
+        } else {
+            self.hir_switch(subject_hir, hir_arms, hir_default, hir_ok);
         }
 
         // Exhaustiveness: every union variant must be covered, or a catch-all arm present.

@@ -5,8 +5,8 @@
 use super::WasmGenerator;
 use crate::syntax::nodes::types::strip_nullable;
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, MatchArm, MatchArmBody, PatternNode};
-use crate::syntax::text::indented_text_writer::IndentedTextWriter;
-use std::io::Error;
+use crate::text::indented_text_writer::IndentedTextWriter;
+use crate::codegen::CodegenError as Error;
 
 /// The byte-offset chain (each step is "+offset, then load") that reaches the union pointer of the
 /// value currently under a pattern. `leaf = Some(off)` means the value is field `off` of the
@@ -64,12 +64,12 @@ impl<'a> WasmGenerator<'a> {
         let info = self
             .unions
             .get(union_name)
-            .ok_or_else(|| Error::other(format!("unknown union '{}'", union_name)))?
+            .ok_or_else(|| Error::UnknownDef(format!("unknown union '{}'", union_name)))?
             .clone();
         let variant = info
             .variant(variant_name)
             .ok_or_else(|| {
-                Error::other(format!(
+                Error::UnknownDef(format!(
                     "union '{}' has no variant '{}'",
                     union_name, variant_name
                 ))

@@ -16,9 +16,9 @@ use super::WasmGenerator;
 use crate::semantics::symbol_table::SymbolTable;
 use crate::syntax::nodes::types::{release_func_suffix, strip_nullable, value_size_align};
 use crate::syntax::nodes::{FunctionNode, Type};
-use crate::syntax::text::indented_text_writer::IndentedTextWriter;
+use crate::text::indented_text_writer::IndentedTextWriter;
 use std::cell::RefCell;
-use std::io::Error;
+use crate::codegen::CodegenError as Error;
 use std::rc::Rc;
 
 impl<'a> WasmGenerator<'a> {
@@ -140,36 +140,38 @@ impl<'a> WasmGenerator<'a> {
         }
     }
 
-    /// Reads the type of a variable from the symbol table
-    pub fn table_read_type(&self, var_name: &String, function: &FunctionNode<'a>) -> String {
+    /// Reads the type of a variable from the symbol table. A missing entry is an `Internal` error:
+    /// the analyzer is expected to have registered every in-scope variable before codegen runs.
+    pub fn table_read_type(
+        &self,
+        var_name: &String,
+        function: &FunctionNode<'a>,
+    ) -> Result<String, Error> {
         // Top-level variables are not in any function's local table; resolve them directly.
         if let Some(global_type) = self.ctx.globals.get(var_name) {
-            return self.resolve_type(global_type);
+            return Ok(self.resolve_type(global_type));
         }
         let func_name = self
             .ctx
             .current_mangled_name
             .as_ref()
             .unwrap_or(&function.name.text);
-        let func_lookup = match self.ctx.combined_symbol_lookup.get(func_name) {
-            Some(lookup) => lookup,
-            None => {
-                panic!("combined_symbol_lookup missing key: '{}', var_name: '{}', function.name.text: '{}', current_mangled_name: {:?}", func_name, var_name, function.name.text, self.ctx.current_mangled_name);
-            }
-        };
-        let t = match func_lookup.get(var_name) {
-            Some(t_val) => t_val.clone().get_type(),
-            None => {
-                panic!(
-                    "func_lookup for '{}' missing var: '{}'",
-                    func_name, var_name
-                );
-            }
-        };
-        self.resolve_type(&t)
+        let func_lookup = self.ctx.combined_symbol_lookup.get(func_name).ok_or_else(|| {
+            Error::Internal(format!(
+                "combined_symbol_lookup missing key '{}' (var '{}', function '{}', mangled {:?})",
+                func_name, var_name, function.name.text, self.ctx.current_mangled_name
+            ))
+        })?;
+        let t = func_lookup
+            .get(var_name)
+            .ok_or_else(|| {
+                Error::Internal(format!("func_lookup for '{}' missing var '{}'", func_name, var_name))
+            })?
+            .clone()
+            .get_type();
+        Ok(self.resolve_type(&t))
     }
 
-    /// Builds local variable declarations for a function
     pub fn build_local_variable(
         &mut self,
         function: &FunctionNode<'a>,

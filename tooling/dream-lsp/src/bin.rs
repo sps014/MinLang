@@ -1,7 +1,7 @@
 use bumpalo::Bump;
 use dream::syntax::lexer::Lexer;
 use dream::syntax::parser::Parser;
-use dream::driver::diagnostics::DiagnosticBag;
+use dream::diagnostics::DiagnosticBag;
 
 fn main() {
     let text = "let x = 5;\nfun foo() { }";
