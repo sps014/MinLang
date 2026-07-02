@@ -124,7 +124,23 @@ fun main(): void {
 - A getter takes no parameters and declares a non-`void` return type. A setter takes exactly one
   parameter (its value); its return value is ignored.
 - A property may have a getter, a setter, or both. Accessors obey the usual `public`/private
-  visibility rules and cannot be `static` or `async`.
+  visibility rules. They cannot be `async` (a getter read must yield the value directly, not a
+  `Future`).
+- A `static get` / `static set` accessor is read and written through the type itself rather than an
+  instance — `Type.name` calls the static getter and `Type.name = v` calls the static setter:
+
+```dream
+class Config {
+    public static get version(): int { return 7; }
+    public static set level(value: int) { println(value); }
+}
+
+fun main(): void {
+    println(Config.version);   // 7  -> calls the static getter
+    Config.level = 3;          //    -> calls the static setter
+}
+```
+
 - These are distinct from the bracket [indexer](#indexer-get--set) `get(i)` / `set(i, v)`, which are
   ordinary methods bound to `obj[i]`.
 

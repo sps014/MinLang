@@ -1,0 +1,10 @@
+// One key/value entry, produced while iterating a `Map` with `for (let pair in map)`.
+class KeyValuePair<K, V> {
+    public key: K;
+    public value: V;
+
+    constructor(key: K, value: V) {
+        this.key = key;
+        this.value = value;
+    }
+}

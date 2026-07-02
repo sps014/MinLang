@@ -409,6 +409,32 @@ impl<'a> Analyzer<'a> {
                 return Ok(enum_ty);
             }
         }
+        // Static property getter `Type.prop`: when the receiver names a type (not a local) and a
+        // static getter exists, desugar to a static call `Type.get$prop()` (mirrors the instance
+        // getter desugar below, but the receiver is the type rather than a value).
+        if let ExpressionNode::Identifier(id) = obj {
+            let is_local = symbol_table.borrow().get_symbol(id).is_ok();
+            if !is_local {
+                let type_name = crate::syntax::nodes::types::canonical_type_name(&id.text)
+                    .unwrap_or(id.text.as_str())
+                    .to_string();
+                let getter = method_fn(&type_name, &getter_member_name(&member.text));
+                if self.function_table.get_function(&getter).is_ok() {
+                    let get_tok = synthetic_token(
+                        TokenKind::IdentifierToken,
+                        &getter_member_name(&member.text),
+                    );
+                    let call = ExpressionNode::MethodCall(obj, get_tok, None, vec![]);
+                    return self.analyze_expression(
+                        &call,
+                        parent_function,
+                        symbol_table,
+                        diagnostics,
+                    );
+                }
+            }
+        }
+
         let obj_type =
             self.analyze_expression(obj, parent_function, symbol_table, diagnostics)?;
         let obj_hir = self.hir_take();

@@ -627,6 +627,36 @@ impl<'a> Analyzer<'a> {
         symbol_table: &Rc<RefCell<SymbolTable>>,
         diagnostics: &mut DiagnosticBag,
     ) -> Result<(), SemanticError> {
+        // Static property setter `Type.prop = v`: when the receiver names a type (not a local) and a
+        // static setter exists, desugar to a static call `Type.set$prop(v)` (mirrors the instance
+        // setter desugar below, but the receiver is the type rather than a value).
+        if let ExpressionNode::Identifier(id) = obj {
+            let is_local = symbol_table.borrow().get_symbol(id).is_ok();
+            if !is_local {
+                let type_name = crate::syntax::nodes::types::canonical_type_name(&id.text)
+                    .unwrap_or(id.text.as_str())
+                    .to_string();
+                let setter = method_fn(&type_name, &setter_member_name(&member.text));
+                if self.function_table.get_function(&setter).is_ok() {
+                    let set_tok = synthetic_token(
+                        TokenKind::IdentifierToken,
+                        &setter_member_name(&member.text),
+                    );
+                    let call =
+                        ExpressionNode::MethodCall(obj, set_tok, None, vec![right.clone()]);
+                    let _ = self.analyze_expression(
+                        &call,
+                        parent_function,
+                        symbol_table,
+                        diagnostics,
+                    )?;
+                    let call_hir = self.hir_take();
+                    self.hir_expr_stmt(call_hir);
+                    return Ok(());
+                }
+            }
+        }
+
         let obj_type = self
             .analyze_expression(obj, parent_function, symbol_table, diagnostics)
             .unwrap_or(Type::Unknown);

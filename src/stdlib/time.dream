@@ -1,0 +1,7 @@
+// `Time` - timing utilities backing a compiler intrinsic. `Time.sleep(ms)` is async: it yields a
+// `Future<void>` that resolves after roughly `ms` milliseconds, so `await Time.sleep(100)` pauses
+// the current task. Auto-imported into every program.
+class Time {
+    @intrinsic("sleep")
+    static extern async fun sleep(ms: int): void;
+}

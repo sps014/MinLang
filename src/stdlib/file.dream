@@ -1,9 +1,10 @@
-// `File` / `FileStream` - a small cross-runtime filesystem API. The host capability is a set of
-// *synchronous* externs (implemented natively in `src/execution/host.rs` for the wasmtime CLI and
-// in `runtime/dream.js` for Node); the `async` surface is built in Dream by wrapping those calls
-// in `async fun`s. Because Dream's async scheduler is compiled into the module itself, calling
+// `File` - a small cross-runtime filesystem API. The host capability is a set of *synchronous*
+// externs (implemented natively in `src/execution/host/file.rs` for the wasmtime CLI and in
+// `runtime/dream.js` for Node); the `async` surface is built in Dream by wrapping those calls in
+// `async fun`s. Because Dream's async scheduler is compiled into the module itself, calling
 // `File.read(...)` returns a `Future<T>` that resolves on the first poll on *every* host - no
 // host-side promise bridge is required. This is what lets the same `.dream` run fast and natively.
+// Buffered reads go through `FileStream` (`file_stream.dream`). Auto-imported into every program.
 //
 //   async fun main(): void {
 //       await File.write("notes.txt", "hello\nworld\n");
@@ -15,8 +16,6 @@
 //           System.print(stream.read(8));                 // 8 chars at a time
 //       }
 //   }
-
-// File: static filesystem utilities contains useful functions for interacting with the filesystem.
 class File {
     // --- host bridge: synchronous externs (real WASM imports; no @intrinsic) -------------------
     @js("Dream", "fileRead")
@@ -140,105 +139,5 @@ class File {
         }
         let bytes = await File.read_bytes(path);
         return Result.Ok(FileStream(bytes.unwrap_or(Array.new<byte>(0))));
-    }
-}
-
-// --- FileStream: a buffered, seekable cursor over a file's bytes -----------------------------
-// The file's bytes are read once into `data` (a single bulk copy from the host) and the cursor
-// then slices them in pure Dream. Buffering as raw bytes is binary-safe and means `read_bytes`
-// needs no conversion; `read`/`read_all` materialize a text view only when text is requested.
-// Random access via `seek` is cheap and allocation-free.
-class FileStream {
-    data: byte[];
-    pos: int;
-
-    constructor(data: byte[]) {
-        this.data = data;
-        this.pos = 0;
-    }
-
-    // Clamps `end` to the buffer length and returns it (helper for the read methods).
-    fun _clamp(end: int): int {
-        if (end > this.data.len()) {
-            return this.data.len();
-        }
-        return end;
-    }
-
-    // Reads up to `n` raw bytes from the current position, advancing the cursor. No conversion.
-    public fun read_bytes(n: int): byte[] {
-        let end = this._clamp(this.pos + n);
-        let count = end - this.pos;
-        if (count < 0) {
-            count = 0;
-        }
-        let out = Array.new<byte>(count);
-        let i = 0;
-        while (i < count) {
-            out[i] = this.data[this.pos + i];
-            i = i + 1;
-        }
-        this.pos = end;
-        return out;
-    }
-
-    // Reads up to `n` bytes from the current position as text, advancing the cursor. Each raw
-    // byte is widened to a `char` code point for the string view.
-    public fun read(n: int): string {
-        let end = this._clamp(this.pos + n);
-        let count = end - this.pos;
-        if (count < 0) {
-            count = 0;
-        }
-        let out = String.alloc(count);
-        let i = 0;
-        while (i < count) {
-            String.set(out, i, (char)this.data[this.pos + i]);
-            i = i + 1;
-        }
-        this.pos = end;
-        return out;
-    }
-
-    // Reads everything remaining from the current position as text.
-    public fun read_all(): string {
-        return this.read(this.data.len() - this.pos);
-    }
-
-    // True while there are unread bytes.
-    public fun has_more(): bool {
-        return this.pos < this.data.len();
-    }
-
-    // Current cursor offset (bytes from the start).
-    public fun position(): int {
-        return this.pos;
-    }
-
-    // Total length of the buffered content in bytes.
-    public fun length(): int {
-        return this.data.len();
-    }
-
-    // Moves the cursor to an absolute offset (clamped to [0, length]).
-    public fun seek(offset: int): void {
-        let target = offset;
-        if (target < 0) {
-            target = 0;
-        }
-        if (target > this.data.len()) {
-            target = this.data.len();
-        }
-        this.pos = target;
-    }
-
-    // Rewinds the cursor to the start.
-    public fun reset(): void {
-        this.pos = 0;
-    }
-
-    // Releases the buffer (no-op for the buffered stream; present for API symmetry).
-    public fun close(): void {
-        this.pos = this.data.len();
     }
 }

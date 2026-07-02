@@ -1,0 +1,14 @@
+// An `async` property accessor is rejected: a getter read must yield the property value directly,
+// not a Future. Compilation must fail.
+class Box {
+    v: int;
+    constructor() { this.v = 0; }
+
+    public async get value(): int {
+        return this.v;
+    }
+}
+
+fun main(): void {
+    let b = Box();
+}

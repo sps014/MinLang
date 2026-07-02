@@ -1251,12 +1251,9 @@ impl<'a> Analyzer<'a> {
             return;
         };
         let prop = &method.name.text;
-        if method.is_static {
-            diagnostics.report_error(
-                format!("property accessor '{}' cannot be 'static'", prop),
-                Some(method.name.position),
-            );
-        }
+        // Static accessors are permitted: `static get`/`static set` are read/written through the
+        // type (`Type.prop` / `Type.prop = v`) with no `this`. `async` accessors are not: a getter
+        // read must yield the property value directly, not a `Future`.
         if method.is_async {
             diagnostics.report_error(
                 format!("property accessor '{}' cannot be 'async'", prop),

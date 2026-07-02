@@ -1,0 +1,130 @@
+// A parsed view over the raw response bytes returned by the host (produced by `HttpClient`). Status
+// and header reads scan the ASCII head; `text`/`bytes`/`json` materialize the body only when asked.
+// All reads are synchronous - the bytes are already in hand by the time the request future resolves.
+// Auto-imported into every program.
+class HttpResponse {
+    data: char[];
+    boundary: int;   // index of the first '\n' of the head/body "\n\n" separator (-1 until scanned)
+    scanned: bool;
+
+    constructor(data: char[]) {
+        this.data = data;
+        this.boundary = 0 - 1;
+        this.scanned = false;
+    }
+
+    // Locates the blank line separating the head from the body. `boundary` ends up at the first of
+    // the two consecutive newlines (or at the end of the buffer when there is no body).
+    fun scan(): void {
+        if (this.scanned == false) {
+            this.scanned = true;
+            let n = this.data.len();
+            let i = 0;
+            let found = false;
+            while ((i + 1 < n) && (found == false)) {
+                if ((this.data[i] == '\n') && (this.data[i + 1] == '\n')) {
+                    this.boundary = i;
+                    found = true;
+                }
+                i = i + 1;
+            }
+            if (found == false) {
+                this.boundary = n;
+            }
+        }
+    }
+
+    // Decodes the half-open byte range [start, end) of the response as text.
+    fun slice_text(start: int, end: int): string {
+        let len = end - start;
+        if (len < 0) {
+            len = 0;
+        }
+        let result = String.alloc(len);
+        let i = 0;
+        while (i < len) {
+            String.set(result, i, this.data[start + i]);
+            i = i + 1;
+        }
+        return result;
+    }
+
+    // The ASCII head (status line + header lines) as text.
+    fun head_text(): string {
+        this.scan();
+        return this.slice_text(0, this.boundary);
+    }
+
+    // The HTTP status code, e.g. 200. Parsed from the leading digits of the head.
+    public fun status(): int {
+        let n = this.data.len();
+        let i = 0;
+        let value = 0;
+        let going = true;
+        while ((i < n) && (going == true)) {
+            let c = this.data[i];
+            if (c.is_digit() == true) {
+                value = value * 10 + (c.to_int() - 48);   // 48 = '0'
+                i = i + 1;
+            } else {
+                going = false;
+            }
+        }
+        return value;
+    }
+
+    // True for a 2xx status.
+    public fun ok(): bool {
+        let s = this.status();
+        return (s >= 200) && (s < 300);
+    }
+
+    // The value of response header `name` (case-insensitive), or "" if absent.
+    public fun header(name: string): string {
+        let lines = this.head_text().split('\n');
+        let want = name.to_lower();
+        let i = 1;   // line 0 is the status line
+        while (i < lines.len()) {
+            let line = lines[i];
+            let colon = line.index_of(':').unwrap_or(0 - 1);
+            if (colon >= 0) {
+                let key = line.substring(0, colon).trim().to_lower();
+                if (key == want) {
+                    return line.substring(colon + 1, line.len()).trim();
+                }
+            }
+            i = i + 1;
+        }
+        return "";
+    }
+
+    // The response body as UTF-8 text.
+    public fun text(): string {
+        this.scan();
+        return this.slice_text(this.boundary + 2, this.data.len());
+    }
+
+    // The response body as raw bytes (binary-safe; a fresh `byte[]` slice). Each code point of the
+    // raw response buffer is narrowed to a byte.
+    public fun bytes(): byte[] {
+        this.scan();
+        let n = this.data.len();
+        let start = this.boundary + 2;
+        if (start > n) {
+            start = n;
+        }
+        let count = n - start;
+        let out = Array.new<byte>(count);
+        let i = 0;
+        while (i < count) {
+            out[i] = (byte)this.data[start + i];
+            i = i + 1;
+        }
+        return out;
+    }
+
+    // The response body parsed as JSON.
+    public fun json(): JsonValue {
+        return JSON.parse(this.text());
+    }
+}

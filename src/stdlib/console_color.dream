@@ -1,0 +1,21 @@
+// The 16 standard console colors, matching the C# `ConsoleColor` ordering/values so the low 8 are
+// the dim ANSI colors and the high 8 are their bright counterparts. Consumed by `System`'s
+// `setForeground`/`setBackground`/`printColored`. Auto-imported into every program.
+enum ConsoleColor {
+    Black,
+    DarkBlue,
+    DarkGreen,
+    DarkCyan,
+    DarkRed,
+    DarkMagenta,
+    DarkYellow,
+    Gray,
+    DarkGray,
+    Blue,
+    Green,
+    Cyan,
+    Red,
+    Magenta,
+    Yellow,
+    White,
+}

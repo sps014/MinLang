@@ -5,11 +5,27 @@ use crate::syntax::nodes::Type;
 /// language service, so the two can never drift. The primitive files (int/char/string/...)
 /// only attach methods to built-in types, so their relative order does not matter.
 pub const PRELUDE_FILES: &[(&str, &str)] = &[
-    ("<std>/core.dream", include_str!("core.dream")),
+    // Core intrinsic-backed classes (one class per file).
+    ("<std>/array.dream", include_str!("array.dream")),
+    ("<std>/time.dream", include_str!("time.dream")),
+    ("<std>/debug.dream", include_str!("debug.dream")),
     ("<std>/option.dream", include_str!("option.dream")),
     ("<std>/result.dream", include_str!("result.dream")),
-    ("<std>/list.dream", include_str!("list.dream")),
-    ("<std>/map.dream", include_str!("map.dream")),
+    // Collections (`List`/`Map` and their cursors), one class per file under `collections/`.
+    ("<std>/collections/list.dream", include_str!("collections/list.dream")),
+    (
+        "<std>/collections/list_iterator.dream",
+        include_str!("collections/list_iterator.dream"),
+    ),
+    ("<std>/collections/map.dream", include_str!("collections/map.dream")),
+    (
+        "<std>/collections/key_value_pair.dream",
+        include_str!("collections/key_value_pair.dream"),
+    ),
+    (
+        "<std>/collections/map_iterator.dream",
+        include_str!("collections/map_iterator.dream"),
+    ),
     ("<std>/int.dream", include_str!("int.dream")),
     ("<std>/long.dream", include_str!("long.dream")),
     ("<std>/uint.dream", include_str!("uint.dream")),
@@ -21,11 +37,20 @@ pub const PRELUDE_FILES: &[(&str, &str)] = &[
     ("<std>/float.dream", include_str!("float.dream")),
     ("<std>/double.dream", include_str!("double.dream")),
     ("<std>/jsref.dream", include_str!("jsref.dream")),
+    // JSON: value tree, parser, and the public `JSON` API (one class per file).
+    ("<std>/json_value.dream", include_str!("json_value.dream")),
+    ("<std>/json_parser.dream", include_str!("json_parser.dream")),
     ("<std>/json.dream", include_str!("json.dream")),
     ("<std>/math.dream", include_str!("math.dream")),
     ("<std>/regex.dream", include_str!("regex.dream")),
-    ("<std>/http.dream", include_str!("http.dream")),
+    // HTTP client/response (one class per file).
+    ("<std>/http_response.dream", include_str!("http_response.dream")),
+    ("<std>/http_client.dream", include_str!("http_client.dream")),
+    // Filesystem: static `File` API and the buffered `FileStream` (one class per file).
     ("<std>/file.dream", include_str!("file.dream")),
+    ("<std>/file_stream.dream", include_str!("file_stream.dream")),
+    // Console/system: the `ConsoleColor` enum and the `System` utilities.
+    ("<std>/console_color.dream", include_str!("console_color.dream")),
     ("<std>/system.dream", include_str!("system.dream")),
     ("<std>/promise.dream", include_str!("promise.dream")),
 ];

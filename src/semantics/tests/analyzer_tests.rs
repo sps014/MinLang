@@ -542,7 +542,7 @@ const SYSTEM_STUB: &str = "
     }
 ";
 
-/// `System` + `Time.sleep` for async tests (mirrors `stdlib/core.dream` + `system.dream`).
+/// `System` + `Time.sleep` for async tests (mirrors `stdlib/time.dream` + `system.dream`).
 const ASYNC_STUB: &str = "
     class System {
         @intrinsic(\"print\")
@@ -1739,34 +1739,46 @@ fn test_property_getter_ok() {
 }
 
 #[test]
-fn test_static_getter_is_rejected() {
-    // A property accessor is dispatched on an instance receiver (`obj.prop`), so it cannot be
-    // `static`: registration must report the error.
+fn test_static_getter_and_setter_ok() {
+    // Static accessors are read/written through the type itself: `Counter.count` calls the static
+    // getter and `Counter.count = v` calls the static setter (no instance receiver).
     let code = "
-        class Box {
-            v: int;
-            constructor() { this.v = 0; }
-            public static get value(): int { return 0; }
+        class Counter {
+            public static get count(): int { return 42; }
+            public static set count(x: int) { }
         }
         fun main(): void {
+            Counter.count = 5;
+            let n: int = Counter.count;
         }
     ";
     let diagnostics = analyze_code(code);
-    assert_eq!(diagnostics.has_errors(), true);
-    assert!(diagnostics
-        .diagnostics
-        .iter()
-        .any(|d| d.message.contains("cannot be 'static'")));
+    assert_eq!(diagnostics.has_errors(), false);
 }
 
 #[test]
-fn test_static_setter_is_rejected() {
-    // Same restriction for setters: `static set` has no receiver to assign through.
+fn test_static_getter_type_mismatch_is_reported() {
+    // A static getter is still type-checked: assigning its `int` result to a `string` errors.
+    let code = "
+        class Box {
+            public static get value(): int { return 0; }
+        }
+        fun main(): void {
+            let s: string = Box.value;
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+}
+
+#[test]
+fn test_async_accessor_is_rejected() {
+    // An `async` getter would yield a `Future` instead of the property value, so it is rejected.
     let code = "
         class Box {
             v: int;
             constructor() { this.v = 0; }
-            public static set value(x: int) { }
+            public async get value(): int { return this.v; }
         }
         fun main(): void {
         }
@@ -1776,7 +1788,7 @@ fn test_static_setter_is_rejected() {
     assert!(diagnostics
         .diagnostics
         .iter()
-        .any(|d| d.message.contains("cannot be 'static'")));
+        .any(|d| d.message.contains("cannot be 'async'")));
 }
 
 #[test]

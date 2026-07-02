@@ -21,6 +21,19 @@ class List<T> {
         return this.count;
     }
 
+    // Number of elements, exposed as a property: read with `list.length`. Mirrors `size()`.
+    public get length(): int {
+        return this.count;
+    }
+
+    // Assigning `list.length = n` truncates the list to the first `n` elements. Values outside
+    // `0..=count` are ignored (the list only ever shrinks through this property, never grows).
+    public set length(value: int) {
+        if ((value >= 0) && (value <= this.count)) {
+            this.count = value;
+        }
+    }
+
     // Doubles the backing buffer, copying existing elements across.
     public fun grow(): void {
         let old_cap = this.items.len();
@@ -122,27 +135,5 @@ class List<T> {
     // Enumerator for `for (let x in list)`. Returns a fresh cursor over the current elements.
     public fun iterator(): ListIterator<T> {
         return ListIterator<T>(this);
-    }
-}
-
-// Cursor produced by `List.iterator()`. `next()` yields `Some(element)` in order until the list is
-// exhausted, then `None` — the enumerator protocol consumed by `for (let x in list)`. Uses only the
-// list's public `size()`/`get()`, so it needs no access to the list's private buffer.
-class ListIterator<T> {
-    list: List<T>;
-    idx: int;
-
-    constructor(list: List<T>) {
-        this.list = list;
-        this.idx = 0;
-    }
-
-    public fun next(): Option<T> {
-        if (this.idx >= this.list.size()) {
-            return Option.None;
-        }
-        let value = this.list.get(this.idx);
-        this.idx = this.idx + 1;
-        return value;
     }
 }
