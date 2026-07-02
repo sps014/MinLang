@@ -598,11 +598,11 @@ impl Emitter<'_> {
                         self.line(&format!("     (call ${})", sym));
                         self.line("     (local.get $__obj)");
                     } else {
-                        // Auto constructor: initialize each field from its positional argument.
-                        for (i, arg) in args.iter().enumerate() {
-                            if let Some(&(off, fty)) = fields.get(i) {
-                                self.store_at_obj(off, fty, arg);
-                            }
+                        // Implicit zero-arg default constructor: leave every field at its zero
+                        // value. Reused heap blocks are not zeroed, so zero each field explicitly.
+                        let _ = args;
+                        for &(off, fty) in &fields {
+                            self.zero_at_obj(off, fty);
                         }
                         self.line("     (local.get $__obj)");
                     }

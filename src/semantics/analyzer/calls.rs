@@ -398,7 +398,8 @@ impl<'a> Analyzer<'a> {
             // `ensure_struct_instantiated` has already added to the struct table. A generic base with
             // no type args is an error, not a constructor. When the instance is registered, emit
             // `New`: if it declares a user `constructor(){}`, resolve that def so the backend calls it
-            // (its args are the constructor's); otherwise `args` initialize fields positionally.
+            // (its args are the constructor's); otherwise the implicit zero-arg default constructor
+            // takes no args and leaves every field at its zero value.
             // `hir_set_new` is given the source (base) name — the registered `DefId` for both plain
             // and generic structs — while the result type `t` supplies the per-instance layout key.
             let concrete_name = match &concrete_generic_args {
@@ -711,8 +712,8 @@ impl<'a> Analyzer<'a> {
     }
 
     /// Type-checks a constructor call `Struct(args)`. When the struct defines a custom `constructor`
-    /// the call is checked against `init`'s parameters; otherwise it is checked positionally
-    /// against the struct's fields in declaration order (the auto-generated constructor).
+    /// the call is checked against `init`'s parameters; otherwise the class has an implicit zero-arg
+    /// default constructor (`Struct()`) that leaves every field at its zero value.
     pub(super) fn analyze_constructor_call(
         &mut self,
         name: &SyntaxToken,
@@ -744,8 +745,8 @@ impl<'a> Analyzer<'a> {
 
         let init_name = constructor_fn(&struct_name);
         // `expected` are the constructor's parameter types (a user `constructor` skips its implicit
-        // `this`); `expected_defaults` are the parallel default values. The field-initializing
-        // auto-constructor never has defaults.
+        // `this`); `expected_defaults` are the parallel default values. A class with no explicit
+        // `constructor` has an implicit zero-arg default constructor, so it expects no arguments.
         let (expected, expected_defaults): (Vec<String>, Vec<Option<Type>>) =
             if let Ok(sig) = self.function_table.get_function(&init_name) {
                 // `constructor` is registered as a method, so parameter 0 is the implicit `this`.
@@ -753,13 +754,6 @@ impl<'a> Analyzer<'a> {
                     sig.parameters.iter().skip(1).cloned().collect(),
                     sig.defaults.iter().skip(1).cloned().collect(),
                 )
-            } else if let Some(info) = self.struct_table.get_struct(&struct_name) {
-                let mut ordered: Vec<(&String, &crate::semantics::struct_table::StructFieldInfo)> =
-                    info.fields.iter().collect();
-                ordered.sort_by_key(|(_, f)| f.offset);
-                let types: Vec<String> = ordered.iter().map(|(_, f)| f.type_.get_type()).collect();
-                let defaults = vec![None; types.len()];
-                (types, defaults)
             } else {
                 (Vec::new(), Vec::new())
             };

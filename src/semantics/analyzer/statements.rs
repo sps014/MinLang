@@ -7,7 +7,7 @@ use crate::hir::{HExpr, HStmt};
 use crate::intrinsics;
 use crate::semantics::errors::SemanticError;
 use crate::semantics::symbol_table::SymbolTable;
-use crate::syntax::nodes::types::{mangle_generic, strip_nullable};
+use crate::syntax::nodes::types::{mangle_generic, method_fn, strip_nullable};
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, StatementNode, Type};
 use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;
@@ -619,7 +619,7 @@ impl<'a> Analyzer<'a> {
 
     pub(super) fn analyze_member_assignment(
         &mut self,
-        obj: &ExpressionNode<'a>,
+        obj: &'a ExpressionNode<'a>,
         member: &SyntaxToken,
         right: &ExpressionNode<'a>,
         parent_function: &FunctionNode<'a>,
@@ -649,32 +649,52 @@ impl<'a> Analyzer<'a> {
         self.ensure_struct_instantiated(&base_name, &generic_args, &member.position, diagnostics);
         let struct_name = mangle_generic(&base_name, &generic_args);
 
-        let (field_type, field_is_public) = {
-            let struct_info = match self.struct_table.get_struct(&struct_name) {
-                Some(info) => info,
-                None => {
-                    self.hir_fail();
-                    diagnostics.report_error(
-                        format!("Struct '{}' not found", struct_name),
-                        Some(member.position),
-                    );
-                    return Ok(());
-                }
-            };
+        let field = match self.struct_table.get_struct(&struct_name) {
+            Some(info) => info
+                .fields
+                .get(&member.text)
+                .map(|i| (i.type_.clone(), i.is_public)),
+            None => {
+                self.hir_fail();
+                diagnostics.report_error(
+                    format!("Struct '{}' not found", struct_name),
+                    Some(member.position),
+                );
+                return Ok(());
+            }
+        };
 
-            match struct_info.fields.get(&member.text) {
-                Some(info) => (info.type_.clone(), info.is_public),
-                None => {
-                    self.hir_fail();
-                    diagnostics.report_error(
-                        format!(
-                            "Field '{}' not found in class '{}'",
-                            member.text, struct_name
-                        ),
-                        Some(member.position),
-                    );
+        let (field_type, field_is_public) = match field {
+            Some(f) => f,
+            None => {
+                // Not a field: `obj.prop = v` may write a property setter, which desugars to a call
+                // of the (internally named) setter method. The call carries its own privacy/type
+                // check, and its (discarded) result becomes the assignment statement.
+                let setter = method_fn(&struct_name, &setter_member_name(&member.text));
+                if self.function_table.get_function(&setter).is_ok() {
+                    let set_tok =
+                        synthetic_token(TokenKind::IdentifierToken, &setter_member_name(&member.text));
+                    let call =
+                        ExpressionNode::MethodCall(obj, set_tok, None, vec![right.clone()]);
+                    let _ = self.analyze_expression(
+                        &call,
+                        parent_function,
+                        symbol_table,
+                        diagnostics,
+                    )?;
+                    let call_hir = self.hir_take();
+                    self.hir_expr_stmt(call_hir);
                     return Ok(());
                 }
+                self.hir_fail();
+                diagnostics.report_error(
+                    format!(
+                        "Field '{}' not found in class '{}'",
+                        member.text, struct_name
+                    ),
+                    Some(member.position),
+                );
+                return Ok(());
             }
         };
 

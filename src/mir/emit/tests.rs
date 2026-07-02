@@ -113,13 +113,13 @@
             },
         );
 
-        // fun make(): S { return S(1, 2); }
+        // fun make(): S { return S(); }  -- implicit zero-arg default constructor
         let mut b = FunctionBuilder::new("make", sty);
         b.set_def(DefId(9), vec![]);
         let t = b.new_temp(sty);
         b.assign(
             Place::Local(t),
-            Rvalue::New { def, ty: sty, ctor: None, args: vec![Operand::Const(Const::Int(1)), Operand::Const(Const::Int(2))] },
+            Rvalue::New { def, ty: sty, ctor: None, args: vec![] },
         );
         b.terminate(Terminator::Return(Some(Operand::Copy(Place::Local(t)))));
 
@@ -128,7 +128,7 @@
         assert!(wat.contains("(i32.const 8)"), "allocates the struct's data size:\n{}", wat);
         assert!(wat.contains("(call $malloc)"), "constructs via malloc:\n{}", wat);
         assert!(wat.contains("(local.set $__obj)"), "captures the object pointer:\n{}", wat);
-        assert!(wat.contains("(i32.store)"), "initializes fields:\n{}", wat);
+        assert!(wat.contains("(i32.store)"), "zero-initializes fields:\n{}", wat);
     }
 
     #[test]

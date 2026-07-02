@@ -12,6 +12,11 @@ class Regex {
     pattern: string;
     flags: string;
 
+    constructor(pattern: string, flags: string) {
+        this.pattern = pattern;
+        this.flags = flags;
+    }
+
     // --- host bridge (implemented by the `Dream` module: natively in Rust, or via JS `RegExp`) ---
     @js("Dream", "regexTest")
     static extern fun __regex_test(pattern: string, flags: string, input: string): bool;

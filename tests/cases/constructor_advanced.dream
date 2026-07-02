@@ -1,4 +1,4 @@
-// Generic class with an auto-generated constructor.
+// Generic class built via the implicit zero-arg default constructor.
 class Box<T> {
     public value: T;
 }
@@ -33,10 +33,13 @@ fun open_account(owner: string) {
 }
 
 fun main() {
-    let b = Box<int>(42);
+    let b = Box<int>();
+    b.value = 42;
     System.println(b.value);
 
-    let n = Named("Ada", 95);
+    let n = Named();
+    n.name = "Ada";
+    n.score = 95;
     System.print(n.name);
     System.print(" ");
     System.println(n.score);

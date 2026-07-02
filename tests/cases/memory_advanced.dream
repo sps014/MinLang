@@ -1,6 +1,11 @@
 class Node {
     val: int;
     next: Node?;
+
+    constructor(val: int, next: Node?) {
+        this.val = val;
+        this.next = next;
+    }
 }
 
 // A recursive discriminated union: a singly-linked list. Each `Cons` owns its `tail`, so dropping

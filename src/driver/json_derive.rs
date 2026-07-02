@@ -94,6 +94,8 @@ fn generate_json_extend(
     let name = &struct_decl.name.text;
     let mut to_body = String::from("        let __o = JsonValue.dict();\n");
     let mut from_prelude = String::new();
+    // `from_json` reconstructs the value by calling the class's field-order constructor positionally,
+    // so a `@json` class must declare a `constructor` taking its fields in declaration order.
     let mut from_fields: Vec<String> = Vec::new();
 
     for field in &struct_decl.fields {

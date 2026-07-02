@@ -10,6 +10,11 @@
 class Node {
     public val: int;
     public next: Node?;
+
+    constructor(val: int, next: Node?) {
+        this.val = val;
+        this.next = next;
+    }
 }
 
 class Holder {

@@ -265,7 +265,8 @@ pub enum Rvalue {
     /// Allocate and construct a struct instance. `ty` is the constructed value's interned type (the
     /// layout key, distinguishing generic instances); `def` tags the allocation. When `ctor` is
     /// `Some`, `args` are the user constructor's arguments (the backend allocates, zeroes, then calls
-    /// `ctor(this, args)`); when `None`, `args` initialize the fields positionally.
+    /// `ctor(this, args)`); when `None`, the implicit zero-arg default constructor takes no args and
+    /// every field is zero-initialized.
     New {
         def: DefId,
         ty: TypeId,

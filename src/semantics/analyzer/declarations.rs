@@ -1028,8 +1028,13 @@ impl<'a> Analyzer<'a> {
             // Validate object-protocol overrides once (on the non-monomorphized declaration).
             if bindings.is_empty() {
                 self.validate_protocol_override(method, diagnostics);
+                self.validate_accessor(method, diagnostics);
             }
-            let mangled_name = method_fn(target_type_str, &method.name.text);
+            // Property accessors (`get`/`set`) are registered under a `$`-tagged internal name that a
+            // user identifier can never spell, so `obj.prop`/`obj.prop = v` resolve to them without a
+            // regular method (or the indexer `get`/`set` hooks) ever colliding.
+            let member_name = accessor_member_name(method);
+            let mangled_name = method_fn(target_type_str, &member_name);
             self.type_ctx.register(
                 DefKind::Function,
                 &mangled_name,
@@ -1231,6 +1236,56 @@ impl<'a> Analyzer<'a> {
                     format!("overridden '{}' must return '{}'", name, expected),
                     Some(method.name.position),
                 );
+            }
+        }
+    }
+
+    /// Validates a TypeScript-style property accessor (`get`/`set`): a getter takes no parameters
+    /// and returns a non-`void` value; a setter takes exactly one parameter; neither may be `static`
+    /// or `async`. Non-accessor methods are ignored.
+    pub(super) fn validate_accessor(
+        &self,
+        method: &FunctionNode<'a>,
+        diagnostics: &mut DiagnosticBag,
+    ) {
+        let Some(kind) = method.accessor else {
+            return;
+        };
+        let prop = &method.name.text;
+        if method.is_static {
+            diagnostics.report_error(
+                format!("property accessor '{}' cannot be 'static'", prop),
+                Some(method.name.position),
+            );
+        }
+        if method.is_async {
+            diagnostics.report_error(
+                format!("property accessor '{}' cannot be 'async'", prop),
+                Some(method.name.position),
+            );
+        }
+        match kind {
+            crate::syntax::nodes::function::AccessorKind::Get => {
+                if !method.parameters.is_empty() {
+                    diagnostics.report_error(
+                        format!("getter '{}' must not declare parameters", prop),
+                        Some(method.name.position),
+                    );
+                }
+                if matches!(method.return_type, None | Some(Type::Void)) {
+                    diagnostics.report_error(
+                        format!("getter '{}' must declare a non-void return type", prop),
+                        Some(method.name.position),
+                    );
+                }
+            }
+            crate::syntax::nodes::function::AccessorKind::Set => {
+                if method.parameters.len() != 1 {
+                    diagnostics.report_error(
+                        format!("setter '{}' must declare exactly one parameter", prop),
+                        Some(method.name.position),
+                    );
+                }
             }
         }
     }

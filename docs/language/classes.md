@@ -11,26 +11,29 @@ class Point {
 }
 ```
 
-Fields are declared as `name: type;` pairs. A custom `constructor` may leave fields unset, in which case they start at their zero value (see [Constructors](#constructors)).
+Fields are declared as `name: type;` pairs. A field you never assign starts at its zero value (`0`, `0.0`, `false`, or `null`).
 
 ## Creating an instance
 
-Create an instance with a constructor call, passing values positionally in field declaration order:
+Create an instance with a constructor call. A class with no explicit `constructor` has an implicit
+**zero-argument** default constructor, so you build it with `Point()` and then set its (public)
+fields:
 
 ```dream
-let p = Point(3, 4);
+let p = Point();
+p.x = 3;
+p.y = 4;
 ```
 
-Every class is constructed this way; there is no separate brace-literal (`Point { x: 3, y: 4 }`) syntax.
 
 ## Constructors
 
-Every class has an **auto-generated constructor** that accepts its fields in declaration
-order. For `Point` above, that is `Point(x, y)`.
+A class with no `constructor` has an implicit **zero-argument** default constructor (`Point()`);
+every field starts at its zero value.
 
-To run custom logic when an instance is created, define a `constructor(...)`.
-When a `constructor` is present, the constructor call matches its parameters instead of the fields,
-and any field you do not assign starts at its zero value (`0`, `0.0`, `false`, or `null`):
+To accept arguments — or run custom logic — when an instance is created, define a `constructor(...)`.
+When a `constructor` is present, the constructor call matches its parameters, and any field you do
+not assign starts at its zero value (`0`, `0.0`, `false`, or `null`):
 
 ```dream
 class Account {
@@ -80,7 +83,7 @@ class Counter {
 }
 
 fun main(): void {
-    let c = Counter(0);
+    let c = Counter();       // count starts at 0
     c.increment();
     c.increment();
     println(c.get());   // 2
@@ -88,6 +91,42 @@ fun main(): void {
 ```
 
 Methods are called with `instance.method(args)`. The `this` parameter is implicit — you do not pass it yourself.
+
+## Properties (get / set)
+
+A class can expose a computed member that looks like a field but runs code on read and write, using
+TypeScript-style `get` and `set` accessors:
+
+```dream
+class Temperature {
+    celsius: float;
+
+    constructor(celsius: float) { this.celsius = celsius; }
+
+    public get fahrenheit(): float {
+        return this.celsius * 9.0f / 5.0f + 32.0f;
+    }
+
+    public set fahrenheit(value: float) {
+        this.celsius = (value - 32.0f) * 5.0f / 9.0f;
+    }
+}
+
+fun main(): void {
+    let t = Temperature(100.0f);
+    println(t.fahrenheit);   // 212  -> calls the getter
+    t.fahrenheit = 32.0f;    //      -> calls the setter
+    println(t.celsius);      // 0
+}
+```
+
+- Reading `obj.name` calls the getter; writing `obj.name = v` calls the setter.
+- A getter takes no parameters and declares a non-`void` return type. A setter takes exactly one
+  parameter (its value); its return value is ignored.
+- A property may have a getter, a setter, or both. Accessors obey the usual `public`/private
+  visibility rules and cannot be `static` or `async`.
+- These are distinct from the bracket [indexer](#indexer-get--set) `get(i)` / `set(i, v)`, which are
+  ordinary methods bound to `obj[i]`.
 
 ## Destructors
 
@@ -126,6 +165,11 @@ Append `?` to a class type to allow `null`:
 class Node {
     value: int;
     next: Node?;
+
+    constructor(value: int, next: Node?) {
+        this.value = value;
+        this.next = next;
+    }
 }
 
 let head: Node? = null;

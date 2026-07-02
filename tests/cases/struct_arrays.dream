@@ -1,11 +1,21 @@
 class Point<T> {
     public x: T;
     public y: T;
+
+    constructor(x: T, y: T) {
+        this.x = x;
+        this.y = y;
+    }
 }
 
 class Pixel {
     public r: int;
     public g: int;
+
+    constructor(r: int, g: int) {
+        this.r = r;
+        this.g = g;
+    }
 }
 
 fun main() {

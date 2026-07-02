@@ -356,7 +356,7 @@ fn test_hir_emission_destructor_body() {
     // release-time *invocation* is part of the RC runtime and handled at the driver switch.)
     let code = "
         class Res { public h: int; del() { this.h = 0; } }
-        fun mk(): Res { return Res(1); }
+        fun mk(): Res { return Res(); }
     ";
     let (wat, _count) = emit_hir_to_wat(code);
     assert!(wat.contains("(func $Res_del"), "destructor body should emit:\n{}", wat);
@@ -413,12 +413,12 @@ fn test_hir_emission_generic_struct_construction_and_field() {
     // layout: `Box<int>(7)` allocates + stores the field, and `b.v` loads it. The per-instance
     // layout is keyed by the interned type, so field widths are correct.
     let code = "
-        class Box<T> { public v: T; }
+        class Box<T> { public v: T; constructor(v: T) { this.v = v; } }
         fun make(): Box<int> { return Box<int>(7); }
         fun read(b: Box<int>): int { return b.v; }
     ";
     let (wat, count) = emit_hir_to_wat(code);
-    assert_eq!(count, 2, "both make and read should be emitted:\n{}", wat);
+    assert_eq!(count, 3, "make, read, and the constructor body should be emitted:\n{}", wat);
     assert!(wat.contains("(call $malloc)"), "generic construction should allocate:\n{}", wat);
     assert!(wat.contains("(i32.store)"), "the field should be initialized:\n{}", wat);
     assert!(wat.contains("(i32.load)"), "the field read should lower to a load:\n{}", wat);
@@ -724,7 +724,7 @@ fn exec_print_struct_via_object_to_string() {
     // through the generated `$Point_to_string` to render `Point { x: 1, y: 2 }`.
     let code = format!(
         "{SYSTEM_STUB}
-        class Point {{ public x: int; public y: int; }}
+        class Point {{ public x: int; public y: int; constructor(x: int, y: int) {{ this.x = x; this.y = y; }} }}
         fun main(): void {{ System.println(Point(1, 2)); }}"
     );
     assert_eq!(run_and_capture(&code, "main"), "Point { x: 1, y: 2 }\n");
@@ -736,8 +736,8 @@ fn exec_print_nested_struct() {
     // A struct field that is itself a struct renders recursively via `$object_to_string`.
     let code = format!(
         "{SYSTEM_STUB}
-        class Point {{ public x: int; public y: int; }}
-        class Line {{ public a: Point; public b: Point; }}
+        class Point {{ public x: int; public y: int; constructor(x: int, y: int) {{ this.x = x; this.y = y; }} }}
+        class Line {{ public a: Point; public b: Point; constructor(a: Point, b: Point) {{ this.a = a; this.b = b; }} }}
         fun main(): void {{ System.println(Line(Point(1, 2), Point(3, 4))); }}"
     );
     assert_eq!(
@@ -783,7 +783,7 @@ fn exec_print_struct_array() {
     // through `$object_to_string`).
     let code = format!(
         "{SYSTEM_STUB}
-        class Point {{ public x: int; public y: int; }}
+        class Point {{ public x: int; public y: int; constructor(x: int, y: int) {{ this.x = x; this.y = y; }} }}
         fun main(): void {{
             let ps: Point[] = [Point(1, 2), Point(3, 4)];
             System.println(ps);
@@ -1082,12 +1082,12 @@ fn test_hir_emission_field_read_and_constructor() {
     // A struct-field read and a (non-generic) constructor are both representable; field indexing is
     // resolved from the struct layout and `new` resolves the struct's `DefId`.
     let code = "
-        class Point { public x: int; public y: int; }
+        class Point { public x: int; public y: int; constructor(x: int, y: int) { this.x = x; this.y = y; } }
         fun getx(p: Point): int { return p.x; }
         fun make(): Point { return Point(1, 2); }
     ";
     let (wat, count) = emit_hir_to_wat(code);
-    assert_eq!(count, 2, "both the field-read and constructor functions should be emitted");
+    assert_eq!(count, 3, "the field-read, constructor, and constructor-body functions should be emitted");
     assert!(wat.contains("(func $getx"), "missing field-read function:\n{}", wat);
     assert!(wat.contains("(func $make"), "missing constructor function:\n{}", wat);
     // `p.x` (field 0) lowers to a real load now that the layout is threaded through.
@@ -1885,6 +1885,7 @@ fn test_generic_interface_monomorphized_ok() {
         }
         class Box<T> : Container<T> {
             public value: T;
+            constructor(value: T) { this.value = value; }
             public fun get(): T { return this.value; }
             public fun size(): int { return 1; }
         }

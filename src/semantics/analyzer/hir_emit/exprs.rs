@@ -405,7 +405,8 @@ impl<'a> Analyzer<'a> {
     /// Records the HIR for a constructor call `Struct(args)`. `name` is the source (base) struct name
     /// — the registered `DefId` for both plain and generic structs — and `result_ty` supplies the
     /// per-instance layout key. `ctor`, when `Some`, is the resolved user `constructor(){}` def (its
-    /// `args` are the constructor's arguments); when `None`, `args` initialize fields positionally.
+    /// `args` are the constructor's arguments); when `None`, the implicit zero-arg default
+    /// constructor takes no args and every field is zero-initialized.
     /// Unresolved names or a non-representable argument drop the call out of coverage.
     pub(in crate::semantics::analyzer) fn hir_set_new(
         &mut self,

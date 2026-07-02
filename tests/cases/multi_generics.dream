@@ -5,6 +5,11 @@ class Pair<K, V> {
     public key: K;
     public value: V;
 
+    constructor(key: K, value: V) {
+        this.key = key;
+        this.value = value;
+    }
+
     public fun show() {
         System.println(this.key);
         System.print(this.value);

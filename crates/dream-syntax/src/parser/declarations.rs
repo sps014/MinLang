@@ -218,9 +218,18 @@ impl<'a, 'b> Parser<'a, 'b> {
             let is_ctor_dtor = core.kind == TokenKind::IdentifierToken
                 && crate::nodes::types::is_special_member_name(&core.text)
                 && self.peek_token(m + 1).kind == TokenKind::OpenParenthesisToken;
+            
+                // TypeScript-style property accessor: `get name(...)` / `set name(...)`. `get`/`set`
+            // are contextual keywords (still ordinary identifiers/field names elsewhere), so this
+            // only binds when the next token is a property name followed by a parameter list.
+            let is_accessor = core.kind == TokenKind::IdentifierToken
+                && (core.text == "get" || core.text == "set")
+                && self.peek_token(m + 1).kind == TokenKind::IdentifierToken
+                && self.peek_token(m + 2).kind == TokenKind::OpenParenthesisToken;
             if core.kind == TokenKind::FunToken
                 || core.kind == TokenKind::ExternToken
                 || is_ctor_dtor
+                || is_accessor
             {
                 methods.push(self.parse_function(Some(field_attributes))?);
             } else {
@@ -627,6 +636,44 @@ impl<'a, 'b> Parser<'a, 'b> {
             return Ok(FunctionNode::new(
                 attributes, ctor_name, None, None, params, block, false,
             ));
+        }
+
+        // TypeScript-style property accessor: `get name(): T { ... }` / `set name(value: T) { ... }`.
+        // Like `constructor`/`del`, these omit `fun`; `get`/`set` are contextual keywords. A getter
+        // takes no parameters and declares a return type; a setter takes one parameter. The property
+        // name is stored on `name`, and `accessor` records which half this is.
+        if self.current_token().kind == TokenKind::IdentifierToken
+            && (self.current_token().text == "get" || self.current_token().text == "set")
+            && self.peek_token(1).kind == TokenKind::IdentifierToken
+        {
+            let kind_tok = self.match_token(TokenKind::IdentifierToken);
+            let is_getter = kind_tok.text == "get";
+            let mut prop_name = self.match_token(TokenKind::IdentifierToken);
+            Self::splice_leading_trivia(&mut prop_name, first_trivia);
+            let params = self.parse_formal_parameters()?;
+            let mut return_type: Option<Type> = None;
+            if self.current_token().kind == TokenKind::ColonToken {
+                self.match_token(TokenKind::ColonToken);
+                return_type = Some(self.parse_type()?);
+            }
+            let block = self.parse_block()?;
+            let mut node = FunctionNode::new(
+                attributes,
+                prop_name,
+                None,
+                return_type,
+                params,
+                block,
+                is_public,
+            );
+            node.is_static = is_static;
+            node.is_async = is_async;
+            node.accessor = Some(if is_getter {
+                crate::nodes::function::AccessorKind::Get
+            } else {
+                crate::nodes::function::AccessorKind::Set
+            });
+            return Ok(node);
         }
 
         //eat the fun keyword

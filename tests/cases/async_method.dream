@@ -1,6 +1,10 @@
 class Worker {
     public base: int;
 
+    constructor(base: int) {
+        this.base = base;
+    }
+
     public async fun compute(n: int): int {
         await Time.sleep(10);
         return this.base + n;

@@ -1,0 +1,32 @@
+// TypeScript-style property accessors: `obj.prop` calls the getter, `obj.prop = v` calls the
+// setter. Distinct from bracket-indexer `get(i)`/`set(i, v)`.
+class Temperature {
+    celsius: float;
+
+    constructor(celsius: float) {
+        this.celsius = celsius;
+    }
+
+    public get fahrenheit(): float {
+        return this.celsius * 9.0f / 5.0f + 32.0f;
+    }
+
+    public set fahrenheit(value: float) {
+        this.celsius = (value - 32.0f) * 5.0f / 9.0f;
+    }
+
+    public get raw(): float {
+        return this.celsius;
+    }
+}
+
+fun main(): void {
+    let t = Temperature(0.0f);
+    System.println(t.fahrenheit);   // 32
+
+    t.fahrenheit = 212.0f;
+    System.println(t.raw);          // 100
+
+    t.fahrenheit = 98.6f;
+    System.println(t.fahrenheit);   // 98.6
+}

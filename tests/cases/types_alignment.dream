@@ -3,6 +3,13 @@ class Mixed {
     public i1: int;
     public d1: double;
     public b2: bool;
+
+    constructor(b1: bool, i1: int, d1: double, b2: bool) {
+        this.b1 = b1;
+        this.i1 = i1;
+        this.d1 = d1;
+        this.b2 = b2;
+    }
 }
 
 fun main(): void {

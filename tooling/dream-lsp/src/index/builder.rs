@@ -27,9 +27,6 @@ pub(crate) struct Builder {
     pub(crate) method_params: HashMap<String, Vec<String>>,
     /// Constructor parameter names per struct name (only when a custom `constructor` is declared).
     pub(crate) ctor_params: HashMap<String, Vec<String>>,
-    /// Field names per struct name, in declaration order. These are the positional arguments of a
-    /// struct's auto-generated constructor (when it has no custom `constructor`).
-    pub(crate) struct_fields: HashMap<String, Vec<String>>,
 }
 
 impl Builder {
@@ -187,10 +184,6 @@ impl Builder {
         for st in &program.structs {
             let detail = format!("class {}", st.name.text);
             self.push_decl(&st.name, SymKind::Struct, detail, GLOBAL, None);
-            self.struct_fields.insert(
-                st.name.text.clone(),
-                st.fields.iter().map(|f| f.name.text.clone()).collect(),
-            );
             for field in &st.fields {
                 let field_ty = field.field_type.display_name();
                 let detail = format!("{}.{}: {}", st.name.text, field.name.text, field_ty);
@@ -406,11 +399,10 @@ impl Builder {
             StatementNode::Return(None) => {}
             StatementNode::FunctionInvocation(name, _, args) => {
                 self.add_ref(name, SymKind::Function, scope);
-                let params = self.fn_params.get(&name.text).or_else(|| {
-                    self.ctor_params
-                        .get(&name.text)
-                        .or_else(|| self.struct_fields.get(&name.text))
-                });
+                let params = self
+                    .fn_params
+                    .get(&name.text)
+                    .or_else(|| self.ctor_params.get(&name.text));
                 if let Some(params) = params {
                     self.push_param_hints(&params.clone(), args);
                 }
@@ -531,12 +523,12 @@ impl Builder {
                 self.add_ref(name, SymKind::Function, scope);
                 // A name resolves to a free function if one exists; otherwise `Name(...)` is a
                 // constructor call, whose positional arguments are the custom `constructor`'s
-                // parameters (if any) or the struct's fields in declaration order.
-                let params = self.fn_params.get(&name.text).or_else(|| {
-                    self.ctor_params
-                        .get(&name.text)
-                        .or_else(|| self.struct_fields.get(&name.text))
-                });
+                // parameters. A class with no explicit `constructor` has an implicit zero-arg
+                // default constructor, so it contributes no positional parameter hints.
+                let params = self
+                    .fn_params
+                    .get(&name.text)
+                    .or_else(|| self.ctor_params.get(&name.text));
                 if let Some(params) = params {
                     self.push_param_hints(&params.clone(), args);
                 }

@@ -3,6 +3,10 @@
 // release at exit keeps the reference count balanced.
 class Box {
     public value: int;
+
+    constructor(value: int) {
+        this.value = value;
+    }
 }
 
 fun read_value(b: Box): int {

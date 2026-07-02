@@ -2,6 +2,11 @@
 class Address {
     public city: string;
     public zip: string;
+
+    constructor(city: string, zip: string) {
+        this.city = city;
+        this.zip = zip;
+    }
 }
 
 @json
@@ -12,6 +17,15 @@ class User {
     public address: Address;
     public tags: string[];
     public scores: int[];
+
+    constructor(name: string, age: int, active: bool, address: Address, tags: string[], scores: int[]) {
+        this.name = name;
+        this.age = age;
+        this.active = active;
+        this.address = address;
+        this.tags = tags;
+        this.scores = scores;
+    }
 }
 
 fun main(): void {

@@ -1,6 +1,11 @@
 class Node {
     public value: int;
     public next: Node?;
+
+    constructor(value: int, next: Node?) {
+        this.value = value;
+        this.next = next;
+    }
 }
 
 fun create_list(n: int): Node? {

@@ -537,6 +537,10 @@ fn parameter_inlay_hints_on_function_and_constructor_calls() {
 class Point {
     x: int;
     y: int;
+    constructor(x: int, y: int) {
+        this.x = x;
+        this.y = y;
+    }
 }
 fun add(a: int, b: int): int {
     return a + b;
@@ -553,7 +557,7 @@ fun main(): void {
         .filter(|h| h.kind == InlayKind::Parameter)
         .map(|h| h.label.as_str())
         .collect();
-    // Auto-generated constructor takes the struct's fields positionally.
+    // A custom `constructor` supplies the positional parameter hints.
     assert!(
         labels.contains(&"x:"),
         "expected `x:` hint, got {:?}",

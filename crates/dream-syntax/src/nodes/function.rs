@@ -34,6 +34,15 @@ impl ParameterNode {
     }
 }
 
+/// Distinguishes a TypeScript-style property accessor from an ordinary method. A getter
+/// (`get name(): T { ... }`) takes no parameters and is invoked by reading `obj.name`; a setter
+/// (`set name(value: T) { ... }`) takes one parameter and is invoked by writing `obj.name = v`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccessorKind {
+    Get,
+    Set,
+}
+
 /// Represents a function declaration in the AST
 #[derive(Debug, Clone)]
 pub struct FunctionNode<'a> {
@@ -59,6 +68,9 @@ pub struct FunctionNode<'a> {
     /// Source file this declaration came from; set during multi-file merge so semantic
     /// diagnostics can report the correct file. `None` for synthesized nodes.
     pub file_path: Option<Rc<str>>,
+    /// `Some` when this is a TypeScript-style property accessor (`get`/`set`) rather than an
+    /// ordinary method; `name` then holds the property name. `None` for normal methods/functions.
+    pub accessor: Option<AccessorKind>,
 }
 
 impl<'a> FunctionNode<'a> {
@@ -84,6 +96,7 @@ impl<'a> FunctionNode<'a> {
             is_static: false,
             is_async: false,
             file_path: None,
+            accessor: None,
         }
     }
 }

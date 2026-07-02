@@ -18,6 +18,10 @@ class Tracked {
 class Factory {
     public base: int;
 
+    constructor(base: int) {
+        this.base = base;
+    }
+
     public fun create(n: int): Tracked {
         return Tracked(this.base + n);
     }
@@ -25,6 +29,10 @@ class Factory {
 
 class Named {
     public name: string;
+
+    constructor(name: string) {
+        this.name = name;
+    }
 
     del() {
         System.print("bye ");

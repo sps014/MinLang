@@ -148,6 +148,32 @@ fn generic_param_names(params: &Option<Vec<SyntaxToken>>) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// The internal member name a property getter is registered under. The `$` cannot appear in a
+/// source identifier, so this never collides with a user method (including the indexer `get`) and
+/// is not directly callable as `obj.get$prop()`.
+pub(super) fn getter_member_name(prop: &str) -> String {
+    format!("get${}", prop)
+}
+
+/// The internal member name a property setter is registered under (see [`getter_member_name`]).
+pub(super) fn setter_member_name(prop: &str) -> String {
+    format!("set${}", prop)
+}
+
+/// The internal member name a class member is registered under: the `$`-tagged accessor name for a
+/// property `get`/`set`, or the plain method/field name otherwise.
+pub(super) fn accessor_member_name(method: &FunctionNode) -> String {
+    match method.accessor {
+        Some(crate::syntax::nodes::function::AccessorKind::Get) => {
+            getter_member_name(&method.name.text)
+        }
+        Some(crate::syntax::nodes::function::AccessorKind::Set) => {
+            setter_member_name(&method.name.text)
+        }
+        None => method.name.text.clone(),
+    }
+}
+
 /// Maps each generic parameter name to the concrete `Type` bound to it for one monomorphization.
 /// Insertion-ordered so the mangled instance symbol (built from the values in order) is
 /// deterministic. Stores the structured AST `Type` (not a stringified name), so the monomorphizer

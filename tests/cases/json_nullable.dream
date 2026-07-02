@@ -1,5 +1,13 @@
 @json
-class Address { public city: string; public zip: string; }
+class Address {
+    public city: string;
+    public zip: string;
+
+    constructor(city: string, zip: string) {
+        this.city = city;
+        this.zip = zip;
+    }
+}
 
 @json
 class Profile {
@@ -7,6 +15,13 @@ class Profile {
     public nickname: string?;
     public address: Address?;
     public age: int;
+
+    constructor(name: string, nickname: string?, address: Address?, age: int) {
+        this.name = name;
+        this.nickname = nickname;
+        this.address = address;
+        this.age = age;
+    }
 }
 
 fun main(): void {

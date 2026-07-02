@@ -3,6 +3,10 @@
 class Greeter {
     public name: string;
 
+    constructor(name: string) {
+        this.name = name;
+    }
+
     public fun greet() {
         System.print("hello from method body\n");
     }

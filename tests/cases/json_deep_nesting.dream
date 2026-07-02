@@ -2,6 +2,11 @@
 class Geo {
     public lat: double;
     public lng: double;
+
+    constructor(lat: double, lng: double) {
+        this.lat = lat;
+        this.lng = lng;
+    }
 }
 
 @json
@@ -9,12 +14,23 @@ class Address {
     public city: string;
     public zip: string;
     public geo: Geo;
+
+    constructor(city: string, zip: string, geo: Geo) {
+        this.city = city;
+        this.zip = zip;
+        this.geo = geo;
+    }
 }
 
 @json
 class Company {
     public name: string;
     public address: Address;
+
+    constructor(name: string, address: Address) {
+        this.name = name;
+        this.address = address;
+    }
 }
 
 @json
@@ -23,6 +39,13 @@ class User {
     public age: int;
     public company: Company;
     public tags: string[];
+
+    constructor(name: string, age: int, company: Company, tags: string[]) {
+        this.name = name;
+        this.age = age;
+        this.company = company;
+        this.tags = tags;
+    }
 }
 
 @json
@@ -30,6 +53,12 @@ class Team {
     public title: string;
     public lead: User;
     public members: User[];
+
+    constructor(title: string, lead: User, members: User[]) {
+        this.title = title;
+        this.lead = lead;
+        this.members = members;
+    }
 }
 
 fun mk_user(name: string, age: int, city: string): User {

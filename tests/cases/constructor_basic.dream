@@ -1,4 +1,4 @@
-// Auto-generated (default) constructor: Point(x, y) stores fields positionally.
+// Implicit zero-arg default constructor: Point() leaves fields at their zero value.
 class Point {
     public x: int;
     public y: int;
@@ -26,7 +26,9 @@ fun make(n: int) {
 }
 
 fun main() {
-    let p = Point(3, 4);
+    let p = Point();
+    p.x = 3;
+    p.y = 4;
     System.println(p.x);
     System.println(p.y);
 

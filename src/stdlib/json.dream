@@ -26,6 +26,16 @@ class JsonValue {
     public obj_keys: List<string>;
     public obj_vals: List<JsonValue>;
 
+    constructor(kind: int, bool_val: bool, num_val: double, str_val: string, items: List<JsonValue>, obj_keys: List<string>, obj_vals: List<JsonValue>) {
+        this.kind = kind;
+        this.bool_val = bool_val;
+        this.num_val = num_val;
+        this.str_val = str_val;
+        this.items = items;
+        this.obj_keys = obj_keys;
+        this.obj_vals = obj_vals;
+    }
+
     // --- builders ---------------------------------------------------------------------------
 
     // Allocates a fresh JsonValue of kind `k` with empty backing lists.
@@ -158,6 +168,12 @@ class JsonParser {
     src: string;
     pos: int;
     n: int;
+
+    constructor(src: string, pos: int, n: int) {
+        this.src = src;
+        this.pos = pos;
+        this.n = n;
+    }
 
     public fun skip_ws(): void {
         let going = true;

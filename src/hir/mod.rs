@@ -322,8 +322,8 @@ pub enum HExprKind {
     },
     /// Constructor `Type(args)`; `instance` records the monomorphization type-args when generic.
     /// When `ctor` is `Some`, `args` are the user `constructor(){}`'s arguments (the backend
-    /// allocates, then calls that constructor with `this` + args); when `None`, `args` initialize the
-    /// fields positionally.
+    /// allocates, then calls that constructor with `this` + args); when `None`, the implicit zero-arg
+    /// default constructor takes no args and every field is zero-initialized.
     New {
         def: DefId,
         instance: Vec<TypeId>,

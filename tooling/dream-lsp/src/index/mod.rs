@@ -45,7 +45,6 @@ impl Index {
             fn_params: HashMap::new(),
             method_params: HashMap::new(),
             ctor_params: HashMap::new(),
-            struct_fields: HashMap::new(),
         };
         if let Ok(ast) = parser.parse() {
             let program = ast.get_root();

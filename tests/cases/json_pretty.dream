@@ -1,8 +1,28 @@
 @json
-class Address { city: string; zip: string; }
+class Address {
+    city: string;
+    zip: string;
+
+    constructor(city: string, zip: string) {
+        this.city = city;
+        this.zip = zip;
+    }
+}
 
 @json
-class User { name: string; age: int; address: Address; tags: string[]; }
+class User {
+    name: string;
+    age: int;
+    address: Address;
+    tags: string[];
+
+    constructor(name: string, age: int, address: Address, tags: string[]) {
+        this.name = name;
+        this.age = age;
+        this.address = address;
+        this.tags = tags;
+    }
+}
 
 fun main(): void {
     let u = User("Ada", 36, Address("London", "NW1"), ["dev", "math"]);

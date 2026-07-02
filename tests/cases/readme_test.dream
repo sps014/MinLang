@@ -2,6 +2,11 @@ class Node {
     public value: int;
     public next: Node?;
 
+    constructor(value: int, next: Node?) {
+        this.value = value;
+        this.next = next;
+    }
+
     public fun has_next(): bool {
         return this.next != null;
     }

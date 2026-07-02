@@ -136,7 +136,7 @@ impl<'a> Analyzer<'a> {
                 diagnostics,
             )?,
             StatementNode::MemberAssignment(obj, member, right) => self.analyze_member_assignment(
-                obj,
+                *obj,
                 member,
                 right,
                 parent_function,

@@ -1,5 +1,9 @@
 class Node {
     public val: int;
+
+    constructor(val: int) {
+        this.val = val;
+    }
 }
 
 fun create_node(v: int): Node {

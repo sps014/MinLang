@@ -5,7 +5,7 @@ use super::*;
 use crate::diagnostics::DiagnosticBag;
 use crate::semantics::errors::SemanticError;
 use crate::semantics::symbol_table::SymbolTable;
-use crate::syntax::nodes::types::{is_numeric_primitive, mangle_generic, strip_nullable};
+use crate::syntax::nodes::types::{is_numeric_primitive, mangle_generic, method_fn, strip_nullable};
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, Type};
 use crate::text::text_span::TextSpan;
 use crate::syntax::token::syntax_token::SyntaxToken;
@@ -370,7 +370,7 @@ impl<'a> Analyzer<'a> {
     /// instantiation and field-privacy enforcement). Returns the accessed field/member type.
     fn analyze_member_access(
         &mut self,
-        obj: &ExpressionNode<'a>,
+        obj: &'a ExpressionNode<'a>,
         member: &SyntaxToken,
         parent_function: &FunctionNode<'a>,
         symbol_table: &Rc<RefCell<SymbolTable>>,
@@ -441,8 +441,11 @@ impl<'a> Analyzer<'a> {
         );
         let struct_name = mangle_generic(&base_name, &generic_args);
 
-        let struct_info = match self.struct_table.get_struct(&struct_name) {
-            Some(info) => info,
+        let field = match self.struct_table.get_struct(&struct_name) {
+            Some(info) => info
+                .fields
+                .get(&member.text)
+                .map(|f| (f.type_.clone(), f.is_public)),
             None => {
                 self.hir_none();
                 return Err(report(
@@ -453,9 +456,23 @@ impl<'a> Analyzer<'a> {
             }
         };
 
-        let field_info = match struct_info.fields.get(&member.text) {
-            Some(info) => info,
+        let (field_type, field_is_public) = match field {
+            Some(f) => f,
             None => {
+                // Not a field: `obj.prop` may read a property getter, which desugars to a call of
+                // the (internally named) getter method. The call carries its own privacy/type check.
+                let getter = method_fn(&struct_name, &getter_member_name(&member.text));
+                if self.function_table.get_function(&getter).is_ok() {
+                    let get_tok =
+                        synthetic_token(TokenKind::IdentifierToken, &getter_member_name(&member.text));
+                    let call = ExpressionNode::MethodCall(obj, get_tok, None, vec![]);
+                    return self.analyze_expression(
+                        &call,
+                        parent_function,
+                        symbol_table,
+                        diagnostics,
+                    );
+                }
                 self.hir_none();
                 return Err(report(
                     diagnostics,
@@ -467,9 +484,6 @@ impl<'a> Analyzer<'a> {
                 ));
             }
         };
-
-        let field_type = field_info.type_.clone();
-        let field_is_public = field_info.is_public;
 
         // Private fields (the default) may only be read from within the declaring type's
         // own methods; `public` exposes them to outside code.
