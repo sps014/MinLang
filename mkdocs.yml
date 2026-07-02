@@ -92,6 +92,7 @@ nav:
     - File I/O: stdlib/file.md
     - HTTP: stdlib/http.md
     - Regex: stdlib/regex.md
+    - DateTime: stdlib/datetime.md
   - Memory Model: memory.md
   - Interop:
     - JS Interop: language/interop.md

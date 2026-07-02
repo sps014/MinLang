@@ -543,6 +543,13 @@ function defaultDreamModule(getInstance) {
     fileSize: (path) => BigInt(fsBackend().size(path)),
     fileIsDir: (path) => fsBackend().isDir(path),
     dirList: (path) => fsBackend().list(path).join("\n"),
+    // Wall-clock helpers (see src/stdlib/system/datetime.dream). Mirrored natively in
+    // src/execution/host/datetime.rs so `DateTime` works the same under wasmtime, Node, and the
+    // browser. `dateNowMillis` returns a `long` (BigInt). `Date.getTimezoneOffset()` returns
+    // minutes *west* of UTC, the opposite sign convention from the Rust side's `chrono`-based
+    // "minutes east of UTC", hence the negation.
+    dateNowMillis: () => BigInt(Date.now()),
+    dateLocalOffsetMinutes: (millis) => -new Date(Number(millis)).getTimezoneOffset(),
     // Console helpers (see src/stdlib/system/system.dream). Synchronous, mirroring
     // src/execution/host/console.rs. In Node, reads block on fd 0 via `fs.readSync`; there is no
     // synchronous stdin in a browser, so `readLine`/`readKey` fall back to `prompt()` there (and

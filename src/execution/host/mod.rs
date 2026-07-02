@@ -3,14 +3,16 @@
 //! output sink differs (real stdout vs. a captured buffer).
 //!
 //! The pieces are split by concern so each capability lives next to the stdlib module it backs:
-//!   * [`memory`]  - shared string/`char[]` marshaling across the WASM boundary.
-//!   * [`file`]    - `src/stdlib/io/file.dream` (synchronous `std::fs`).
-//!   * [`regex`]   - `src/stdlib/text/regex.dream` (the `regex` crate).
-//!   * [`http`]    - `src/stdlib/net/http_client.dream` (blocking `reqwest` + the async future bridge).
-//!   * [`math`]    - the `Math.*` `env` builtins.
-//!   * [`console`] - `src/stdlib/system/system.dream`'s `readLine`/`readKey`/`exit` (the `crossterm` crate).
+//!   * [`memory`]   - shared string/`char[]` marshaling across the WASM boundary.
+//!   * [`file`]     - `src/stdlib/io/file.dream` (synchronous `std::fs`).
+//!   * [`regex`]    - `src/stdlib/text/regex.dream` (the `regex` crate).
+//!   * [`http`]     - `src/stdlib/net/http_client.dream` (blocking `reqwest` + the async future bridge).
+//!   * [`math`]     - the `Math.*` `env` builtins.
+//!   * [`console`]  - `src/stdlib/system/system.dream`'s `readLine`/`readKey`/`exit` (the `crossterm` crate).
+//!   * [`datetime`] - `src/stdlib/system/datetime.dream`'s wall clock + local timezone offset (the `chrono` crate).
 
 mod console;
+mod datetime;
 mod file;
 mod http;
 mod math;
@@ -18,6 +20,7 @@ mod memory;
 mod regex;
 
 pub use console::{enable_ansi_support, link_console_functions};
+pub use datetime::link_datetime_functions;
 pub use file::link_file_functions;
 pub use http::link_http_functions;
 pub use math::link_math_functions;

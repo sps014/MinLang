@@ -30,13 +30,17 @@ serde_json = { version = "1", optional = true }
 # Cross-platform raw-mode terminal input backing `System.readKey` (src/execution/host/console.rs)
 # and Windows ANSI virtual-terminal setup for `System.setForeground`/`setBackground`.
 crossterm = { version = "0.28", optional = true }
+# Resolves the local system timezone's UTC offset (including DST) for an arbitrary instant,
+# backing `DateTime.now()`/`DateTime.to_local()` (src/execution/host/datetime.rs). Calendar math
+# itself is implemented in pure Dream; chrono is only used for OS timezone-database lookups.
+chrono = { version = "0.4", optional = true }
 
 [features]
 default = ["native"]
 # `native` pulls in the wasmtime-backed WASM runtime used by the `dream` CLI to
 # execute compiled programs. It is excluded from the wasm32 analyzer build, whose
 # only need is the lexer/parser/analyzer front-end.
-native = ["wasmtime", "reqwest", "serde_json", "crossterm"]
+native = ["wasmtime", "reqwest", "serde_json", "crossterm", "chrono"]
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"

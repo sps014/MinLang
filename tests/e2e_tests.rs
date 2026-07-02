@@ -1,7 +1,7 @@
 use dream::driver::compiler::{Compiler, Target};
 use dream::execution::host::{
-    link_console_functions, link_file_functions, link_http_functions, link_math_functions,
-    link_regex_functions, read_string_from_memory,
+    link_console_functions, link_datetime_functions, link_file_functions, link_http_functions,
+    link_math_functions, link_regex_functions, read_string_from_memory,
 };
 use pretty_assertions::assert_eq;
 use std::fs;
@@ -130,6 +130,7 @@ fn run_test_case(dream_file: &Path) {
     link_http_functions(&mut linker).unwrap();
     link_regex_functions(&mut linker).unwrap();
     link_console_functions(&mut linker).unwrap();
+    link_datetime_functions(&mut linker).unwrap();
     linker
         .func_wrap("env", "strlen", |_: i32| -> i32 { 0 })
         .unwrap();

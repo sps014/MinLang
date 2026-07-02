@@ -48,6 +48,7 @@ If you already know the basics, the [Language](language/variables.md) section co
 | [JSON](stdlib/json.md) | `JsonValue` model, `JSON.parse`/`stringify`, `@json` auto-derive |
 | [File I/O](stdlib/file.md) | `File` and `FileStream`: read/write text and bytes, list, stat, stream |
 | [HTTP](stdlib/http.md) | `HttpClient`: cross-runtime requests over `async`/`await` |
+| [DateTime](stdlib/datetime.md) | Calendar dates and times: construction, arithmetic, comparison, ISO-8601 formatting/parsing |
 
 ## Interop
 

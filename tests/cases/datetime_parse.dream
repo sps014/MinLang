@@ -1,0 +1,26 @@
+// Exercises `DateTime.parse_iso8601` end-to-end: UTC ("Z"), an explicit positive offset, a
+// fractional-second value with more than 3 digits (truncated to milliseconds), and malformed
+// input (`Err`). Round-trips parsed values back through `to_iso8601()` to confirm both directions
+// agree.
+fun main(): void {
+    let a = DateTime.parse_iso8601("2026-07-02T10:35:00.250Z");
+    System.println(a.is_ok());
+    System.println(a.unwrap_or(DateTime.from_epoch_millis(0L)).to_iso8601());
+
+    let b = DateTime.parse_iso8601("2026-07-02T16:05:00+05:30");
+    let b_dt = b.unwrap_or(DateTime.from_epoch_millis(0L));
+    System.println(b_dt.to_iso8601());
+    System.println(b_dt.to_utc().to_iso8601());
+
+    let c = DateTime.parse_iso8601("2026-07-02T10:35:00.1234567Z");
+    System.println(c.unwrap_or(DateTime.from_epoch_millis(0L)).millisecond());
+
+    let d = DateTime.parse_iso8601("not-a-date");
+    System.println(d.is_err());
+
+    let f = DateTime.parse_iso8601("2026-13-02T10:35:00Z");
+    System.println(f.is_err());
+
+    let g = DateTime.parse_iso8601("2026-07-02T10:35:00");
+    System.println(g.unwrap_or(DateTime.from_epoch_millis(0L)).to_iso8601());
+}

@@ -1,0 +1,43 @@
+// Exercises `DateTime` construction, calendar accessors, arithmetic, comparison, and ISO-8601
+// formatting/conversion end-to-end. Deliberately avoids `DateTime.now()`/`utc_now()` since those
+// are non-deterministic; everything here is built from fixed instants so the output is stable.
+fun main(): void {
+    let dt = DateTime.of(2026, 7, 2, 10, 35, 0, 250);
+    System.println(dt.to_iso8601());
+    System.println(dt.year());
+    System.println(dt.month());
+    System.println(dt.day());
+    System.println(dt.hour());
+    System.println(dt.minute());
+    System.println(dt.second());
+    System.println(dt.millisecond());
+    System.println(dt.day_of_week());
+    System.println(dt.day_of_year());
+
+    let later = dt.add_days(30);
+    System.println(later.to_iso8601());
+
+    let earlier = dt.add_hours(0L - 15L);
+    System.println(earlier.to_iso8601());
+
+    System.println(dt.is_before(later));
+    System.println(later.is_after(dt));
+    System.println(dt.equals(dt));
+    System.println(dt.compare_to(later));
+    System.println(later.compare_to(dt));
+    System.println(dt.compare_to(dt));
+
+    let epoch = DateTime.from_epoch_millis(0L);
+    System.println(epoch.to_iso8601());
+
+    // A fixed offset (+05:30, e.g. IST) constructed directly from an instant + offset.
+    let offset_dt = DateTime(19800000L, 330);
+    System.println(offset_dt.to_iso8601());
+    System.println(offset_dt.to_utc().to_iso8601());
+    System.println(offset_dt.to_string());
+
+    // Dates before the epoch exercise the floor-division paths.
+    let before_epoch = DateTime.of(1969, 12, 31, 23, 59, 59, 500);
+    System.println(before_epoch.to_iso8601());
+    System.println(before_epoch.day_of_week());
+}

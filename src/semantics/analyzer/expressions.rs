@@ -144,12 +144,18 @@ impl<'a> Analyzer<'a> {
                         if !right_type.is_unknown()
                             && !matches!(
                                 right_type,
-                                Type::Integer(_) | Type::Float(_) | Type::Double(_)
+                                Type::Integer(_)
+                                    | Type::Long(_)
+                                    | Type::UInt(_)
+                                    | Type::ULong(_)
+                                    | Type::Byte(_)
+                                    | Type::Float(_)
+                                    | Type::Double(_)
                             )
                         {
                             diagnostics.report_error(
                                 format!(
-                                    "unary +/- requires int, float, or double, got {}",
+                                    "unary +/- requires a numeric type, got {}",
                                     right_type.get_type()
                                 ),
                                 Some(opr.position),
