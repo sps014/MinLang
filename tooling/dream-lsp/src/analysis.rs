@@ -70,7 +70,7 @@ pub fn collect_diagnostics(file_path: Option<&str>, text: &str) -> Vec<Diagnosti
             acc.visited.insert(MAIN_FILE.to_string());
 
             for import in &program.imports {
-                let module_name = import.module_name.text.trim_matches('"');
+                let module_name = import.module_name.text.as_str();
                 let import_path =
                     dream::driver::source_loader::resolve_import_path(parent_dir, module_name);
 

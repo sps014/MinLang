@@ -33,8 +33,8 @@ pub struct ProgramAccumulator<'a> {
     pub file_contents: HashMap<String, String>,
 }
 
-/// Resolves an `import "<module>"` reference relative to `base_dir`, defaulting the extension to
-/// `.dream` when none is given.
+/// Resolves an `import a.b.c;` reference (passed here as the slash-joined path `a/b/c`) relative to
+/// `base_dir`, defaulting the extension to `.dream` when none is given.
 pub fn resolve_import_path(base_dir: &Path, module_name: &str) -> std::path::PathBuf {
     let mut import_path = base_dir.join(module_name);
     if import_path.extension().is_none() {
@@ -150,7 +150,7 @@ pub fn parse_file_recursive<'a>(
     let parent_dir = path.parent().unwrap_or_else(|| Path::new(""));
 
     for import in &program.imports {
-        let module_name = import.module_name.text.trim_matches('"');
+        let module_name = import.module_name.text.as_str();
         let import_path = resolve_import_path(parent_dir, module_name);
 
         let import_path_str = match import_path.to_str() {

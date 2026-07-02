@@ -406,7 +406,7 @@ fun fetch_user(): RemoteUser {
     .unwrap();
 
     let main_src = "
-import \"other\";
+import other;
 
 fun main(): void {
     let u: RemoteUser = fetch_user();
@@ -462,7 +462,7 @@ public class Test {
     .unwrap();
 
     let main_src = "
-import \"basic_sum.dream\"
+import basic_sum;
 
 public fun main() {
     let result = add_numbers(10,20);

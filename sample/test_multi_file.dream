@@ -1,5 +1,5 @@
-import "math_lib.dream"
-import "basic_sum.dream"
+import math_lib;
+import basic_sum;
 
 public fun main() {
     let result = add_numbers(10,20);

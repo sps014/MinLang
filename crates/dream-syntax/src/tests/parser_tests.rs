@@ -902,6 +902,28 @@ fn test_parse_cast_with_nested_generic_type_argument() {
 }
 
 #[test]
+fn test_parse_dotted_import() {
+    let code = "import a.b.c;\nfun main(): void {}";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    assert_eq!(program.imports.len(), 1);
+    assert_eq!(program.imports[0].module_name.text, "a/b/c");
+}
+
+#[test]
+fn test_parse_single_segment_import() {
+    let code = "import math_lib;\nfun main(): void {}";
+    let arena = bumpalo::Bump::new();
+    let (program, diagnostics) = parse_code(code, &arena);
+
+    assert_eq!(diagnostics.has_errors(), false);
+    assert_eq!(program.imports.len(), 1);
+    assert_eq!(program.imports[0].module_name.text, "math_lib");
+}
+
+#[test]
 fn test_parenthesized_comparison_is_not_a_cast() {
     // `(x) < y` is a comparison, not a `(Type)expr` cast: the generic lookahead must not
     // misclassify it. It should parse as a parenthesized expression on the left of a `<`.

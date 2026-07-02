@@ -5,11 +5,12 @@ A Dream program can be split across multiple `.dream` files. Use `import` at the
 ## Importing a file
 
 ```dream
-import "math_lib.dream"
+import math_lib;
 ```
 
+- The path is a dotted module path (identifiers separated by `.`) ending with a semicolon.
+- Each `.` maps to a directory separator, and the `.dream` extension is added automatically: `import utils.math_lib;` resolves to `utils/math_lib.dream`.
 - The path is relative to the file that contains the `import`.
-- The `.dream` extension is optional: `import "math_lib"` and `import "math_lib.dream"` are equivalent.
 - Imported declarations become directly usable — no namespace prefix.
 
 ```dream
@@ -21,7 +22,7 @@ public fun add_numbers(a: int, b: int): int {
 
 ```dream
 // main.dream
-import "math_lib.dream"
+import math_lib;
 
 fun main() {
     println(add_numbers(10, 20));   // 30

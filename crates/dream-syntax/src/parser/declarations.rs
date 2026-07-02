@@ -430,10 +430,26 @@ impl<'a, 'b> Parser<'a, 'b> {
         ))
     }
 
-    /// Parses an import statement
+    /// Parses an import statement of the form `import a.b.c;`, mapping each dotted segment to a
+    /// directory separator (`a/b/c`) so resolution can append the `.dream` extension later.
     pub(super) fn parse_import(&mut self) -> Result<ImportNode, Error> {
         self.match_token(TokenKind::ImportToken);
-        let module_name = self.match_token(TokenKind::StringToken);
+
+        let first = self.match_token(TokenKind::IdentifierToken);
+        let mut position = first.position;
+        let mut path = first.text.clone();
+
+        while self.current_token().kind == TokenKind::DotToken {
+            self.match_token(TokenKind::DotToken);
+            let segment = self.match_token(TokenKind::IdentifierToken);
+            position.end = segment.position.end;
+            path.push('/');
+            path.push_str(&segment.text);
+        }
+
+        self.match_token(TokenKind::SemicolonToken);
+
+        let module_name = SyntaxToken::new(TokenKind::IdentifierToken, position, path);
         Ok(ImportNode::new(module_name))
     }
     /// Parses a Type from the token stream, including array types
