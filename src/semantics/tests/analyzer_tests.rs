@@ -1373,6 +1373,35 @@ fn test_analyze_new_integer_explicit_casts_ok() {
 }
 
 #[test]
+fn test_analyze_unary_minus_allows_all_numeric_types() {
+    // Regression test: unary +/- used to be rejected for `long`/`uint`/`ulong`/`byte`, even though
+    // the MIR backend (const-fold + codegen) already handled them like `int`/`float`/`double`.
+    let code = "fun main(): void {
+        let a: long = -15L;
+        let b: uint = -3u;
+        let c: ulong = -7ul;
+        let d: byte = -(byte)1;
+        let e: int = -42;
+        let f: float = -1.5f;
+        let g: double = -2.5d;
+        let h = +5;
+    }";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), false);
+}
+
+#[test]
+fn test_analyze_unary_minus_rejects_non_numeric_types() {
+    let code = "fun main(): void { let x = -\"hello\"; }";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("unary +/- requires a numeric type")));
+}
+
+#[test]
 fn test_analyze_undefined_variable() {
     let code = "fun main(): void { let x = y + 5; }";
     let diagnostics = analyze_code(code);
