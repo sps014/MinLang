@@ -1,5 +1,5 @@
 use crate::syntax::nodes::struct_node::StructDeclarationNode;
-use crate::syntax::nodes::types::value_size_align;
+use crate::types::value_size_align;
 use crate::syntax::nodes::Type;
 use indexmap::IndexMap;
 

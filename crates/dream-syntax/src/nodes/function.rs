@@ -43,6 +43,33 @@ pub enum AccessorKind {
     Set,
 }
 
+/// Contextual keyword introducing a getter accessor.
+pub const GET_ACCESSOR: &str = "get";
+/// Contextual keyword introducing a setter accessor.
+pub const SET_ACCESSOR: &str = "set";
+
+impl AccessorKind {
+    /// Classifies a member-leading identifier as an accessor keyword. `get`/`set` are contextual
+    /// keywords (they remain ordinary identifiers/method names elsewhere, e.g. the indexer hooks
+    /// `get(i)`/`set(i, v)`), so callers must additionally confirm the surrounding accessor shape
+    /// (`get <name>(...)`) before treating the member as an accessor.
+    pub fn from_keyword(text: &str) -> Option<AccessorKind> {
+        match text {
+            GET_ACCESSOR => Some(AccessorKind::Get),
+            SET_ACCESSOR => Some(AccessorKind::Set),
+            _ => None,
+        }
+    }
+
+    /// The contextual keyword spelling for this accessor kind.
+    pub fn keyword(self) -> &'static str {
+        match self {
+            AccessorKind::Get => GET_ACCESSOR,
+            AccessorKind::Set => SET_ACCESSOR,
+        }
+    }
+}
+
 /// Represents a function declaration in the AST
 #[derive(Debug, Clone)]
 pub struct FunctionNode<'a> {

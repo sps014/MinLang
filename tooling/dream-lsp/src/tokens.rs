@@ -4,6 +4,7 @@
 
 use dream::diagnostics::DiagnosticBag;
 use dream::syntax::lexer::Lexer;
+use dream::syntax::token::syntax_token::SyntaxToken;
 use dream::syntax::token::token_kind::TokenKind;
 
 use crate::position::{LineIndex, Range};
@@ -26,22 +27,42 @@ pub fn classify(text: &str) -> Vec<TokenOut> {
     let mut lexer = Lexer::new(text.to_string());
     let tokens = lexer.lex_all(&mut scratch);
 
-    tokens
-        .into_iter()
-        .filter_map(|token| {
-            // `this` lexes as an identifier but reads as a keyword inside methods.
-            let kind = if token.kind == TokenKind::IdentifierToken && token.text == "this" {
-                "keyword"
-            } else {
-                category(token.kind)?
-            };
-            let span = token.position;
-            Some(TokenOut {
-                range: line_index.range(span.start, span.end),
-                kind,
-            })
-        })
-        .collect()
+    let mut out = Vec::new();
+    for (i, token) in tokens.iter().enumerate() {
+        // `this` lexes as an identifier but reads as a keyword inside methods; `get`/`set` are
+        // contextual accessor keywords, highlighted only in `get <name>(` / `set <name>(` position
+        // (so ordinary method calls like `list.get(0)` stay classified as identifiers).
+        let kind = if token.kind == TokenKind::IdentifierToken && token.text == "this" {
+            "keyword"
+        } else if token.kind == TokenKind::IdentifierToken
+            && (token.text == "get" || token.text == "set")
+            && is_accessor_position(&tokens, i)
+        {
+            "keyword"
+        } else {
+            match category(token.kind) {
+                Some(k) => k,
+                None => continue,
+            }
+        };
+        let span = token.position;
+        out.push(TokenOut {
+            range: line_index.range(span.start, span.end),
+            kind,
+        });
+    }
+    out
+}
+
+/// True when the identifier at `idx` is followed by `<name> (`, matching the accessor grammar
+/// `get name(...)` / `set name(...)`. The lexer skips whitespace/comments, so the two following
+/// tokens are the next significant ones.
+fn is_accessor_position(tokens: &[SyntaxToken], idx: usize) -> bool {
+    matches!(tokens.get(idx + 1).map(|t| t.kind), Some(TokenKind::IdentifierToken))
+        && matches!(
+            tokens.get(idx + 2).map(|t| t.kind),
+            Some(TokenKind::OpenParenthesisToken)
+        )
 }
 
 /// Maps a lexical token kind to a highlighting category, or `None` for tokens that carry no

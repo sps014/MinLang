@@ -8,9 +8,9 @@ use crate::semantics::errors::SemanticError;
 use crate::semantics::function_table::{FunctionTableInfo, OverloadResolution};
 use crate::semantics::symbol_table::SymbolTable;
 use crate::syntax::nodes::types::{
-    canonical_type_name, constructor_fn, is_numeric_primitive, is_unknown_type_name,
-    mangle_generic, method_fn, strip_nullable,
+    canonical_type_name, is_numeric_primitive, is_unknown_type_name, mangle_generic, strip_nullable,
 };
+use crate::types::{constructor_fn, method_fn};
 use crate::syntax::nodes::{ExpressionNode, FunctionNode, Type};
 use crate::syntax::token::syntax_token::SyntaxToken;
 use crate::syntax::token::token_kind::TokenKind;

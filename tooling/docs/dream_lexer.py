@@ -55,6 +55,11 @@ class DreamLexer(RegexLexer):
             # Declarations that introduce a named entity.
             (r"\b(fun)(\s+)([A-Za-z_]\w*)",
              bygroups(Keyword.Declaration, Whitespace, Name.Function)),
+            # Contextual accessor keywords: `get name(...)` / `set name(...)`. Matched only in
+            # accessor position (keyword + property name + `(`) so ordinary calls such as
+            # `list.get(0)` keep `get`/`set` as plain identifiers.
+            (r"\b(get|set)(\s+)([A-Za-z_]\w*)(?=\s*\()",
+             bygroups(Keyword.Declaration, Whitespace, Name.Function)),
             (r"\b(class|enum|extend|type)(\s+)([A-Za-z_]\w*)",
              bygroups(Keyword.Declaration, Whitespace, Name.Class)),
             (words(_control, prefix=r"\b", suffix=r"\b"), Keyword),

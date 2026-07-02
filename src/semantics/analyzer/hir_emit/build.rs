@@ -120,7 +120,7 @@ impl<'a> Analyzer<'a> {
         &mut self,
         node: &crate::syntax::nodes::ProgramNode,
     ) -> Vec<HImport> {
-        use crate::syntax::nodes::types::method_fn;
+        use crate::types::method_fn;
         let mut imports: Vec<HImport> = Vec::new();
         // Each candidate is paired with the name it was *registered* under: top-level externs keep
         // their bare name, while class/`extend` static externs are mangled `{Type}_{method}` (the
@@ -171,7 +171,7 @@ impl<'a> Analyzer<'a> {
         &mut self,
         node: &crate::syntax::nodes::ProgramNode,
     ) -> Vec<(crate::types::DefId, String)> {
-        use crate::syntax::nodes::types::method_fn;
+        use crate::types::method_fn;
         let mut out: Vec<(crate::types::DefId, String)> = Vec::new();
         for func in node.functions.iter() {
             if let Some(key) = crate::intrinsics::intrinsic_key(&func.attributes) {

@@ -7,9 +7,8 @@ use crate::semantics::union_table::{
     UnionFieldInfo, UnionInfo, UnionVariantInfo, DISCRIMINANT_SIZE,
 };
 use crate::syntax::nodes::struct_node::{StructDeclarationNode, StructFieldNode};
-use crate::syntax::nodes::types::{
-    mangle_generic, method_fn, strip_array, strip_nullable, value_size_align,
-};
+use crate::syntax::nodes::types::{mangle_generic, strip_array, strip_nullable};
+use crate::types::{method_fn, value_size_align};
 use crate::syntax::nodes::{EnumVariantNode, FunctionNode, ProgramNode, Type};
 use crate::text::text_span::TextSpan;
 use crate::syntax::token::token_kind::TokenKind;

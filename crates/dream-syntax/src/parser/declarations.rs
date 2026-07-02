@@ -223,7 +223,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             // are contextual keywords (still ordinary identifiers/field names elsewhere), so this
             // only binds when the next token is a property name followed by a parameter list.
             let is_accessor = core.kind == TokenKind::IdentifierToken
-                && (core.text == "get" || core.text == "set")
+                && crate::nodes::function::AccessorKind::from_keyword(&core.text).is_some()
                 && self.peek_token(m + 1).kind == TokenKind::IdentifierToken
                 && self.peek_token(m + 2).kind == TokenKind::OpenParenthesisToken;
             if core.kind == TokenKind::FunToken
@@ -642,12 +642,15 @@ impl<'a, 'b> Parser<'a, 'b> {
         // Like `constructor`/`del`, these omit `fun`; `get`/`set` are contextual keywords. A getter
         // takes no parameters and declares a return type; a setter takes one parameter. The property
         // name is stored on `name`, and `accessor` records which half this is.
-        if self.current_token().kind == TokenKind::IdentifierToken
-            && (self.current_token().text == "get" || self.current_token().text == "set")
+        let accessor_kind = if self.current_token().kind == TokenKind::IdentifierToken
             && self.peek_token(1).kind == TokenKind::IdentifierToken
         {
-            let kind_tok = self.match_token(TokenKind::IdentifierToken);
-            let is_getter = kind_tok.text == "get";
+            crate::nodes::function::AccessorKind::from_keyword(&self.current_token().text)
+        } else {
+            None
+        };
+        if let Some(accessor_kind) = accessor_kind {
+            self.match_token(TokenKind::IdentifierToken);
             let mut prop_name = self.match_token(TokenKind::IdentifierToken);
             Self::splice_leading_trivia(&mut prop_name, first_trivia);
             let params = self.parse_formal_parameters()?;
@@ -668,11 +671,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             );
             node.is_static = is_static;
             node.is_async = is_async;
-            node.accessor = Some(if is_getter {
-                crate::nodes::function::AccessorKind::Get
-            } else {
-                crate::nodes::function::AccessorKind::Set
-            });
+            node.accessor = Some(accessor_kind);
             return Ok(node);
         }
 

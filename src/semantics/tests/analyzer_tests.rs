@@ -1716,6 +1716,69 @@ fn test_class_indexer_async_get_is_not_an_indexer() {
         .any(|d| d.message.contains("cannot be async")));
 }
 
+// -- TypeScript-style property accessors (`get prop()` / `set prop(v)`) --
+
+#[test]
+fn test_property_getter_ok() {
+    // A well-formed getter/setter pair is read/written via dot access, not brackets.
+    let code = "
+        class Box {
+            v: int;
+            constructor() { this.v = 0; }
+            public get value(): int { return this.v; }
+            public set value(x: int) { this.v = x; }
+        }
+        fun main(): void {
+            let b = Box();
+            b.value = 5;
+            let x: int = b.value;
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), false);
+}
+
+#[test]
+fn test_static_getter_is_rejected() {
+    // A property accessor is dispatched on an instance receiver (`obj.prop`), so it cannot be
+    // `static`: registration must report the error.
+    let code = "
+        class Box {
+            v: int;
+            constructor() { this.v = 0; }
+            public static get value(): int { return 0; }
+        }
+        fun main(): void {
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("cannot be 'static'")));
+}
+
+#[test]
+fn test_static_setter_is_rejected() {
+    // Same restriction for setters: `static set` has no receiver to assign through.
+    let code = "
+        class Box {
+            v: int;
+            constructor() { this.v = 0; }
+            public static set value(x: int) { }
+        }
+        fun main(): void {
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), true);
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("cannot be 'static'")));
+}
+
 #[test]
 fn test_class_foreach_with_option_enumerator_ok() {
     // The full enumerator protocol: `iterator()` returns an object whose `next(): Option<T>`

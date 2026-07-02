@@ -100,81 +100,14 @@ pub fn is_numeric_primitive(name: &str) -> bool {
     )
 }
 
-/// True for the unsigned integer primitives (`byte`/`uint`/`ulong`). Drives the choice of
-/// signed vs unsigned WASM instructions (`div_u`/`lt_u`/...) in codegen.
-pub fn is_unsigned_integer(name: &str) -> bool {
-    matches!(name, "byte" | "uint" | "ulong")
-}
-
-/// True if a value of numeric type `from` may implicitly widen to numeric type `to` without an
-/// explicit cast (narrowing always requires a cast). Encodes the full widening lattice:
-/// `byte -> int -> long -> float -> double` and `byte -> uint -> ulong`, plus the safe
-/// cross-edges (`uint -> long`, unsigned ints -> float/double). Same-width opposite-sign pairs
-/// (`int`<->`uint`, `long`<->`ulong`) are intentionally excluded. `from == to` returns false
-/// (it is an identity, not a widening); callers handle equality separately.
-pub fn numeric_widen(from: &str, to: &str) -> bool {
-    matches!(
-        (from, to),
-        ("byte", "int")
-            | ("byte", "uint")
-            | ("byte", "long")
-            | ("byte", "ulong")
-            | ("byte", "float")
-            | ("byte", "double")
-            | ("int", "long")
-            | ("int", "float")
-            | ("int", "double")
-            | ("uint", "long")
-            | ("uint", "ulong")
-            | ("uint", "float")
-            | ("uint", "double")
-            | ("long", "float")
-            | ("long", "double")
-            | ("ulong", "float")
-            | ("ulong", "double")
-            | ("float", "double")
-    )
-}
-
-/// Byte size and alignment of a value of `type_name` when stored inline (array element or struct
-/// field). `bool`/`char`/`byte` occupy a single byte; `double`/`long`/`ulong` are 8 bytes;
-/// everything else - `int`, `uint`, `float`, and all heap references - is a 4-byte word/pointer.
-pub fn value_size_align(type_name: &str) -> (usize, usize) {
-    match type_name {
-        "bool" | "char" | "byte" => (1, 1),
-        "double" | "long" | "ulong" => (8, 8),
-        _ => (4, 4),
-    }
-}
-
 /// Returns the given type name with a single trailing array (`[]`) suffix removed.
 pub fn strip_array(type_name: &str) -> &str {
     type_name.strip_suffix("[]").unwrap_or(type_name)
 }
 
-/// The internal name under which a struct method is registered in the function table and
-/// emitted in codegen: the struct name and method name joined with `_` (e.g. `User_greet`).
-/// Single source of truth for method-name mangling; the derived-method helpers below build on it.
-pub fn method_fn(struct_name: &str, method_name: &str) -> String {
-    format!("{}_{}", struct_name, method_name)
-}
-
-/// The name of the compiler-derived `to_json` converter for a `@json` struct (e.g.
-/// `User_to_json`). Single source of truth for the implicit naming contract shared by the
-/// `@json` source generator, the type checker, and the codegen backend.
-pub fn json_to_json_fn(struct_name: &str) -> String {
-    method_fn(struct_name, "to_json")
-}
-
-/// The name of the compiler-derived `from_json` converter for a `@json` struct (e.g.
-/// `User_from_json`). See [`json_to_json_fn`].
-pub fn json_from_json_fn(struct_name: &str) -> String {
-    method_fn(struct_name, "from_json")
-}
-
 /// The reserved member name of a type's constructor declaration (`constructor(...) { ... }`).
-/// The parser recognizes it, semantics validates it, and codegen mangles it via
-/// [`constructor_fn`]. Single source of truth so the spelling never drifts between layers.
+/// The parser recognizes it, semantics validates it, and codegen mangles it (via the backend
+/// `constructor_fn`). Single source of truth so the spelling never drifts between layers.
 pub const CONSTRUCTOR_NAME: &str = "constructor";
 
 /// The reserved member name of a type's destructor declaration (`del() { ... }`), run on
@@ -200,33 +133,9 @@ pub fn foreach_array_local(n: usize) -> String {
     format!("__foreach_arr_{}", n)
 }
 
-/// The internal name under which a struct's user-defined constructor is registered/emitted
-/// (e.g. `User_constructor`). Single source of truth for the constructor naming convention.
-pub fn constructor_fn(struct_name: &str) -> String {
-    method_fn(struct_name, CONSTRUCTOR_NAME)
-}
-
 /// The base type name of the async handle `Future<T>`. Single source of truth for the identifier
 /// the async machinery keys on (the structured `Future<T>` type and its `Future_<inner>` mangling).
 pub const FUTURE_TYPE: &str = "Future";
-
-/// The canonical type-name string for a `Future<T>` whose inner type is `inner`
-/// (e.g. `Future_int`). `Future` is the storable, ref-light handle returned by async calls.
-pub fn future_type_name(inner: &str) -> String {
-    format!("{}_{}", FUTURE_TYPE, inner)
-}
-
-/// If `type_name` denotes a `Future<T>` (i.e. `Future_<inner>`), returns the inner type name,
-/// otherwise `None`. Used to type `await` (unwrap) and async-call results (wrap).
-pub fn future_inner(type_name: &str) -> Option<&str> {
-    type_name.strip_prefix("Future_")
-}
-
-/// Maps a type name to the suffix used in its generated `$release_*` runtime helper.
-/// Arrays become `_array` and nullable markers are dropped (e.g. `Node[]?` -> `Node_array`).
-pub fn release_func_suffix(type_name: &str) -> String {
-    type_name.replace("[]", "_array").replace('?', "")
-}
 
 /// Returns true if a type name denotes a heap-allocated, reference-counted value
 /// (strings, arrays, and structs). `known_struct` decides whether a bare name is a struct.
