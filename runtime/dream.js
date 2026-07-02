@@ -433,7 +433,7 @@ function resolveGlobal(module, field) {
 
 /**
  * Performs one HTTP request via the platform `fetch` and serializes the whole response into a single
- * `Uint8Array` for `src/stdlib/http.dream`: an ASCII head (status line + header lines) and a blank
+ * `Uint8Array` for `src/stdlib/net/http_response.dream`: an ASCII head (status line + header lines) and a blank
  * line, then the raw body bytes. Keeping the body raw (an `arrayBuffer`) makes binary responses
  * byte-exact. `body` is either a string or a `Uint8Array` (or "" / empty for none).
  */
@@ -497,7 +497,7 @@ function defaultDreamModule(getInstance) {
     jsInvoke0: (fn) => fn(),
     jsInvoke1: (fn, a) => fn(a),
     jsInvoke2: (fn, a, b) => fn(a, b),
-    // Regex helpers (string-in/string-out; see src/stdlib/regex.dream). Mirrored natively in
+    // Regex helpers (string-in/string-out; see src/stdlib/text/regex.dream). Mirrored natively in
     // src/execution/host.rs so `Regex` works the same under wasmtime, Node, and the browser.
     regexTest: (pattern, flags, input) => new RegExp(pattern, flags).test(input),
     regexReplace: (pattern, flags, input, replacement) =>
@@ -506,7 +506,7 @@ function defaultDreamModule(getInstance) {
       const m = input.match(new RegExp(pattern, flags));
       return m ? Array.from(m).join(sep) : "";
     },
-    // HTTP helpers (see src/stdlib/http.dream). Each performs the whole request and resolves with
+    // HTTP helpers (see src/stdlib/net/http_client.dream). Each performs the whole request and resolves with
     // the full response as a single `Uint8Array` (marshaled to a Dream `char[]`): an ASCII head
     // ("<status>\n" + "Name: value\n" ... + blank line) followed by the raw body bytes. Bridged via
     // extern async. `httpRequest` takes a string body; `httpRequestBytes` takes a `char[]` body
@@ -515,7 +515,7 @@ function defaultDreamModule(getInstance) {
       httpDo(url, method, headersJson, body),
     httpRequestBytes: (url, method, headersJson, body) =>
       httpDo(url, method, headersJson, Uint8Array.from(body || [])),
-    // Filesystem helpers (see src/stdlib/file.dream). Synchronous. They route through `fsBackend()`:
+    // Filesystem helpers (see src/stdlib/io/file.dream). Synchronous. They route through `fsBackend()`:
     // Node's real `node:fs`, or an in-memory virtual filesystem in the browser (see `memFs`). Text
     // variants marshal `string`; the byte variants marshal `char[]` directly (binary-safe, no string
     // round-trip) - the bytes are bulk-copied across the boundary.
@@ -543,7 +543,7 @@ function defaultDreamModule(getInstance) {
     fileSize: (path) => BigInt(fsBackend().size(path)),
     fileIsDir: (path) => fsBackend().isDir(path),
     dirList: (path) => fsBackend().list(path).join("\n"),
-    // Console helpers (see src/stdlib/system.dream). Synchronous, mirroring
+    // Console helpers (see src/stdlib/system/system.dream). Synchronous, mirroring
     // src/execution/host/console.rs. In Node, reads block on fd 0 via `fs.readSync`; there is no
     // synchronous stdin in a browser, so `readLine`/`readKey` fall back to `prompt()` there (and
     // return "" / 0 when unavailable, e.g. in a Worker).

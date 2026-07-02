@@ -30,6 +30,24 @@ Returns the character at `index`. No bounds checking.
 let c = "hello".char_at(1);   // 'e'
 ```
 
+## Indexing and iteration
+
+A string is indexable and iterable, exactly like the built-in arrays and the stdlib `List`/`Map`.
+`s[i]` reads the character at position `i` (a `char`, the same value as `char_at`), and
+`for (let c in s)` walks its characters in order:
+
+```dream
+let s = "abc";
+println(s[0]);          // 'a'
+
+for (let c in s) {
+    println(c);         // 'a', 'b', 'c'
+}
+```
+
+Indexing is read-only (there is no `s[i] = c`); build derived strings with `substring`, `+`, or the
+low-level `String.alloc`/`String.set` helpers instead.
+
 ## substring
 
 Returns a new string containing the characters in the half-open range `[start, end)`. A non-positive length yields the empty string.

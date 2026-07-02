@@ -1,4 +1,4 @@
-//! Synchronous console host functions (the `Dream` module behind `src/stdlib/system.dream`'s
+//! Synchronous console host functions (the `Dream` module behind `src/stdlib/system/system.dream`'s
 //! `readLine`/`readKey`/`exit`). Browser/Node hosts implement the same names in `runtime/dream.js`.
 
 use std::io::{self, BufRead, Read, Write};

@@ -1,4 +1,4 @@
-//! HTTP host functions (the `Dream` module behind `src/stdlib/http.dream`). Each performs the whole
+//! HTTP host functions (the `Dream` module behind `src/stdlib/net/http_client.dream`). Each performs the whole
 //! request synchronously (blocking `reqwest`) and bridges the serialized response into Dream's async
 //! runtime, so the same `.dream` works under wasmtime, Node, and the browser.
 
@@ -45,7 +45,7 @@ fn resolve_host_future_bytes(caller: &mut Caller<'_, ()>, bytes: &[u8]) -> i32 {
 }
 
 /// Performs one blocking HTTP request and serializes the whole response into the wire format shared
-/// with `runtime/dream.js` (and parsed by `src/stdlib/http.dream`): an ASCII head ("<status>\n" plus
+/// with `runtime/dream.js` (and parsed by `src/stdlib/net/http_response.dream`): an ASCII head ("<status>\n" plus
 /// "Name: value\n" lines), a blank line, then the raw body bytes. `body` is sent verbatim unless the
 /// verb is GET/HEAD or it is empty. Network/protocol errors come back as a status `0` response whose
 /// body is the error text.

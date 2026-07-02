@@ -1,0 +1,13 @@
+// A string is indexable (`s[i]` -> char) and iterable (`for (let c in s)`), mirroring the
+// collection protocol used by List and Map.
+fun main(): void {
+    let s = "abc";
+    System.print(s[0]);   // a
+    System.print(s[2]);   // c
+    System.print('\n');
+
+    for (let c in s) {
+        System.print(c);
+    }
+    System.print('\n');
+}

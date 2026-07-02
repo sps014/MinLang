@@ -65,8 +65,15 @@ for (let value in xs) {
 The loop variable is bound to each element in turn (its type is the array's element type).
 
 `for..in` also works over any class that implements the enumerator protocol (an `iterator()`
-method returning an object with `next(): Option<T>`), including the standard `List` and `Map`. See
+method returning an object with `next(): Option<T>`), including the standard `List` and `Map`, and
+over a `string` (which yields its characters as `char`). See
 [Indexers and enumerators](classes.md#indexers-and-enumerators).
+
+```dream
+for (let c in "abc") {
+    println(c);   // 'a', 'b', 'c'
+}
+```
 
 ## switch
 

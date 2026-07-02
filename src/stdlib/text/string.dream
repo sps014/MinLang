@@ -16,6 +16,17 @@ extend string {
         return this.size() == 0;
     }
 
+    // Indexer: `s[i]` reads the character at position `i` (a `char`), the same value as the
+    // low-level `s.char_at(i)`. Out-of-range access is undefined, exactly like array indexing.
+    public fun get(index: int): char {
+        return this.char_at(index);
+    }
+
+    // Enumerator for `for (let c in s)`. Returns a fresh cursor over this string's characters.
+    public fun iterator(): StringIterator {
+        return StringIterator(this);
+    }
+
     // A new string containing the characters in the half-open range [start, end). A non-positive
     // length yields the empty string.
     public fun substring(start: int, end: int): string {

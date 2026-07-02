@@ -1,4 +1,4 @@
-//! Synchronous regex host functions (the `Dream` module behind `src/stdlib/regex.dream`),
+//! Synchronous regex host functions (the `Dream` module behind `src/stdlib/text/regex.dream`),
 //! implemented with the `regex` crate. These mirror the JS helpers in `runtime/dream.js` so
 //! `Regex.test`/`replace`/`match` behave the same on wasmtime, Node, and the browser (for the
 //! common pattern subset the `regex` crate supports).

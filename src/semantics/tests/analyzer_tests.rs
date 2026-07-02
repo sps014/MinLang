@@ -531,7 +531,7 @@ fn test_hir_emission_extern_import_with_result() {
     wat::parse_str(&wat).expect("module importing a result-returning extern should assemble");
 }
 
-/// The `System` intrinsic surface (mirrors `stdlib/system.dream`), inlined so the print tests do not
+/// The `System` intrinsic surface (mirrors `stdlib/system/system.dream`), inlined so the print tests do not
 /// depend on the full prelude being merged by the unit-test harness.
 const SYSTEM_STUB: &str = "
     class System {
@@ -542,7 +542,7 @@ const SYSTEM_STUB: &str = "
     }
 ";
 
-/// `System` + `Time.sleep` for async tests (mirrors `stdlib/time.dream` + `system.dream`).
+/// `System` + `Time.sleep` for async tests (mirrors `stdlib/system/time.dream` + `system.dream`).
 const ASYNC_STUB: &str = "
     class System {
         @intrinsic(\"print\")

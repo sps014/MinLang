@@ -4,11 +4,11 @@
 //!
 //! The pieces are split by concern so each capability lives next to the stdlib module it backs:
 //!   * [`memory`]  - shared string/`char[]` marshaling across the WASM boundary.
-//!   * [`file`]    - `src/stdlib/file.dream` (synchronous `std::fs`).
-//!   * [`regex`]   - `src/stdlib/regex.dream` (the `regex` crate).
-//!   * [`http`]    - `src/stdlib/http.dream` (blocking `reqwest` + the async future bridge).
+//!   * [`file`]    - `src/stdlib/io/file.dream` (synchronous `std::fs`).
+//!   * [`regex`]   - `src/stdlib/text/regex.dream` (the `regex` crate).
+//!   * [`http`]    - `src/stdlib/net/http_client.dream` (blocking `reqwest` + the async future bridge).
 //!   * [`math`]    - the `Math.*` `env` builtins.
-//!   * [`console`] - `src/stdlib/system.dream`'s `readLine`/`readKey`/`exit` (the `crossterm` crate).
+//!   * [`console`] - `src/stdlib/system/system.dream`'s `readLine`/`readKey`/`exit` (the `crossterm` crate).
 
 mod console;
 mod file;

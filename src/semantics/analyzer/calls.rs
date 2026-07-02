@@ -45,10 +45,16 @@ impl<'a> Analyzer<'a> {
         diagnostics: &mut DiagnosticBag,
     ) -> HookResolution {
         let (base_name, generic_args) = match Self::resolve_struct_parts(obj_type) {
-            Some(parts) => parts,
+            Some(parts) => {
+                self.ensure_type_instantiated(&parts.0, &parts.1, &empty_span(), diagnostics);
+                parts
+            }
+            // `string` is a built-in reference type carrying `extend string` methods (registered
+            // under the `string` type name), so its `get`/`iterator` hooks resolve exactly like a
+            // class's — no instantiation needed since `string` is not generic.
+            None if matches!(obj_type, Type::String(_)) => ("string".to_string(), Vec::new()),
             None => return HookResolution::Absent,
         };
-        self.ensure_type_instantiated(&base_name, &generic_args, &empty_span(), diagnostics);
         let mono_name = mangle_generic(&base_name, &generic_args);
         let mangled = method_fn(&mono_name, method_name);
 

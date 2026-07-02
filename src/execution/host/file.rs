@@ -1,4 +1,4 @@
-//! Synchronous filesystem host functions (the `Dream` module behind `src/stdlib/file.dream`),
+//! Synchronous filesystem host functions (the `Dream` module behind `src/stdlib/io/file.dream`),
 //! implemented over `std::fs`. Browser/Node hosts implement the same names in `runtime/dream.js`.
 
 use std::fs;
