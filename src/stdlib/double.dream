@@ -31,7 +31,7 @@ extend double {
     // fit the grammar. Returns `Err` for an empty string or one containing no digits; otherwise
     // `Ok` with the value.
     public static fun parse(text: string): Result<double, string> {
-        let n = text.len();
+        let n = text.size();
         if (n == 0) {
             return Result.Err("cannot parse double from empty string");
         }

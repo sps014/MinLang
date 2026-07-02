@@ -1,4 +1,4 @@
 fun main(args: string[]): void {
     System.println("args length:");
-    System.println(args.len());
+    System.println(args.size());
 }

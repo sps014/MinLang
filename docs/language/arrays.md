@@ -20,12 +20,13 @@ nums[2] = 99;          // [1, 2, 99, 4, 5]
 
 Going out of bounds is undefined behaviour — there is no automatic bounds check at runtime.
 
-## Array length
+## Array size
 
-Use the `len` method to get the number of elements:
+Use the `size` method to get the number of elements. It is the same `size()` the stdlib `List` and
+`Map` expose, so every collection is measured the same way:
 
 ```dream
-let count = nums.len();   // 5
+let count = nums.size();   // 5
 ```
 
 ## Passing arrays to functions
@@ -35,7 +36,7 @@ Arrays are reference types. Passing an array to a function does not copy it; bot
 ```dream
 fun fill_zeros(arr: int[]): void {
     let i = 0;
-    while (i < arr.len()) {
+    while (i < arr.size()) {
         arr[i] = 0;
         i = i + 1;
     }
@@ -73,7 +74,7 @@ The element type can itself be an array (or any other type), giving multi-dimens
 
 ```dream
 let grid: int[][] = [[1, 2, 3], [4, 5, 6]];
-println(grid.len());      // 2  (rows)
-println(grid[0].len());   // 3  (columns)
+println(grid.size());      // 2  (rows)
+println(grid[0].size());   // 3  (columns)
 println(grid[1][2]);      // 6
 ```

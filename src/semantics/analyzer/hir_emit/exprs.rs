@@ -604,7 +604,7 @@ impl<'a> Analyzer<'a> {
         ));
     }
 
-    /// Records `recv.len()` (typed `int`): an array reads its stored length word (`ArrayLen`), while a
+    /// Records `recv.size()` (typed `int`): an array reads its stored length word (`ArrayLen`), while a
     /// string scans for its NUL terminator at runtime (`StrLen`), since the two have different layouts.
     pub(in crate::semantics::analyzer) fn hir_set_array_len(&mut self, recv: Option<HExpr>) {
         if !self.active() {

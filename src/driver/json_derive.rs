@@ -161,7 +161,7 @@ fn generate_json_extend(
             match (to_elem, from_elem) {
                 (Some(to_e), Some(from_e)) => {
                     to_body.push_str(&format!(
-                        "        let __arr_{f} = JsonValue.array();\n        let __i_{f} = 0;\n        while (__i_{f} < this.{f}.len()) {{\n            __arr_{f}.push({to_e});\n            __i_{f} = __i_{f} + 1;\n        }}\n        __o.set(\"{k}\", __arr_{f});\n",
+                        "        let __arr_{f} = JsonValue.array();\n        let __i_{f} = 0;\n        while (__i_{f} < this.{f}.size()) {{\n            __arr_{f}.push({to_e});\n            __i_{f} = __i_{f} + 1;\n        }}\n        __o.set(\"{k}\", __arr_{f});\n",
                         f = fname, k = json_key, to_e = to_e
                     ));
                     from_prelude.push_str(&format!(

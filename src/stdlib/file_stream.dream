@@ -14,8 +14,8 @@ class FileStream {
 
     // Clamps `end` to the buffer length and returns it (helper for the read methods).
     fun _clamp(end: int): int {
-        if (end > this.data.len()) {
-            return this.data.len();
+        if (end > this.data.size()) {
+            return this.data.size();
         }
         return end;
     }
@@ -57,12 +57,12 @@ class FileStream {
 
     // Reads everything remaining from the current position as text.
     public fun read_all(): string {
-        return this.read(this.data.len() - this.pos);
+        return this.read(this.data.size() - this.pos);
     }
 
     // True while there are unread bytes.
     public fun has_more(): bool {
-        return this.pos < this.data.len();
+        return this.pos < this.data.size();
     }
 
     // Current cursor offset (bytes from the start).
@@ -70,9 +70,9 @@ class FileStream {
         return this.pos;
     }
 
-    // Total length of the buffered content in bytes.
-    public fun length(): int {
-        return this.data.len();
+    // Total number of buffered bytes (the same `size()` every collection answers to).
+    public fun size(): int {
+        return this.data.size();
     }
 
     // Moves the cursor to an absolute offset (clamped to [0, length]).
@@ -81,8 +81,8 @@ class FileStream {
         if (target < 0) {
             target = 0;
         }
-        if (target > this.data.len()) {
-            target = this.data.len();
+        if (target > this.data.size()) {
+            target = this.data.size();
         }
         this.pos = target;
     }
@@ -94,6 +94,6 @@ class FileStream {
 
     // Releases the buffer (no-op for the buffered stream; present for API symmetry).
     public fun close(): void {
-        this.pos = this.data.len();
+        this.pos = this.data.size();
     }
 }

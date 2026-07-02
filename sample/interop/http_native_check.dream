@@ -5,7 +5,7 @@ async fun main(): void {
     System.println("status:");
     System.println(res.status());
     System.println("len:");
-    System.println(res.bytes().len());
+    System.println(res.bytes().size());
     System.println("has-html:");
     System.println(res.text().contains("html"));
 }

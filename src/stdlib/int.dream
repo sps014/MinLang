@@ -64,7 +64,7 @@ extend int {
     // a bare sign, or any non-digit character; otherwise `Ok` with the value. Called as
     // `int.parse("42")`.
     public static fun parse(text: string): Result<int, string> {
-        let n = text.len();
+        let n = text.size();
         if (n == 0) {
             return Result.Err("cannot parse int from empty string");
         }

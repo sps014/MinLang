@@ -154,16 +154,17 @@ let s = Math.sin(0);                                // 0.0 (int argument coerced
 let p = Math.pow(2.0, 3.0);                         // 8.0
 ```
 
-## len
+## size
 
-`len` is a method on arrays and strings:
+`size` is the element-count method on arrays and strings. It is the same `size()` the stdlib
+`List` and `Map` expose, so every collection is queried the same way:
 
 ```dream
 let arr = [10, 20, 30];
-System.println(arr.len());     // 3
+System.println(arr.size());     // 3
 
 let name = "hello";
-System.println(name.len());    // 5
+System.println(name.size());    // 5
 ```
 
 ## Array.new

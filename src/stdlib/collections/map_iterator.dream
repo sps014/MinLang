@@ -12,7 +12,7 @@ class MapIterator<K, V> {
     }
 
     public fun next(): Option<KeyValuePair<K, V>> {
-        if (this.idx >= this.keys.len()) {
+        if (this.idx >= this.keys.size()) {
             return Option.None;
         }
         let pair = KeyValuePair<K, V>(this.keys[this.idx], this.values[this.idx]);

@@ -4,20 +4,13 @@
 
 Strings can be built with `+` concatenation or [string interpolation](../language/operators.md#string-interpolation) (`$"hi {name}"`).
 
-## len
+## size
 
-Returns the number of characters. This is the same as `length()`.
-
-```dream
-let n = "hello".len();   // 5
-```
-
-## length
-
-Alias for `len()`.
+Returns the number of characters. This is the same `size()` the built-in arrays and the stdlib
+`List`/`Map` expose, so every collection is measured the same way:
 
 ```dream
-let n = "hello".length();   // 5
+let n = "hello".size();   // 5
 ```
 
 ## is_empty

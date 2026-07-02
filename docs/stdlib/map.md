@@ -137,7 +137,7 @@ fun main() {
     let freq = Map<string, int>();
     let words = ["the", "cat", "sat", "on", "the", "mat"];
     let i = 0;
-    while (i < words.len()) {
+    while (i < words.size()) {
         let w = words[i];
         freq.put(w, freq.get_or(w, 0) + 1);
         i = i + 1;

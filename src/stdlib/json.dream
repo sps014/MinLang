@@ -30,7 +30,7 @@ class JSON {
     }
 
     public static fun parse(text: string): JsonValue {
-        let parser = JsonParser(text, 0, text.len());
+        let parser = JsonParser(text, 0, text.size());
         return parser.parse_value();
     }
 
@@ -38,7 +38,7 @@ class JSON {
 
     // Wraps `s` in quotes, escaping the characters JSON requires.
     static fun _json_escape(s: string): string {
-        let n = s.len();
+        let n = s.size();
         let result = "\"";
         let i = 0;
         while (i < n) {

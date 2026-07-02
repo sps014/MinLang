@@ -42,7 +42,7 @@ class Regex {
     // it, the full match followed by any capture groups. Empty when there is no match.
     public fun match(input: string): string[] {
         let joined = Regex.__regex_match_joined(this.pattern, this.flags, input, "\n");
-        if (joined.len() == 0) {
+        if (joined.size() == 0) {
             return Array.new<string>(0);
         }
         return joined.split('\n');

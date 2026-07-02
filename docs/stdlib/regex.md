@@ -30,7 +30,7 @@ fun main(): void {
     System.println(cleaned);
 
     let parts = digits.match("a1b2c3");            // ["1", "2", "3"]
-    System.println(parts.len());         // 3
+    System.println(parts.size());        // 3
 }
 ```
 

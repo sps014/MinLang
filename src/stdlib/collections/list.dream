@@ -21,22 +21,9 @@ class List<T> {
         return this.count;
     }
 
-    // Number of elements, exposed as a property: read with `list.length`. Mirrors `size()`.
-    public get length(): int {
-        return this.count;
-    }
-
-    // Assigning `list.length = n` truncates the list to the first `n` elements. Values outside
-    // `0..=count` are ignored (the list only ever shrinks through this property, never grows).
-    public set length(value: int) {
-        if ((value >= 0) && (value <= this.count)) {
-            this.count = value;
-        }
-    }
-
-    // Doubles the backing buffer, copying existing elements across.
-    public fun grow(): void {
-        let old_cap = this.items.len();
+    // Doubles the backing buffer, copying existing elements across. Internal to `push`.
+    fun grow(): void {
+        let old_cap = this.items.size();
         let new_cap = old_cap * 2;
         if (new_cap < 4) {
             new_cap = 4;
@@ -52,7 +39,7 @@ class List<T> {
 
     // Appends a value to the end, growing if necessary.
     public fun push(value: T): void {
-        if (this.count == this.items.len()) {
+        if (this.count == this.items.size()) {
             this.grow();
         }
         this.items[this.count] = value;

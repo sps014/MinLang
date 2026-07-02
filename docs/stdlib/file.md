@@ -50,7 +50,7 @@ async fun main(): void {
 ```dream
 async fun main(): void {
     let entries = await File.list(".");
-    System.println(entries.len());
+    System.println(entries.size());
 }
 ```
 
@@ -116,8 +116,8 @@ A buffered cursor over a file's bytes. `read`/`read_all` produce text; `read_byt
 | `read_all(): string` | everything remaining as text |
 | `has_more(): bool` | true while unread bytes remain |
 | `position(): int` | current cursor offset in bytes |
-| `length(): int` | total buffered length in bytes |
-| `seek(offset): void` | move the cursor to an absolute offset (clamped to `[0, length]`) |
+| `size(): int` | total number of buffered bytes |
+| `seek(offset): void` | move the cursor to an absolute offset (clamped to `[0, size]`) |
 | `reset(): void` | rewind the cursor to the start |
 | `close(): void` | release the buffer (advances the cursor to the end) |
 

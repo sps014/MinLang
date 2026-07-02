@@ -32,7 +32,7 @@ extend ulong {
     // Parses an unsigned decimal integer from `text`. Returns `Err` for an empty string or any
     // non-digit character; otherwise `Ok` with the value. Called as `ulong.parse("42")`.
     public static fun parse(text: string): Result<ulong, string> {
-        let n = text.len();
+        let n = text.size();
         if (n == 0) {
             return Result.Err("cannot parse ulong from empty string");
         }

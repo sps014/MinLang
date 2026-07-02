@@ -849,7 +849,7 @@ impl<'a> Analyzer<'a> {
             return Ok(Type::Unknown);
         }
 
-        // Builtin methods: `len()` lowers to `ArrayLen`; the rest (`to_string`/`char_at`/`hash_code`)
+        // Builtin methods: `size()` lowers to `ArrayLen`; the rest (`to_string`/`char_at`/`hash_code`)
         // need runtime defs and stay on the legacy path (they clear HIR inside the helper). The
         // receiver is threaded in so `len` can wrap it; it is left intact when no builtin matches.
         let mut recv = obj_hir;
@@ -1089,7 +1089,7 @@ impl<'a> Analyzer<'a> {
     }
 
     /// Type-checks the builtin methods available on every (or every primitive/array) receiver:
-    /// `len()`, `str.char_at(i)`, and the `to_string`/`hash_code` object protocol (a C-style enum's
+    /// `size()`, `str.char_at(i)`, and the `to_string`/`hash_code` object protocol (a C-style enum's
     /// `to_string()` renders its variant name). Returns `Ok(Some(result_type))` when the call is a
     /// builtin (so the caller returns it) or `Ok(None)` to fall through to normal instance-method
     /// dispatch. A user-defined `to_string`/`hash_code` override yields `None` so the override is
@@ -1106,13 +1106,14 @@ impl<'a> Analyzer<'a> {
         // Default: no builtin HIR. `len` opts back in below; the others stay on the legacy path.
         self.hir_none();
 
-        // `arr.len()` / `str.len()`: built-in length method on arrays and strings.
-        if method.text == intrinsics::LEN {
+        // `arr.size()` / `str.size()`: built-in element-count method on arrays and strings (the same
+        // `size()` the stdlib `List`/`Map` expose, so every collection is queried the same way).
+        if method.text == intrinsics::SIZE {
             let base = strip_nullable(&obj_type.get_type()).to_string();
             if base.ends_with("[]") || base == "string" {
                 if !params.is_empty() {
                     diagnostics.report_error(
-                        format!("'len' takes no arguments, got {}", params.len()),
+                        format!("'size' takes no arguments, got {}", params.len()),
                         Some(method.position),
                     );
                 }

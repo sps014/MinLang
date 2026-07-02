@@ -681,12 +681,12 @@ fn exec_print_bool_via_to_string() {
 #[cfg(feature = "native")]
 #[test]
 fn exec_string_len_via_strlen() {
-    // `str.len()` runs the `$strlen` scan over the reconciled NUL-terminated string.
+    // `str.size()` runs the `$strlen` scan over the reconciled NUL-terminated string.
     let code = format!(
         "{SYSTEM_STUB}
         fun main(): void {{
             let s: string = \"hello\";
-            System.print(s.len());
+            System.print(s.size());
         }}"
     );
     assert_eq!(run_and_capture(&code, "main"), "5");
@@ -1239,14 +1239,14 @@ fn test_hir_emission_switch_statement_with_variant_binding() {
 
 #[test]
 fn test_hir_emission_len_builtin() {
-    // `arr.len()` reads the array's stored length word; `str.len()` scans via the runtime `$strlen`
+    // `arr.size()` reads the array's stored length word; `str.size()` scans via the runtime `$strlen`
     // (strings are NUL-terminated heap objects, not length-prefixed).
     let code = "
-        fun count(xs: int[]): int { return xs.len(); }
-        fun slen(s: string): int { return s.len(); }
+        fun count(xs: int[]): int { return xs.size(); }
+        fun slen(s: string): int { return s.size(); }
     ";
     let (wat, count) = emit_hir_to_wat(code);
-    assert_eq!(count, 2, "both len functions should be emitted:\n{}", wat);
+    assert_eq!(count, 2, "both size functions should be emitted:\n{}", wat);
     assert!(wat.contains("(func $count"), "missing array-len function:\n{}", wat);
     assert!(wat.contains("(func $slen"), "missing string-len function:\n{}", wat);
     assert!(wat.contains("(call $strlen)"), "string len should use $strlen:\n{}", wat);
@@ -1769,6 +1769,21 @@ fn test_static_getter_type_mismatch_is_reported() {
     ";
     let diagnostics = analyze_code(code);
     assert_eq!(diagnostics.has_errors(), true);
+}
+
+#[test]
+fn test_array_size_builtin_ok() {
+    // `arr.size()` is the builtin element-count method on arrays, typed `int` (the same `size()`
+    // the stdlib collections expose). Cross-collection consistency is covered by the
+    // `size_consistent` e2e case.
+    let code = "
+        fun main(): void {
+            let a = [10, 20, 30];
+            let n: int = a.size();
+        }
+    ";
+    let diagnostics = analyze_code(code);
+    assert_eq!(diagnostics.has_errors(), false);
 }
 
 #[test]

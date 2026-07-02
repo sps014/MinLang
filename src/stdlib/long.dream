@@ -53,7 +53,7 @@ extend long {
     // a bare sign, or any non-digit character; otherwise `Ok` with the value. Called as
     // `long.parse("42")`.
     public static fun parse(text: string): Result<long, string> {
-        let n = text.len();
+        let n = text.size();
         if (n == 0) {
             return Result.Err("cannot parse long from empty string");
         }

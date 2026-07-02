@@ -1,7 +1,7 @@
 fun main(): void {
     let s: string = "hello";
-    System.println(s.len());
+    System.println(s.size());
 
     let xs: int[] = [1, 2, 3, 4];
-    System.println(xs.len());
+    System.println(xs.size());
 }

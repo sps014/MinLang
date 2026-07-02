@@ -56,7 +56,7 @@ pub fn is_object_builtin(name: &str) -> bool {
 }
 
 /// The low-level character accessor `s.char_at(i)`, a builtin pseudo-method on `string` (like
-/// [`LEN`]); lowered directly to the `$char_at` runtime helper.
+/// [`SIZE`]); lowered directly to the `$char_at` runtime helper.
 pub const CHAR_AT: &str = "char_at";
 
 /// The generic array-allocation builtin, surfaced as the static method `Array.new<T>(len)`.
@@ -65,8 +65,9 @@ pub const ARRAY_NEW: &str = "array_new";
 // --- Builtin pseudo-methods on language types -----------------------------------------------
 // Recognized on built-in types rather than declared as user methods.
 
-/// `string.len()` / `T[].len()`: the length accessor on strings and arrays.
-pub const LEN: &str = "len";
+/// `string.size()` / `T[].size()`: the element-count accessor on strings and arrays. The same name
+/// is used by the stdlib `List`/`Map` methods, so `size()` is uniform across every collection.
+pub const SIZE: &str = "size";
 
 // --- Async intrinsics -----------------------------------------------------------------------
 

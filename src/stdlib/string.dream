@@ -11,14 +11,9 @@ extend string {
     @intrinsic("string_set")
     static extern fun set(s: string, i: int, c: char): void;
 
-    // Number of characters in the string (alias for the builtin `len()`).
-    public fun length(): int {
-        return this.len();
-    }
-
     // True when the string has no characters.
     public fun is_empty(): bool {
-        return this.len() == 0;
+        return this.size() == 0;
     }
 
     // A new string containing the characters in the half-open range [start, end). A non-positive
@@ -39,7 +34,7 @@ extend string {
 
     // The index of the first occurrence of character `target`, or `None` if absent.
     public fun index_of(target: char): Option<int> {
-        let n = this.len();
+        let n = this.size();
         let i = 0;
         while (i < n) {
             if (this.char_at(i) == target) {
@@ -52,8 +47,8 @@ extend string {
 
     // True if `sub` occurs anywhere in this string (the empty string is always contained).
     public fun contains(sub: string): bool {
-        let n = this.len();
-        let m = sub.len();
+        let n = this.size();
+        let m = sub.size();
         if (m == 0) {
             return true;
         }
@@ -72,7 +67,7 @@ extend string {
 
     // True if this string begins with `prefix`.
     public fun starts_with(prefix: string): bool {
-        if (prefix.len() > this.len()) {
+        if (prefix.size() > this.size()) {
             return false;
         }
         return this._matches_at(prefix, 0);
@@ -80,7 +75,7 @@ extend string {
 
     // True if this string ends with `suffix`.
     public fun ends_with(suffix: string): bool {
-        let offset = this.len() - suffix.len();
+        let offset = this.size() - suffix.size();
         if (offset < 0) {
             return false;
         }
@@ -89,7 +84,7 @@ extend string {
 
     // A new string with every ASCII uppercase letter lowercased.
     public fun to_lower(): string {
-        let n = this.len();
+        let n = this.size();
         let result = String.alloc(n);
         let i = 0;
         while (i < n) {
@@ -102,7 +97,7 @@ extend string {
 
     // A new string with every ASCII lowercase letter uppercased.
     public fun to_upper(): string {
-        let n = this.len();
+        let n = this.size();
         let result = String.alloc(n);
         let i = 0;
         while (i < n) {
@@ -115,7 +110,7 @@ extend string {
 
     // A new string with leading and trailing ASCII whitespace removed.
     public fun trim(): string {
-        let n = this.len();
+        let n = this.size();
         let start = 0;
         while ((start < n) && (this._is_space_at(start) == true)) {
             start = start + 1;
@@ -129,7 +124,7 @@ extend string {
 
     // A new string consisting of this string repeated `times` times (<= 0 yields the empty string).
     public fun repeat(times: int): string {
-        let n = this.len();
+        let n = this.size();
         let total = n * times;
         if (total < 0) {
             total = 0;
@@ -155,7 +150,7 @@ extend string {
     // Splits this string on the single character `sep`, returning every piece between separators
     // (including empty pieces). A string with no separators yields a one-element array.
     public fun split(sep: char): string[] {
-        let n = this.len();
+        let n = this.size();
         let parts = 1;
         let i = 0;
         while (i < n) {
@@ -183,11 +178,11 @@ extend string {
     // A new string with every occurrence of `old` replaced by `replacement`. An empty `old`
     // returns the string unchanged.
     public fun replace(old: string, replacement: string): string {
-        let m = old.len();
+        let m = old.size();
         if (m == 0) {
             return this;
         }
-        let n = this.len();
+        let n = this.size();
         let result = "";
         let i = 0;
         while (i < n) {
@@ -210,7 +205,7 @@ extend string {
 
     // Private helper: true if `sub` matches this string starting at byte `offset`.
     fun _matches_at(sub: string, offset: int): bool {
-        let m = sub.len();
+        let m = sub.size();
         let j = 0;
         while (j < m) {
             if (this.char_at(offset + j) != sub.char_at(j)) {

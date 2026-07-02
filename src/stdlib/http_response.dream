@@ -18,7 +18,7 @@ class HttpResponse {
     fun scan(): void {
         if (this.scanned == false) {
             this.scanned = true;
-            let n = this.data.len();
+            let n = this.data.size();
             let i = 0;
             let found = false;
             while ((i + 1 < n) && (found == false)) {
@@ -57,7 +57,7 @@ class HttpResponse {
 
     // The HTTP status code, e.g. 200. Parsed from the leading digits of the head.
     public fun status(): int {
-        let n = this.data.len();
+        let n = this.data.size();
         let i = 0;
         let value = 0;
         let going = true;
@@ -84,13 +84,13 @@ class HttpResponse {
         let lines = this.head_text().split('\n');
         let want = name.to_lower();
         let i = 1;   // line 0 is the status line
-        while (i < lines.len()) {
+        while (i < lines.size()) {
             let line = lines[i];
             let colon = line.index_of(':').unwrap_or(0 - 1);
             if (colon >= 0) {
                 let key = line.substring(0, colon).trim().to_lower();
                 if (key == want) {
-                    return line.substring(colon + 1, line.len()).trim();
+                    return line.substring(colon + 1, line.size()).trim();
                 }
             }
             i = i + 1;
@@ -101,14 +101,14 @@ class HttpResponse {
     // The response body as UTF-8 text.
     public fun text(): string {
         this.scan();
-        return this.slice_text(this.boundary + 2, this.data.len());
+        return this.slice_text(this.boundary + 2, this.data.size());
     }
 
     // The response body as raw bytes (binary-safe; a fresh `byte[]` slice). Each code point of the
     // raw response buffer is narrowed to a byte.
     public fun bytes(): byte[] {
         this.scan();
-        let n = this.data.len();
+        let n = this.data.size();
         let start = this.boundary + 2;
         if (start > n) {
             start = n;
