@@ -1089,10 +1089,11 @@ impl<'a> Analyzer<'a> {
     }
 
     /// Type-checks the builtin methods available on every (or every primitive/array) receiver:
-    /// `EnumValue.name()`, `len()`, `str.char_at(i)`, and the `to_string`/`hash_code` object
-    /// protocol. Returns `Ok(Some(result_type))` when the call is a builtin (so the caller returns
-    /// it) or `Ok(None)` to fall through to normal instance-method dispatch. A user-defined
-    /// `to_string`/`hash_code` override yields `None` so the override is dispatched normally.
+    /// `len()`, `str.char_at(i)`, and the `to_string`/`hash_code` object protocol (a C-style enum's
+    /// `to_string()` renders its variant name). Returns `Ok(Some(result_type))` when the call is a
+    /// builtin (so the caller returns it) or `Ok(None)` to fall through to normal instance-method
+    /// dispatch. A user-defined `to_string`/`hash_code` override yields `None` so the override is
+    /// dispatched normally.
     fn analyze_builtin_method(
         &mut self,
         obj_type: &Type,
@@ -1104,27 +1105,6 @@ impl<'a> Analyzer<'a> {
     ) -> Result<Option<Type>, SemanticError> {
         // Default: no builtin HIR. `len` opts back in below; the others stay on the legacy path.
         self.hir_none();
-        // `EnumValue.name()`: built-in accessor returning the variant name as a string.
-        if method.text == intrinsics::ENUM_NAME {
-            let base = strip_nullable(&obj_type.get_type()).to_string();
-            if let Some(members) = self.enum_table.get(&base) {
-                if !params.is_empty() {
-                    diagnostics.report_error(
-                        format!("'name' takes no arguments, got {}", params.len()),
-                        Some(method.position),
-                    );
-                }
-                let arms: Vec<(i64, String)> = members
-                    .iter()
-                    .map(|(name, value)| (*value as i64, name.clone()))
-                    .collect();
-                self.hir_set_enum_name(receiver.take(), arms);
-                return Ok(Some(Type::String(synthetic_token(
-                    TokenKind::DataTypeToken,
-                    "string",
-                ))));
-            }
-        }
 
         // `arr.len()` / `str.len()`: built-in length method on arrays and strings.
         if method.text == intrinsics::LEN {
@@ -1197,6 +1177,20 @@ impl<'a> Analyzer<'a> {
                     );
                 }
                 if method.text == intrinsics::TO_STRING {
+                    // A C-style enum's `to_string()` renders the variant name (e.g. `Color.Green`
+                    // -> "Green") by mapping the discriminant to its interned name, rather than the
+                    // generic object protocol (which would stringify the underlying integer).
+                    if let Some(members) = self.enum_table.get(&receiver_name) {
+                        let arms: Vec<(i64, String)> = members
+                            .iter()
+                            .map(|(name, value)| (*value as i64, name.clone()))
+                            .collect();
+                        self.hir_set_enum_name(receiver.take(), arms);
+                        return Ok(Some(Type::String(synthetic_token(
+                            TokenKind::DataTypeToken,
+                            "string",
+                        ))));
+                    }
                     self.hir_set_to_string(receiver.take());
                     return Ok(Some(Type::String(synthetic_token(
                         TokenKind::DataTypeToken,

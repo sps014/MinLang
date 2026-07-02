@@ -7,9 +7,9 @@ enum Direction {
 
 fun main() {
     let d = Direction.South;
-    System.println(d.name());
-    System.println(Direction.North.name());
-    System.println(Direction.West.name());
-    System.print(Direction.East.name());
+    System.println(d.to_string());
+    System.println(Direction.North.to_string());
+    System.println(Direction.West.to_string());
+    System.print(Direction.East.to_string());
     System.println("!");
 }

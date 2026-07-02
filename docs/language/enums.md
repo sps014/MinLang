@@ -16,11 +16,11 @@ let c: Color = Color.Green;
 println(c);              // 1
 ```
 
-Call `.name()` on an enum value to get its member name as a string:
+Call `.to_string()` on an enum value to get its member name as a string:
 
 ```dream
-println(Color.Green.name());   // Green
-println(c.name());             // Green
+println(Color.Green.to_string());   // Green
+println(c.to_string());             // Green
 ```
 
 ## Enums with data

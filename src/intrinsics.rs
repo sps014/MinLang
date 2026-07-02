@@ -67,8 +67,6 @@ pub const ARRAY_NEW: &str = "array_new";
 
 /// `string.len()` / `T[].len()`: the length accessor on strings and arrays.
 pub const LEN: &str = "len";
-/// `<enum>.name()`: the variant-name accessor on enum values.
-pub const ENUM_NAME: &str = "name";
 
 // --- Async intrinsics -----------------------------------------------------------------------
 

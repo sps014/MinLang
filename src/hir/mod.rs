@@ -361,8 +361,8 @@ pub enum HExprKind {
     /// String concatenation `a + b` (both operands already string-typed, non-string operands wrapped
     /// in [`HExprKind::ToString`]): joins the two via the runtime `$concat_strings`.
     Concat(Box<HExpr>, Box<HExpr>),
-    /// `EnumValue.name()` — maps the operand's discriminant to its interned variant-name string.
-    /// `arms` is `(discriminant, variant name)` for every member; an unmatched value yields `""`.
+    /// A C-style enum's `to_string()` — maps the operand's discriminant to its interned variant-name
+    /// string. `arms` is `(discriminant, variant name)` for every member; an unmatched value yields `""`.
     EnumName {
         value: Box<HExpr>,
         arms: Vec<(i64, String)>,

@@ -237,8 +237,9 @@ pub enum Rvalue {
     ToString(Operand),
     /// String concatenation `a + b` via the runtime `$concat_strings` (both operands are strings).
     Concat(Operand, Operand),
-    /// `EnumValue.name()` — the operand's discriminant mapped to its interned variant-name string.
-    /// `arms` is `(discriminant, variant name)`; an unmatched value produces the empty string.
+    /// A C-style enum's `to_string()` — the operand's discriminant mapped to its interned
+    /// variant-name string. `arms` is `(discriminant, variant name)`; an unmatched value produces
+    /// the empty string.
     EnumName {
         value: Operand,
         arms: Vec<(i64, String)>,

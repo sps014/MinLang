@@ -691,8 +691,9 @@ impl<'a> Analyzer<'a> {
         ));
     }
 
-    /// Records `EnumValue.name()` (typed `string`): the backend maps the receiver's discriminant to
-    /// its interned variant-name string via `arms` (`(discriminant, name)` for every member).
+    /// Records a C-style enum's `to_string()` (typed `string`): the backend maps the receiver's
+    /// discriminant to its interned variant-name string via `arms` (`(discriminant, name)` for
+    /// every member).
     pub(in crate::semantics::analyzer) fn hir_set_enum_name(&mut self, recv: Option<HExpr>, arms: Vec<(i64, String)>) {
         if !self.active() {
             self.hir.last = None;
